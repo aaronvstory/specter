@@ -177,45 +177,101 @@ class Verifier:
         self.c.print(f"\n[muted]report -> {path}[/]")
 
 
+def _preflight(c):
+    """Show a device/environment summary so the operator knows the state before running checks."""
+    t = Table.grid(padding=(0, 2))
+    t.add_column(style="key", justify="right"); t.add_column(style="val")
+    connected = D.device_connected()
+    t.add_row("device", "[good]connected[/]" if connected else "[bad]NOT connected[/]")
+    if connected:
+        rc, model, _ = D.adb("shell", "getprop", "ro.product.model")
+        rc, rel, _ = D.adb("shell", "getprop", "ro.build.version.release")
+        t.add_row("model", f"{model} (Android {rel})")
+        t.add_row("root", "[good]yes[/]" if D.has_root() else "[warn]no (su checks limited)[/]")
+        # is the Specter module installed + loading?
+        rc, out, _ = D.adb("shell", "pm", "list", "packages")
+        installed = "com.fleet.idrotate" in out
+        t.add_row("specter module", "[good]installed[/]" if installed else "[warn]not installed[/]")
+        loglines = D.read_geergit_hook_log(pattern="specter")
+        t.add_row("module active", "[good]hooks logging[/]" if loglines
+                  else "[warn]no [specter] log yet — enable in LSPosed + reboot[/]")
+    c.print(Panel(t, title="[brand]pre-flight[/]", border_style="magenta", box=box.ROUNDED))
+    return connected
+
+
+def _summary(c, results):
+    t = Table(box=box.SIMPLE, title="[brand]verification summary[/]")
+    t.add_column("check"); t.add_column("result")
+    def row(name, ok, detail=""):
+        t.add_row(name, ("[good]PASS[/]" if ok else "[bad]FAIL[/]") + (f"  {detail}" if detail else ""))
+    if "coverage" in results:
+        cov = results["coverage"]
+        row("coverage", cov["loglines"] > 0, f"{len(cov['covered'])} ids rotated, {cov['loglines']} log lines")
+    if "rotation" in results:
+        r = results["rotation"]
+        ok = not r["any_repeat"] and r.get("not_found", 0) == 0
+        row("rotation", ok, f"{r['launches']} launches, repeat={r['any_repeat']}, not_found={r.get('not_found',0)}")
+    if "backup_reload" in results:
+        row("backup/reload", results["backup_reload"]["ok"])
+    if "leak_audit" in results:
+        row("leak audit", not results["leak_audit"]["leaks"],
+            "clean" if not results["leak_audit"]["leaks"] else f"{len(results['leak_audit']['leaks'])} leaks")
+    c.print(t)
+
+
+CHECKS = {
+    "coverage": "What the app reads vs what Specter rotates (from the hook log)",
+    "rotation": "Launch the app N times, refresh identity each — confirm the app sees a fresh id",
+    "backup":   "Save an identity, rotate away, reload it — confirm the round-trip is exact",
+    "leak":     "Compare OS ground-truth to app data — flag any REAL device id leaking",
+}
+
+
 def run_questionnaire(console=None):
     c = console or Console(theme=THEME)
-    c.print(Panel("[brand]Specter — deep on-device verification[/]\n"
-                  "Prove the tool works against the real phone before trusting it.",
+    c.print(Panel("[brand]👻 Specter — deep on-device verification[/]\n"
+                  "Reads back what the target app actually stored — no trusting the tool's own claims.",
                   box=box.ROUNDED, border_style="magenta"))
 
-    if not D.device_connected():
-        c.print("[bad]No device connected (adb). Plug in the Pixel and enable USB debugging.[/]")
+    if not _preflight(c):
+        c.print("[bad]No device connected (adb). Plug in the phone, enable USB debugging, retry.[/]")
         return 2
-    if not D.has_root():
-        c.print("[warn]No root detected — some checks read /data and need su.[/]")
 
-    pkg = Prompt.ask("[key]Target package[/]", default=DEFAULT_PKG)
-    v = Verifier(pkg, console=c)
-
-    checks = {
-        "coverage": ("Coverage — what the app reads vs what we rotate", v.check_coverage),
-        "rotation": ("Rotation — launch N times, confirm fresh identity each time", None),
-        "backup": ("Backup/reload round-trip", v.check_backup_reload),
-        "leak": ("Leak audit — real OS id vs app data", v.check_leak_audit),
-    }
-    c.print("\n[brand]Which checks?[/]")
-    for k, (desc, _) in checks.items():
-        c.print(f"  [unique]{k}[/] — {desc}")
-    picked = Prompt.ask("[key]Comma-separated (or 'all')[/]", default="all")
-    want = set(checks) if picked.strip() == "all" else {x.strip() for x in picked.split(",")}
-    invalid = want - set(checks)
-    if invalid:
-        c.print(f"[bad]Unknown check(s): {', '.join(sorted(invalid))}. Valid: {', '.join(checks)}[/]")
+    pkg = Prompt.ask("\n[key]Target package[/]", default=DEFAULT_PKG)
+    try:
+        v = Verifier(pkg, console=c)
+    except Exception as e:
+        c.print(f"[bad]{e}[/]")
         return 1
 
-    if "coverage" in want: v.check_coverage()
+    c.print("\n[brand]Available checks:[/]")
+    for k, desc in CHECKS.items():
+        c.print(f"  [unique]{k:9}[/] {desc}")
+    picked = Prompt.ask("[key]Run which? (comma-separated, or 'all')[/]",
+                        choices=None, default="all")
+    want = set(CHECKS) if picked.strip() == "all" else {x.strip() for x in picked.split(",")}
+    invalid = want - set(CHECKS)
+    if invalid:
+        c.print(f"[bad]Unknown check(s): {', '.join(sorted(invalid))}. Valid: {', '.join(CHECKS)}[/]")
+        return 1
+
+    # run each selected check, isolating failures so one crash doesn't abort the rest
+    def run(name, fn):
+        try:
+            fn()
+        except Exception as e:
+            c.print(f"[bad]check '{name}' errored: {e}[/]")
+
+    if "coverage" in want: run("coverage", v.check_coverage)
     if "rotation" in want:
         n = int(Prompt.ask("[key]How many launches?[/]", default="3"))
         if Confirm.ask(f"[warn]This clears + relaunches {pkg} {n}× (logs it out). Proceed?[/]", default=True):
-            v.check_rotation(n)
-    if "backup" in want: v.check_backup_reload()
-    if "leak" in want: v.check_leak_audit()
+            run("rotation", lambda: v.check_rotation(n))
+    if "backup" in want: run("backup", v.check_backup_reload)
+    if "leak" in want: run("leak", v.check_leak_audit)
 
     v.save_report()
-    c.print("\n[good]Verification complete.[/]")
+    c.print()
+    _summary(c, v.results)
+    c.print("\n[good]✓ Verification complete.[/] [muted]Report saved to reports/verify-latest.json[/]")
     return 0

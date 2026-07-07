@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- Polished README (feature table, quality section, project layout).
+- Deepened `verify` questionnaire: pre-flight device/module summary, module-active detection,
+  per-check error isolation, and a final results summary table.
+- RFC-4122 v4 advertising IDs; GSF clamped to Java Long.MAX; slot-aware IMEI; GSF cursor getLong.
 - Core identity generator: coherent, US-biased device profiles from a 499-device DB.
 - Per-identifier generators with validators (Luhn IMEI/ICCID, MAC bits, 19-digit GSF).
 - Global used-id ledger — no identifier is ever reused across signups (the anti-ban core).

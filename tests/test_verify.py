@@ -73,3 +73,30 @@ def test_leak_audit_clean(V):
                            return_value={"android_ids": ["fakefakefakefake"], "gsf_ids": []}):
         v.check_leak_audit()
     assert not v.results["leak_audit"]["leaks"]
+
+
+def test_summary_renders(V):
+    v, mod = V
+    from rich.console import Console
+    from specter.theme import THEME
+    import os
+    v.results = {
+        "coverage": {"loglines": 5, "covered": ["android_id", "gsf_id"]},
+        "rotation": {"launches": 3, "any_repeat": False, "not_found": 0, "android_ids": ["a"], "gsf_ids": ["g"]},
+        "backup_reload": {"ok": True},
+        "leak_audit": {"leaks": []},
+    }
+    con = Console(theme=THEME, file=open(os.devnull, "w"))
+    mod._summary(con, v.results)  # must not raise
+
+
+def test_preflight_no_device(V):
+    v, mod = V
+    from rich.console import Console
+    from specter.theme import THEME
+    from specter import device as D
+    import os
+    from unittest import mock
+    con = Console(theme=THEME, file=open(os.devnull, "w"))
+    with mock.patch.object(D, "device_connected", return_value=False):
+        assert mod._preflight(con) is False
