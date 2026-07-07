@@ -56,10 +56,12 @@ public class HookEntry implements IXposedHookLoadPackage {
             File f = new File(PROFILE_DIR + pkg + ".json");
             if (!f.exists()) f = new File(PROFILE_DIR + "profile.json");
             if (!f.exists()) return m;
-            byte[] b = new byte[(int) f.length()];
             java.io.FileInputStream in = new java.io.FileInputStream(f);
-            in.read(b); in.close();
-            JSONObject j = new JSONObject(new String(b));
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096]; int n;
+            while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+            in.close();
+            JSONObject j = new JSONObject(new String(bos.toByteArray(), "UTF-8"));
             java.util.Iterator<String> it = j.keys();
             while (it.hasNext()) { String k = it.next(); m.put(k, j.getString(k)); }
         } catch (Throwable t) { XposedBridge.log("[specter] profile load fail: " + t); }
@@ -111,9 +113,11 @@ public class HookEntry implements IXposedHookLoadPackage {
         Class<?> tm = XposedHelpers.findClassIfExists("android.telephony.TelephonyManager", lp.classLoader);
         if (tm == null) return;
         rc(tm, "getImei", p.get("imei1"));
-        rc(tm, "getImei", p.get("imei1"), int.class);          // getImei(int slot)
         rc(tm, "getDeviceId", p.get("imei1"));
-        rc(tm, "getDeviceId", p.get("imei1"), int.class);
+        // slot overloads: slot 0 -> imei1, slot 1 -> imei2 (a dual-SIM app reading both must
+        // see two DIFFERENT imeis, or the mismatch flags). Use a slot-aware hook, not a constant.
+        hookSlotImei(tm, "getImei", p.get("imei1"), p.get("imei2"));
+        hookSlotImei(tm, "getDeviceId", p.get("imei1"), p.get("imei2"));
         rc(tm, "getSubscriberId", p.get("sim_subscriber_imsi"));
         rc(tm, "getSimSerialNumber", p.get("sim_serial_iccid"));
         rc(tm, "getLine1Number", p.get("mobile_number"));
@@ -192,9 +196,23 @@ public class HookEntry implements IXposedHookLoadPackage {
         private final String fakeGsf;
         GsfCursorWrapper(android.database.Cursor c, String fakeGsf) { super(c); this.fakeGsf = fakeGsf; }
         @Override public String getString(int columnIndex) {
-            String key = super.getString(0);           // column 0 = the setting name
-            if ("android_id".equals(key) && columnIndex == 1) return fakeGsf;  // column 1 = value
+            if (isAndroidIdValueColumn(columnIndex)) return fakeGsf;
             return super.getString(columnIndex);
+        }
+        @Override public long getLong(int columnIndex) {
+            // GSF android_id is frequently read via getLong on the value column — cover it too.
+            if (isAndroidIdValueColumn(columnIndex)) {
+                try { return Long.parseLong(fakeGsf); } catch (NumberFormatException e) { return super.getLong(columnIndex); }
+            }
+            return super.getLong(columnIndex);
+        }
+        private boolean isAndroidIdValueColumn(int columnIndex) {
+            // rows are (name, value); value is the last column. Guard against unexpected schemas.
+            try {
+                String key = super.getString(0);
+                int valueCol = getColumnCount() - 1;
+                return "android_id".equals(key) && columnIndex == valueCol;
+            } catch (Throwable t) { return false; }
         }
     }
 
@@ -216,6 +234,19 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     // ---- helpers ----
+    // slot-aware IMEI: getImei(0)->imei1, getImei(1)->imei2
+    private void hookSlotImei(Class<?> tm, String method, final String imei1, final String imei2) {
+        try {
+            XposedHelpers.findAndHookMethod(tm, method, int.class, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    int slot = (param.args.length > 0 && param.args[0] instanceof Integer)
+                            ? (Integer) param.args[0] : 0;
+                    param.setResult(slot == 1 ? imei2 : imei1);
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
     private void rc(Class<?> c, String method, String val, Class<?>... params) {
         if (val == null) return;
         try { XposedHelpers.findAndHookMethod(c, method, appended(params,

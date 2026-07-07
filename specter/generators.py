@@ -48,7 +48,13 @@ def imei(r):
     return body + luhn_check_digit(body)               # 15-digit, Luhn-valid
 
 def uuid(r):
-    return f"{hexs(r,4)}-{hexs(r,2)}-{hexs(r,2)}-{hexs(r,2)}-{hexs(r,6)}"
+    # RFC 4122 v4: set version nibble to 4 and variant bits to 10xx. Some ad-id validators
+    # reject a UUID without these, so build them explicitly.
+    b = [r(256) for _ in range(16)]
+    b[6] = (b[6] & 0x0F) | 0x40   # version 4
+    b[8] = (b[8] & 0x3F) | 0x80   # variant 10xx
+    h = "".join(f"{x:02x}" for x in b)
+    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
 
 def mac_upper(r):
     b = [r(256) for _ in range(6)]
@@ -71,9 +77,13 @@ def iccid(r):
     body = "89" + "01" + digits(r, 15)                 # 89=telecom, 01=US, then issuer+account (19 digits)
     return body + luhn_check_digit(body)               # 20-digit Luhn
 
+LONG_MAX = 9_223_372_036_854_775_807  # Java signed 64-bit max
+
 def gsf(r):
-    # 19-digit positive long (GSF android_id is a signed 64-bit rendered decimal)
-    return str(1_000_000_000_000_000_000 + r(9_000_000_000_000_000_000))
+    # GSF android_id is a signed 64-bit long rendered as decimal. Must stay <= Long.MAX,
+    # else Java Long.parseLong()/Cursor.getLong() throws. Range: [1e18, Long.MAX].
+    lo = 1_000_000_000_000_000_000
+    return str(lo + r(LONG_MAX - lo))
 
 def gmail(r):
     first = "".join("abcdefghijklmnopqrstuvwxyz"[r(26)] for _ in range(3 + r(5)))
@@ -92,14 +102,14 @@ def validate(key, value):
         "media_drm_id":        lambda v: bool(re.fullmatch(r"[0-9a-f]{32}", v)),
         "imei1":               lambda v: len(v) == 15 and v.isdigit() and luhn_valid(v),
         "imei2":               lambda v: len(v) == 15 and v.isdigit() and luhn_valid(v),
-        "advertising_id":      lambda v: bool(re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", v)),
+        "advertising_id":      lambda v: bool(re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", v)),
         "bluetooth_mac":       lambda v: bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", v)),
         "wifi_mac":            lambda v: bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", v)),
         "wifi_bssid":          lambda v: bool(re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", v)),
         "mobile_number":       lambda v: bool(re.fullmatch(r"1[2-9]\d{2}[2-9]\d{6}", v)),
         "sim_subscriber_imsi": lambda v: len(v) == 15 and v.isdigit(),
         "sim_serial_iccid":    lambda v: len(v) == 20 and v.isdigit() and luhn_valid(v),
-        "gsf_id":              lambda v: v.isdigit() and 1 <= len(v) <= 19 and int(v) > 0,
+        "gsf_id":              lambda v: v.isdigit() and 0 < int(v) <= LONG_MAX,
         "gmail":               lambda v: bool(re.fullmatch(r"[a-z]{3,}\d{3}@gmail\.com", v)),
     }
     fn = checks.get(key)
