@@ -30,3 +30,5 @@ nul
 /xposed-module/local.properties
 /_*.db
 /_*.apk
+/dist/specter-v*.zip
+/dist/specter-v*/
