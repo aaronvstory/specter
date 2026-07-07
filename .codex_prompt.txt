@@ -1,0 +1,6 @@
+Review the Specter codebase (Python device-identity rotation tool for Android + an Xposed/LSPosed module in xposed-module/). Focus on:
+(1) correctness of identifier generation in specter/generators.py and specter/profile.py — any format a real Android app would reject or that fraud detection would flag as invalid/inconsistent;
+(2) the no-reuse uniqueness guarantee under concurrency in specter/profile.py UsedStore (file lock + atomic write + re-read-merge);
+(3) the Xposed hooks in xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java — correctness, crash-safety on the target app, and whether GSF (the identifier whose reuse caused account bans) is fully covered including the ContentProvider query path;
+(4) anything that would make generated device profiles internally incoherent (Build.* vs fingerprint vs SIM/IMSI/carrier).
+Give concrete file:line findings with fixes, most severe first. Be terse.

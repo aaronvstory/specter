@@ -29,6 +29,7 @@ from rich import box
 
 from .theme import THEME
 from . import device as D
+from .validation import validate_pkg
 from . import profile as P
 from .identifiers import SPECS, UNIQUE_KEYS
 
@@ -37,33 +38,46 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPORTS = os.path.join(ROOT, "reports")
 
 
+class LaunchError(RuntimeError):
+    pass
+
+
 class Verifier:
     def __init__(self, pkg=DEFAULT_PKG, console=None):
-        self.pkg = pkg
+        self.pkg = validate_pkg(pkg)  # never let an unvalidated pkg reach a root shell
         self.c = console or Console(theme=THEME)
         self.results = {}
         os.makedirs(REPORTS, exist_ok=True)
 
     # ---------- primitives ----------
     def _target_reads(self):
-        """Grep the target's own stored data for a 16-hex android_id and 19-digit gsf it recorded."""
+        """
+        Grep the target's WHOLE data dir (not just shared_prefs) for a 16-hex android_id and
+        19-digit gsf it recorded. Apps also stash ids in SQLite/leveldb/flat files, so scanning
+        the full /data/data/<pkg>/ is more robust than shared_prefs alone.
+        """
         rc, out, _ = D.su(
-            f"grep -rhoE '[0-9a-f]{{16}}' /data/data/{self.pkg}/shared_prefs/ 2>/dev/null | sort -u")
+            f"grep -rhoE '[0-9a-f]{{16}}' /data/data/{self.pkg}/ 2>/dev/null | sort -u")
         aids = out.split() if out else []
         rc, out, _ = D.su(
-            f"grep -rhoE '[0-9]{{18,20}}' /data/data/{self.pkg}/shared_prefs/*.xml 2>/dev/null | sort -u")
+            f"grep -rhoE '[0-9]{{18,20}}' /data/data/{self.pkg}/ 2>/dev/null | sort -u")
         gsfs = out.split() if out else []
         return {"android_ids": aids, "gsf_ids": gsfs}
 
     def _launch_target(self, settle=8):
         D.su(f"am force-stop {self.pkg}")
         time.sleep(1)
-        # try monkey; if the launcher is cloaked, fall back to component start
         rc, out, _ = D.adb("shell", "monkey", "-p", self.pkg, "-c",
                            "android.intent.category.LAUNCHER", "1")
         time.sleep(settle)
         rc, pid, _ = D.adb("shell", "pidof", self.pkg)
-        return pid.strip()
+        pid = pid.strip()
+        if not pid:
+            # target didn't start (cloaked launcher / disabled / auth) — don't report false results
+            raise LaunchError(
+                f"{self.pkg} did not start (no pid). If GeerGit/LSPosed cloaks the launcher, "
+                "launch it once from the phone, or ensure the app is enabled.")
+        return pid
 
     def _app_stored_identity(self):
         """Best-effort: what device identity is currently in the app's data."""
@@ -83,19 +97,30 @@ class Verifier:
     def check_rotation(self, launches=3):
         self.c.rule("[brand]2. Rotation[/]")
         seen_aids, seen_gsfs = [], []
+        store = P.UsedStore(os.path.join(ROOT, "used_ids.json"))  # one store, not per-iteration
         table = Table(box=box.SIMPLE)
         table.add_column("launch"); table.add_column("android_id seen"); table.add_column("gsf seen"); table.add_column("fresh?")
+        not_found = 0
         for i in range(launches):
-            # generate + push a fresh identity, clear, launch
-            store = P.UsedStore(os.path.join(ROOT, "used_ids.json"))
-            prof = P.generate_unique(store); store.save()
+            prof = P.generate_unique(store)
             D.push_profile(prof, self.pkg)
             D.clear_app(self.pkg)
-            pid = self._launch_target()
+            try:
+                self._launch_target()
+            except LaunchError as e:
+                self.c.print(f"[bad]launch {i+1} failed: {e}[/]")
+                not_found += 1
+                table.add_row(str(i + 1), "(launch failed)", "(launch failed)", "[bad]NO[/]")
+                continue
             stored = self._app_stored_identity()
             aid = next((a for a in stored["android_ids"] if a == prof["android_id"]), None)
             gsf = next((g for g in stored["gsf_ids"] if g == prof["gsf_id"]), None)
-            fresh = aid not in seen_aids and gsf not in seen_gsfs
+            # fresh requires at least one id ACTUALLY FOUND in the app AND not seen before —
+            # otherwise a total hook failure (nothing found) would falsely read as "fresh".
+            found_something = aid is not None or gsf is not None
+            fresh = found_something and aid not in seen_aids and gsf not in seen_gsfs
+            if not found_something:
+                not_found += 1
             table.add_row(str(i + 1), aid or "(not found)", gsf or "(not found)",
                           "[good]yes[/]" if fresh else "[bad]NO[/]")
             if aid: seen_aids.append(aid)
@@ -103,25 +128,29 @@ class Verifier:
         self.c.print(table)
         repeated = len(seen_aids) != len(set(seen_aids)) or len(seen_gsfs) != len(set(seen_gsfs))
         self.results["rotation"] = {"launches": launches, "android_ids": seen_aids,
-                                    "gsf_ids": seen_gsfs, "any_repeat": repeated}
+                                    "gsf_ids": seen_gsfs, "any_repeat": repeated,
+                                    "not_found": not_found}
+        if not_found:
+            self.c.print(f"[warn]⚠ {not_found}/{launches} launches found NO injected id — "
+                         "hook may not be active (module installed + scoped + rebooted?).[/]")
         self.c.print("[bad]✗ REPEATED identifier across launches[/]" if repeated
                      else "[good]✓ every launch saw a fresh identity[/]")
 
     def check_backup_reload(self):
         self.c.rule("[brand]3. Backup / reload round-trip[/]")
         store = P.UsedStore(os.path.join(ROOT, "used_ids.json"))
-        original = P.generate_unique(store); store.save()
+        original = P.generate_unique(store)
         # save to vault
         vault_path = os.path.join(ROOT, "profiles.json")
         vault = {}
         if os.path.exists(vault_path):
-            vault = json.load(open(vault_path))
+            vault = json.load(open(vault_path, encoding="utf-8"))
         vault["_verify_backup"] = original
-        json.dump(vault, open(vault_path, "w"), indent=2)
+        json.dump(vault, open(vault_path, "w", encoding="utf-8"), indent=2)
         # rotate away
-        other = P.generate_unique(store); store.save()
+        other = P.generate_unique(store)
         # reload
-        reloaded = json.load(open(vault_path))["_verify_backup"]
+        reloaded = json.load(open(vault_path, encoding="utf-8"))["_verify_backup"]
         ok = reloaded == original and reloaded != other
         self.results["backup_reload"] = {"ok": ok}
         self.c.print("[good]✓ backup saved, rotated away, reloaded identical[/]" if ok
@@ -144,7 +173,7 @@ class Verifier:
 
     def save_report(self):
         path = os.path.join(REPORTS, "verify-latest.json")
-        json.dump(self.results, open(path, "w"), indent=2)
+        json.dump(self.results, open(path, "w", encoding="utf-8"), indent=2)
         self.c.print(f"\n[muted]report -> {path}[/]")
 
 
@@ -174,6 +203,10 @@ def run_questionnaire(console=None):
         c.print(f"  [unique]{k}[/] — {desc}")
     picked = Prompt.ask("[key]Comma-separated (or 'all')[/]", default="all")
     want = set(checks) if picked.strip() == "all" else {x.strip() for x in picked.split(",")}
+    invalid = want - set(checks)
+    if invalid:
+        c.print(f"[bad]Unknown check(s): {', '.join(sorted(invalid))}. Valid: {', '.join(checks)}[/]")
+        return 1
 
     if "coverage" in want: v.check_coverage()
     if "rotation" in want:

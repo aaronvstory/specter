@@ -18,3 +18,9 @@ data/*.jsonl
 *.apk
 nul
 /xposed-module/.jdk/
+/xposed-module/.gradle-dist/
+/xposed-module/build.log
+/xposed-module/build2.log
+/xposed-module/build3.log
+/xposed-module/app/libs/
+/xposed-module/stub-build/
