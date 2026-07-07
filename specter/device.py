@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import os
 
+from .validation import validate_pkg
+
 PROFILE_DIR = "/data/local/tmp/ghostprint"
 
 
@@ -46,6 +48,7 @@ def has_root():
 
 
 def push_profile(profile, pkg):
+    validate_pkg(pkg)
     """Write profile to a temp file and push to the phone's per-app profile path."""
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(profile, f)
@@ -61,6 +64,7 @@ def push_profile(profile, pkg):
 
 
 def clear_app(pkg):
+    validate_pkg(pkg)
     rc, out, err = su(f"pm clear {pkg}")
     if rc != 0 or "Success" not in out:
         raise AdbError(f"pm clear failed: {err or out}")

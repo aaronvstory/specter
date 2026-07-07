@@ -16,6 +16,7 @@ import sys
 
 from . import profile as P
 from . import device as D
+from .validation import validate_pkg, InvalidPackageName
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -141,6 +142,12 @@ def build_parser():
 def main(argv=None):
     ap = build_parser()
     a = ap.parse_args(argv)
+    if getattr(a, "pkg", None):
+        try:
+            validate_pkg(a.pkg)
+        except InvalidPackageName as e:
+            print(f"[!] {e}", file=sys.stderr)
+            return 3
     return a.f(a) or 0
 
 

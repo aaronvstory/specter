@@ -17,3 +17,4 @@ data/*.jsonl
 /xposed-module/**/.gradle/
 *.apk
 nul
+/xposed-module/.jdk/

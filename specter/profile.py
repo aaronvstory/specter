@@ -10,6 +10,7 @@ Coherence rules (a fingerprint that fails these is a fraud flag, per the GeerGit
 import json
 import os
 import secrets
+import tempfile
 
 from . import generators as G
 from .identifiers import BUILD_FIELDS, UNIQUE_KEYS
@@ -115,34 +116,107 @@ def validate(profile):
 
 
 class UsedStore:
-    """Persistent record of every unique id ever issued — guarantees no reuse across signups."""
+    """
+    Persistent record of every unique id ever issued — guarantees no reuse across signups.
+
+    Concurrency-safe: record() re-reads the on-disk state under an exclusive OS file lock,
+    merges the new id into it, and atomically replaces the file. A stale in-memory snapshot
+    can therefore never erase ids another concurrent process recorded. This is the
+    ban-critical property — the whole tool exists to never reuse an identifier.
+    """
     def __init__(self, path):
         self.path = path
-        self.data = {}
-        if os.path.exists(path):
+        self.data = self._read_disk()
+        self._sets = {k: set(self.data.get(k, [])) for k in UNIQUE_KEYS}
+
+    def _read_disk(self):
+        if os.path.exists(self.path):
             try:
-                self.data = json.load(open(path))
+                return json.load(open(self.path))
             except Exception:
-                self.data = {}
+                return {}
+        return {}
+
+    def _refresh_from_disk(self):
+        """Reload disk state into memory (so collides() sees other processes' recent ids)."""
+        self.data = self._read_disk()
         self._sets = {k: set(self.data.get(k, [])) for k in UNIQUE_KEYS}
 
     def collides(self, profile):
         return any(profile[k] in self._sets.get(k, set()) for k in UNIQUE_KEYS)
 
     def record(self, profile):
-        for k in UNIQUE_KEYS:
-            self._sets.setdefault(k, set()).add(profile[k])
-            self.data.setdefault(k, []).append(profile[k])
+        """Atomically merge this profile's unique ids into the on-disk record under a lock."""
+        with _file_lock(self.path):
+            disk = self._read_disk()  # newest truth, incl. other processes
+            for k in UNIQUE_KEYS:
+                lst = disk.setdefault(k, [])
+                if profile[k] not in set(lst):
+                    lst.append(profile[k])
+            _atomic_write_json(self.path, disk)
+            self.data = disk
+            self._sets = {k: set(self.data.get(k, [])) for k in UNIQUE_KEYS}
 
     def save(self):
-        json.dump(self.data, open(self.path, "w"), indent=2)
+        """No-op kept for API compatibility — record() already persists atomically."""
+        return
 
     def count(self):
         return len(self.data.get("gsf_id", []))
 
 
+def _atomic_write_json(path, obj):
+    """Write to a temp file in the same dir, then os.replace — never leaves a partial file."""
+    d = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(obj, f, indent=2)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+class _file_lock:
+    """Cross-platform exclusive lock on a sidecar .lock file (msvcrt on Windows, fcntl elsewhere)."""
+    def __init__(self, target_path):
+        self.lockpath = target_path + ".lock"
+        self.fh = None
+
+    def __enter__(self):
+        self.fh = open(self.lockpath, "a+")
+        try:
+            import fcntl
+            fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX)
+        except ImportError:
+            import msvcrt
+            self.fh.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(self.fh.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    import time as _t
+                    _t.sleep(0.05)
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            import fcntl
+            fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+        except ImportError:
+            import msvcrt
+            try:
+                self.fh.seek(0)
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+        self.fh.close()
+
+
 def generate_unique(used_store, us_bias=True, seed=None, max_tries=1000):
-    """Generate a validated, never-before-used profile. Records it. Returns the profile."""
+    """Generate a validated, never-before-used profile. Records it atomically. Returns the profile."""
     devices = _load_devices()
     r = _seeded(seed) if seed is not None else _csprng
     for _ in range(max_tries):
@@ -150,9 +224,10 @@ def generate_unique(used_store, us_bias=True, seed=None, max_tries=1000):
         ok, errs = validate(p)
         if not ok:
             continue
-        if used_store is not None and used_store.collides(p):
-            continue
         if used_store is not None:
+            used_store._refresh_from_disk()  # see other processes' latest ids before checking
+            if used_store.collides(p):
+                continue
             used_store.record(p)
         return p
     raise RuntimeError("could not generate a fresh valid profile in %d tries" % max_tries)

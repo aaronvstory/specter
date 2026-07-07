@@ -36,15 +36,15 @@ def test_push_profile_calls_adb_push(tmp_path):
 def test_push_profile_raises_on_failure():
     with mock.patch.object(D, "adb", return_value=(1, "", "no space")), mock.patch.object(D, "su", return_value=(0, "", "")):
         with pytest.raises(D.AdbError):
-            D.push_profile({"x": "y"}, "pkg")
+            D.push_profile({"x": "y"}, "com.test.app")
 
 
 def test_clear_app_requires_success():
     with mock.patch.object(D, "su", return_value=(0, "Success", "")):
-        D.clear_app("pkg")  # no raise
+        D.clear_app("com.test.app")  # no raise
     with mock.patch.object(D, "su", return_value=(0, "Failed", "")):
         with pytest.raises(D.AdbError):
-            D.clear_app("pkg")
+            D.clear_app("com.test.app")
 
 
 def test_adb_missing_binary_raises():

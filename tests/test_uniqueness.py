@@ -35,12 +35,11 @@ def test_used_store_persists_and_blocks_reuse():
             assert store2.collides(p), "reloaded store failed to see prior ids"
 
         # new generations still avoid all prior ids
+        prior_gsf = set(store2.data.get("gsf_id", []))
         for _ in range(100):
             p = P.generate_unique(store2)
-            assert not any(
-                p[k] in set(store2.data.get(k, [])[:-1]) for k in UNIQUE_KEYS
-            ) or True  # record() already added; just assert generate didn't raise
-        store2.save()
+            assert p["gsf_id"] not in prior_gsf, "reused an id already on disk"
+            prior_gsf.add(p["gsf_id"])
         assert store2.count() == 200
 
 

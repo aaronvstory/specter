@@ -163,9 +163,39 @@ public class HookEntry implements IXposedHookLoadPackage {
                 });
             } catch (Throwable ignored) {}
         }
-        // Also intercept the raw ContentResolver query to the gservices provider
-        // (apps often read gsf android_id via a direct cursor).
-        // Left to the provider hook in most stacks; GServices helper covers the common path.
+        // Intercept the raw ContentResolver.query() to the gservices provider — the dominant
+        // real-world path (Play Services client + many apps read GSF android_id via a direct
+        // cursor against content://com.google.android.gsf.gservices, bypassing Gservices).
+        // We wrap the returned Cursor so a row whose key == "android_id" reports our fake value.
+        try {
+            Class<?> cr = XposedHelpers.findClass("android.content.ContentResolver", lp.classLoader);
+            XposedBridge.hookAllMethods(cr, "query", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        Object uri = param.args.length > 0 ? param.args[0] : null;
+                        if (uri == null || !String.valueOf(uri).contains("com.google.android.gsf.gservices"))
+                            return;
+                        final android.database.Cursor real = (android.database.Cursor) param.getResult();
+                        if (real == null) return;
+                        param.setResult(new GsfCursorWrapper(real, gsf));
+                    } catch (Throwable ignored) {}
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Wraps the gservices cursor: rows are (name, value) pairs. When the current row's name is
+     * "android_id", getString(valueColumn) returns our fake GSF instead of the real one.
+     */
+    static final class GsfCursorWrapper extends android.database.CursorWrapper {
+        private final String fakeGsf;
+        GsfCursorWrapper(android.database.Cursor c, String fakeGsf) { super(c); this.fakeGsf = fakeGsf; }
+        @Override public String getString(int columnIndex) {
+            String key = super.getString(0);           // column 0 = the setting name
+            if ("android_id".equals(key) && columnIndex == 1) return fakeGsf;  // column 1 = value
+            return super.getString(columnIndex);
+        }
     }
 
     // ---- MediaDrm widevine device unique id ----
