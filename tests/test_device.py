@@ -31,7 +31,7 @@ def test_push_profile_calls_adb_push(tmp_path):
         if a and a[0] == "push":
             return (0, "", "1 file pushed, 0 skipped.")
         return (0, "", "")
-    with mock.patch.object(D, "adb", side_effect=rec_adb), mock.patch.object(D, "su", return_value=(0, "", "")):
+    with mock.patch.object(D, "adb", side_effect=rec_adb), mock.patch.object(D, "su", return_value=(0, "OK", "")):
         D.push_profile({"android_id": "abc"}, "com.doordash.driverapp")
     assert any(a and a[0] == "push" for a in calls), "adb push not called"
 
