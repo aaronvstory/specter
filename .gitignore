@@ -24,3 +24,6 @@ nul
 /xposed-module/build3.log
 /xposed-module/app/libs/
 /xposed-module/stub-build/
+/codex-review-*.txt
+/.codex_prompt.txt
+/xposed-module/build4.log
