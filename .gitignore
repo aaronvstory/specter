@@ -28,3 +28,5 @@ nul
 /.codex_prompt.txt
 /xposed-module/build4.log
 /xposed-module/local.properties
+/_*.db
+/_*.apk
