@@ -19,7 +19,7 @@ import org.json.JSONObject;
 /**
  * GeerGit replacement — per-app identifier spoofing Xposed module.
  *
- * Reads a flat profile.json (pushed to /data/local/tmp/ghostprint/<pkg>.json OR a shared
+ * Reads a flat profile.json (pushed to /data/local/tmp/specter/<pkg>.json OR a shared
  * profile) and injects those fake values into the target app. Covers the SAME identifier
  * surface GeerGit 2.9.4 hooks — extracted from its dart string pool — with the fix baked in:
  * every value comes from a freshly-generated profile, so there is no stale-GSF reuse
@@ -30,14 +30,14 @@ import org.json.JSONObject;
 public class HookEntry implements IXposedHookLoadPackage {
 
     // where the push .bat drops per-app profiles
-    private static final String PROFILE_DIR = "/data/local/tmp/ghostprint/";
+    private static final String PROFILE_DIR = "/data/local/tmp/specter/";
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         final String pkg = lpparam.packageName;
         final Map<String, String> p = loadProfile(pkg);
         if (p == null || p.isEmpty()) return; // not a scoped/targeted app -> do nothing
-        XposedBridge.log("[idrotate] active for " + pkg + " (" + p.size() + " fields)");
+        XposedBridge.log("[specter] active for " + pkg + " (" + p.size() + " fields)");
 
         hookBuildFields(p);
         hookSettingsSecure(p);
@@ -62,7 +62,7 @@ public class HookEntry implements IXposedHookLoadPackage {
             JSONObject j = new JSONObject(new String(b));
             java.util.Iterator<String> it = j.keys();
             while (it.hasNext()) { String k = it.next(); m.put(k, j.getString(k)); }
-        } catch (Throwable t) { XposedBridge.log("[idrotate] profile load fail: " + t); }
+        } catch (Throwable t) { XposedBridge.log("[specter] profile load fail: " + t); }
         return m;
     }
 

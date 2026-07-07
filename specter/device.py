@@ -11,7 +11,7 @@ import os
 
 from .validation import validate_pkg
 
-PROFILE_DIR = "/data/local/tmp/ghostprint"
+PROFILE_DIR = "/data/local/tmp/specter"
 
 
 class AdbError(RuntimeError):
@@ -33,7 +33,17 @@ def adb(*args, timeout=30):
 
 
 def su(cmd, timeout=30):
-    return adb("shell", "su", "-c", cmd, timeout=timeout)
+    """
+    Run cmd as root on the device.
+
+    IMPORTANT: adb must receive `su -c '<whole cmd>'` as a SINGLE shell string, not as separate
+    argv tokens. With argv tokens (["adb","shell","su","-c",cmd]) the device shell binds only the
+    first word of a compound command to `su -c` and runs the rest (`&& cp ...`) as the unprivileged
+    shell user — which then fails on root-owned paths. We wrap cmd in single quotes (escaping any
+    embedded single quotes) and pass the whole `su -c '...'` as one adb-shell argument.
+    """
+    escaped = cmd.replace("'", "'\\''")
+    return adb("shell", f"su -c '{escaped}'", timeout=timeout)
 
 
 def device_connected():
@@ -48,17 +58,36 @@ def has_root():
 
 
 def push_profile(profile, pkg):
+    """
+    Write profile to the phone's per-app profile path.
+
+    adb push runs as the `shell` user, which cannot write into a root-owned PROFILE_DIR.
+    So we push to a shell-writable staging path, then `su cp` it into place and fix perms.
+    The module reads it as the app process; PROFILE_DIR must be world-readable.
+    """
     validate_pkg(pkg)
-    """Write profile to a temp file and push to the phone's per-app profile path."""
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(profile, f)
         tmp = f.name
+    # stage in the shell user's OWN dir (adb push writes as shell; root can always read it back)
+    stage = f"/data/local/tmp/{pkg}.specter.json"
+    dest = f"{PROFILE_DIR}/{pkg}.json"
     try:
-        su(f"mkdir -p {PROFILE_DIR}")
-        rc, out, err = adb("push", tmp, f"{PROFILE_DIR}/{pkg}.json")
-        if rc != 0:
-            raise AdbError(f"push failed: {err or out}")
-        su(f"chmod 644 {PROFILE_DIR}/{pkg}.json")
+        rc, out, err = adb("push", tmp, stage)
+        # adb writes its success line ("N file pushed") to stderr — only a literal error is failure.
+        combined = (out + err).lower()
+        if "error" in combined or "failed" in combined or "pushed" not in combined:
+            raise AdbError(f"adb push failed: {err or out}")
+        # Use `cp` (not a `>`/`tee` redirect): a shell redirect inside `su -c` gets opened by the
+        # outer adb shell as the unprivileged `shell` user (permission denied under SELinux). `cp`
+        # opens the dest inside the root context. World-readable so the target app can read it.
+        rc, out, err = su(
+            f"mkdir -p {PROFILE_DIR} && cp {stage} {dest} && "
+            f"chmod 755 {PROFILE_DIR} && chmod 644 {dest} && rm -f {stage}")
+        # verify it actually landed (cat is more reliable than cp under SELinux)
+        rc2, out2, _ = su(f"test -s {dest} && echo OK")
+        if "OK" not in out2:
+            raise AdbError(f"profile did not land at {dest}: {err or out}")
     finally:
         os.unlink(tmp)
 
