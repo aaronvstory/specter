@@ -32,3 +32,4 @@ nul
 /_*.apk
 /dist/specter-v*.zip
 /dist/specter-v*/
+/xposed-module/.jvm-test-out/

@@ -202,16 +202,14 @@ public class HookEntry implements IXposedHookLoadPackage {
         @Override public long getLong(int columnIndex) {
             // GSF android_id is frequently read via getLong on the value column — cover it too.
             if (isAndroidIdValueColumn(columnIndex)) {
-                try { return Long.parseLong(fakeGsf); } catch (NumberFormatException e) { return super.getLong(columnIndex); }
+                return SpoofLogic.gsfToLong(fakeGsf, super.getLong(columnIndex));
             }
             return super.getLong(columnIndex);
         }
         private boolean isAndroidIdValueColumn(int columnIndex) {
             // rows are (name, value); value is the last column. Guard against unexpected schemas.
             try {
-                String key = super.getString(0);
-                int valueCol = getColumnCount() - 1;
-                return "android_id".equals(key) && columnIndex == valueCol;
+                return SpoofLogic.isAndroidIdValueColumn(super.getString(0), columnIndex, getColumnCount());
             } catch (Throwable t) { return false; }
         }
     }
@@ -241,7 +239,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     int slot = (param.args.length > 0 && param.args[0] instanceof Integer)
                             ? (Integer) param.args[0] : 0;
-                    param.setResult(slot == 1 ? imei2 : imei1);
+                    param.setResult(SpoofLogic.imeiForSlot(slot, imei1, imei2));
                 }
             });
         } catch (Throwable ignored) {}
