@@ -84,7 +84,7 @@ def build_profile(r, devices, us_bias=True):
         "sim_operator_mccmnc": mccmnc,
         "sim_operator_name": carrier,
         "sim_subscriber_imsi": G.imsi(r, mccmnc),
-        "sim_serial_iccid": G.iccid(r),
+        "sim_serial_iccid": G.iccid(r, mccmnc),
         "gmail": G.gmail(r),
         "build_manufacturer": manufacturer,
         "build_brand": brand,
@@ -112,6 +112,12 @@ def validate(profile):
             errors.append(f"incoherent: {f}={profile.get(f)} not in fingerprint")
     if profile.get("sim_operator_mccmnc") and not profile.get("sim_subscriber_imsi", "").startswith(profile["sim_operator_mccmnc"]):
         errors.append("incoherent: IMSI does not start with SIM MCC/MNC")
+    # ICCID issuer prefix should match the carrier (when we have a known IIN for it)
+    mccmnc = profile.get("sim_operator_mccmnc")
+    iccid = profile.get("sim_serial_iccid", "")
+    expected_iin = G._ICCID_IIN.get(mccmnc)
+    if expected_iin and not iccid.startswith(expected_iin):
+        errors.append(f"incoherent: ICCID {iccid[:8]} does not match carrier IIN {expected_iin}")
     return (len(errors) == 0, errors)
 
 
@@ -146,16 +152,29 @@ class UsedStore:
         return any(profile[k] in self._sets.get(k, set()) for k in UNIQUE_KEYS)
 
     def record(self, profile):
-        """Atomically merge this profile's unique ids into the on-disk record under a lock."""
+        """
+        Atomically claim this profile's unique ids under the file lock.
+
+        Returns True if THIS call actually claimed the ids (they were all new on disk), or
+        False if ANY of them was already present — meaning a concurrent caller claimed the same
+        value in the window between our collides() check and now. The caller MUST treat False as
+        a collision and retry, otherwise two callers could be handed the identical profile even
+        though the disk stays correct. This is the ban-critical reuse guard.
+        """
         with _file_lock(self.path):
             disk = self._read_disk()  # newest truth, incl. other processes
+            # If any unique id is already on disk, someone else claimed it first — reject.
             for k in UNIQUE_KEYS:
-                lst = disk.setdefault(k, [])
-                if profile[k] not in set(lst):
-                    lst.append(profile[k])
+                if profile[k] in set(disk.get(k, [])):
+                    self.data = disk
+                    self._sets = {kk: set(disk.get(kk, [])) for kk in UNIQUE_KEYS}
+                    return False
+            for k in UNIQUE_KEYS:
+                disk.setdefault(k, []).append(profile[k])
             _atomic_write_json(self.path, disk)
             self.data = disk
             self._sets = {k: set(self.data.get(k, [])) for k in UNIQUE_KEYS}
+            return True
 
     def save(self):
         """No-op kept for API compatibility — record() already persists atomically."""
@@ -228,6 +247,9 @@ def generate_unique(used_store, us_bias=True, seed=None, max_tries=1000):
             used_store._refresh_from_disk()  # see other processes' latest ids before checking
             if used_store.collides(p):
                 continue
-            used_store.record(p)
+            # record() returns False if a concurrent caller claimed these ids first — retry then,
+            # so two callers can never be handed the same profile.
+            if not used_store.record(p):
+                continue
         return p
     raise RuntimeError("could not generate a fresh valid profile in %d tries" % max_tries)

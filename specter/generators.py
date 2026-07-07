@@ -73,9 +73,24 @@ def phone_us(r):
 def imsi(r, mccmnc):
     return mccmnc + digits(r, 15 - len(mccmnc))        # IMSI = MCC+MNC+MSIN, 15 digits
 
-def iccid(r):
-    body = "89" + "01" + digits(r, 15)                 # 89=telecom, 01=US, then issuer+account (19 digits)
-    return body + luhn_check_digit(body)               # 20-digit Luhn
+# Real US carrier ICCID issuer-identifier prefixes (after 89 = telecom, 01 = US country code).
+# Keyed by MCC+MNC so the SIM serial is coherent with the assigned carrier.
+_ICCID_IIN = {
+    "310260": "89014103",  # T-Mobile
+    "310160": "89014103",  # T-Mobile
+    "311480": "89148000",  # Verizon
+    "310410": "89014104",  # AT&T
+    "310030": "89014104",  # AT&T
+    "310120": "89011201",  # Sprint
+    "311580": "89011580",  # US Cellular
+    "311870": "89011870",  # Boost
+}
+
+def iccid(r, mccmnc=None):
+    """20-digit ICCID, Luhn-valid, with an issuer prefix consistent with the carrier when given."""
+    iin = _ICCID_IIN.get(mccmnc, "890114")        # generic US telecom prefix as fallback
+    body = iin + digits(r, 19 - len(iin))         # pad to 19 digits before the check digit
+    return body + luhn_check_digit(body)          # 20-digit Luhn
 
 LONG_MAX = 9_223_372_036_854_775_807  # Java signed 64-bit max
 

@@ -44,3 +44,16 @@ def test_all_unique_keys_present():
         assert k in p and p[k], f"missing {k}"
     for k in BUILD_FIELDS:
         assert k in p and p[k], f"missing {k}"
+
+
+def test_iccid_matches_carrier_iin():
+    """ICCID issuer prefix must be consistent with the assigned carrier (fraud flag otherwise)."""
+    from specter import generators as G
+    for _ in range(300):
+        p = P.generate_unique(None)
+        iin = G._ICCID_IIN.get(p["sim_operator_mccmnc"])
+        if iin:
+            assert p["sim_serial_iccid"].startswith(iin), \
+                f"ICCID {p['sim_serial_iccid']} != carrier IIN {iin} for {p['sim_operator_name']}"
+        # still a valid 20-digit Luhn ICCID
+        assert G.validate("sim_serial_iccid", p["sim_serial_iccid"])

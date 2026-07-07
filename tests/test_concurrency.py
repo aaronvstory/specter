@@ -64,3 +64,38 @@ def test_atomic_write_leaves_no_partial_on_disk(tmp_path):
     # no leftover temp files
     leftovers = [f for f in os.listdir(tmp_path) if f.endswith(".tmp")]
     assert not leftovers, f"temp files left behind: {leftovers}"
+
+
+def test_tiny_keyspace_never_hands_out_duplicate(tmp_path, monkeypatch):
+    """
+    Reviewer's reproduction: force the GSF keyspace tiny so concurrent threads WILL draw the
+    same value, and assert generate_unique() never RETURNS a duplicate (retries on concurrent
+    claim). Before the record()->bool fix, this returned duplicates while the disk stayed clean.
+    """
+    import threading
+    from specter import generators as G
+
+    # shrink gsf to 8 possible values so collisions are frequent
+    monkeypatch.setattr(G, "gsf", lambda r: str(1_000_000_000_000_000_000 + r(8)))
+
+    path = str(tmp_path / "used.json")
+    results = []
+    lock = threading.Lock()
+    stop = {"full": False}
+
+    def worker():
+        # each thread grabs a few until keyspace-ish exhausted or it can't (max_tries guards)
+        for _ in range(2):
+            try:
+                p = P.generate_unique(P.UsedStore(path), max_tries=2000)
+            except Exception:
+                return  # keyspace exhausted — fine, means no reuse was forced
+            with lock:
+                results.append(p["gsf_id"])
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    # whatever got HANDED OUT must be unique — no two callers received the same gsf
+    assert len(results) == len(set(results)), f"duplicate handed out: {results}"
