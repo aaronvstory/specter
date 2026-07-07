@@ -113,6 +113,11 @@ def cmd_stats(a):
     return 0
 
 
+def cmd_verify(a):
+    from . import verify
+    return verify.run_questionnaire()
+
+
 def cmd_tui(a):
     from . import tui
     tui.run(ROOT)
@@ -128,6 +133,7 @@ def build_parser():
     p = sub.add_parser("list"); p.set_defaults(f=cmd_list)
     p = sub.add_parser("show"); p.add_argument("--name"); p.add_argument("--pkg"); p.set_defaults(f=cmd_show)
     p = sub.add_parser("stats"); p.set_defaults(f=cmd_stats)
+    p = sub.add_parser("verify"); p.set_defaults(f=cmd_verify)
     p = sub.add_parser("tui"); p.set_defaults(f=cmd_tui)
     return ap
 
