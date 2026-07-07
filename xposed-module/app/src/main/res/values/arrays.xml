@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Default scope suggestion shown in LSPosed. You can add/remove in the LSPosed UI. -->
+    <string-array name="xposed_scope">
+        <item>com.doordash.driverapp</item>
+        <item>com.dd.doordash</item>
+    </string-array>
+</resources>

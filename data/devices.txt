@@ -1,0 +1,499 @@
+Asus ROG Phone 3 ZS661KS~~Asus~~asus~~ZS661KS~~WW_I003D~~ASUS_I003_1:10~~QKQ1.200419.002~~17.0823.2012.122-0~~2020-12-01
+Asus ROG Phone 5 ZS673KS~~Asus~~asus~~ZS673KS~~WW_I005D~~ASUS_I005_1:11~~RKQ1.201022.002~~18.0840.2103.26-0~~2021-03-05
+Asus Smartphone for Snapdragon Insiders ASUS_I007D~~asus~~asus~~ASUS_I007D~~WW_I007D~~ASUS_I007_1:11~~RKQ1.201112.002~~18.1030.2107.138-0~~2021-07-01
+Asus ZenFone 2 Laser ASUS_Z00LD~~Asus~~asus~~ASUS_Z00LD~~WW_Z00L~~ASUS_Z00L_63:6.0.1~~MMB29P~~WW_user_21.40.1220.2196_20180308
+Asus ZenFone 3 Max ASUS_X00DD~~Asus~~asus~~ASUS_X00DD~~WW_Phone~~ASUS_X00DD:7.1.1~~NMF26F~~14.0200.1712.347-20171214
+Asus ZenFone 3 Ultra ASUS_A001~~Asus~~asus~~ASUS_A001~~WW_Phone~~ASUS_A001:7.0~~NRD90M~~14.1010.1804.75-20180612~~2018-04-01
+Asus ZenFone 4 ASUS_Z01KD~~Asus~~asus~~ASUS_Z01KD~~WW_Z01KD~~ASUS_Z01KD_1:8.0.0~~OPR1.170623.032~~15.0610.1909.39-0~~2019-09-01
+Asus ZenFone 4 Max ASUS_X00HD~~Asus~~asus~~ASUS_X00HD~~WW_Phone~~ASUS_X00HD_4:7.1.1~~NMF26F~~14.2016.1801.372-20180119
+Asus ZenFone 5 ASUS_X00QD~~Asus~~asus~~ASUS_X00QD~~WW_X00QD~~ASUS_X00QD:9~~PPR1.180610.009~~16.0615.2006.131-0~~2020-06-01
+Asus ZenFone 5Z ASUS_Z01RD~~Asus~~asus~~ASUS_Z01RD~~WW_Z01RD~~ASUS_Z01R_1:9~~PPR1.180610.009~~WW_90.11.162.72_20190531~~2019-05-01
+Asus ZenFone 6 ASUS_I01WD~~Asus~~asus~~ASUS_I01WD~~WW_I01WD~~ASUS_I01WD:9~~PPR2.181005.003~~16.1220.1909.193-0~~2019-09-01
+Asus ZenFone 7/7 Pro Europe ASUS_I002D~~Asus~~asus~~ASUS_I002D~~EU_I002D~~ASUS_I002D:10~~QKQ1.200127.002~~29.14.53.5_20201111~~2020-10-05
+Asus ZenFone 7/7 Pro Global ASUS_I002D~~Asus~~asus~~ASUS_I002D~~WW_I002D~~ASUS_I002D:10~~QKQ1.200127.002~~29.12.18.14_20200902~~2020-07-05
+Asus ZenFone Max M1 ASUS_X00PD~~Asus~~asus~~ASUS_X00PD~~WW_X00PD~~ASUS_X00P_1:8.0.0~~OPR1.170623.032~~15.00.2007.122~~2020-07-05
+Asus ZenFone Max Pro M1 ASUS_X00TD~~Asus~~asus~~ASUS_X00TD~~RU_X00TD~~ASUS_X00T_6:8.1.0~~OPM1~~15.2016.1902.340-20190216~~2019-02-01
+Asus ZenFone Max Pro M2 ASUS_X01BD~~asus~~asus~~ASUS_X01BD~~WW_X01BD~~ASUS_X01BD_1:9~~PKQ1~~16.2017.2007.094-20200705~~2020-07-05
+Asus Zenfone 8 Mini Europe ASUS_I006D~~Asus~~asus~~ASUS_I006D~~EU_I006D~~ASUS_I006D:11~~RKQ1.201022.002~~30.11.51.83~~2021-05-05
+Asus Zenfone 8 Mini Global ASUS_I006D~~Asus~~asus~~ASUS_I006D~~WW_I006D~~ASUS_I006D:11~~RKQ1.201022.002~~30.11.51.67~~2021-04-05
+Asus ZenPad S 8.0 P01MA~~Asus~~asus~~P01MA~~WW_P01M~~P01M_3:6.0.1~~MMB29P~~WW_P01M-V5.6.0-20170608
+BLU S1~~Blu~~BLU~~BLU_S1~~BLU_S1~~S0320WW:7.0~~NRD90M~~1514191903
+BLU Vivo XI~~BLU~~BLU~~BLU_VIVO_XI~~BLU_VIVO_XI~~V0330WW:8.1.0~~O11019~~1543905757~~2018-12-05
+Elephone U Pro~~Elephone~~Elephone~~U_Pro~~U_Pro~~U_Pro:8.0.0~~Elephone_U_Pro_20180917~~09172123~~2018-09-05
+Essential PH-1~~Essential~~essential~~PH-1~~mata~~mata:7.1.1~~NMK24B~~468~~2018-02-05
+Fairphone 2~~Fairphone~~Fairphone~~FP2~~FP2~~FP2:6.0.1~~FP2-gms-17.09.3~~FP2-gms-17.09.3
+Fairphone 3/3 Plus~~Fairphone~~Fairphone~~FP3~~FP3~~FP3:10~~8901.3.A.0054.20200929~~09290922~~2020-10-05
+Fxtec Pro 1~~Fxtec~~Fxtec~~QX1000~~QX1000_EEA~~QX1000:9~~PKQ1.190723.001~~05500.20Q202~~2020-04-05
+Google Nexus 4~~LGE~~google~~Nexus 4~~occam~~mako:5.1.1~~LMY48T~~2237560
+Google Nexus 5~~LGE~~google~~Nexus 5~~hammerhead~~hammerhead:6.0.1~~M4B30Z~~3437181
+Google Nexus 5X~~LGE~~google~~Nexus 5X~~bullhead~~bullhead:6.0~~MDB08L~~2343525
+Google Nexus 6~~Motorola~~google~~Nexus 6~~shamu~~shamu:5.0~~LRX21O~~1570415
+Google Nexus 6P~~Huawei~~google~~Nexus 6P~~angler~~angler:6.0~~MDB08L~~2343525
+Google Nexus 7 2012 Mobile~~Asus~~google~~Nexus 7~~nakasig~~tilapia:5.1.1~~LMY47V~~1836172
+Google Nexus 7 2012 WiFi~~Asus~~google~~Nexus 7~~nakasi~~grouper:5.1.1~~LMY47V~~1836172
+Google Nexus 7 2013 Mobile~~Asus~~google~~Nexus 7~~razorg~~deb:6.0.1~~MOB30X~~3036618
+Google Nexus 7 2013 WiFi~~Asus~~google~~Nexus 7~~razor~~flo:6.0.1~~MOB30X~~3036618
+Google Nexus 9 LTE~~HTC~~google~~Nexus 9~~volantisg~~flounder_lte:5.0.1~~LRX22C~~1602158
+Google Nexus 9 WiFi~~HTC~~google~~Nexus 9~~volantis~~flounder:5.0~~LRX21R~~1573874
+Google Nexus 10~~Samsung~~google~~Nexus 10~~mantaray~~manta:5.1.1~~LMY49J~~2640980
+Google Nexus Player~~Asus~~google~~Nexus Player~~fugu~~fugu:5.0~~LRX21V~~1586762
+Google Pixel~~Google~~google~~Pixel~~sailfish~~sailfish:7.1~~NDE63V~~3389651
+Google Pixel XL~~Google~~google~~Pixel XL~~marlin~~marlin:7.1~~NDE63V~~3389651
+Google Pixel 2~~Google~~google~~Pixel 2~~walleye~~walleye:8.0.0~~OPD1.170816.025~~4424668
+Google Pixel 2 XL~~Google~~google~~Pixel 2 XL~~taimen~~taimen:8.0.0~~OPD1.170816.025~~4424668
+Google Pixel 3~~Google~~google~~Pixel 3~~blueline~~blueline:9~~PQ3A.190801.002~~5670241~~2019-08-01
+Google Pixel 3 XL~~Google~~google~~Pixel 3 XL~~crosshatch~~crosshatch:9~~PQ3A.190801.002~~5670241~~2019-08-01
+Google Pixel 3a~~Google~~google~~Pixel 3a~~sargo~~sargo:9~~PQ3B.190801.002~~5674421~~2019-08-01
+Google Pixel 3a XL~~Google~~google~~Pixel 3a XL~~bonito~~bonito:9~~PQ3B.190801.002~~5674421~~2019-08-01
+Google Pixel 4~~Google~~google~~Pixel 4~~flame~~flame:10~~QQ3A.200805.001~~6578210~~2020-08-05
+Google Pixel 4 XL~~Google~~google~~Pixel 4 XL~~coral~~coral:10~~QQ3A.200805.001~~6578210~~2020-08-05
+Google Pixel 4a~~Google~~google~~Pixel 4a~~sunfish~~sunfish:10~~QD4A.200805.003~~6598198~~2020-08-05
+Google Pixel 4a 5G~~Google~~google~~Pixel 4a (5G)~~bramble~~bramble:11~~RQ3A.211001.001~~7641976~~2021-10-01
+Google Pixel 5~~Google~~google~~Pixel 5~~redfin~~redfin:11~~RQ3A.211001.001~~7641976~~2021-10-01
+Google Pixel 5a~~Google~~google~~Pixel 5a~~barbet~~barbet:11~~RD2A.211001.002~~7644766~~2021-10-01
+Google Pixel 6~~Google~~google~~Pixel 6~~oriole~~oriole:12~~SD1A.210817.015.A4~~7697517~~2021-10-05
+Google Pixel 6 Pro~~Google~~google~~Pixel 6 Pro~~raven~~raven:12~~SD1A.210817.015.A4~~7697517~~2021-10-05
+Google Pixel C~~Google~~google~~Pixel C~~ryu~~dragon:6.0.1~~MXC89L~~3084571
+HTC 10~~HTC~~htc~~HTC 10~~HTCOneM10vzw~~htc_pmewl:6.0.1~~MMB29M~~774095.8
+HTC U11~~HTC~~htc~~HTC U-3w~~ocndtwl_01405~~htc_ocndtwl:8.0.0~~OPR6.170623.013~~1017190.2
+HTC U12 Plus~~HTC~~htc~~HTC U12+~~imeuhl_00617~~htc_imeuhl:8.0.0~~OPR1.170623.032~~1041457.3~~2018-06-01
+HTC Exodus 1~~HTC~~htc~~EXODUS 1~~exouhl_00617~~htc_exouhl:9~~PQ2A.190205.003~~1109191.2~~2020-03-01
+Huawei Honor 6X BLN-AL10~~Huawei~~HONOR~~BLN-AL10~~BLN-AL10~~HWBLN-H:8.0.0~~HONORBLN-AL10~~528(C00)
+Huawei Honor 6X BLN-L22~~Huawei~~HONOR~~BLN-L22~~BLN-L22~~HWBLN-H:8.0.0~~HONORBLN-L22~~520(C675)~~2018-11-05
+Huawei Honor 8X JSN-L21~~Huawei~~HONOR~~JSN-L21~~JSN-L21RU~~HWJSN-H:8.1.0~~HONORJSN-L21~~101(C10)~~2018-10-01
+Huawei Honor 9 STF-L09~~Huawei~~HONOR~~STF-L09~~STF-L09~~HWSTF:8.0.0~~HUAWEISTF-L09~~364(C432)
+Huawei Mate 9 MHA-L29~~Huawei~~HUAWEI~~MHA-L29~~MHA-L29~~HWMHA:9~~HUAWEIMHA-L29~~9.1.0.275C432~~2020-05-01
+Huawei Mate 10 ALP-L29~~Huawei~~HUAWEI~~ALP-L29~~ALP-L29~~HWALP:8.0.0~~HUAWEIALP-L29S~~143(C636)~~2018-10-01
+Huawei Mate 10 Pro BLA-L29~~Huawei~~HUAWEI~~BLA-L29~~BLA-L29~~HWBLA:8.0.0~~HUAWEIBLA-L29S~~137(C432)
+Huawei Mate 20 Lite SNE-LX1~~Huawei~~HUAWEI~~SNE-LX1~~SNE-LX1EEA~~HWSNE:9~~HUAWEISNE-L01~~245EEAC782~~2019-09-01
+Huawei Mate 20 Pro LYA-L29~~Huawei~~HUAWEI~~LYA-L29~~LYA-L29~~HWLYA:9~~HUAWEILYA-L29~~358C432~~2019-11-01
+Huawei P8 Lite PRA-LX1~~Huawei~~HUAWEI~~PRA-LX1~~PRA-LX1~~HWPRA-H:8.0.0~~HUAWEIPRA-LX1~~401(C432)~~2019-01-01
+Huawei P9 EVA-AL10~~Huawei~~HUAWEI~~EVA-AL10~~EVA-AL10~~HWEVA:8.0.0~~HUAWEIEVA-AL10~~550(C00)~~2020-07-01
+Huawei P9 EVA-L09~~Huawei~~HUAWEI~~EVA-L09~~EVA-L09~~HWEVA:7.0~~HUAWEIEVA-L09~~C432B502
+Huawei P9 Lite VNS-L31~~Huawei~~HUAWEI~~HUAWEI VNS-L31~~VNS-L31~~HWVNS-H:7.0~~HUAWEIVNS-L31~~C432B414~~2018-06-01
+Huawei P9 Plus VIE-AL10~~HUAWEI~~HUAWEI~~VIE-AL10~~VIE-AL10~~HWVIE:8.0.0~~HUAWEIVIE-AL10~~550(C00)~~2020-07-01
+Huawei P9 Plus VIE-L09~~Huawei~~HUAWEI~~VIE-L09~~VIE-L09~~HWVIE:7.0~~HUAWEIVIE-L09~~C432B387~~2018-07-01
+Huawei P10 Lite~~Huawei~~HUAWEI~~WAS-LX1A~~WAS-LX1A~~HWWAS-H:8.0.0~~HUAWEIWAS-LX1A~~376(C02)~~2019-03-01
+Huawei P20 EML-L09~~Huawei~~HUAWEI~~EML-L09~~EML-L09~~HWEML:9~~HUAWEIEML-L09~~9.1.0.381C109~~2020-01-01
+Huawei P20 Dual SIM EML-L29~~Huawei~~HUAWEI~~EML-L29~~EML-L29~~HWEML:9~~HUAWEIEML-L29~~197C432R1~~2019-01-01
+Huawei P20 Lite~~Huawei~~HUAWEI~~ANE-LX1~~ANE-LX1~~HWANE:9~~HUAWEIANE-L01~~9.1.0.368C432~~2020-08-01
+Huawei P20 Lite Dual SIM~~Huawei~~HUAWEI~~ANE-LX1~~ANE-LX1~~HWANE:8.0.0~~HUAWEIANE-LX1~~180(C432)~~2019-04-05
+Huawei P20 Pro CLT-L29~~Huawei~~HUAWEI~~CLT-L29~~CLT-L29~~HWCLT:8.1.0~~HUAWEICLT-L29~~128(C432)
+Infinix Note 5~~Infinix~~Infinix~~Infinix X604~~H633~~Infinix-X604_sprout:9~~PPR1.180610.011~~H-190617V240~~2019-06-05
+Lenovo K6 Note~~Lenovo~~Lenovo~~Lenovo K53a48~~karatep~~K53a48:7.0~~NRD90N~~K53_S228_171114_ROW
+Lenovo Tab 4 8 Plus TB-8704F~~Lenovo~~Lenovo~~Lenovo TB-8704F~~TB-8704F~~TB-8704F:8.1.0~~OPM1.171019.019~~8704F_S001018_191009_ROW~~2019-08-05
+Lenovo Tab 4 10 Plus TB-X704F~~Lenovo~~Lenovo~~Lenovo TB-X704F~~LenovoTB-X704F~~X704F:7.1.1~~NMF26F~~TB-X704F_S000056_181015_ROW~~2018-10-01
+Lenovo Tab 4 10 Plus TB-X704L~~Lenovo~~Lenovo~~Lenovo TB-X704L~~LenovoTB-X704L~~X704L:7.1.1~~NMF26F~~TB-X704L_S000056_181015_ROW~~2018-10-01
+LeEco Le Pro3~~Leeco~~LeEco~~LEX725~~ZL1_NA~~le_zl1:6.0.1~~WEXNAOP5802101261S~~letv01261206
+LG G2 VS980~~LGE~~lge~~VS980 4G~~g2_vzw~~g2:5.0.2~~LRX22G~~15046001715f9
+LG G4 H812~~LGE~~lge~~LG-H812~~p1_rgs_ca~~p1:6.0~~MRA58K~~1601215569825
+LG G5 H830~~LGE~~lge~~LG-H830~~h1_tmo_us~~h1:8.0.0~~OPR1.170623.032~~182251913485f~~2018-08-01
+LG G5 H850~~LGE~~lge~~LG-H850~~h1_global_com~~h1:8.0.0~~OPR1.170623.032~~190380127377a~~2018-12-01
+LG G5 RS988~~LGE~~lge~~RS988~~h1_lra_us~~h1:7.0~~NRD90U~~1707917149a1b
+LG G6 H870~~LGE~~lge~~LG-H870~~lucye_global_com~~lucye:7.0~~NRD90U~~171732341982c
+LG G7 ThinQ LM-G710~~LGE~~lge~~LM-G710~~judyln_lao_com~~judyln:9~~PKQ1.181105.001~~200350248e04d.FGN~~2020-01-01
+LG G8 ThinQ LM G850l~~LGE~~lge~~LM-G850l~~mh2lm~~mh2lm:11~~RKQ1.210420.001~~211980139c7f7~~2021-07-01
+LG K20 Plus LG-TP260~~LGE~~lge~~LG-TP260~~lv517_tmo_us~~lv517:7.0~~NRD90U~~1809315248edb
+LG K20 Plus LGMP260~~LGE~~MetroPCS~~LGMP260~~lv517_mpcs_us~~lv517:7.0~~NRD90U~~1833409570571~~2018-12-01
+LG K20 V VS501~~LGE~~lge~~VS501~~lv517_vzw~~lv517:7.0~~NRD90U~~1906714433ce5~~2019-03-01
+LG V20 H910~~LGE~~lge~~LG-H910~~elsa_att_us~~elsa:8.0.0~~OPR1.170623.032~~181871124f959~~2018-06-01
+LG V20 H918~~LGE~~lge~~LG-H918~~elsa_tmo_us~~elsa:8.0.0~~OPR1.170623.032~~1831917495b33~~2018-11-01
+LG V20 H990DS~~LGE~~lge~~LG-H990~~elsa_global_com~~elsa:7.0~~NRD90M~~1801800193678
+LG V20 LS997~~LGE~~lge~~LG-LS997~~elsa_spr_us~~elsa:8.0.0~~OPR1.170623.032~~1819814314eb7~~2018-07-01
+LG V20 US996~~LGE~~lge~~LG-US996~~elsa_nao_us~~elsa:8.0.0~~OPR1.170623.032~~183241436cd40~~2018-11-01
+LG V20 VS995~~LGE~~lge~~VS995~~elsa_vzw~~elsa:8.0.0~~OPR1.170623.032~~183141449275f~~2018-10-01
+LG V30 H930~~LGE~~lge~~LG-H930~~joan_global_com~~joan:8.0.0~~OPR1.170623.026~~181381736b4e9~~2018-11-05
+LG V30 LS998~~LGE~~lge~~LG-LS998~~joan_spr_us~~joan:8.0.0~~OPR1.170623.026~~190181203d401~~2019-01-01
+Mecool KM8~~Mecool~~MECOOL~~KM8~~KM8~~KM8:8.0.0~~OPR6.170623.013~~V0412.201806271453~~2018-05-05
+Meizu 16th~~Meizu~~Meizu~~M1882~~meizu_16th~~16th:8.1.0~~OPM1.171019.026~~1554756792~~2019-03-01
+Meizu 17~~meizu~~meizu~~meizu 17~~meizu_17_N_CN~~meizu17:10~~QKQ1.200223.002~~1599445800~~2020-07-01
+Meizu X8~~Meizu~~Meizu~~meizu X8~~meizu_X8~~X8:8.1.0~~OPM1.171019.026~~1556996821~~2019-04-01
+Motorola Moto C Plus~~Motorola~~motorola~~Moto C Plus~~panell_21_d~~panell_d:7.0~~NRD90M.03.040~~040
+Motorola Moto E4~~Motorola~~motorola~~Moto E (4)~~sperry_sprint~~sperry:7.1.1~~NCQ26.69-64~~68
+Motorola Moto E4 Plus~~Motorola~~motorola~~Moto E (4) Plus~~nicklaus_fn~~nicklaus_fn:7.1.1~~NMA26.42-156~~183
+Motorola Moto E5 Play~~Motorola~~motorola~~moto e5 play~~james_sprint~~james:8.0.0~~OCPS27.91-140-1~~1~~2018-10-01
+Motorola Moto E5 Plus~~Motorola~~motorola~~moto e5 plus~~hannah_sprint~~hannah:8.0.0~~OCPS27.91-32-4~~4~~2018-10-01
+Motorola Moto Edge~~Motorola~~motorola~~motorola edge~~racer_retail~~racer:10~~QPD30.114-80~~6ddbb~~2020-10-01
+Motorola Moto G Stylus~~motorola~~motorola~~moto g stylus~~sofiap_retail~~sofiap:10~~QPRS30.80-58-7-5-1-2~~1ec95d~~2021-01-01
+Motorola Moto G 5g~~Motorola~~motorola~~moto g 5G~~kiev_retail~~kiev:10~~QZKS30.Q4-40-81-3-4~~88702~~2021-07-01
+Motorola Moto G 5g Plus~~Motorola~~motorola~~moto g 5G plus~~nairo_retail~~nairo:10~~QPNS30.37-Q3-42-51-4~~2a371~~2021-01-01
+Motorola Moto G Pro~~motorola~~motorola~~moto g pro~~sofiap_ao~~sofiap_sprout:11~~RPRS31.Q4U-20-36~~f72e82~~2021-07-01
+Motorola Moto G4~~Motorola~~motorola~~Moto G (4)~~athene~~athene:7.0~~NPJS25.93-14-13~~3
+Motorola Moto G5~~Motorola~~motorola~~Moto G (5)~~cedric~~cedric:7.0~~NPPS25.137-15-11~~11
+Motorola Moto G5 Plus~~Motorola~~motorola~~Moto G (5) Plus~~potter_n~~potter_n:7.0~~NPNS25.137-33-11~~11
+Motorola Moto G5S~~Motorola~~motorola~~Moto G (5S)~~montana~~montana:7.1.1~~NPPS26.102-49-8~~6
+Motorola Moto G5S Plus~~Motorola~~motorola~~Moto G (5S) Plus~~sanders_n~~sanders_n:8.1.0~~OPS28.65-36-14~~63857~~2019-08-01
+Motorola Moto G6~~Motorola~~motorola~~moto g(6)~~ali~~ali:9~~PPSS29.55-37-7-6~~16c5a7~~2020-02-01
+Motorola Moto G6 Play~~Motorola~~motorola~~moto g(6) play~~jeter_sprint~~jeter:8.0.0~~OCP27.91-23~~23
+Motorola Moto G6 Plus~~Motorola~~motorola~~moto g(6) plus~~evert_amx_n~~evert_n:9~~PPWS29.116-16-6~~5cbfe~~2019-05-01
+Motorola Moto G7 XT1962-1~~Motorola~~motorola~~moto g(7)~~river~~river:9~~PPOS29.114-134-10~~ca814~~2020-02-01
+Motorola Moto G7 XT1962-5~~Motorola~~motorola~~moto g(7)~~river_retru_n~~river_n:10~~QPUS30.52-16-2-5~~58144~~2020-08-01
+Motorola Moto G7 Power~~Motorola~~motorola~~moto g(7) power~~ocean~~ocean:9~~PPOS29.114-134-13~~6abfe~~2020-04-01
+Motorola Moto G7 Play~~Motorola~~motorola~~moto g(7) play~~channel~~channel:9~~PPY29.105-160-4~~56a11~~2019-12-01
+Motorola Moto G7 Play T-Mobile~~Motorola~~motorola~~moto (g7) play~~channel_t~~channel:10~~QPYS30.85-18-3~~60cdb~~2020-08-01
+Motorola Moto Razr 2020~~Motorola~~motorola~~motorola razr 2020~~smith_retail~~smith:10~~QPSS30.205-Q3-43-51-3~~3bfc9~~2020-11-01
+Motorola Moto X Play~~motorola~~motorola~~XT1562~~lux_retasia_ds~~lux_uds:7.1.1~~NPD26.48-24-1~~1
+Motorola Moto X4~~Motorola~~motorola~~moto x4~~payton~~payton:8.0.0~~OPWS27.57-25-6-10~~12
+Motorola Moto Z2 Force T-Mobile~~Motorola~~motorola~~Moto Z2~~nash_tmo_c~~nash:8.0.0~~OCXS27.109-51-14-7~~12~~2019-07-01
+Motorola Moto Z2 Play~~Motorola~~motorola~~Moto Z2 Play~~albus~~albus:8.0.0~~OPS27.76-12-25~~26
+Motorola Moto Z3 Play~~Motorola~~motorola~~Moto Z3 Play~~beckham~~beckham:9~~PPWS29.131-27-1-27~~34b6d~~2020-07-01
+Nextbook Ares 8A~~Nextbook~~NextBook~~NX16A8116K~~NX16A8116K~~NX16A8116K:6.0.1~~MMB29M~~V4.0.3
+Nokia 6 TA-1021~~Nokia~~Nokia~~TA-1021~~TA-1021_00WW~~PLE:9~~PKQ1.181105.001~~00WW_6_19C~~2020-01-01
+Nokia 6 TA-1025~~Nokia~~Nokia~~TA-1025~~TA-1025_00WW~~PLE:9~~PKQ1.181105.001~~00WW_6_19C~~2020-01-01
+Nokia 6 TA-1033~~Nokia~~Nokia~~TA-1033~~TA-1033_00WW~~PLE:9~~PKQ1.181105.001~~00WW_6_19C~~2020-01-01
+Nokia 6 TA-1039~~Nokia~~Nokia~~TA-1039~~TA-1039_00WW~~PLE:9~~PKQ1.181105.001~~00WW_6_19C~~2020-01-01
+Nokia 6.1~~Nokia~~Nokia~~Nokia 6.1~~Plate2_00WW~~PL2_sprout:10~~QKQ1.190828.002~~00WW_4_15E~~2020-06-01
+Nokia 6.1 Plus~~Nokia~~Nokia~~Nokia 6.1 Plus~~Dragon_00WW~~DRG_sprout:9~~PPR1.180610.011~~00WW_3_54J~~2019-08-01
+Nokia 6.2~~Nokia~~Nokia~~Nokia 6.2~~Starlord_00WW~~SLD_sprout:9~~PKQ1.190118.001~~00WW_1_170~~2020-01-05
+Nokia 7 Plus~~Nokia~~Nokia~~Nokia 7 plus~~Onyx_00WW~~B2N_sprout:9~~PPR1.180610.011~~00WW_3_53B~~2019-05-01
+Nokia 7.1 TA-1095~~Nokia~~Nokia~~Nokia 7.1~~Crystal_00WW~~CTL_sprout:10~~QKQ1.190828.002~~00WW_4_08B~~2019-11-01
+Nvidia Shield Tablet K1~~NVIDIA~~nvidia~~SHIELD Tablet~~sb_na_wf~~shieldtablet:7.0~~NRD90M~~1928188_1065.2559
+Nvidia Shield Tablet LTE~~NVIDIA~~nvidia~~SHIELD Tablet~~wx_un_do~~shieldtablet:7.0~~NRD90M~~1928188_1065.2559
+Nvidia Shield Tablet WiFi~~NVIDIA~~nvidia~~SHIELD Tablet~~wx_na_wf~~shieldtablet:7.0~~NRD90M~~1928188_1065.2559
+Nvidia Shield TV 2015~~NVIDIA~~NVIDIA~~SHIELD Android TV~~foster_e~~foster:8.0.0~~OPR6.170623.010~~3507953_1441.7411~~2018-12-05
+Nvidia Shield TV 2015 Pro~~NVIDIA~~NVIDIA~~SHIELD Android TV~~foster_e_hdd~~foster:8.0.0~~OPR6.170623.010~~3507953_1441.7411~~2018-12-05
+Nvidia Shield TV 2017~~NVIDIA~~NVIDIA~~SHIELD Android TV~~darcy~~darcy:8.0.0~~OPR6.170623.010~~3507953_1441.7411~~2018-12-05
+Nvidia Shield TV 2019~~NVIDIA~~NVIDIA~~SHIELD Android TV~~sif~~sif:9~~PPR1.180610.011~~4079180_2513.0256~~2020-12-05
+Nvidia Shield TV 2019 Pro~~NVIDIA~~NVIDIA~~SHIELD Android TV~~mdarcy~~mdarcy:9~~PPR1.180610.011~~4079208_2740.7538~~2021-04-05
+OnePlus One~~OnePlus~~oneplus~~A0001~~bacon~~A0001:6.0.1~~MMB29X~~ZNH0EAS2JK
+OnePlus 2~~OnePlus~~OnePlus~~ONE A2003~~OnePlus2~~OnePlus2:6.0.1~~MMB29M~~1447858500
+OnePlus X~~OnePlus~~OnePlus~~ONE E1003~~OnePlus~~OnePlus:6.0.1~~MMB29M~~10281213
+OnePlus 3~~OnePlus~~OnePlus~~ONEPLUS A3000~~OnePlus3~~OnePlus3:8.0.0~~OPR1.170623.032~~1809142047~~2018-09-01
+OnePlus 3T~~OnePlus~~OnePlus~~ONEPLUS A3003~~OnePlus3~~OnePlus3T:8.0.0~~OPR1.170623.032~~1812060016~~2018-11-01
+OnePlus 5~~OnePlus~~OnePlus~~ONEPLUS A5000~~OnePlus5~~OnePlus5:8.1.0~~OPM1.171019.011~~1809241512~~2018-09-01
+OnePlus 5T~~OnePlus~~OnePlus~~ONEPLUS A5010~~OnePlus5T~~OnePlus5T:7.1.1~~NMF26X~~12152312
+OnePlus 6~~OnePlus~~OnePlus~~ONEPLUS A6003~~OnePlus6~~OnePlus6:8.1.0~~OPM1.171019.011~~06140300
+OnePlus 6T~~OnePlus~~OnePlus~~ONEPLUS A6013~~OnePlus6T~~OnePlus6T:9~~PKQ1.180716.001~~1909112330~~2019-08-01
+OnePlus 6T T-Mobile~~OnePlus~~OnePlus~~ONEPLUS A6013~~OnePlus6TSingle~~OnePlus6TSingle:9~~PKQ1.180716.001~~1810291147~~2018-11-01
+OnePlus 7 China GM1900~~OnePlus~~OnePlus~~GM1900~~OnePlus7_CH~~OnePlus7:10~~QKQ1.190716.003~~2005132200~~2020-05-01
+OnePlus 7 GM1901~~OnePlus~~OnePlus~~GM1901~~OnePlus7~~OnePlus7:9~~PKQ1.190110.001~~1907280700~~2019-08-01
+OnePlus 7 Europe GM1903~~OnePlus~~OnePlus~~GM1903~~OnePlus7_EEA~~OnePlus7:9~~PKQ1.190110.001~~1907280700~~2019-08-01
+OnePlus 7 GM1905~~OnePlus~~OnePlus~~GM1905~~OnePlus7~~OnePlus7:9~~PKQ1.190110.001~~1907280700~~2019-08-01
+OnePlus 7 Pro China GM1910~~OnePlus~~OnePlus~~GM1910~~OnePlus7Pro_CH~~OnePlus7Pro:10~~QKQ1.190716.003~~2005132200~~2020-05-01
+OnePlus 7 Pro GM1911~~OnePlus~~OnePlus~~GM1911~~OnePlus7Pro~~OnePlus7Pro:9~~PKQ1.190110.001~~1907281556~~2019-08-01
+OnePlus 7 Pro Europe GM1913~~OnePlus~~OnePlus~~GM1913~~OnePlus7Pro_EEA~~OnePlus7Pro:9~~PKQ1.190110.001~~1907281556~~2019-08-01
+OnePlus 7 Pro T-Mobile GM1915~~OnePlus~~OnePlus~~GM1915~~OnePlus7ProTMO~~OnePlus7ProTMO:9~~PKQ1.190110.001~~1905021004~~2019-03-01
+OnePlus 7 Pro GM1917~~OnePlus~~OnePlus~~GM1917~~OnePlus7Pro~~OnePlus7Pro:9~~PKQ1.190110.001~~1907281556~~2019-08-01
+OnePlus 7 Pro NR Europe GM1920~~OnePlus~~OnePlus~~GM1920~~OnePlus7ProNR_EEA~~OnePlus7ProNR:9~~PKQ1.190223.001~~1912171007~~2019-12-01
+OnePlus 7 Pro NR Sprint GM1925~~OnePlus~~OnePlus~~GM1925~~OP7ProNRSpr~~OP7ProNRSpr:9~~PKQ1.190223.001~~1908201041~~2019-08-01
+OnePlus 7T China HD1900~~OnePlus~~OnePlus~~HD1900~~OnePlus7T_CH~~OnePlus7T:10~~QKQ1.190716.003~~2005131900~~2020-05-01
+OnePlus 7T HD1901~~OnePlus~~OnePlus~~HD1901~~OnePlus7T~~OnePlus7T:10~~QKQ1.190716.003~~2101212100~~2021-01-01
+OnePlus 7T Europe HD1903~~OnePlus~~OnePlus~~HD1903~~OnePlus7T_EEA~~OnePlus7T:10~~QKQ1.190716.003~~2101282100~~2021-01-01
+OnePlus 7T HD1905~~OnePlus~~OnePlus~~HD1905~~OnePlus7T~~OnePlus7T:10~~QKQ1.190716.003~~2101212100~~2021-01-01
+OnePlus 7T T-Mobile HD1907~~OnePlus~~OnePlus~~HD1907~~OnePlus7TTMO~~OnePlus7TTMO:11~~RKQ1.201022.002~~2108021431~~2021-08-01
+OnePlus 7T Pro China HD1910~~OnePlus~~OnePlus~~HD1910~~OnePlus7TPro_CH~~OnePlus7TPro:10~~QKQ1.190716.003~~2005131900~~2020-05-01
+OnePlus 7T Pro HD1911~~OnePlus~~OnePlus~~HD1911~~OnePlus7TPro~~OnePlus7TPro:10~~QKQ1.190716.003~~2101212101~~2021-01-01
+OnePlus 7T Pro Europe HD1913~~OnePlus~~OnePlus~~HD1913~~OnePlus7TPro_EEA~~OnePlus7TPro:10~~QKQ1.190716.003~~2101282100~~2021-01-01
+OnePlus 7T Pro HD1917~~OnePlus~~OnePlus~~HD1917~~OnePlus7TPro~~OnePlus7TPro:10~~QKQ1.190716.003~~2101212101~~2021-01-01
+OnePlus 7T Pro NR HD1925~~OnePlus~~OnePlus~~HD1925~~OnePlus7TProNR~~OnePlus7TProNR:10~~QKQ1.190716.003~~2011302116~~2020-11-01
+OnePlus 8 China IN2010~~OnePlus~~OnePlus~~IN2010~~OnePlus8_CH~~OnePlus8:10~~QKQ1.191222.002~~2006300106~~2020-06-01
+OnePlus 8 India IN2011~~OnePlus~~OnePlus~~IN2011~~OnePlus8_IND~~OnePlus8:10~~QKQ1.191222.002~~2008080019~~2020-08-01
+OnePlus 8 Europe IN2013~~OnePlus~~OnePlus~~IN2013~~OnePlus8_EEA~~OnePlus8:10~~QKQ1.191222.002~~2008150504~~2020-08-01
+OnePlus 8 Global IN2015~~OnePlus~~OnePlus~~IN2015~~OnePlus8~~OnePlus8:10~~QKQ1.191222.002~~2008080019~~2020-08-01
+OnePlus 8 Visible IN2015~~OnePlus~~OnePlus~~IN2015~~OnePlus8Visible~~OnePlus8Visible:10~~QKQ1.191222.002~~2010121010~~2020-09-01
+OnePlus 8 T-Mobile IN2017~~OnePlus~~OnePlus~~IN2017~~OnePlus8TMO~~OnePlus8TMO:10~~QKQ1.191222.002~~2006102149~~2020-06-01
+OnePlus 8 Verizon IN2019~~OnePlus~~OnePlus~~IN2019~~OnePlus8VZW~~OnePlus8VZW:10~~QKQ1.191222.002~~2011031214~~2020-10-01
+OnePlus 8 Pro China IN2020~~OnePlus~~OnePlus~~IN2020~~OnePlus8Pro_CH~~OnePlus8Pro:10~~QKQ1.191222.002~~2007021926~~2020-06-01
+OnePlus 8 Pro India IN2021~~OnePlus~~OnePlus~~IN2021~~OnePlus8Pro_IND~~OnePlus8Pro:10~~QKQ1.191222.002~~2008080018~~2020-08-01
+OnePlus 8 Pro Europe IN2023~~OnePlus~~OnePlus~~IN2023~~OnePlus8Pro_EEA~~OnePlus8Pro:10~~QKQ1.191222.002~~2008150503~~2020-08-01
+OnePlus 8 Pro Global IN2025~~OnePlus~~OnePlus~~IN2025~~OnePlus8Pro~~OnePlus8Pro:10~~QKQ1.191222.002~~2008080018~~2020-08-01
+OnePlus 8T China KB2000~~OnePlus~~OnePlus~~KB2000~~OnePlus8T_CH~~OnePlus8T:11~~RP1A.201005.001~~2108261338~~2021-08-01
+OnePlus 8T India KB2001~~OnePlus~~OnePlus~~KB2001~~OnePlus8T_IND~~OnePlus8T:11~~RP1A.201005.001~~2110091916~~2021-10-01
+OnePlus 8T Europe KB2003~~OnePlus~~OnePlus~~KB2003~~OnePlus8T_EEA~~OnePlus8T:11~~RP1A.201005.001~~2110091916~~2021-10-01
+OnePlus 8T Global KB2005~~OnePlus~~OnePlus~~KB2005~~OnePlus8T~~OnePlus8T:11~~RP1A.201005.001~~2110091917~~2021-10-01
+OnePlus 8T T-Mobile KB2007~~OnePlus~~OnePlus~~KB2007~~OnePlus8TTMO~~OnePlus8TTMO:11~~RP1A.201005.001~~2108091917~~2021-08-01
+OnePlus 9 India LE2111~~OnePlus~~OnePlus~~LE2111~~OnePlus9_IND~~OnePlus9:11~~RKQ1.201105.002~~2109102009~~2021-09-01
+OnePlus 9 Europe LE2113~~OnePlus~~OnePlus~~LE2113~~OnePlus9_EEA~~OnePlus9:11~~RKQ1.201105.002~~2109102009~~2021-09-01
+OnePlus 9 LE2115~~OnePlus~~OnePlus~~LE2115~~OnePlus9~~OnePlus9:11~~RKQ1.201105.002~~2109110403~~2021-09-01
+OnePlus 9 TMO LE2117~~OnePlus~~OnePlus~~LE2117~~OnePlus9TMO~~OnePlus9TMO:11~~RKQ1.201105.002~~2103071836~~2021-02-01
+OnePlus 9 Pro India LE2121~~OnePlus~~OnePlus~~LE2121~~OnePlus9Pro_IND~~OnePlus9Pro:11~~RKQ1.201105.002~~2109102008~~2021-09-01
+OnePlus 9 Pro Europe LE2123~~OnePlus~~OnePlus~~LE2123~~OnePlus9Pro_EEA~~OnePlus9Pro:11~~RKQ1.201105.002~~2109102008~~2021-09-01
+OnePlus 9 Pro LE2125~~OnePlus~~OnePlus~~LE2125~~OnePlus9Pro~~OnePlus9Pro:11~~RKQ1.201105.002~~2109102009~~2021-09-01
+OnePlus 9 Pro TMO LE2127~~OnePlus~~OnePlus~~LE2127~~OnePlus9ProTMO~~OnePlus9ProTMO:11~~RKQ1.201105.002~~2104091024~~2021-04-01
+OnePlus 9R India LE2101~~OnePlus~~OnePlus~~LE2101~~OnePlus9R_IND~~OnePlus9R:11~~RKQ1.201112.002~~2109081911~~2021-09-01
+OnePlus 9RT China MT2110~~OnePlus~~OnePlus~~MT2110~~MT2110_CH~~OP5154L1:11~~RKQ1.210614.002~~1635776772321~~2021-09-05
+OnePlus N10 5G Global BE2026~~OnePlus~~OnePlus~~BE2026~~OnePlusN10~~OnePlusN10:10~~QKQ1.200830.002~~2104271142~~2021-05-05
+OnePlus N10 5G Europe BE2029~~OnePlus~~OnePlus~~BE2029~~OnePlusN10_EEA~~OnePlusN10:10~~QKQ1.200830.002~~2104240528~~2021-05-05
+OnePlus N10 5G Metro BE2025~~OnePlus~~OnePlus~~BE2025~~OnePlusN10METRO~~OnePlusN10METRO:10~~QKQ1.200830.002~~2012181933~~2020-12-05
+OnePlus N10 5G T-Mobile BE2028~~OnePlus~~OnePlus~~BE2028~~OnePlusN10TMO~~OnePlusN10TMO:10~~QKQ1.200830.002~~2012181933~~2020-12-05
+OnePlus N100 Global BE2011~~OnePlus~~OnePlus~~BE2011~~OnePlusN100~~OnePlusN100:10~~QKQ1.200719.002~~2104021943~~2021-03-05
+OnePlus N100 Europe BE2013~~OnePlus~~OnePlus~~BE2013~~OnePlusN100_EEA~~OnePlusN100:10~~QKQ1.200719.002~~2105110821~~2021-05-05
+OnePlus N100 Metro BE2015~~OnePlus~~OnePlus~~BE2015~~OnePlusN100METRO~~OnePlusN100METRO:10~~QKQ1.200719.002~~2012212113~~2020-12-05
+OnePlus N100 T-Mobile BE2012~~OnePlus~~OnePlus~~BE2012~~OnePlusN100TMO~~OnePlusN100TMO:10~~QKQ1.200719.002~~2012212112~~2020-12-05
+OnePlus N200 Global DE2117~~OnePlus~~OnePlus~~DE2117~~OnePlusN200~~OnePlusN200:11~~RKQ1.201217.002~~2107241556~~2021-07-01
+OnePlus N200 T-Mobile DE2118~~OnePlus~~OnePlus~~DE2118~~OnePlusN200TMO~~OnePlusN200TMO:11~~RKQ1.201217.002~~2110141014~~2021-10-01
+OnePlus Nord India AC2001~~OnePlus~~OnePlus~~AC2001~~Nord_IND~~Nord:10~~QKQ1.200412.002~~2102040230~~2021-01-01
+OnePlus Nord Europe AC2003~~OnePlus~~OnePlus~~AC2003~~Nord_EEA~~Nord:10~~QKQ1.200412.002~~2102040230~~2021-01-01
+OnePlus Nord Global AC2003~~OnePlus~~OnePlus~~AC2003~~Nord~~Nord:10~~QKQ1.200412.002~~2102040553~~2021-01-01
+OnePlus Nord 2 India DN2101~~OnePlus~~OnePlus~~DN2101~~DN2101IND~~OP515BL1:11~~RP1A.200720.011~~1632390704634~~2021-09-05
+OnePlus Nord 2 Europe DN2103~~OnePlus~~OnePlus~~DN2103~~DN2103EEA~~OP515BL1:11~~RP1A.200720.011~~1632390704634~~2021-09-05
+OnePlus Nord CE EB13AA~~OnePlus~~OnePlus~~EB13AA~~OnePlusNordCE~~OnePlusNordCE:11~~RKQ1.201217.002~~2109160900~~2021-09-01
+OnePlus Nord CE India EB2101~~OnePlus~~OnePlus~~EB2101~~OnePlusNordCE_IND~~OnePlusNordCE:11~~RKQ1.201217.002~~2109152230~~2021-09-01
+OnePlus Nord CE Europe EB2103~~OnePlus~~OnePlus~~EB2103~~OnePlusNordCE_EEA~~OnePlusNordCE:11~~RKQ1.201217.002~~2109152207~~2021-09-01
+OPPO A53s Europe~~OPPO~~OPPO~~CPH2135~~CPH2135EEA~~OP4EFDL1:10~~QKQ1.200614.002~~1605790610~~2020-11-05
+OPPO Find X2 Neo Europe CPH2009~~OPPO~~OPPO~~CPH2009~~CPH2009EEA~~OP4C2DL1:10~~QKQ1.200216.002~~1596223341~~2020-08-05
+OPPO Neo 7 A33w~~Oppo~~OPPO~~A33w~~A33w~~A33w:5.1~~LMY47I~~1487829433
+OPPO Neo 7 A1603~~Oppo~~OPPO~~A1603~~A1603~~A1603:5.1~~LMY47I~~1489407760
+POCO F2 Pro Europe~~POCO~~POCO~~POCO F2 Pro~~lmi_eea~~lmi:10~~QKQ1.191117.002~~V12.0.3.0.QJKEUXM~~2020-09-01
+POCO F2 Pro Global~~POCO~~POCO~~POCO F2 Pro~~lmi_global~~lmi:10~~QKQ1.191117.002~~V12.0.4.0.QJKMIXM~~2020-09-01
+POCO F3 Europe~~POCO~~POCO~~M2012K11AG~~alioth_eea~~alioth:11~~RKQ1.200826.002~~V12.5.3.0.RKHEUXM~~2021-06-01
+POCO F3 Global~~POCO~~POCO~~M2012K11AG~~alioth_global~~alioth:11~~RKQ1.200826.002~~V12.5.2.0.RKHMIXM~~2021-05-01
+POCO F3 Indoniesia~~POCO~~POCO~~M2012K11AG~~alioth_id~~alioth:11~~RKQ1.200826.002~~V12.5.2.0.RKHIDXM~~2021-06-01
+POCO F3 Russia~~POCO~~POCO~~M2012K11AG~~alioth_ru~~alioth:11~~RKQ1.200826.002~~V12.5.3.0.RKHRUXM~~2021-06-01
+POCO F3 Taiwan~~POCO~~POCO~~M2012K11AG~~alioth_global~~alioth:11~~RKQ1.200826.002~~V12.5.2.0.RKHTWXM~~2021-06-01
+POCO F3 Turkey~~POCO~~POCO~~M2012K11AG~~alioth_tr~~alioth:11~~RKQ1.200826.002~~V12.5.2.0.RKHTRXM~~2021-06-01
+POCO M3 Pro 5G Indonesia~~POCO~~POCO~~M2103K19PG~~camellian_p_id~~camellian:11~~RP1A.200720.011~~V12.0.3.0.RKSIDXM~~2021-06-01
+POCO X2~~POCO~~POCO~~POCO X2~~phoenixin~~phoenixin:10~~QKQ1.190825.002~~V12.0.2.0.QGHINXM~~2020-10-01
+POCO X3 NFC Europe~~POCO~~POCO~~M2007J20CG~~surya_eea~~surya:10~~QKQ1.200512.002~~V12.0.7.0.QJGEUXM~~2020-11-01
+POCO X3 NFC Global~~POCO~~POCO~~M2007J20CG~~surya_global~~surya:10~~QKQ1.200512.002~~V12.0.7.0.QJGMIXM~~2020-11-01
+POCO X3 Pro Global~~POCO~~POCO~~M2102J20SG~~vayu_global~~vayu:11~~RKQ1.200826.002~~V12.0.4.0.RJUMIXM~~2021-03-01
+Razer Phone~~Razer~~razer~~Phone~~cheryl~~cheryl:7.1.1~~NMF26X-RZR-180118~~3005~~2018-01-05
+Razer Phone 2~~Razer~~razer~~Phone 2~~cheryl2~~aura:8.1.0~~O-MR2-RC009-RZR-181124~~2009~~2018-10-05
+Realme X2 Pro~~Realme~~realme~~RMX1931~~RMX1931EEA~~RMX1931L1:10~~QKQ1.191021.002~~1590460856~~2020-06-05
+Realme XT RMX1921~~Realme~~realme~~RMX1921~~RMX1921~~RMX1921:10~~QKQ1.190918.001~~1619577165~~2021-05-05
+Redmi 9T Global~~Redmi~~Redmi~~M2010J19SI~~lime_global~~lime:10~~QKQ1.200830.002~~V12.0.7.0.QJQMIXM~~2021-03-01
+Redmi K30 Pro China~~Redmi~~Redmi~~Redmi K30 Pro~~lmi~~lmi:10~~QKQ1.191117.002~~V12.0.1.0.QJKCNXM~~2020-06-01
+Redmi K30 Pro Zoom Edition China~~Redmi~~Redmi~~Redmi K30 Pro Zoom Edition~~lmipro~~lmipro:10~~QKQ1.191117.002~~V11.0.16.0.QJKCNXM~~2020-04-01
+Redmi K30 Ultra China~~Redmi~~Redmi~~M2006J10C~~cezanne~~cezanne:10~~QP1A.190711.020~~V12.0.12.0.QJNCNXM~~2020-09-01
+Redmi K30S Ultra China~~Redmi~~Redmi~~M2007J3SC~~apollo~~apollo:10~~QKQ1.200419.002~~V12.0.3.0.QJDCNXM~~2020-09-01
+Redmi K40 China~~Redmi~~Redmi~~M2012K11AC~~alioth~~alioth:11~~RKQ1.200826.002~~V12.5.5.0.RKHCNXM~~2021-07-01
+Redmi Note 8 Pro Europe~~Redmi~~Redmi~~Redmi Note 8 Pro~~begonia_eea~~begonia:10~~QP1A.190711.020~~V12.0.4.0.QGGEUXM~~2021-02-01
+Redmi Note 8 Pro Global~~Redmi~~Redmi~~Redmi Note 8 Pro~~begonia~~begonia:9~~PPR1.180610.011~~V10.4.1.0.PGGMIXM~~2019-09-01
+Redmi Note 8 Pro India~~Redmi~~Redmi~~Redmi Note 8 Pro~~begoniain~~begoniain:9~~PPR1.180610.011~~V10.4.4.0.PGGINXM~~2019-09-01
+Redmi Note 8 Pro Russia~~Redmi~~Redmi~~Redmi Note 8 Pro~~begonia_ru~~begonia:9~~PPR1.180610.011~~V11.0.3.0.PGGRUXM~~2019-11-01
+Redmi Note 9 Pro Europe~~Redmi~~Redmi~~Redmi Note 9 Pro~~joyeuse_eea~~joyeuse:10~~QKQ1.191215.002~~V11.0.4.0.QJZEUXM~~2020-07-01
+Redmi Note 9 Pro Global~~Redmi~~Redmi~~Redmi Note 9 Pro~~joyeuse_global~~joyeuse:10~~QKQ1.191215.002~~V11.0.5.0.QJZMIXM~~2020-07-01
+Redmi Note 9 Pro Indonesia~~Redmi~~Redmi~~Redmi Note 9 Pro~~joyeuse_id~~joyeuse:10~~QKQ1.191215.002~~V12.0.5.0.QJZIDXM~~2021-03-01
+Redmi Note 9 Pro Max India~~Redmi~~Redmi~~Redmi Note 9 Pro Max~~excalibur_in~~excalibur:10~~QKQ1.191215.002~~V12.0.3.0.QJXINXM~~2021-02-01
+Redmi Note 9S Europe~~Redmi~~Redmi~~Redmi Note 9S~~curtana_eea~~curtana:10~~QKQ1.191215.002~~V11.0.4.0.QJWEUXM~~2020-07-01
+Redmi Note 9S Global~~Redmi~~Redmi~~Redmi Note 9S~~curtana_global~~curtana:10~~QKQ1.191215.002~~V11.0.10.0.QJWMIXM~~2020-07-01
+Redmi Note 10 Pro Global~~Redmi~~Redmi~~M2101K6G~~sweet_global~~sweet:11~~RKQ1.200826.002~~V12.0.6.0.RKFMIXM~~2021-03-01
+Samsung Galaxy A01 Core~~Samsung~~samsung~~SM-A013G~~a01corextc~~a01core:10~~QP1A.190711.020~~A013GXXU1ATGE~~2020-07-01
+Samsung Galaxy A3 2015 SM-A300FU~~Samsung~~samsung~~SM-A300FU~~a3ultexx~~a3ulte:6.0.1~~MMB29M~~A300FUXXU1CRF1
+Samsung Galaxy A3 2016 SM-A310F~~samsung~~samsung~~SM-A310F~~a3xeltexx~~a3xelte:7.0~~NRD90M~~A310FXXU4CSB2~~2019-02-01
+Samsung Galaxy A3 2017 SM-A320FL~~samsung~~samsung~~SM-A320FL~~a3y17ltexc~~a3y17lte:8.0.0~~R16NW~~A320FLXXU4CSD2~~2019-04-01
+Samsung Galaxy A5 2015 SM-A500FU~~Samsung~~samsung~~SM-A500FU~~a5ultexx~~a5ulte:6.0.1~~MMB29M~~A500FUXXU1CPH3
+Samsung Galaxy A5 2016 SM-A510F~~samsung~~samsung~~SM-A510F~~a5xeltexx~~a5xelte:7.0~~NRD90M~~A510FXXS8CSF3~~2019-07-01
+Samsung Galaxy A5 2017 SM-A520F~~Samsung~~samsung~~SM-A520F~~a5y17ltexx~~a5y17lte:8.0.0~~R16NW~~A520FXXUGCTI9~~2020-09-01
+Samsung Galaxy A6 SM-A600F~~Samsung~~samsung~~SM-A600F~~a6ltexx~~a6lte:10~~QP1A.190711.020~~A600FNXXS7CTI1~~2020-09-01
+Samsung Galaxy A6 Plus SM-A605G~~Samsung~~samsung~~SM-A605G~~a6pltedx~~a6plte:9~~PPR1.180610.011~~A605GDXU3BSC6~~2019-03-01
+Samsung Galaxy A7 2017 SM-A720F~~Samsung~~samsung~~SM-A720F~~a7y17ltexx~~a7y17lte:8.0.0~~R16NW~~A720FXXU9CSK3~~2019-12-01
+Samsung Galaxy A7 2018 SM-A750GN~~samsung~~samsung~~SM-A750GN~~a7y18ltedx~~a7y18lte:9~~PPR1.180610.011~~A750GNDXU2BSD2~~2019-04-01
+Samsung Galaxy A8 Plus SM-A730F~~Samsung~~samsung~~SM-A730F~~jackpot2ltexx~~jackpot2lte:7.1.1~~NMF26X~~A730FXXU2ARD1
+Samsung Galaxy A20 SM-A205W~~Samsung~~samsung~~SM-A205W~~a20cs~~a20:9~~PPR1.180610.011~~A205WVLU3ASK2~~2019-11-01
+Samsung Galaxy A40 SM-A405FN~~Samsung~~samsung~~SM-A405FN~~a40xx~~a40:10~~QP1A.190711.020~~A405FNXXS3BTI3~~2020-09-01
+Samsung Galaxy A50 SM-A505F~~Samsung~~samsung~~SM-A505F~~a50dd~~a50:9~~PPR1.180610.011~~A505FDDU1ASD6~~2019-04-01
+Samsung Galaxy A50S SM-A507FN~~Samsung~~samsung~~SM-A507FN~~a50sxx~~a50s:10~~QP1A.190711.020~~A507FNXXS5BTI1~~2020-09-01
+Samsung Galaxy A51 SM-A515F~~Samsung~~samsung~~SM-A515F~~a51nsxx~~a51:10~~QP1A.190711.020~~A515FXXU1ASKJ~~2019-12-01
+Samsung Galaxy A52 4G~~Samsung~~samsung~~SM-A525F~~a52qnsxx~~a52q:11~~RP1A.200720.012~~A525FXXU2AUF3~~2021-06-01
+Samsung Galaxy A70 SM-A705FN~~samsung~~samsung~~SM-A705FN~~a70qxx~~a70q:10~~QP1A.190711.020~~A705FNXXU5CTK4~~2020-11-01
+Samsung Galaxy A71 SM-A715F~~samsung~~samsung~~SM-A715F~~a71naxx~~a71:10~~QP1A.190711.020~~A715FXXU3ATK1~~2020-11-01
+Samsung Galaxy A90 5G SM-A908B~~samsung~~samsung~~SM-A908B~~r3qxx~~r3q:9~~PPR1.180610.011~~A908BXXU2ASK5~~2019-11-01
+Samsung Galaxy Core Prime SM-G361F~~Samsung~~samsung~~SM-G361F~~coreprimeveltexx~~coreprimevelte:5.1.1~~LMY48B~~G361FXXU1APB1
+Samsung Galaxy Grand Prime SM-G530BT~~Samsung~~samsung~~SM-G530BT~~fortuna3gdtvvj~~fortuna3gdtv:5.0.2~~LRX22G~~G530BTVJU1BPH4
+Samsung Galaxy J2 2015 SM-J200H~~Samsung~~samsung~~SM-J200H~~j23gdd~~j23g:5.1.1~~LMY48B~~J200HXXU0AQK2
+Samsung Galaxy J2 Core SM-S260DL~~samsung~~samsung~~SM-S260DL~~j2corepltetfntmo~~j2corepltetfntmo:8.1.0~~M1AJQ~~S260DLUDU1ASC7~~2019-03-01
+Samsung Galaxy J3 SM-J320FN~~Samsung~~samsung~~SM-J320FN~~j3xnltexx~~j3xnlte:5.1.1~~LMY47V~~J320FNXXU0ARB1
+Samsung Galaxy J5 2015 SM-J500FN~~Samsung~~samsung~~SM-J500FN~~j5nltexx~~j5nlte:6.0.1~~MMB29M~~J500FNXXS1BQG1
+Samsung Galaxy J5 2016 SM-J510FN~~Samsung~~samsung~~SM-J510FN~~j5xnltexx~~j5xnlte:7.1.1~~NMF26X~~J510FNXXS2BRA2
+Samsung Galaxy J5 Prime SM-G570F~~Samsung~~samsung~~SM-G570F~~on5xeltejv~~on5xelte:7.0~~NRD90M~~G570FXXU1BQI6
+Samsung Galaxy J7 2016 SM-J710FQ~~Samsung~~samsung~~SM-J710FQ~~j7xeltetur~~j7xelte:8.1.0~~M1AJQ~~J710FQXXU3CSG1~~2019-07-01
+Samsung Galaxy J7 2017 SM-J730F~~Samsung~~samsung~~SM-J730F~~j7y17ltexx~~j7y17lte:8.1.0~~M1AJQ~~J730FXXU3BRK2~~2018-11-01
+Samsung Galaxy J7 Neo SM-J701M~~Samsung~~samsung~~SM-J701M~~j7velteub~~j7velte:8.1.0~~M1AJQ~~J701MUBU6BSD2~~2019-04-01
+Samsung Galaxy J7 Prime SM-G610F~~Samsung~~samsung~~SM-G610F~~on7xeltedd~~on7xelte:6.0.1~~MMB29K~~G610FDDU1AQG2
+Samsung Galaxy M20 SM-M205F~~Samsung~~samsung~~SM-M205F~~m20ltedd~~m20lte:10~~QP1A.190711.020~~M205FDDU3CSL4~~2019-12-01
+Samsung Galaxy M21 SM-M215F~~Samsung~~samsung~~SM-M215F~~m21nsxx~~m21:10~~QP1A.190711.020~~M215FXXU2ATI9~~2020-09-01
+Samsung Galaxy Note 3 SM-N9005~~Samsung~~samsung~~SM-N9005~~hltezh~~hlte:5.0~~LRX21V~~N9005ZSUGPJ2
+Samsung Galaxy Note 4 SM-N910F~~Samsung~~samsung~~SM-N910F~~trltexx~~trlte:6.0.1~~MMB29M~~N910FXXS1DQH9
+Samsung Galaxy Note 4 SM-N910G~~Samsung~~samsung~~SM-N910G~~trltedt~~trlte:6.0.1~~MMB29M~~N910GDTU1DQL2
+Samsung Galaxy Note 5 SM-N920C~~Samsung~~samsung~~SM-N920C~~nobleltejv~~noblelte:7.0~~NRD90M~~N920CXXU3CQH6
+Samsung Galaxy Note 8 SM-N950F~~Samsung~~samsung~~SM-N950F~~greatltexx~~greatlte:8.0.0~~R16NW~~N950FXXU3CRC1
+Samsung Galaxy Note 9 SM-N960F~~Samsung~~samsung~~SM-N960F~~crownltexx~~crownlte:10~~QP1A.190711.020~~N960FXXS4DTA5~~2020-02-01
+Samsung Galaxy Note 10 Plus SM-N9750~~Samsung~~samsung~~SM-N9750~~d2qzh~~d2q:10~~QP1A.190711.020~~N9750ZSU2CTD1~~2020-04-01
+Samsung Galaxy Note 10 Plus SM-N975F~~Samsung~~samsung~~SM-N975F~~d2sxx~~d2s:10~~QP1A.190711.020~~N975FXXU1BSL7~~2019-12-01
+Samsung Galaxy Note 10 Plus SM-N975U~~Samsung~~samsung~~SM-N975U~~d2qsq~~d2q:10~~QP1A.190711.020~~N975USQU2BTA1~~2020-01-01
+Samsung Galaxy Note 10.1 2014 SM-P600~~Samsung~~samsung~~SM-P600~~lt03wifixx~~lt03wifi:5.1.1~~LMY47X~~P600XXUDOJ3
+Samsung Galaxy Note 20 Ultra SM-N986U~~Samsung~~samsung~~SM-N986U~~c2qsqw~~c2q:10~~QP1A.190711.020~~N986USQU1ATH3~~2020-08-01
+Samsung Galaxy Note 20 Ultra 5G SM-N9860~~Samsung~~samsung~~SM-N9860~~c2qzhx~~c2q:10~~QP1A.190711.020~~N9860ZSU1ATJ6~~2020-09-01
+Samsung Galaxy Note 20 Ultra 5G SM-N986B/DS~~samsung~~samsung~~SM-N986B~~c2sxxx~~c2s:10~~QP1A.190711.020~~N986BXXU1ATJ1~~2020-10-01
+Samsung Galaxy S3 Neo GT-I9300I~~Samsung~~samsung~~GT-I9300I~~s3ve3gdd~~s3ve3gdd:4.4.4~~KTU84P~~I9300IDDUBQE2
+Samsung Galaxy S4 GT-I9505~~Samsung~~samsung~~GT-I9505~~jfltexx~~jflte:5.0.1~~LRX22C~~I9505XXUHPF4
+Samsung Galaxy S4 Active GT-I9295~~Samsung~~samsung~~GT-I9295~~jactiveltexx~~jactivelte:5.0.1~~LRX22C~~I9295XXSDQD6
+Samsung Galaxy S5 SM-G900F~~Samsung~~samsung~~SM-G900F~~kltexx~~klte:6.0.1~~MMB29M~~G900FXXU1CRH1
+Samsung Galaxy S5 SM-G900H~~Samsung~~samsung~~SM-G900H~~k3gxx~~k3g:6.0.1~~MMB29K~~G900HXXU1CPF2
+Samsung Galaxy S6 SM-G920F~~Samsung~~samsung~~SM-G920F~~zerofltexx~~zeroflte:7.0~~NRD90M~~G920FXXS5EQL1
+Samsung Galaxy S6 Edge SM-G925F~~Samsung~~samsung~~SM-G925F~~zeroltexx~~zerolte:7.0~~NRD90M~~G925FXXS5EQL1
+Samsung Galaxy S7 SM-G930F~~Samsung~~samsung~~SM-G930F~~heroltexx~~herolte:8.0.0~~R16NW~~G930FXXU2ERD5
+Samsung Galaxy S7 Edge SM-G935F~~Samsung~~samsung~~SM-G935F~~hero2ltexx~~hero2lte:8.0.0~~R16NW~~G935FXXS4ESC3~~2019-03-01
+Samsung Galaxy S8 SM-G950F~~Samsung~~samsung~~SM-G950F~~dreamltexx~~dreamlte:8.0.0~~R16NW~~G950FXXU1CRC7
+Samsung Galaxy S8 Plus SM-G955F~~Samsung~~samsung~~SM-G955F~~dream2ltexx~~dream2lte:8.0.0~~R16NW~~G955FXXU1CRC7
+Samsung Galaxy S9 SM-G960F~~Samsung~~samsung~~SM-G960F~~starltexx~~starlte:8.0.0~~R16NW~~G960FXXU1ARCC
+Samsung Galaxy S9 Plus SM-G965F~~Samsung~~samsung~~SM-G965F~~star2ltexx~~star2lte:8.0.0~~R16NW~~G965FXXU1ARCC
+Samsung Galaxy S10 SM-G973F~~Samsung~~samsung~~SM-G973F~~beyond1ltexx~~beyond1:10~~QP1A.190711.020~~G973FXXS3BSL4~~2020-01-01
+Samsung Galaxy S10 SM-G973F Europe~~Samsung~~samsung~~SM-G973F~~beyond1lteeea~~beyond1:11~~RP1A.200720.012~~G973FXXSBFUF3~~2021-07-01
+Samsung Galaxy S10 SM-G973N~~Samsung~~samsung~~SM-G973N~~beyond1lteks~~beyond1:11~~RP1A.200720.012~~G973NKSU6FUF5~~2021-07-01
+Samsung Galaxy S10 5G SM-G977B~~Samsung~~samsung~~SM-G977B~~beyondxxx~~beyondx:11~~RP1A.200720.012~~G977BXXS8FUF3~~2021-07-01
+Samsung Galaxy S10 5G SM-G977N~~Samsung~~samsung~~SM-G977N~~beyondxks~~beyondx:11~~RP1A.200720.012~~G977NKSU5FUF5~~2021-07-01
+Samsung Galaxy S10 Lite SM-G770F~~Samsung~~samsung~~SM-G770F~~r5qnsxx~~r5q:11~~RP1A.200720.012~~G770FXXS4EUF6~~2021-07-01
+Samsung Galaxy S10 Plus SM-G975F~~Samsung~~samsung~~SM-G975F~~beyond2ltexx~~beyond2:10~~QP1A.190711.020~~G975FXXU3BSKO~~2019-12-01
+Samsung Galaxy S10 Plus SM-G975F Europe~~Samsung~~samsung~~SM-G975F~~beyond2lteeea~~beyond2:11~~RP1A.200720.012~~G975FXXSBFUF3~~2021-07-01
+Samsung Galaxy S10 Plus SM-G975N~~Samsung~~samsung~~SM-G975N~~beyond2lteks~~beyond2:11~~RP1A.200720.012~~G975NKSU6FUF5~~2021-07-01
+Samsung Galaxy S10 Plus SM-G975U~~Samsung~~samsung~~SM-G975U~~beyond2qlteue~~beyond2q:9~~PPR1.180610.011~~G975U1UEU1ASD3~~2019-03-01
+Samsung Galaxy S10e SM-G970F~~Samsung~~samsung~~SM-G970F~~beyond0ltexx~~beyond0:10~~QP1A.190711.020~~G970FXXS9DTK9~~2020-12-01
+Samsung Galaxy S10e SM-G970F Europe~~Samsung~~samsung~~SM-G970F~~beyond0lteeea~~beyond0:11~~RP1A.200720.012~~G970FXXSBFUF3~~2021-07-01
+Samsung Galaxy S10e SM-G970N~~Samsung~~samsung~~SM-G970N~~beyond0lteks~~beyond0:10~~QP1A.190711.020~~G970NKSU4CTC9~~2020-04-01
+Samsung Galaxy S20 FE SM-G780F~~Samsung~~samsung~~SM-G780F~~r8sxx~~r8s:11~~RP1A.200720.012~~G780FXXU5CUH1~~2021-08-01
+Samsung Galaxy S20 FE 5G SM-G781B~~samsung~~samsung~~SM-G781B~~r8qxxx~~r8q:10~~QP1A.190711.020~~G781BXXU1ATJ5~~2020-10-01
+Samsung Galaxy S20 Ultra SM-G988B~~Samsung~~samsung~~SM-G988B~~z3sxxx~~z3s:10~~QP1A.190711.020~~G988BXXU1ATCT~~2020-04-01
+Samsung Galaxy S21 SM-G991B~~Samsung~~samsung~~SMG991B~~o1sxxx~~o1s:11~~RP1A.200720.012~~G991BXXU3AUE1~~2021-05-01
+Samsung Galaxy Tab 2 7.0 GT-P5110~~Samsung~~samsung~~GT-P5110~~espresso10wifixx~~espresso10wifi:4.2.2~~JDQ39~~P5110XXDML1
+Samsung Galaxy Tab 4 7.0 SM-T230NU~~samsung~~samsung~~SM-T230NU~~degaswifiue~~degaswifiue:4.4.2~~KOT49H~~T230NUUEU0APA1
+Samsung Galaxy Tab 4 8.0 SM-T330NU~~samsung~~samsung~~SM-T330NU~~milletwifiue~~milletwifiue:5.1.1~~LMY47X~~T330NUUES1BPL1
+Samsung Galaxy Tab 4 10.1 SM-T530NU~~samsung~~samsung~~SM-T530NU~~matissewifiue~~matissewifiue:5.0.2~~LRX22G~~T530NUUEU1BQC1
+Samsung Galaxy Tab A 8.0 LTE 2019 SM-T295~~Samsung~~samsung~~SM-T295~~gtoxx~~gto:9~~PPR1.180610.011~~T295XXS3ATB2~~2020-03-01
+Samsung Galaxy tab A 10.1 WiFi 2019 SM-T510~~Samsung~~samsung~~SM-T510~~gta3xlwifieea~~gta3xlwifi:10~~QP1A.190711.020~~T510XXU3BTFN~~2020-07-01
+Samsung Galaxt Tab A WiFi SM-T590~~Samsung~~samsung~~SM-T590~~gta2xlwifixx~~gta2xlwifi:9~~PPR1.180610.011~~T590XXU3BSJ1~~2019-10-01
+Samsung Galaxt Tab A LTE SM-T595~~Samsung~~samsung~~SM-T595~~gta2xlltexx~~gta2xllte:9~~PPR1.180610.011~~T595XXU3BSF3~~2019-06-01
+Samsung Galaxt Tab A LTE SM-T597~~Samsung~~samsung~~SM-T597~~gta2xlltespr~~gta2xlltespr:9~~PPR1.180610.011~~T597PVPU2BSH7~~2019-08-01
+Samsung Galaxy Tab E 9.6 SM-T560~~Samsung~~samsung~~SM-T560~~gtelwifixx~~gtelwifi:4.4.4~~KTU84P~~T560XXU0APL1
+Samsung Galaxy Tab S2 SM-T813~~samsung~~samsung~~SM-T813~~gts210vewifixx~~gts210vewifi:7.0~~NRD90M~~T813XXS2BSJ3~~2019-08-01
+Samsung Galaxy Tab S3 LTE SM-T825~~Samsung~~samsung~~SM-T825~~gts3lltexx~~gts3llte:8.0.0~~R16NW~~T825XXU2BRL2~~2018-12-01
+Samsung Galaxy Tab S4 WiFi SM-T830~~samsung~~samsung~~SM-T830~~gts4lwifixx~~gts4lwifi:10~~QP1A.190711.020~~T830XXU4CTF5~~2020-06-01
+Samsung Galaxy Tab S4 LTE SM-T835~~samsung~~samsung~~SM-T835~~gts4lltexx~~gts4llte:10~~QP1A.190711.020~~T835XXU4CTF5~~2020-06-01
+Samsung Galaxy Tab S4 LTE SM-T837A~~samsung~~samsung~~SM-T837A~~gts4llteuc~~gts4llteatt:10~~QP1A.190711.020~~T837AUCU5CUF1~~2021-03-01
+Samsung Galaxy Tab S5e SM-T720~~samsung~~samsung~~SM-T720~~gts4lvwifixx~~gts4lvwifi:9~~PPR1.180610.011~~T720XXS1ASL3~~2020-01-01
+Samsung Galaxy Tab S6 Lite SM-P610~~samsung~~samsung~~SM-P610~~gta4xlwifixx~~gta4xlwifi:10~~QP1A.190711.020~~P610XXU2BTK2~~2020-12-01
+Samsung Galaxy Tab S7+ WiFi SM-T970~~Samsung~~samsung~~SM-T970~~gts7xlwifixx~~gts7xlwifi:11~~RP1A.200720.012~~T970XXU1BUAA~~2021-01-01
+Sony Xperia 5 DSDS J9210~~Sony~~Sony~~J9210~~J9210_RU~~J9210:10~~55.1.A.9.52~~055001A009005201481357772~~2020-07-01
+Sony Xperia 10~~Sony~~Sony~~I4193~~I4193~~I4193:10~~53.1.A.3.85~~053001A003008502135191194~~2020-11-01
+Sony Xperia 10 II Dual XQ-AU52~~Sony~~Sony~~XQ-AU52~~XQ-AU52_EEA~~XQ-AU52:10~~59.0.A.6.24~~059000A006002402956232951~~2020-07-01
+Sony Xperia M~~Sony~~Sony~~C1905~~C1905~~C1905:4.3~~15.4.A.1.9~~eng.user.20140509.125022
+Sony Xperia X F5121~~Sony~~Sony~~F5121~~F5121~~F5121:8.0.0~~34.4.A.2.118~~1631208121~~2018-09-01
+Sony Xperia X Compact F5321~~Sony~~Sony~~F5321~~F5321~~F5321:8.0.0~~34.4.A.2.118~~1631208121~~2018-09-01
+Sony Xperia X Dual F5122~~Sony~~Sony~~F5122~~F5122~~F5122:8.0.0~~34.4.A.2.118~~1631208121~~2018-09-01
+Sony Xperia X Performance F8131~~Sony~~Sony~~F8131~~F8131~~F8131:8.0.0~~41.3.A.2.99~~1455830589
+Sony Xperia X Performance Dual F8132~~Sony~~Sony~~F8132~~F8132~~F8132:8.0.0~~41.3.A.2.99~~1455830589
+Sony Xperia XA2 Dual H4113~~Sony~~Sony~~H4113~~H4113~~H4113:8.0.0~~50.1.A.4.76~~2209478692
+Sony Xperia XA2 Ultra H3223~~Sony~~Sony~~H3223~~H3223~~H3223:9~~50.2.A.3.22~~2120505936~~2019-11-01
+Sony Xperia XZ F8331~~Sony~~Sony~~F8331~~F8331~~F8331:8.0.0~~41.3.A.2.99~~1455830589
+Sony Xperia XZ Dual F8332~~Sony~~Sony~~F8332~~F8332~~F8332:8.0.0~~41.3.A.2.99~~1455830589
+Sony Xperia XZ Premium G8141~~Sony~~Sony~~G8141~~G8141~~G8141:8.0.0~~47.1.A.12.179~~1909673090
+Sony Xperia XZ Premium Dual G8142~~Sony~~Sony~~G8142~~G8142~~G8142:8.0.0~~47.1.A.12.179~~1909673090
+Sony Xperia XZ1 G8341~~Sony~~Sony~~G8341~~G8341~~G8341:8.0.0~~47.1.A.12.179~~1909673090
+Sony Xperia XZ1 Compact G8441~~Sony~~Sony~~G8441~~G8441~~G8441:8.0.0~~47.1.A.12.179~~1909673090
+Sony Xperia XZ1 Dual G8342~~Sony~~Sony~~G8342~~G8342~~G8342:8.0.0~~47.1.A.12.179~~1909673090
+Sony Xperia XZ2 H8216~~Sony~~Sony~~H8216~~H8216~~H8216:8.0.0~~51.1.A.3.159~~620448843
+Sony Xperia XZ2 Compact H8314~~Sony~~Sony~~H8314~~H8314~~H8314:8.0.0~~51.1.A.3.159~~620448843
+Sony Xperia XZ2 Compact Dual H8324~~Sony~~Sony~~H8324~~H8324~~H8324:8.0.0~~51.1.A.3.159~~620448843
+Sony Xperia XZ2 Dual H8266~~Sony~~Sony~~H8266~~H8266~~H8266:8.0.0~~51.1.A.3.159~~620448843
+Sony Xperia Z C6603~~Sony~~Sony~~C6603~~C6603~~C6603:5.1.1~~10.7.A.0.228~~58103698
+Sony Xperia Z1 C6903~~Sony~~Sony~~C6903~~C6903~~C6903:5.1.1~~14.6.A.1.236~~2031203603
+Sony Xperia Z2 D6503~~Sony~~Sony~~D6503~~D6503~~D6503:6.0.1~~23.5.A.1.291~~2769308465
+Sony Xperia Z3 D6633~~Sony~~Sony~~D6633~~D6633~~D6633:6.0.1~~23.5.A.1.291~~2769308465
+Sony Xperia Z3 Compact D5803~~Sony~~Sony~~D5803~~D5803~~D5803:6.0.1~~23.5.A.1.291~~2769308465
+Sony Xperia Z3 Tablet Compact SGP621~~Sony~~Sony~~SGP621~~SGP621~~SGP621:6.0.1~~23.5.A.1.291~~3706784398
+Sony Xperia Z4 Tablet LTE SGP771~~Sony~~Sony~~SGP771~~SGP771~~SGP771:7.1.1~~32.4.A.1.54~~219395100
+Sony Xperia Z5 E6603~~Sony~~Sony~~E6603~~E6603~~E6603:7.1.1~~32.4.A.1.54~~3761073091
+Sony Xperia Z5 E6653~~Sony~~Sony~~E6653~~E6653~~E6653:7.1.1~~32.4.A.1.54~~3761073091
+Sony Xperia Z5 Compact E5823~~Sony~~Sony~~E5823~~E5823~~E5823:7.1.1~~32.4.A.1.54~~3761073091
+Sony Xperia Z5 Dual E6633~~Sony~~Sony~~E6633~~E6633~~E6633:7.1.1~~32.4.A.1.54~~3761073091
+Sony Xperia Z5 Premium E6853~~Sony~~Sony~~E6853~~E6853~~E6853:7.1.1~~32.4.A.1.54~~3761073091
+Sony Xperia Z5 Premium Dual E6883~~Sony~~Sony~~E6883~~E6883~~E6883:7.1.1~~32.4.A.1.54~~3761073091
+Vodafone Smart Ultra 6~~Vodafone~~Vodafone~~Vodafone Smart ultra 6~~P839V55~~P839V55:5.1.1~~LMY47V~~20161227.134319.15534
+Walmart Onn 8~~Onn~~onn~~ONA19TB002~~ONA19TB002~~ONA19TB002:9~~PPR1.180610.011~~1551232410~~2019-01-05
+Xiaomi Mi 3 Global~~Xiaomi~~Xiaomi~~MI 3W~~cancro~~cancro:6.0.1~~MMB29M~~V9.5.2.0.MXDMIFA
+Xiaomi Mi 4 Global~~Xiaomi~~Xiaomi~~MI 4W~~cancro~~cancro:6.0.1~~MMB29M~~V9.5.2.0.MXDMIFA
+Xiaomi Mi 4C China~~Xiaomi~~Xiaomi~~Mi-4c~~libra~~libra:7.0~~NRD90M~~V9.6.2.0.NXKCNFD
+Xiaomi Mi 5/5 Pro Global~~Xiaomi~~Xiaomi~~MI 5~~gemini~~gemini:7.0~~NRD90M~~V9.2.1.0.NAAMIEK
+Xiaomi Mi 5S Global~~Xiaomi~~Xiaomi~~MI 5s~~capricorn~~capricorn:7.0~~NRD90M~~V9.5.4.0.NAGMIFD
+Xiaomi Mi 5S Plus Global~~Xiaomi~~Xiaomi~~MI 5s Plus~~natrium~~natrium:6.0.1~~MXB48T~~V8.5.2.0.MBGMIED
+Xiaomi Mi 6 Global~~Xiaomi~~Xiaomi~~MI 6~~sagit~~sagit:8.0.0~~OPR1.170623.027~~V9.2.3.0.OCAMIEK
+Xiaomi Mi 6X China~~Xiaomi~~xiaomi~~Mi 6X~~wayne~~wayne:9~~PKQ1.180904.001~~V12.0.2.0.PDCCNXM~~2020-11-05
+Xiaomi Mi 8 Global~~Xiaomi~~Xiaomi~~MI 8~~dipper~~dipper:8.1.0~~OPM1.171019.011~~V9.5.5.0.OEAMIFA
+Xiaomi Mi 8 Explorer~~Xiaomi~~Xiaomi~~Mi 8 Explorer~~ursa~~ursa:10~~QKQ1.190828.002~~V12.5.1.0.QEHCNXM~~2020-12-01
+Xiaomi Mi 8 Pro Global~~Xiaomi~~Xiaomi~~Mi 8 Pro~~equuleus~~equuleus:10~~QKQ1.190828.002~~V11.0.5.0.QECMIXM~~2020-04-01
+Xiaomi Mi 8 Pro Russia~~Xiaomi~~Xiaomi~~Mi 8 Pro~~equuleus_ru~~equuleus:10~~QKQ1.190828.002~~V11.0.3.0.QECRUXM~~2020-04-01
+Xiaomi Mi 9 China~~Xiaomi~~Xiaomi~~MI 9~~cepheus~~cepheus:10~~QKQ1.190825.002~~V12.0.6.0.QFACNXM~~2020-11-01
+Xiaomi Mi 9 Europe~~Xiaomi~~Xiaomi~~MI 9~~cepheus_eea~~cepheus:9~~PKQ1.181121.001~~V10.2.27.0.PFAEUXM~~2019-06-01
+Xiaomi Mi 9 Lite Global~~Xiaomi~~Xiaomi~~Mi 9 Lite~~pyxis~~pyxis:9~~PKQ1.181121.001~~V11.3.3.0.PFCMIXM~~2019-10-01
+Xiaomi Mi 9 SE Global~~Xiaomi~~Xiaomi~~MI 9 SE~~grus~~grus:9~~PKQ1.181121.001~~V11.0.4.0.PFBMIXM~~2019-10-01
+Xiaomi Mi 9T China~~Xiaomi~~Xiaomi~~Mi 9T~~davinci~~davinci:10~~QKQ1.190825.002~~V12.0.6.0.QFJCNXM~~2020-10-01
+Xiaomi Mi 9T Europe~~Xiaomi~~Xiaomi~~Mi 9T~~davinci_eea~~davinci:9~~PKQ1.190302.001~~V10.3.12.0.PFJEUXM~~2019-07-01
+Xiaomi Mi 9T Pro China~~Xiaomi~~Xiaomi~~Mi 9T Pro~~raphael~~raphael:9~~PKQ1.181121.001~~V10.3.14.0.PFKCNXM~~2019-06-01
+Xiaomi Mi 9T Pro Europe~~Xiaomi~~Xiaomi~~Mi 9T Pro~~raphael_eea~~raphael:10~~QKQ1.190825.002~~V12.0.4.0.QFKEUXM~~2021-01-01
+Xiaomi Mi 9T Pro Global~~Xiaomi~~Xiaomi~~Mi 9T Pro~~raphael~~raphael:10~~QKQ1.190825.002~~V11.0.1.0.QFKMIXM~~2019-10-01
+Xiaomi Mi 10 China~~Xiaomi~~Xiaomi~~Mi 10~~umi~~umi:10~~QKQ1.191117.002~~V12.0.8.0.QJBCNXM~~2020-07-01
+Xiaomi Mi 10 Europe~~Xiaomi~~Xiaomi~~Mi 10~~umi_eea~~umi:10~~QKQ1.191117.002~~V11.0.10.0.QJBEUVF~~2020-07-01
+Xiaomi Mi 10 Lite 5G Europe~~Xiaomi~~Xiaomi~~M2002J9G~~monet_eea~~monet:10~~QKQ1.191222.002~~V12.0.1.0.QJIEUXM~~2020-06-01
+Xiaomi Mi 10 Lite 5G Global~~Xiaomi~~Xiaomi~~M2002J9G~~monet_global~~monet:10~~QKQ1.191222.002~~V12.0.1.0.QJIMIXM~~2020-08-01
+Xiaomi Mi 10 Pro China~~Xiaomi~~Xiaomi~~Mi 10 Pro~~cmi~~cmi:10~~QKQ1.191117.002~~V12.0.4.0.QJACNXM~~2020-07-01
+Xiaomi Mi 10 Ultra China~~Xiaomi~~Xiaomi~~Mi 10 Ultra~~cas~~cas:10~~QKQ1.200419.002~~V12.0.10.0.QJJCNXM~~2020-08-01
+Xiaomi Mi 10S China~~Xiaomi~~Xiaomi~~M2102J2SC~~thyme~~thyme:11~~RKQ1.200826.002~~V12.0.10.0.RGACNXM~~2021-03-01
+Xiaomi Mi 10T Europe~~Xiaomi~~Xiaomi~~M2007J3SY~~apollo_eea~~apollo:10~~QKQ1.200419.002~~V12.0.13.0.QJDEUXM~~2020-11-01
+Xiaomi Mi 10T Lite Europe~~Xiaomi~~Xiaomi~~M2007J17G~~gauguin_eea~~gauguin:10~~QKQ1.200628.002~~V12.0.8.0.QJSEUXM~~2020-12-01
+Xiaomi Mi 10T Pro Europe~~Xiaomi~~Xiaomi~~M2007J3SG~~apollopro_eea~~apollo:10~~QKQ1.200419.002~~V12.0.13.0.QJDEUXM~~2020-11-01
+Xiaomi Mi 11 China~~Xiaomi~~Xiaomi~~M2011K2C~~venus~~venus:11~~RKQ1.200928.002~~V12.0.22.0.RKBCNXM~~2021-01-01
+Xiaomi Mi 11 Lite Indonesia~~Xiaomi~~Xiaomi~~M2101K9AG~~courbet_id~~courbet:11~~RKQ1.200826.002~~V12.5.1.0.RKQIDXM~~2021-06-01
+Xiaomi Mi A1 Global~~Xiaomi~~xiaomi~~Mi A1~~tissot~~tissot_sprout:7.1.2~~N2G47H~~7.12.19
+Xiaomi Mi A2 Global~~Xiaomi~~xiaomi~~Mi A2~~jasmine~~jasmine_sprout:8.1.0~~OPM1.171019.011~~V9.6.17.0.ODIMIFE~~2018-11-05
+Xiaomi Mi A2 Lite Global~~Xiaomi~~xiaomi~~Mi A2 Lite~~daisy~~daisy_sprout:8.1.0~~OPM1.171019.019~~V9.6.11.0.ODLMIFF~~2018-11-01
+Xiaomi Mi A3 Europe~~Xiaomi~~Xiaomi~~Mi A3~~laurel_sprout_eea~~laurel_sprout:9~~PKQ1.190416.001~~V10.3.17.0.PFQEUXM~~2020-03-05
+Xiaomi Mi A3 Global~~Xiaomi~~Xiaomi~~Mi A3~~laurel_sprout~~laurel_sprout:9~~PKQ1.190416.001~~V10.3.16.0.PFQMIXM~~2020-03-05
+Xiaomi Mi Box S~~Xiaomi~~Xiaomi~~MIBOX4~~oneday~~oneday:9~~PI~~2231~~2019-11-05
+Xiaomi Mi Max Global~~Xiaomi~~Xiaomi~~MI MAX~~helium~~helium:6.0.1~~MMB29M~~V8.2.3.0.MBDMIDL
+Xiaomi Mi Max 2 Global~~Xiaomi~~Xiaomi~~MI MAX 2~~oxygen~~oxygen:7.1.1~~NMF26F~~V9.5.4.0.NDDMIFA
+Xiaomi Mi Max 3 Global~~Xiaomi~~Xiaomi~~MI MAX 3~~nitrogen~~nitrogen:9~~PKQ1.181007.001~~V10.3.1.0.PEDMIXM~~2019-03-01
+Xiaomi Mi Mix 2 Global~~Xiaomi~~Xiaomi~~Mi MIX 2~~chiron~~chiron:8.0.0~~OPR1.170623.027~~V10.2.2.0.ODEMIXM~~2018-12-01
+Xiaomi Mi Mix 2S Global~~Xiaomi~~Xiaomi~~Mi MIX 2S~~polaris~~polaris:8.0.0~~OPR1.170623.032~~V9.5.19.0.ODGMIFA
+Xiaomi Mi Mix 2S China~~Xiaomi~~Xiaomi~~Mi MIX 2S~~polaris~~polaris:10~~QKQ1.190828.002~~V11.0.1.0.QDGCNXM~~2019-12-01
+Xiaomi Mi Mix 3 Global~~Xiaomi~~Xiaomi~~Mi MIX 3~~perseus~~perseus:9~~PKQ1.180729.001~~V10.3.1.0.PEEMIXM~~2019-03-01
+Xiaomi Mi Mix 3 5G Europe~~Xiaomi~~Xiaomi~~Mi MIX 3 5G~~andromeda_eea~~andromeda:9~~PKQ1.190321.001~~V12.0.7.0.PEMEUXM~~2021-05-01
+Xiaomi Mi Note 2 China~~Xiaomi~~Xiaomi~~Mi Note 2~~scorpio~~scorpio:8.0.0~~OPR1.170623.032~~V9.6.1.0.OADCNFD
+Xiaomi Mi Note 2 Global~~Xiaomi~~Xiaomi~~Mi Note 2~~scorpio~~scorpio:7.0~~NRD90M~~V9.2.1.0.NADMIEK
+Xiaomi Mi Note 3 Global~~Xiaomi~~Xiaomi~~Mi Note 3~~jason~~jason:8.1.0~~OPM1.171019.019~~V10.2.2.0.OCHMIXM~~2018-12-01
+Xiaomi Mi Note 10 Europe~~Xiaomi~~Xiaomi~~Mi Note 10~~tucana_eea~~tucana:9~~PKQ1.190302.001~~V11.0.11.0.PFDEUXM~~2019-11-01
+Xiaomi Mi Pad Global~~Xiaomi~~Xiaomi~~MI PAD~~mocha~~mocha:4.4.4~~KTU84P~~V7.5.2.0.KXFMIDE
+Xiaomi Mi Pad 4 China~~Xiaomi~~Xiaomi~~MI PAD 4~~clover~~clover:8.1.0~~OPM1.171019.019~~V10.1.1.0.ODJCNFI~~2018-10-01
+Xiaomi Pocophone F1 Global~~Xiaomi~~Xiaomi~~POCOPHONE F1~~beryllium~~beryllium:9~~PKQ1.180729.001~~V11.0.5.0.PEJMIXM~~2019-10-01
+Xiaomi Redmi 3/3 Pro Global~~Xiaomi~~Xiaomi~~Redmi 3~~ido~~ido:5.1.1~~LMY47V~~V9.6.2.0.LAIMIFD
+Xiaomi Redmi 3S/X Prime Global~~Xiaomi~~Xiaomi~~Redmi 3S~~land~~land:6.0.1~~MMB29M~~V9.5.1.0.MALMIFA
+Xiaomi Redmi 4 Pro Global~~Xiaomi~~Xiaomi~~Redmi 4~~markw~~markw:6.0.1~~MMB29M~~V9.5.3.0.MBEMIFA
+Xiaomi Redmi 4A Global~~Xiaomi~~Xiaomi~~Redmi 4A~~rolex~~rolex:7.1.2~~N2G47H~~V9.2.6.0.NCCMIEK
+Xiaomi Redmi 4X China~~Xiaomi~~Xiaomi~~Redmi 4X~~santoni~~santoni:6.0.1~~MMB29M~~V8.5.4.0.MAMCNED
+Xiaomi Redmi 5 Plus Global~~Xiaomi~~xiaomi~~Redmi 5 Plus~~vince~~vince:7.1.2~~N2G47H~~V9.5.4.0.NEGMIFA
+Xiaomi Redmi 5A Global~~Xiaomi~~Xiaomi~~Redmi 5A~~riva~~riva:7.1.2~~N2G47H~~V9.1.8.0.NCKMIEI
+Xiaomi Redmi 6 Global~~Xiaomi~~xiaomi~~Redmi 6~~cereus~~cereus:9~~PPR1.180610.011~~V11.0.3.0.PCGMIXM~~2020-03-01
+Xiaomi Redmi 6 Pro China~~Xiaomi~~xiaomi~~Redmi 6 Pro~~sakura~~sakura:9~~PKQ1.180917.001~~V12.0.1.0.PDICNXM~~2020-07-01
+Xiaomi Redmi 6 Pro India~~Xiaomi~~xiaomi~~Redmi 6 Pro~~sakura_india~~sakura_india:9~~PKQ1.180917.001~~V12.0.4.0.PDMMIXM~~2020-09-01
+Xiaomi Redmi 6A Global~~Xiaomi~~xiaomi~~Redmi 6A~~cactus~~cactus:9~~PPR1.180610.011~~V11.0.7.0.PCBMIXM~~2020-03-01
+Xiaomi Redmi 7 Europe~~Xiaomi~~xiaomi~~Redmi 7~~onc_eea~~onc:10~~QKQ1.191008.001~~V11.0.3.0.QFLEUXM~~2021-07-01
+Xiaomi Redmi 7 Global~~Xiaomi~~xiaomi~~Redmi 7~~onc~~onc:9~~PKQ1.181021.001~~V11.0.5.0.PFLMIXM~~2020-03-01
+Xiaomi Redmi 7A Global~~Xiaomi~~Xiaomi~~Redmi 7A~~pine~~pine:9~~PKQ1.190319.001~~V11.0.7.0.PCMMIXM~~2020-03-01
+Xiaomi Redmi 8 China~~Xiaomi~~Xiaomi~~Redmi 8~~olive~~olive:9~~PKQ1.190319.001~~V11.0.7.0.PCNCNXM~~2019-12-01
+Xiaomi Redmi 9 China~~Xiaomi~~Redmi~~M2004J19AG~~lancelot~~lancelot:10~~QP1A.190711.020~~V12.0.6.0.QJCCNXM~~2020-11-05
+Xiaomi Redmi Go Global~~Xiaomi~~Xiaomi~~Redmi Go~~tiare~~tiare:8.1.0~~OPM1.171019.026~~V10.2.6.0.OCLMIXM~~2019-01-01
+Xiaomi Redmi K20 Europe~~Xiaomi~~Xiaomi~~Redmi K20~~davinci_eea~~davinci:11~~RKQ1.200826.002~~V12.1.1.0.RFJEUXM~~2021-08-01
+Xiaomi Redmi K20 Pro China~~Xiaomi~~Xiaomi~~Redmi K20 Pro~~raphael~~raphael:9~~PKQ1.181121.001~~V10.3.14.0.PFKCNXM~~2019-06-01
+Xiaomi Redmi K20 Pro Europe~~Xiaomi~~Xiaomi~~Redmi K20 Pro~~raphael_eea~~raphael:10~~QKQ1.190825.002~~V12.0.4.0.QFKEUXM~~2021-01-01
+Xiaomi Redmi K20 Pro Global~~Xiaomi~~Xiaomi~~Redmi K20 Pro~~raphael~~raphael:10~~QKQ1.190825.002~~V11.0.1.0.QFKMIXM~~2019-10-01
+Xiaomi Redmi K20 Pro India~~Xiaomi~~Xiaomi~~Redmi K20 Pro~~raphaelin~~raphaelin:10~~QKQ1.190825.002~~V12.0.2.0.QFKINXM~~2020-06-01
+Xiaomi Redmi K30 Pro China~~Xiaomi~~Redmi~~Redmi K30 Pro~~lmi~~lmi:11~~RKQ1.200826.002~~V12.5.5.0.RJKCNXM~~2021-08-01
+Xiaomi Redmi Note 2 Global~~Xiaomi~~Xiaomi~~Redmi Note 2~~hermes~~hermes:5.0.2~~LRX22G~~V9.2.4.0.LHMMIEK
+Xiaomi Redmi Note 3 Pro China~~Xiaomi~~Xiaomi~~Redmi Note 3~~kenzo~~kenzo:6.0.1~~MMB29M~~V8.2.1.0.MHOCNDL
+Xiaomi Redmi Note 3 Pro SE Global~~Xiaomi~~Xiaomi~~Redmi Note 3~~kate~~kate:6.0.1~~MMB29M~~V8.1.3.0.MHRMIDI
+Xiaomi Redmi Note 4 Global~~Xiaomi~~xiaomi~~Redmi Note 4~~mido~~mido:7.0~~NRD90M~~V11.0.2.0.NCFMIXM~~2018-12-01
+Xiaomi Redmi Note 4X Global~~Xiaomi~~xiaomi~~Redmi Note 4X~~mido~~mido:7.0~~NRD90M~~V11.0.2.0.NCFMIXM~~2018-12-01
+Xiaomi Redmi Note 4 Mediatek Global~~Xiaomi~~Xiaomi~~Redmi Note 4~~nikel~~nikel:6.0~~MRA58K~~V9.2.2.0.MBFMIEK
+Xiaomi Redmi Note 5 Global~~Xiaomi~~xiaomi~~Redmi Note 5~~vince~~vince:7.1.2~~N2G47H~~V9.5.4.0.NEGMIFA
+Xiaomi Redmi Note 5 Pro Global~~Xiaomi~~xiaomi~~Redmi Note 5 Pro~~whyred~~whyred:8.1.0~~OPM1.171019.011~~V10.0.6.0.OEIMIFH~~2018-11-01
+Xiaomi Redmi Note 5A Lite Global~~Xiaomi~~xiaomi~~Redmi Note 5A~~ugglite~~ugglite:7.1.2~~N2G47H~~V9.1.2.0.NDFMIEI
+Xiaomi Redmi Note 6 Pro Global~~Xiaomi~~xiaomi~~Redmi Note 6 Pro~~tulip~~tulip:8.1.0~~OPM1.171019.011~~V10.0.5.0.OEKMIFH~~2018-10-01
+Xiaomi Redmi Note 7 Global~~Xiaomi~~xiaomi~~Redmi Note 7~~lavender~~lavender:9~~PKQ1.180904.001~~V11.0.5.0.PFGMIXM~~2020-01-05
+Xiaomi Redmi Note 7 Pro India~~Xiaomi~~xiaomi~~Redmi Note 7 Pro~~violet~~violet:9~~PKQ1.181203.001~~V10.3.13.0.PFHINXM~~2019-08-01
+Xiaomi Redmi Note 8 Global~~Xiaomi~~xiaomi~~Redmi Note 8~~ginkgo~~ginkgo:9~~PKQ1.190616.001~~V11.0.11.0.PCOMIXM~~2020-09-01
+Xiaomi Redmi Note 8T Europe~~Xiaomi~~xiaomi~~Redmi Note 8T~~willow_eea~~willow:9~~PKQ1.190616.001~~V10.3.5.0.PCXEUXM~~2019-10-01
+Xiaomi Redmi Y1 Global~~Xiaomi~~xiaomi~~Redmi Y1~~ugg~~ugg:7.1.2~~N2G47H~~V9.6.2.0.NDKMIFD~~2018-07-01
+ZTE Axon 7~~ZTE~~ZTE~~ZTE A2017~~P996A01_N~~ailsa_ii:7.1.1~~NMF26V~~20171211.005949
+ZTE Blade~~ZTE~~ZTE~~Blade A310~~P809A50_MY_MAX~~P809A50:6.0.1~~MMB29M~~20161017.095504
+ZTE Nubia Z17~~ZTE~~nubia~~NX563J~~NX563J~~NX563J:7.1.1~~NMF26X~~eng.nubia.20171019.101529
+Zuk Z2 Pro~~Zuk~~ZUK~~ZUK Z2121~~z2_row~~z2_row:7.0~~NRD90M~~2.5.435_170525

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.fleet.idrotate">
+
+    <application
+        android:label="Fleet ID Rotate"
+        android:icon="@android:drawable/ic_menu_manage">
+
+        <!-- Xposed / LSPosed module markers -->
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:value="Per-app identifier spoofing (GeerGit replacement). Rotates android_id, IMEI, serial, MACs, GSF, MediaDRM, advertising id, SIM + Build.* from a pushed profile.json. Scope target apps in LSPosed." />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="93" />
+        <!-- Zygisk/LSPosed scope hint: user picks apps in LSPosed UI -->
+        <meta-data
+            android:name="xposedscope"
+            android:resource="@array/xposed_scope" />
+    </application>
+</manifest>
