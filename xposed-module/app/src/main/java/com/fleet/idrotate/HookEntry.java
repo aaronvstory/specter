@@ -92,6 +92,18 @@ public class HookEntry implements IXposedHookLoadPackage {
             XposedHelpers.findAndHookMethod(Build.class, "getSerial",
                 XC_MethodReplacement.returnConstant(p.get("serial")));
         } catch (Throwable ignored) {}
+        // Build.VERSION.* must match the spoofed fingerprint's Android version, or an app that
+        // reads VERSION.RELEASE/INCREMENTAL/SECURITY_PATCH sees a mismatch vs the fingerprint.
+        setVersion("RELEASE", p.get("build_release"));
+        setVersion("INCREMENTAL", p.get("build_incremental"));
+        setVersion("SECURITY_PATCH", p.get("build_security_patch"));
+    }
+
+    private void setVersion(String field, String val) {
+        if (val == null) return;
+        try {
+            XposedHelpers.setStaticObjectField(Build.VERSION.class, field, val);
+        } catch (Throwable ignored) {}
     }
 
     // ---- Settings.Secure.getString(..., "android_id") ----
@@ -158,11 +170,23 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (gsf == null) return;
         Class<?> gs = XposedHelpers.findClassIfExists("com.google.android.gsf.Gservices", lp.classLoader);
         if (gs != null) {
+            // getString(..., "android_id", ...) -> fake gsf
             try {
                 XposedBridge.hookAllMethods(gs, "getString", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
                         for (Object a : param.args)
                             if ("android_id".equals(String.valueOf(a))) { param.setResult(gsf); return; }
+                    }
+                });
+            } catch (Throwable ignored) {}
+            // getLong(..., "android_id", ...) -> fake gsf parsed to long (the common numeric read)
+            try {
+                final long gsfLong = SpoofLogic.gsfToLong(gsf, -1L);
+                XposedBridge.hookAllMethods(gs, "getLong", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if (gsfLong < 0) return;
+                        for (Object a : param.args)
+                            if ("android_id".equals(String.valueOf(a))) { param.setResult(gsfLong); return; }
                     }
                 });
             } catch (Throwable ignored) {}

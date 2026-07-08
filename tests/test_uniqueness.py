@@ -50,3 +50,22 @@ def test_gsf_specifically_never_repeats():
         g = P.generate_unique(None)["gsf_id"]
         assert g not in seen, "GSF REUSE — this is the ban bug"
         seen.add(g)
+
+
+def test_corrupt_ledger_fails_closed(tmp_path):
+    """A corrupt used_ids.json must NOT be treated as empty (that would allow reuse)."""
+    import pytest
+    path = str(tmp_path / "used.json")
+    open(path, "w").write("{ this is not valid json")
+    with pytest.raises(P.UsedStoreCorrupt):
+        P.UsedStore(path)
+    # it quarantined the bad file
+    assert __import__("os").path.exists(path + ".corrupt")
+
+
+def test_non_dict_ledger_fails_closed(tmp_path):
+    import pytest
+    path = str(tmp_path / "used.json")
+    open(path, "w").write('["a", "list", "not", "a", "dict"]')
+    with pytest.raises(P.UsedStoreCorrupt):
+        P.UsedStore(path)

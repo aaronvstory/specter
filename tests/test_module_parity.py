@@ -21,3 +21,17 @@ def test_module_hooks_gsf_both_paths():
     assert 'hookAllMethods(cr, "query"' in java or "\"query\"" in java, "must hook ContentResolver.query"
     assert "com.google.android.gsf.gservices" in java, "must target the gservices provider authority"
     assert "GsfCursorWrapper" in java, "must wrap the cursor to rewrite the android_id row"
+
+
+def test_module_spoofs_build_version():
+    """Build.VERSION.* must be spoofed to match the fingerprint's Android version."""
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
+    assert "Build.VERSION.class" in java, "must spoof Build.VERSION.* static fields"
+    for f in ("RELEASE", "INCREMENTAL", "SECURITY_PATCH"):
+        assert f in java, f"Build.VERSION.{f} not spoofed"
+
+
+def test_module_hooks_gservices_getlong():
+    """GSF read via Gservices.getLong must be covered, not just getString."""
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
+    assert 'hookAllMethods(gs, "getLong"' in java, "must hook Gservices.getLong for GSF"

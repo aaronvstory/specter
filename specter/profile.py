@@ -121,6 +121,10 @@ def validate(profile):
     return (len(errors) == 0, errors)
 
 
+class UsedStoreCorrupt(RuntimeError):
+    """Raised when the used-id ledger exists but is unreadable — we fail closed, never open."""
+
+
 class UsedStore:
     """
     Persistent record of every unique id ever issued — guarantees no reuse across signups.
@@ -136,12 +140,28 @@ class UsedStore:
         self._sets = {k: set(self.data.get(k, [])) for k in UNIQUE_KEYS}
 
     def _read_disk(self):
-        if os.path.exists(self.path):
+        if not os.path.exists(self.path):
+            return {}  # absent file == a fresh ledger, legitimately empty
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("used-id ledger is not a JSON object")
+            return data
+        except Exception as e:
+            # FAIL CLOSED: a corrupt/unreadable ledger must NOT be treated as empty, or the
+            # no-reuse guarantee silently dies (every previously-issued id becomes reusable).
+            # Quarantine the bad file and refuse rather than continue with {}.
+            quarantine = self.path + ".corrupt"
             try:
-                return json.load(open(self.path))
-            except Exception:
-                return {}
-        return {}
+                os.replace(self.path, quarantine)
+            except OSError:
+                quarantine = "(could not move)"
+            raise UsedStoreCorrupt(
+                f"used-id ledger at {self.path} is unreadable ({e}); quarantined to {quarantine}. "
+                "Refusing to continue — an empty ledger would allow reusing already-issued ids. "
+                "Restore a good ledger or start fresh deliberately."
+            ) from e
 
     def _refresh_from_disk(self):
         """Reload disk state into memory (so collides() sees other processes' recent ids)."""
