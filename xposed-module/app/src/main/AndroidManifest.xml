@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.fleet.idrotate">
+
+    <!-- See EVERY installed app in the target-app picker. Android 11+ hides other packages by
+         default; this app is a root/LSPosed tool whose whole job is to target arbitrary apps. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <application
         android:label="Specter"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.Material.NoActionBar">
 
         <!-- Launcher UI. The app is BOTH an Xposed module and a launchable app, exactly like
-             GeerGit — no PC needed to generate + apply identities. -->
+             GeerGit — no PC needed to generate + apply identities. NoActionBar so our own header
+             is the only title (was showing "Specter" twice). -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true">

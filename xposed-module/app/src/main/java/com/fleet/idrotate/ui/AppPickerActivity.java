@@ -62,12 +62,28 @@ public class AppPickerActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Theme.BG);
 
+        // Title row with a Back control (this is a sub-screen; give an explicit way out).
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.setPadding(dp(10), dp(12), dp(16), dp(6));
+        Button back = new Button(this);
+        back.setText("‹ Back");
+        back.setAllCaps(false);
+        back.setTextColor(Theme.INK);
+        back.setBackground(pill(Theme.CARD2, Theme.BTN_EDGE));
+        back.setOnClickListener(v -> finish());
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.setMargins(0, 0, dp(12), 0);
+        back.setLayoutParams(blp);
         TextView title = new TextView(this);
         title.setText("Target Apps");
         title.setTextColor(Theme.GOLD);
         title.setTextSize(20);
-        title.setPadding(dp(16), dp(14), dp(16), dp(6));
-        root.addView(title);
+        titleRow.addView(back);
+        titleRow.addView(title);
+        root.addView(titleRow);
 
         // search
         EditText search = new EditText(this);
@@ -161,17 +177,34 @@ public class AppPickerActivity extends Activity {
     }
 
     private List<Row> loadApps() {
-        List<Row> out = new ArrayList<>();
-        for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
-            boolean system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
-            String label;
-            try { label = String.valueOf(pm.getApplicationLabel(ai)); } catch (Throwable t) { label = ai.packageName; }
-            Drawable icon;
-            try { icon = pm.getApplicationIcon(ai); } catch (Throwable t) { icon = null; }
-            out.add(new Row(ai.packageName, label, system, icon));
-        }
+        java.util.Map<String, Row> byPkg = new java.util.LinkedHashMap<>();
+        // Primary: every installed app (needs QUERY_ALL_PACKAGES on API 30+, declared in manifest).
+        for (ApplicationInfo ai : pm.getInstalledApplications(0)) addRow(byPkg, ai);
+        // Fallback: launchable apps via a LAUNCHER intent — returned even under tighter package
+        // visibility, so the list is never empty if getInstalledApplications is restricted.
+        try {
+            android.content.Intent launcher = new android.content.Intent(android.content.Intent.ACTION_MAIN);
+            launcher.addCategory(android.content.Intent.CATEGORY_LAUNCHER);
+            for (android.content.pm.ResolveInfo ri : pm.queryIntentActivities(launcher, 0)) {
+                if (ri.activityInfo == null) continue;
+                String pkg = ri.activityInfo.packageName;
+                if (byPkg.containsKey(pkg)) continue;
+                try { addRow(byPkg, pm.getApplicationInfo(pkg, 0)); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        List<Row> out = new ArrayList<>(byPkg.values());
         out.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
         return out;
+    }
+
+    private void addRow(java.util.Map<String, Row> byPkg, ApplicationInfo ai) {
+        if (byPkg.containsKey(ai.packageName)) return;
+        boolean system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        String label;
+        try { label = String.valueOf(pm.getApplicationLabel(ai)); } catch (Throwable t) { label = ai.packageName; }
+        Drawable icon;
+        try { icon = pm.getApplicationIcon(ai); } catch (Throwable t) { icon = null; }
+        byPkg.put(ai.packageName, new Row(ai.packageName, label, system, icon));
     }
 
     private List<Row> visible() {
@@ -188,7 +221,25 @@ public class AppPickerActivity extends Activity {
 
     private void rebuild() {
         list.removeAllViews();
-        for (Row r : visible()) list.addView(rowView(r));
+        List<Row> vis = visible();
+        // Count line so an empty/short list is never mysterious.
+        TextView count = new TextView(this);
+        count.setText(vis.size() + " app(s)" + (showSystem ? "" : " — user apps (toggle to show system)"));
+        count.setTextColor(Theme.DIM);
+        count.setTextSize(12);
+        count.setPadding(dp(4), dp(4), dp(4), dp(6));
+        list.addView(count);
+        if (vis.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText(query.isEmpty()
+                    ? "No apps found. (If this stays empty, the app may lack package-visibility access.)"
+                    : "No apps match \"" + query + "\".");
+            empty.setTextColor(Theme.SOFT);
+            empty.setPadding(dp(4), dp(8), dp(4), dp(8));
+            list.addView(empty);
+            return;
+        }
+        for (Row r : vis) list.addView(rowView(r));
     }
 
     private View rowView(final Row r) {
