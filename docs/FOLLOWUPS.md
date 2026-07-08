@@ -11,7 +11,7 @@ ban-critical fixes already applied. Tracked here so they're not lost.
   validate TAC-against-model could flag the current random TAC.* (Bigger lift — needs a TAC dataset.)
 - **Serial OEM-shape** — `serial` is a fixed 16-char uppercase hex. Real serials vary by OEM
   (length, mixed alnum) and some are permission-gated to `UNKNOWN`. Consider per-model serial patterns.
-- [PARTIAL] **Phone number E.164** — `mobile_number` is a random NANP number with no `+1`/E.164 form and no
+- [DROPPED] **Phone number E.164** — generated field had no consumer/hook/validation (dead weight per review); removed until an app is confirmed to need E.164 from getLine1Number.
   assignment check. Some apps expect `+1…` or a null Line1. Consider assigned test ranges or nullable.
 
 ## Hook coverage (defense in depth)

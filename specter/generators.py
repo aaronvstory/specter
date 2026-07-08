@@ -96,10 +96,6 @@ def phone_us(r):
     exch = str(2 + r(8)) + digits(r, 2)
     return "1" + area + exch + digits(r, 4)
 
-def phone_e164(number11):
-    """+1XXXXXXXXXX form. getLine1Number often returns E.164; provide both."""
-    return "+" + number11 if not number11.startswith("+") else number11
-
 def imsi(r, mccmnc):
     return mccmnc + digits(r, 15 - len(mccmnc))        # IMSI = MCC+MNC+MSIN, 15 digits
 
