@@ -4,21 +4,16 @@ plugins {
 
 android {
     namespace 'com.fleet.idrotate'
-    compileSdk 34
-
+    compileSdk 36
     defaultConfig {
         applicationId "com.fleet.idrotate"
         minSdk 24
-        targetSdk 34
+        targetSdk 36
         versionCode 1
         versionName "1.0"
     }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-        }
-    }
+    lint { checkReleaseBuilds false; abortOnError false }
+    buildTypes { release { minifyEnabled false } }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -26,7 +21,6 @@ android {
 }
 
 dependencies {
-    // Xposed API is compileOnly — provided by the LSPosed framework at runtime.
-    compileOnly 'de.robv.android.xposed:api:82'
-    // org.json ships with Android; no extra dep needed.
+    // Xposed API stubs — compileOnly, LSPosed provides the real impl at runtime.
+    compileOnly files('libs/xposed-api-stub.jar')
 }

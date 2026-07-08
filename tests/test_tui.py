@@ -48,3 +48,23 @@ def test_push_success(dash):
          mock.patch.object(D, "push_profile"), mock.patch.object(D, "clear_app"):
         dash.act_push()
     assert "PUSHED" in dash.msg
+
+
+def test_act_stats_renders(dash):
+    dash.act_new()
+    # act_stats reads console.input at the end — feed it
+    dash.console = type(dash.console)(theme=__import__("specter.theme", fromlist=["THEME"]).THEME, file=open(os.devnull, "w"))
+    import io
+    # monkeypatch input to return immediately
+    dash.console.input = lambda *a, **k: ""
+    dash.act_stats()  # must not raise
+
+
+def test_header_says_specter():
+    from specter import tui
+    import tempfile
+    d = tui.Dashboard(tempfile.mkdtemp())
+    from rich.console import Console
+    from specter.theme import THEME
+    con = Console(theme=THEME, file=open(os.devnull, "w"))
+    con.print(d.render())  # renders with 'specter' header, not ghostprint

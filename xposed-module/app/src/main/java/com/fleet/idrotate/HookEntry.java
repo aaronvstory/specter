@@ -19,7 +19,7 @@ import org.json.JSONObject;
 /**
  * GeerGit replacement — per-app identifier spoofing Xposed module.
  *
- * Reads a flat profile.json (pushed to /data/local/tmp/ghostprint/<pkg>.json OR a shared
+ * Reads a flat profile.json (pushed to /data/local/tmp/specter/<pkg>.json OR a shared
  * profile) and injects those fake values into the target app. Covers the SAME identifier
  * surface GeerGit 2.9.4 hooks — extracted from its dart string pool — with the fix baked in:
  * every value comes from a freshly-generated profile, so there is no stale-GSF reuse
@@ -30,14 +30,14 @@ import org.json.JSONObject;
 public class HookEntry implements IXposedHookLoadPackage {
 
     // where the push .bat drops per-app profiles
-    private static final String PROFILE_DIR = "/data/local/tmp/ghostprint/";
+    private static final String PROFILE_DIR = "/data/local/tmp/specter/";
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         final String pkg = lpparam.packageName;
         final Map<String, String> p = loadProfile(pkg);
         if (p == null || p.isEmpty()) return; // not a scoped/targeted app -> do nothing
-        XposedBridge.log("[idrotate] active for " + pkg + " (" + p.size() + " fields)");
+        XposedBridge.log("[specter] active for " + pkg + " (" + p.size() + " fields)");
 
         hookBuildFields(p);
         hookSettingsSecure(p);
@@ -56,13 +56,15 @@ public class HookEntry implements IXposedHookLoadPackage {
             File f = new File(PROFILE_DIR + pkg + ".json");
             if (!f.exists()) f = new File(PROFILE_DIR + "profile.json");
             if (!f.exists()) return m;
-            byte[] b = new byte[(int) f.length()];
             java.io.FileInputStream in = new java.io.FileInputStream(f);
-            in.read(b); in.close();
-            JSONObject j = new JSONObject(new String(b));
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096]; int n;
+            while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+            in.close();
+            JSONObject j = new JSONObject(new String(bos.toByteArray(), "UTF-8"));
             java.util.Iterator<String> it = j.keys();
             while (it.hasNext()) { String k = it.next(); m.put(k, j.getString(k)); }
-        } catch (Throwable t) { XposedBridge.log("[idrotate] profile load fail: " + t); }
+        } catch (Throwable t) { XposedBridge.log("[specter] profile load fail: " + t); }
         return m;
     }
 
@@ -90,6 +92,18 @@ public class HookEntry implements IXposedHookLoadPackage {
             XposedHelpers.findAndHookMethod(Build.class, "getSerial",
                 XC_MethodReplacement.returnConstant(p.get("serial")));
         } catch (Throwable ignored) {}
+        // Build.VERSION.* must match the spoofed fingerprint's Android version, or an app that
+        // reads VERSION.RELEASE/INCREMENTAL/SECURITY_PATCH sees a mismatch vs the fingerprint.
+        setVersion("RELEASE", p.get("build_release"));
+        setVersion("INCREMENTAL", p.get("build_incremental"));
+        setVersion("SECURITY_PATCH", p.get("build_security_patch"));
+    }
+
+    private void setVersion(String field, String val) {
+        if (val == null) return;
+        try {
+            XposedHelpers.setStaticObjectField(Build.VERSION.class, field, val);
+        } catch (Throwable ignored) {}
     }
 
     // ---- Settings.Secure.getString(..., "android_id") ----
@@ -111,9 +125,11 @@ public class HookEntry implements IXposedHookLoadPackage {
         Class<?> tm = XposedHelpers.findClassIfExists("android.telephony.TelephonyManager", lp.classLoader);
         if (tm == null) return;
         rc(tm, "getImei", p.get("imei1"));
-        rc(tm, "getImei", p.get("imei1"), int.class);          // getImei(int slot)
         rc(tm, "getDeviceId", p.get("imei1"));
-        rc(tm, "getDeviceId", p.get("imei1"), int.class);
+        // slot overloads: slot 0 -> imei1, slot 1 -> imei2 (a dual-SIM app reading both must
+        // see two DIFFERENT imeis, or the mismatch flags). Use a slot-aware hook, not a constant.
+        hookSlotImei(tm, "getImei", p.get("imei1"), p.get("imei2"));
+        hookSlotImei(tm, "getDeviceId", p.get("imei1"), p.get("imei2"));
         rc(tm, "getSubscriberId", p.get("sim_subscriber_imsi"));
         rc(tm, "getSimSerialNumber", p.get("sim_serial_iccid"));
         rc(tm, "getLine1Number", p.get("mobile_number"));
@@ -154,6 +170,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (gsf == null) return;
         Class<?> gs = XposedHelpers.findClassIfExists("com.google.android.gsf.Gservices", lp.classLoader);
         if (gs != null) {
+            // getString(..., "android_id", ...) -> fake gsf
             try {
                 XposedBridge.hookAllMethods(gs, "getString", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
@@ -162,10 +179,86 @@ public class HookEntry implements IXposedHookLoadPackage {
                     }
                 });
             } catch (Throwable ignored) {}
+            // getLong(..., "android_id", ...) -> fake gsf parsed to long (the common numeric read)
+            try {
+                final long gsfLong = SpoofLogic.gsfToLong(gsf, -1L);
+                XposedBridge.hookAllMethods(gs, "getLong", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if (gsfLong < 0) return;
+                        for (Object a : param.args)
+                            if ("android_id".equals(String.valueOf(a))) { param.setResult(gsfLong); return; }
+                    }
+                });
+            } catch (Throwable ignored) {}
         }
-        // Also intercept the raw ContentResolver query to the gservices provider
-        // (apps often read gsf android_id via a direct cursor).
-        // Left to the provider hook in most stacks; GServices helper covers the common path.
+        // Intercept the raw ContentResolver.query() to the gservices provider — the dominant
+        // real-world path (Play Services client + many apps read GSF android_id via a direct
+        // cursor against content://com.google.android.gsf.gservices, bypassing Gservices).
+        // We wrap the returned Cursor so a row whose key == "android_id" reports our fake value.
+        final XC_MethodHook wrapCursor = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                try {
+                    Object uri = param.args.length > 0 ? param.args[0] : null;
+                    if (uri == null || !String.valueOf(uri).contains("com.google.android.gsf.gservices"))
+                        return;
+                    final android.database.Cursor real = (android.database.Cursor) param.getResult();
+                    if (real == null) return;
+                    param.setResult(new GsfCursorWrapper(real, gsf));
+                } catch (Throwable ignored) {}
+            }
+        };
+        // ContentResolver.query — the common path.
+        try {
+            XposedBridge.hookAllMethods(
+                XposedHelpers.findClass("android.content.ContentResolver", lp.classLoader), "query", wrapCursor);
+        } catch (Throwable ignored) {}
+        // ContentProviderClient.query — some clients hold a provider client and query it directly,
+        // bypassing ContentResolver.query. Same wrap, so it can't leak the real GSF.
+        try {
+            XposedBridge.hookAllMethods(
+                XposedHelpers.findClass("android.content.ContentProviderClient", lp.classLoader), "query", wrapCursor);
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Wraps the gservices cursor: rows are (name, value) pairs. When the current row's name is
+     * "android_id", getString(valueColumn) returns our fake GSF instead of the real one.
+     */
+    static final class GsfCursorWrapper extends android.database.CursorWrapper {
+        private final String fakeGsf;
+        GsfCursorWrapper(android.database.Cursor c, String fakeGsf) { super(c); this.fakeGsf = fakeGsf; }
+        @Override public String getString(int columnIndex) {
+            if (isAndroidIdValueColumn(columnIndex)) return fakeGsf;
+            return super.getString(columnIndex);
+        }
+        @Override public long getLong(int columnIndex) {
+            // GSF android_id is frequently read via getLong on the value column — cover it too.
+            if (isAndroidIdValueColumn(columnIndex)) {
+                return SpoofLogic.gsfToLong(fakeGsf, super.getLong(columnIndex));
+            }
+            return super.getLong(columnIndex);
+        }
+        @Override public byte[] getBlob(int columnIndex) {
+            // Some callers read the value column as a blob — return the fake GSF's bytes.
+            if (isAndroidIdValueColumn(columnIndex)) return fakeGsf.getBytes();
+            return super.getBlob(columnIndex);
+        }
+        @Override public void copyStringToBuffer(int columnIndex, android.database.CharArrayBuffer buffer) {
+            // Cursor.copyStringToBuffer bypasses getString — cover it so it can't leak the real value.
+            if (isAndroidIdValueColumn(columnIndex)) {
+                char[] data = fakeGsf.toCharArray();
+                buffer.data = data;
+                buffer.sizeCopied = data.length;
+                return;
+            }
+            super.copyStringToBuffer(columnIndex, buffer);
+        }
+        private boolean isAndroidIdValueColumn(int columnIndex) {
+            // rows are (name, value); value is the last column. Guard against unexpected schemas.
+            try {
+                return SpoofLogic.isAndroidIdValueColumn(super.getString(0), columnIndex, getColumnCount());
+            } catch (Throwable t) { return false; }
+        }
     }
 
     // ---- MediaDrm widevine device unique id ----
@@ -186,6 +279,19 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     // ---- helpers ----
+    // slot-aware IMEI: getImei(0)->imei1, getImei(1)->imei2
+    private void hookSlotImei(Class<?> tm, String method, final String imei1, final String imei2) {
+        try {
+            XposedHelpers.findAndHookMethod(tm, method, int.class, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    int slot = (param.args.length > 0 && param.args[0] instanceof Integer)
+                            ? (Integer) param.args[0] : 0;
+                    param.setResult(SpoofLogic.imeiForSlot(slot, imei1, imei2));
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
     private void rc(Class<?> c, String method, String val, Class<?>... params) {
         if (val == null) return;
         try { XposedHelpers.findAndHookMethod(c, method, appended(params,

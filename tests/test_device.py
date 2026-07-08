@@ -27,8 +27,11 @@ def test_push_profile_calls_adb_push(tmp_path):
     calls = []
     def rec_adb(*a, **k):
         calls.append(a)
+        # adb push reports success on stderr ("N file pushed"); mimic that
+        if a and a[0] == "push":
+            return (0, "", "1 file pushed, 0 skipped.")
         return (0, "", "")
-    with mock.patch.object(D, "adb", side_effect=rec_adb), mock.patch.object(D, "su", return_value=(0, "", "")):
+    with mock.patch.object(D, "adb", side_effect=rec_adb), mock.patch.object(D, "su", return_value=(0, "OK", "")):
         D.push_profile({"android_id": "abc"}, "com.doordash.driverapp")
     assert any(a and a[0] == "push" for a in calls), "adb push not called"
 
@@ -36,15 +39,15 @@ def test_push_profile_calls_adb_push(tmp_path):
 def test_push_profile_raises_on_failure():
     with mock.patch.object(D, "adb", return_value=(1, "", "no space")), mock.patch.object(D, "su", return_value=(0, "", "")):
         with pytest.raises(D.AdbError):
-            D.push_profile({"x": "y"}, "pkg")
+            D.push_profile({"x": "y"}, "com.test.app")
 
 
 def test_clear_app_requires_success():
     with mock.patch.object(D, "su", return_value=(0, "Success", "")):
-        D.clear_app("pkg")  # no raise
+        D.clear_app("com.test.app")  # no raise
     with mock.patch.object(D, "su", return_value=(0, "Failed", "")):
         with pytest.raises(D.AdbError):
-            D.clear_app("pkg")
+            D.clear_app("com.test.app")
 
 
 def test_adb_missing_binary_raises():

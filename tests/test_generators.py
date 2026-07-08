@@ -95,3 +95,20 @@ def test_validate_rejects_garbage():
     assert not G.validate("imei1", "123")           # wrong length
     assert not G.validate("imei1", "123456789012345")  # right length, bad luhn (almost always)
     assert not G.validate("sim_serial_iccid", "8901")
+
+
+def test_gsf_within_java_long_max():
+    """GSF must never exceed Long.MAX (else Java Long.parseLong/getLong throws)."""
+    LONG_MAX = 9_223_372_036_854_775_807
+    for _ in range(5000):
+        v = int(G.gsf(r))
+        assert 0 < v <= LONG_MAX, f"gsf {v} exceeds Long.MAX"
+        assert G.validate("gsf_id", str(v))
+
+
+def test_advertising_id_is_rfc4122_v4():
+    for _ in range(500):
+        v = G.uuid(r)
+        assert v[14] == "4", f"version nibble not 4: {v}"
+        assert v[19] in "89ab", f"variant bits wrong: {v}"
+        assert G.validate("advertising_id", v)
