@@ -152,4 +152,35 @@ public final class IdentityService {
     public void apply(String pkg, Map<String, String> profile) {
         RootWriter.write(shell, pkg, toJson(profile));
     }
+
+    /**
+     * Regenerate a SINGLE identifier in-place (the per-card RANDOMIZE button). Carrier-linked keys
+     * (imsi/iccid) are regenerated against the profile's existing carrier so coherence is kept;
+     * imei1/imei2 keep the existing device's TAC. Returns the new value.
+     */
+    public String randomizeField(Map<String, String> p, String key) {
+        Generators.Rng r = secureRng();
+        String mccmnc = p.get("sim_operator_mccmnc");
+        String tac = p.getOrDefault("imei1", "").length() >= 8 ? p.get("imei1").substring(0, 8) : null;
+        String v;
+        switch (key) {
+            case "android_id":          v = Generators.hex16(r); break;
+            case "serial":              v = Generators.hex16upper(r); break;
+            case "media_drm_id":        v = Generators.hex32(r); break;
+            case "imei1": case "imei2": v = Generators.imei(r, tac); break;
+            case "advertising_id":      v = Generators.uuid(r); break;
+            case "bluetooth_mac":
+            case "wifi_mac":            v = Generators.macUpper(r); break;
+            case "wifi_bssid":          v = Generators.macLower(r); break;
+            case "wifi_ssid":           v = Generators.ssid(r); break;
+            case "mobile_number":       v = Generators.phoneUs(r); break;
+            case "sim_subscriber_imsi": v = Generators.imsi(r, mccmnc); break;
+            case "sim_serial_iccid":    v = Generators.iccid(r, mccmnc); break;
+            case "gsf_id":              v = Generators.gsf(r); break;
+            case "gmail":               v = Generators.gmail(r); break;
+            default:                    return p.get(key); // Build.* etc. rotate via the device bundle
+        }
+        p.put(key, v);
+        return v;
+    }
 }

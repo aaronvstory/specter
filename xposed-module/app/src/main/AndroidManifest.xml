@@ -6,16 +6,20 @@
         android:label="Fleet ID Rotate"
         android:icon="@android:drawable/ic_menu_manage">
 
-        <!-- Launcher UI (self-apply gate). The app is BOTH an Xposed module and a launchable app,
-             exactly like GeerGit — no PC needed to generate + apply identities. -->
+        <!-- Launcher UI. The app is BOTH an Xposed module and a launchable app, exactly like
+             GeerGit — no PC needed to generate + apply identities. -->
         <activity
-            android:name=".ui.DebugActivity"
+            android:name=".ui.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Debug self-apply gate (non-launcher; kept for adb-driven testing). -->
+        <activity
+            android:name=".ui.DebugActivity"
+            android:exported="true" />
 
         <!-- Xposed / LSPosed module markers -->
         <meta-data
