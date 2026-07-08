@@ -23,7 +23,28 @@ value against the injected profile `/data/local/tmp/specter/com.liuzh.deviceinfo
 | WiFi MAC / Bluetooth MAC | (injected) | "Unknown" / "Click to grant permission" | ⚠️ permission-gated in DevInfo, not checkable this way. |
 | Board / Hardware | (not spoofed fields) | flame | expected — real, we don't rotate these. |
 
-## Two real hooks to fix (root cause under investigation)
+## ✅ RESOLVED (2026-07-08): both hooks fixed, full set proven spoofing + rotating
+
+Two decompiles (dexdump) confirmed the APIs; the fix was in hook robustness, not targeting:
+- **Android Device ID** = `Settings.Secure.getString(cr, "android_id")`. Our hook targeted the exact
+  2-arg overload but still leaked the real value (GSF/serial spoofed in the SAME process — so not a
+  load/scope issue). Fix: hook ALL getString/getStringForUser overloads on Settings.Secure + System via
+  `hookAllMethods` and scan every arg for the key (`SpoofLogic.argsContainKey`), not one fixed position.
+- **Advertising ID** = `AdvertisingIdClient.getAdvertisingIdInfo(ctx).getId()`. Hooking only `Info.getId`
+  leaked when getId is inlined / built from a Binder IPC result. Fix: also hook the static factory
+  `getAdvertisingIdInfo(Context)` and replace the whole returned `Info` (reflection ctor `(String,boolean)`,
+  preserving the real limit-ad-tracking flag).
+
+**On-screen proof (DevInfo Device tab, hook `[specter] active` confirmed):**
+- Profile A: android_id `49ee68d4b31558af` ✅, adv `e7e144a5-…` ✅, GSF `63E2EAF7F8F86588` ✅, serial `D729D57EDC950EFB` ✅ — ALL match injected.
+- Rotated to Profile B: android_id `86d5a7ab6a0e8244` ✅, adv `9a1fd153-2b2b-4d8f-9d64-d40b9d8aaf10` ✅,
+  GSF `16510F4D7C69C755` (hex of `1608083367422183253`) ✅, serial `DCA89A6224D9E9FF` ✅ — every value CHANGED to B.
+
+So the FULL identifier set spoofs AND rotates on-device — the real GeerGit-parity milestone. Regression
+tests added (`SpoofLogic.argsContainKey`, 6 asserts); JVM suite 34,024 green. Note: DevInfo ad-gates fresh
+launches (privacy consent + Play/Temu interstitials after `clear`); drive past with BACK + force-stop vending.
+
+## Two real hooks to fix (root cause — RESOLVED above)
 1. **Android Device ID** — DevInfo displays a value that is neither our injected android_id nor the shell's
    Settings.Secure android_id (`b1e2d78a800c9fe2`). Settings.Secure android_id is per-app-scoped on Android 8+,
    so DevInfo's real value differs from shell. Our `hookSettingsSecure` hooks

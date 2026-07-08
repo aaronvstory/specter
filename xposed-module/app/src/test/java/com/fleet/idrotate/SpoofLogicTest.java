@@ -32,6 +32,16 @@ public class SpoofLogicTest {
         check(SpoofLogic.gsfToLong("not-a-number", 77L) == 77L, "garbage -> fallback");
         check(SpoofLogic.gsfToLong("", 88L) == 88L, "empty -> fallback");
 
+        // argsContainKey: the android_id key found at any position across getString overloads.
+        // Regression: single-fixed-overload hook leaked real android_id in DevInfo (GSF/serial
+        // spoofed but android_id did not); scanning all args fixes it.
+        check(SpoofLogic.argsContainKey(new Object[]{null, "android_id"}, "android_id"), "key at index 1 (getString(cr,name))");
+        check(SpoofLogic.argsContainKey(new Object[]{null, "android_id", 0}, "android_id"), "key at index 1 (getStringForUser)");
+        check(!SpoofLogic.argsContainKey(new Object[]{null, "bluetooth_name"}, "android_id"), "other setting not matched");
+        check(!SpoofLogic.argsContainKey(new Object[]{}, "android_id"), "empty args safe");
+        check(!SpoofLogic.argsContainKey(null, "android_id"), "null args safe");
+        check(SpoofLogic.argsContainKey(new Object[]{"android_id"}, "android_id"), "key at index 0");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }
