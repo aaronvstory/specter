@@ -25,3 +25,10 @@ ban-critical fixes already applied. Tracked here so they're not lost.
 Already fixed: fail-closed ledger, Build.VERSION.*, Gservices.getLong, concurrent-duplicate race,
 ICCID carrier coherence, GSF Long overflow, advertising-id v4, IMEI slot handling, GSF provider hook,
 pkg injection validation.
+
+## CI note
+The GitHub Actions workflow (`.github/workflows/ci.yml`) is valid but currently returns
+`startup_failure` with no logs on this private repo — the signature of exhausted Actions
+minutes on the account's free private-repo tier (Actions is enabled; YAML validates). The
+suite is the source of truth locally (`uv run … pytest`) and the PR review bots run on every
+push. CI will execute once minutes reset or the repo is made public.
