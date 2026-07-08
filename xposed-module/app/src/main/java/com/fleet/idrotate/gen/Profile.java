@@ -111,6 +111,10 @@ public final class Profile {
     /** Per-field format + cross-field coherence. Returns the list of errors (empty == valid). */
     public static List<String> validate(Map<String, String> p) {
         List<String> errors = new ArrayList<>();
+        // Every profile key must be PRESENT — a truncated profile (missing keys) would otherwise pass
+        // format checks and could be written to the target app, leaking real ids for the gaps.
+        for (String k : KEYS)
+            if (p.get(k) == null) errors.add("missing key: " + k);
         for (Map.Entry<String, String> e : p.entrySet())
             if (!Generators.validate(e.getKey(), String.valueOf(e.getValue())))
                 errors.add("invalid format: " + e.getKey() + "=" + e.getValue());

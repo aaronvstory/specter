@@ -63,6 +63,14 @@ public class ProfileTest {
             check(p.get("imei1").substring(0, 8).equals(p.get("imei2").substring(0, 8)), "imeis share TAC s=" + s);
         }
 
+        // A truncated profile (missing a key) must FAIL validation — else it could be written to
+        // the target app and leak the real id for the missing field.
+        Map<String, String> truncated = new HashMap<>(Profile.build(seeded(9), devs, true));
+        truncated.remove("android_id");
+        check(!Profile.isValid(truncated), "missing key -> invalid");
+        check(Profile.validate(truncated).stream().anyMatch(s -> s.contains("missing key: android_id")),
+                "missing key reported by name");
+
         // Determinism: same seed -> same profile.
         Map<String, String> a = Profile.build(seeded(77), devs, true);
         Map<String, String> b = Profile.build(seeded(77), devs, true);

@@ -33,13 +33,16 @@ public final class IdentityService {
     public IdentityService(Context ctx) { this(ctx, new RootWriter.SuShell()); }
     public IdentityService(Context ctx, RootWriter.Shell shell) { this.ctx = ctx; this.shell = shell; }
 
+    // One SecureRandom for the process — reseeding a fresh instance per call is a known perf
+    // anti-pattern and needless; SecureRandom is thread-safe.
+    private static final SecureRandom RND = new SecureRandom();
+
     /** SecureRandom-backed production RNG. */
     static Generators.Rng secureRng() {
-        final SecureRandom rnd = new SecureRandom();
         return new Generators.Rng() {
-            @Override public int next(int n) { return rnd.nextInt(n); }
+            @Override public int next(int n) { return RND.nextInt(n); }
             @Override public long nextLong(long n) {
-                long v = rnd.nextLong() & Long.MAX_VALUE; // non-negative
+                long v = RND.nextLong() & Long.MAX_VALUE; // non-negative
                 return v % n;
             }
         };
@@ -101,6 +104,12 @@ public final class IdentityService {
         }
     }
 
+    // Serializes ledger read-modify-write across ALL IdentityService instances in this process
+    // (MainActivity + DebugActivity, each on background threads) so concurrent generate/randomize
+    // can't lose records — the ban-critical no-reuse guarantee. Single-process, so an in-JVM lock
+    // suffices (no cross-process file lock needed on-device).
+    private static final Object LEDGER_LOCK = new Object();
+
     void saveLedger(UsedStore store) {
         try {
             JSONObject j = new JSONObject();
@@ -110,7 +119,12 @@ public final class IdentityService {
             try (FileOutputStream out = new FileOutputStream(tmp)) {
                 out.write(j.toString(2).getBytes("UTF-8"));
             }
-            tmp.renameTo(ledgerFile()); // atomic-ish replace
+            File dest = ledgerFile();
+            dest.delete(); // renameTo won't overwrite on some filesystems; clear first
+            if (!tmp.renameTo(dest)) {
+                // FAIL CLOSED: an unpersisted ledger means new ids could be reissued — never swallow.
+                throw new java.io.IOException("could not replace ledger " + dest.getName());
+            }
         } catch (Exception e) {
             throw new RuntimeException("failed to persist ledger: " + e.getMessage(), e);
         }
@@ -118,16 +132,18 @@ public final class IdentityService {
 
     /** Generate a fresh, validated, never-before-used profile and record it. */
     public Map<String, String> generateUnique() {
-        List<List<String>> devices = loadDevices();
-        UsedStore store = loadLedger();
-        Generators.Rng r = secureRng();
-        for (int tries = 0; tries < 1000; tries++) {
-            Map<String, String> p = Profile.build(r, devices, true);
-            if (!Profile.isValid(p)) continue;
-            if (store.collides(p)) continue;
-            if (store.record(p)) { saveLedger(store); return p; }
+        synchronized (LEDGER_LOCK) {
+            List<List<String>> devices = loadDevices();
+            UsedStore store = loadLedger();
+            Generators.Rng r = secureRng();
+            for (int tries = 0; tries < 1000; tries++) {
+                Map<String, String> p = Profile.build(r, devices, true);
+                if (!Profile.isValid(p)) continue;
+                if (store.collides(p)) continue;
+                if (store.record(p)) { saveLedger(store); return p; }
+            }
+            throw new RuntimeException("could not generate a fresh valid profile in 1000 tries");
         }
-        throw new RuntimeException("could not generate a fresh valid profile in 1000 tries");
     }
 
     /** Serialize a profile to the flat JSON string the hook consumes. */
@@ -160,8 +176,11 @@ public final class IdentityService {
 
     /** Generate one candidate value for {@code key} (no ledger interaction). Null for non-rotatable keys. */
     private static String genOne(Generators.Rng r, Map<String, String> p, String key) {
+        // Fallback carrier so a carrier-linked regen (imsi/iccid) can't NPE on an incomplete profile.
         String mccmnc = p.get("sim_operator_mccmnc");
-        String tac = p.getOrDefault("imei1", "").length() >= 8 ? p.get("imei1").substring(0, 8) : null;
+        if (mccmnc == null || mccmnc.isEmpty()) mccmnc = "310260"; // T-Mobile
+        String imei1 = p.getOrDefault("imei1", "");
+        String tac = imei1.length() >= 8 ? imei1.substring(0, 8) : null;
         switch (key) {
             case "android_id":          return Generators.hex16(r);
             case "serial":              return Generators.hex16upper(r);
@@ -199,17 +218,19 @@ public final class IdentityService {
             if (v != null) p.put(key, v);
             return p.get(key);
         }
-        UsedStore store = loadLedger();
-        for (int tries = 0; tries < 1000; tries++) {
-            String v = genOne(r, p, key);
-            if (v == null) return p.get(key);
-            if (!Generators.validate(key, v)) continue;
-            if (store.recordOne(key, v)) {   // claims it iff never issued before for this key
-                saveLedger(store);
-                p.put(key, v);
-                return v;
+        synchronized (LEDGER_LOCK) {
+            UsedStore store = loadLedger();
+            for (int tries = 0; tries < 1000; tries++) {
+                String v = genOne(r, p, key);
+                if (v == null) return p.get(key);
+                if (!Generators.validate(key, v)) continue;
+                if (store.recordOne(key, v)) {   // claims it iff never issued before for this key
+                    saveLedger(store);
+                    p.put(key, v);
+                    return v;
+                }
             }
+            throw new RuntimeException("could not randomize a fresh " + key + " in 1000 tries");
         }
-        throw new RuntimeException("could not randomize a fresh " + key + " in 1000 tries");
     }
 }

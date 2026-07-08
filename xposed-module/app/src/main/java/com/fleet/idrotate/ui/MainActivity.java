@@ -139,6 +139,11 @@ public class MainActivity extends Activity {
     }
 
     private void apply() {
+        if (profile.isEmpty()) {
+            // Never write an empty/partial profile — that would leak the REAL device ids.
+            toast("No identity yet — RANDOMIZE ALL first.");
+            return;
+        }
         status.setText("Applying to " + TARGET + " …");
         final Map<String, String> snapshot = new LinkedHashMap<>(profile);
         new Thread(() -> {
@@ -198,11 +203,21 @@ public class MainActivity extends Activity {
 
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
-        Button edit = flatButton("EDIT", 0xFF2A2F3A, v -> editField(f, val));
+        Button edit = flatButton("EDIT", 0xFF2A2F3A, v -> {
+            if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
+            editField(f, val);
+        });
         Button rand = flatButton("RANDOMIZE", 0xFF2A2F3A, v -> {
-            String nv = svc.randomizeField(profile, f.key);
-            val.setText(nv);
-            status.setText(f.label + " randomized — APPLY to push.");
+            if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
+            // ledger read-modify-write + su-free work off the UI thread; update UI on completion
+            new Thread(() -> {
+                try {
+                    final String nv = svc.randomizeField(profile, f.key);
+                    runOnUiThread(() -> { val.setText(nv); status.setText(f.label + " randomized — APPLY to push."); });
+                } catch (Throwable t) {
+                    runOnUiThread(() -> status.setText("Randomize failed: " + t.getMessage()));
+                }
+            }).start();
         });
         btns.addView(edit);
         btns.addView(rand);
