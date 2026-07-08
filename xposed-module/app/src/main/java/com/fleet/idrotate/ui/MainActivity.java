@@ -214,6 +214,11 @@ public class MainActivity extends Activity {
         if (targets.isEmpty()) { toast("No target apps selected — pick some in Settings."); return; }
         // enabled-only profile: disabled ids are omitted so the hook leaves them REAL.
         final Map<String, String> toApply = enabledProfile();
+        if (toApply.isEmpty()) {
+            // All ids disabled -> the hook would spoof nothing (every id stays REAL). Refuse.
+            toast("Every identifier is toggled off — nothing to spoof. Enable some first.");
+            return;
+        }
         final List<String> pkgs = new ArrayList<>(targets);
         status.setText("Applying to " + pkgs.size() + " app(s)…");
         new Thread(() -> {

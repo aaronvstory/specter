@@ -106,7 +106,17 @@ public class AppPickerActivity extends Activity {
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
         btns.setPadding(dp(12), 0, dp(12), dp(4));
-        btns.addView(smallBtn("Select all (shown)", () -> { for (Row r : visible()) selected.add(r.pkg); rebuild(); }));
+        btns.addView(smallBtn("Select all (shown)", () -> {
+            int skipped = 0;
+            for (Row r : visible()) {
+                if (Targets.isRisky(r.pkg)) { skipped++; continue; } // don't bulk-add fleet/system apps
+                selected.add(r.pkg);
+            }
+            if (skipped > 0) Toast.makeText(this, "Skipped " + skipped
+                    + " fleet/system app(s) — add those individually if you really mean to.",
+                    Toast.LENGTH_LONG).show();
+            rebuild();
+        }));
         btns.addView(smallBtn("Deselect all", () -> { selected.clear(); rebuild(); }));
         root.addView(btns);
 
@@ -136,21 +146,32 @@ public class AppPickerActivity extends Activity {
         root.addView(save);
 
         setContentView(root);
-        loadApps();
-        rebuild();
+
+        // Enumerating installed apps + loading each icon is slow; do it off the UI thread so the
+        // picker opens instantly and doesn't jank on devices with many apps.
+        TextView loading = new TextView(this);
+        loading.setText("Loading apps…");
+        loading.setTextColor(Theme.DIM);
+        loading.setPadding(dp(4), dp(12), dp(4), dp(12));
+        list.addView(loading);
+        new Thread(() -> {
+            final List<Row> loaded = loadApps();
+            runOnUiThread(() -> { rows.clear(); rows.addAll(loaded); rebuild(); });
+        }).start();
     }
 
-    private void loadApps() {
-        rows.clear();
+    private List<Row> loadApps() {
+        List<Row> out = new ArrayList<>();
         for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
             boolean system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
             String label;
             try { label = String.valueOf(pm.getApplicationLabel(ai)); } catch (Throwable t) { label = ai.packageName; }
             Drawable icon;
             try { icon = pm.getApplicationIcon(ai); } catch (Throwable t) { icon = null; }
-            rows.add(new Row(ai.packageName, label, system, icon));
+            out.add(new Row(ai.packageName, label, system, icon));
         }
-        rows.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
+        out.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
+        return out;
     }
 
     private List<Row> visible() {
