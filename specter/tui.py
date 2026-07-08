@@ -104,7 +104,8 @@ class Dashboard:
         left = Text.assemble(("issued (never reused): ", "muted"), (str(count), "fresh"),
                              ("   target: ", "muted"), (self.pkg, "device"))
         keys = Text("  [n]ew  [p]ush  [s]ave  [r]euse  [d]etails  [v]erify  [t]stats  [q]uit", style="muted")
-        status = Text(self.msg, style=self.msg_style)
+        # msg may contain rich markup (chips) — render it, don't print the tags literally
+        status = Text.from_markup(self.msg) if "[" in self.msg else Text(self.msg, style=self.msg_style)
         return Group(left, status, keys)
 
     def render(self):
