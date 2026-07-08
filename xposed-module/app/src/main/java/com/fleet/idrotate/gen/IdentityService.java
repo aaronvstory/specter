@@ -153,34 +153,63 @@ public final class IdentityService {
         RootWriter.write(shell, pkg, toJson(profile));
     }
 
+    private static boolean isUniqueKey(String key) {
+        for (String k : Profile.UNIQUE_KEYS) if (k.equals(key)) return true;
+        return false;
+    }
+
+    /** Generate one candidate value for {@code key} (no ledger interaction). Null for non-rotatable keys. */
+    private static String genOne(Generators.Rng r, Map<String, String> p, String key) {
+        String mccmnc = p.get("sim_operator_mccmnc");
+        String tac = p.getOrDefault("imei1", "").length() >= 8 ? p.get("imei1").substring(0, 8) : null;
+        switch (key) {
+            case "android_id":          return Generators.hex16(r);
+            case "serial":              return Generators.hex16upper(r);
+            case "media_drm_id":        return Generators.hex32(r);
+            case "imei1": case "imei2": return Generators.imei(r, tac);
+            case "advertising_id":      return Generators.uuid(r);
+            case "bluetooth_mac":
+            case "wifi_mac":            return Generators.macUpper(r);
+            case "wifi_bssid":          return Generators.macLower(r);
+            case "wifi_ssid":           return Generators.ssid(r);
+            case "mobile_number":       return Generators.phoneUs(r);
+            case "sim_subscriber_imsi": return Generators.imsi(r, mccmnc);
+            case "sim_serial_iccid":    return Generators.iccid(r, mccmnc);
+            case "gsf_id":              return Generators.gsf(r);
+            case "gmail":               return Generators.gmail(r);
+            default:                    return null; // Build.* etc. rotate via the device bundle
+        }
+    }
+
     /**
      * Regenerate a SINGLE identifier in-place (the per-card RANDOMIZE button). Carrier-linked keys
      * (imsi/iccid) are regenerated against the profile's existing carrier so coherence is kept;
-     * imei1/imei2 keep the existing device's TAC. Returns the new value.
+     * imei1/imei2 keep the existing device's TAC. Returns the new value (or the old one for
+     * non-rotatable keys).
+     *
+     * BAN-CRITICAL: for globally-unique keys, the new value is checked against the no-reuse ledger
+     * and recorded + persisted — exactly like generateUnique(). Without this, a user who randomized
+     * a single id then applied would leak a value that a later generateUnique() could hand out again
+     * (the "coordinated accounts" reuse this tool exists to prevent).
      */
     public String randomizeField(Map<String, String> p, String key) {
         Generators.Rng r = secureRng();
-        String mccmnc = p.get("sim_operator_mccmnc");
-        String tac = p.getOrDefault("imei1", "").length() >= 8 ? p.get("imei1").substring(0, 8) : null;
-        String v;
-        switch (key) {
-            case "android_id":          v = Generators.hex16(r); break;
-            case "serial":              v = Generators.hex16upper(r); break;
-            case "media_drm_id":        v = Generators.hex32(r); break;
-            case "imei1": case "imei2": v = Generators.imei(r, tac); break;
-            case "advertising_id":      v = Generators.uuid(r); break;
-            case "bluetooth_mac":
-            case "wifi_mac":            v = Generators.macUpper(r); break;
-            case "wifi_bssid":          v = Generators.macLower(r); break;
-            case "wifi_ssid":           v = Generators.ssid(r); break;
-            case "mobile_number":       v = Generators.phoneUs(r); break;
-            case "sim_subscriber_imsi": v = Generators.imsi(r, mccmnc); break;
-            case "sim_serial_iccid":    v = Generators.iccid(r, mccmnc); break;
-            case "gsf_id":              v = Generators.gsf(r); break;
-            case "gmail":               v = Generators.gmail(r); break;
-            default:                    return p.get(key); // Build.* etc. rotate via the device bundle
+        if (!isUniqueKey(key)) {
+            String v = genOne(r, p, key);          // e.g. wifi_ssid — not ledgered
+            if (v != null) p.put(key, v);
+            return p.get(key);
         }
-        p.put(key, v);
-        return v;
+        UsedStore store = loadLedger();
+        for (int tries = 0; tries < 1000; tries++) {
+            String v = genOne(r, p, key);
+            if (v == null) return p.get(key);
+            if (!Generators.validate(key, v)) continue;
+            if (store.recordOne(key, v)) {   // claims it iff never issued before for this key
+                saveLedger(store);
+                p.put(key, v);
+                return v;
+            }
+        }
+        throw new RuntimeException("could not randomize a fresh " + key + " in 1000 tries");
     }
 }

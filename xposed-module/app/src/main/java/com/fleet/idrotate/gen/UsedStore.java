@@ -62,6 +62,25 @@ public final class UsedStore {
         return true;
     }
 
+    /** True if this single value was already issued for {@code key}. */
+    public boolean containsValue(String key, String value) {
+        Set<String> s = sets.get(key);
+        return s != null && s.contains(value);
+    }
+
+    /**
+     * Record ONE fresh unique value (the per-field RANDOMIZE path). Returns false if it was already
+     * issued for {@code key} (caller should re-roll), true if newly claimed. Only valid for keys in
+     * {@link Profile#UNIQUE_KEYS}; a no-op returning true for non-unique keys.
+     */
+    public boolean recordOne(String key, String value) {
+        Set<String> s = sets.get(key);
+        if (s == null) return true;            // not a ban-critical unique key
+        if (s.contains(value)) return false;   // already issued — reuse guard
+        s.add(value);
+        return true;
+    }
+
     /** Number of identities recorded (by gsf_id count, matching Python UsedStore.count()). */
     public int count() { return sets.get("gsf_id").size(); }
 

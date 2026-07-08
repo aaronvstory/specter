@@ -99,6 +99,19 @@ public class ProfileTest {
         collide.put("android_id", "deadbeefdeadbeef");
         check(restored.collides(collide), "fromParsed restores prior unique ids");
 
+        // recordOne: the per-field RANDOMIZE ledger path (ban-critical — a single randomized id
+        // must ALSO be recorded, else a later generateUnique could reissue it -> coordinated accounts).
+        UsedStore one = new UsedStore();
+        check(one.recordOne("gsf_id", "111222333"), "recordOne new value claims it");
+        check(one.containsValue("gsf_id", "111222333"), "recordOne persists to the set");
+        check(!one.recordOne("gsf_id", "111222333"), "recordOne rejects a re-issue (reuse guard)");
+        check(one.count() == 1, "recordOne bumps the ledger count");
+        // non-unique key is a no-op success (wifi_ssid is not ban-critical)
+        check(one.recordOne("wifi_ssid", "NETGEAR12"), "recordOne no-op true for non-unique key");
+        check(!one.containsValue("wifi_ssid", "NETGEAR12"), "non-unique key not tracked");
+        // a value randomized into one key doesn't false-collide a different key
+        check(one.recordOne("android_id", "111222333"), "same string, different key -> distinct");
+
         System.out.println("Profile+UsedStore: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }
