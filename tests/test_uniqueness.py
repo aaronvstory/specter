@@ -11,12 +11,33 @@ from specter import profile as P
 from specter.identifiers import UNIQUE_KEYS
 
 
-def test_no_collisions_in_2000_generations():
+def test_ledger_enforces_uniqueness(tmp_path):
+    """
+    With a used-ledger (the real usage), NO unique id ever repeats — even IMEI, whose keyspace is
+    intentionally smaller now (fixed brand TAC + 6-digit serial) for coherence. The ledger's
+    retry-on-collision is the guarantee. 400 gens exercises retries without the O(n^2) disk cost
+    of a huge loop (per-signup use is one-at-a-time; the statistical generator check is separate).
+    """
+    import os
+    store = P.UsedStore(os.path.join(tmp_path, "used.json"))
     seen = {k: set() for k in UNIQUE_KEYS}
-    for _ in range(2000):
-        p = P.generate_unique(None)
+    for _ in range(400):
+        p = P.generate_unique(store)
         for k in UNIQUE_KEYS:
             assert p[k] not in seen[k], f"REUSE on {k}: {p[k]}"
+            seen[k].add(p[k])
+
+
+def test_generator_high_entropy_fields_rarely_collide():
+    """The high-entropy fields (android_id, gsf, serial, etc.) collide ~never even WITHOUT a
+    ledger — fast in-memory check. IMEI is excluded (small keyspace by design; ledger covers it)."""
+    from specter import profile as P
+    HIGH_ENTROPY = [k for k in UNIQUE_KEYS if k not in ("imei1", "imei2")]
+    seen = {k: set() for k in HIGH_ENTROPY}
+    for _ in range(2000):
+        p = P.build_profile(P._csprng, P._load_devices())
+        for k in HIGH_ENTROPY:
+            assert p[k] not in seen[k], f"generator collision on {k}: {p[k]}"
             seen[k].add(p[k])
 
 

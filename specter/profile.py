@@ -262,13 +262,17 @@ def generate_unique(used_store, us_bias=True, seed=None, max_tries=1000):
     """Generate a validated, never-before-used profile. Records it atomically. Returns the profile."""
     devices = _load_devices()
     r = _seeded(seed) if seed is not None else _csprng
+    # Refresh from disk ONCE up front (see other processes' latest ids) rather than on every
+    # retry — record() does the authoritative locked re-read+reject, and a failed record()
+    # updates the in-memory set, so per-retry disk reads would be redundant O(n^2) work.
+    if used_store is not None:
+        used_store._refresh_from_disk()
     for _ in range(max_tries):
         p = build_profile(r, devices, us_bias)
         ok, errs = validate(p)
         if not ok:
             continue
         if used_store is not None:
-            used_store._refresh_from_disk()  # see other processes' latest ids before checking
             if used_store.collides(p):
                 continue
             # record() returns False if a concurrent caller claimed these ids first — retry then,
