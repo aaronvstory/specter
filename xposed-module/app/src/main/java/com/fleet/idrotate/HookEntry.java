@@ -195,20 +195,28 @@ public class HookEntry implements IXposedHookLoadPackage {
         // real-world path (Play Services client + many apps read GSF android_id via a direct
         // cursor against content://com.google.android.gsf.gservices, bypassing Gservices).
         // We wrap the returned Cursor so a row whose key == "android_id" reports our fake value.
+        final XC_MethodHook wrapCursor = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                try {
+                    Object uri = param.args.length > 0 ? param.args[0] : null;
+                    if (uri == null || !String.valueOf(uri).contains("com.google.android.gsf.gservices"))
+                        return;
+                    final android.database.Cursor real = (android.database.Cursor) param.getResult();
+                    if (real == null) return;
+                    param.setResult(new GsfCursorWrapper(real, gsf));
+                } catch (Throwable ignored) {}
+            }
+        };
+        // ContentResolver.query — the common path.
         try {
-            Class<?> cr = XposedHelpers.findClass("android.content.ContentResolver", lp.classLoader);
-            XposedBridge.hookAllMethods(cr, "query", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) {
-                    try {
-                        Object uri = param.args.length > 0 ? param.args[0] : null;
-                        if (uri == null || !String.valueOf(uri).contains("com.google.android.gsf.gservices"))
-                            return;
-                        final android.database.Cursor real = (android.database.Cursor) param.getResult();
-                        if (real == null) return;
-                        param.setResult(new GsfCursorWrapper(real, gsf));
-                    } catch (Throwable ignored) {}
-                }
-            });
+            XposedBridge.hookAllMethods(
+                XposedHelpers.findClass("android.content.ContentResolver", lp.classLoader), "query", wrapCursor);
+        } catch (Throwable ignored) {}
+        // ContentProviderClient.query — some clients hold a provider client and query it directly,
+        // bypassing ContentResolver.query. Same wrap, so it can't leak the real GSF.
+        try {
+            XposedBridge.hookAllMethods(
+                XposedHelpers.findClass("android.content.ContentProviderClient", lp.classLoader), "query", wrapCursor);
         } catch (Throwable ignored) {}
     }
 
@@ -229,6 +237,21 @@ public class HookEntry implements IXposedHookLoadPackage {
                 return SpoofLogic.gsfToLong(fakeGsf, super.getLong(columnIndex));
             }
             return super.getLong(columnIndex);
+        }
+        @Override public byte[] getBlob(int columnIndex) {
+            // Some callers read the value column as a blob — return the fake GSF's bytes.
+            if (isAndroidIdValueColumn(columnIndex)) return fakeGsf.getBytes();
+            return super.getBlob(columnIndex);
+        }
+        @Override public void copyStringToBuffer(int columnIndex, android.database.CharArrayBuffer buffer) {
+            // Cursor.copyStringToBuffer bypasses getString — cover it so it can't leak the real value.
+            if (isAndroidIdValueColumn(columnIndex)) {
+                char[] data = fakeGsf.toCharArray();
+                buffer.data = data;
+                buffer.sizeCopied = data.length;
+                return;
+            }
+            super.copyStringToBuffer(columnIndex, buffer);
         }
         private boolean isAndroidIdValueColumn(int columnIndex) {
             // rows are (name, value); value is the last column. Guard against unexpected schemas.

@@ -35,3 +35,16 @@ def test_module_hooks_gservices_getlong():
     """GSF read via Gservices.getLong must be covered, not just getString."""
     java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
     assert 'hookAllMethods(gs, "getLong"' in java, "must hook Gservices.getLong for GSF"
+
+
+def test_module_hooks_contentproviderclient():
+    """GSF via ContentProviderClient.query must be covered (some clients bypass ContentResolver)."""
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
+    assert "ContentProviderClient" in java, "must hook ContentProviderClient.query"
+
+
+def test_cursor_wrapper_covers_blob_and_buffer():
+    """The GSF cursor must not leak the real value via getBlob or copyStringToBuffer."""
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
+    assert "getBlob" in java, "cursor must override getBlob"
+    assert "copyStringToBuffer" in java, "cursor must override copyStringToBuffer"
