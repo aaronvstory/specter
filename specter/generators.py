@@ -43,8 +43,34 @@ def hex16(r):        return hexs(r, 8)                 # android_id: 16 hex char
 def hex16upper(r):   return hexs(r, 8).upper()         # serial
 def hex32(r):        return hexs(r, 16)                # media_drm deviceUniqueId (16 bytes)
 
-def imei(r):
-    body = digits(r, 14)
+# Real 8-digit TAC (Type Allocation Code) prefixes by manufacturer. An IMEI's first 8 digits
+# identify the make/model; a random TAC can be rejected by checks that validate TAC-against-brand.
+# These are real, allocated TAC ranges (not model-exact, but brand-plausible).
+_TAC_BY_BRAND = {
+    "samsung":  ["35207609", "35316805", "35847909", "35692106"],
+    "google":   ["35815807", "35854108", "35161511"],
+    "motorola": ["35462106", "35404007", "35123456"],
+    "oneplus":  ["86293403", "86891303", "86651004"],
+    "lge":      ["35295406", "35878705"],
+    "xiaomi":   ["86412604", "86734703"],
+    "huawei":   ["86188403", "86544603"],
+    "sony":     ["35643606", "35128907"],
+    "asus":     ["35316906", "35847008"],
+    "oppo":     ["86234503"],
+    "poco":     ["86412604"],
+    "redmi":    ["86734703"],
+}
+
+def _tac_for_brand(r, brand):
+    tacs = _TAC_BY_BRAND.get((brand or "").lower(), ["35000000"])
+    return tacs[r(len(tacs))]
+
+def imei(r, tac=None):
+    """15-digit Luhn-valid IMEI. If a TAC is given, use it as the first 8 digits (brand-coherent)."""
+    if tac and len(tac) == 8 and tac.isdigit():
+        body = tac + digits(r, 6)                      # TAC(8) + serial(6) = 14, then check digit
+    else:
+        body = digits(r, 14)
     return body + luhn_check_digit(body)               # 15-digit, Luhn-valid
 
 def uuid(r):

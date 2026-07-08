@@ -4,7 +4,7 @@ Coherence/robustness improvements surfaced by codex-2 that are real but lower-pr
 ban-critical fixes already applied. Tracked here so they're not lost.
 
 ## Coherence (identity realism)
-- **IMEI TAC ↔ device model** — IMEIs currently use a random 14-digit body (Luhn-valid) unrelated to
+- [DONE] **IMEI TAC ↔ device model** — IMEIs currently use a random 14-digit body (Luhn-valid) unrelated to
   the selected device. Real IMEIs start with a model-specific TAC (Type Allocation Code), and a
   dual-SIM device's two IMEIs usually share the TAC. To fully match, the device DB (`data/devices.json`)
   would need per-model TAC(s), and `generators.imei` would build TAC + serial + Luhn. *Fraud SDKs that

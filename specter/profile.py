@@ -68,10 +68,14 @@ def build_profile(r, devices, us_bias=True):
 
     mccmnc, carrier = US_CARRIERS[r(len(US_CARRIERS))]
 
+    # One TAC per device (from the manufacturer), shared by both IMEIs — real dual-SIM devices
+    # share the TAC and differ only in the serial portion. imei1 != imei2 (different serials).
+    tac = G._tac_for_brand(r, brand)
+
     return {
         "android_id": G.hex16(r),
-        "imei1": G.imei(r),
-        "imei2": G.imei(r),
+        "imei1": G.imei(r, tac),
+        "imei2": G.imei(r, tac),
         "serial": G.hex16upper(r),
         "advertising_id": G.uuid(r),
         "gsf_id": G.gsf(r),
