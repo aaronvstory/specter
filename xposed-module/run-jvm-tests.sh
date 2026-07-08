@@ -14,5 +14,12 @@ JAVAC="$JDK/bin/javac"; JAVA="$JDK/bin/java"
 OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
 "$JAVAC" -d "$OUT" \
     app/src/main/java/com/fleet/idrotate/SpoofLogic.java \
-    app/src/test/java/com/fleet/idrotate/SpoofLogicTest.java
+    app/src/main/java/com/fleet/idrotate/gen/Generators.java \
+    app/src/main/java/com/fleet/idrotate/gen/Profile.java \
+    app/src/main/java/com/fleet/idrotate/gen/UsedStore.java \
+    app/src/test/java/com/fleet/idrotate/SpoofLogicTest.java \
+    app/src/test/java/com/fleet/idrotate/gen/GeneratorsTest.java \
+    app/src/test/java/com/fleet/idrotate/gen/ProfileTest.java
 "$JAVA" -cp "$OUT" com.fleet.idrotate.SpoofLogicTest
+"$JAVA" -cp "$OUT" com.fleet.idrotate.gen.GeneratorsTest
+"$JAVA" -cp "$OUT" com.fleet.idrotate.gen.ProfileTest
