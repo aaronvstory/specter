@@ -107,17 +107,21 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     // ---- Settings.Secure.getString(..., "android_id") ----
+    // Hook ALL getString overloads (getString(cr,name), getStringForUser(cr,name,userId), etc.).
+    // A single-overload hook missed DevInfo's read (GSF/serial spoofed in the same process but
+    // android_id leaked the real value) — the key can be at any arg position, so scan all args.
     private void hookSettingsSecure(final Map<String, String> p) {
         final String aid = p.get("android_id");
         if (aid == null) return;
         XC_MethodHook h = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                Object key = param.args.length >= 2 ? param.args[1] : null;
-                if ("android_id".equals(String.valueOf(key))) param.setResult(aid);
+                if (SpoofLogic.argsContainKey(param.args, "android_id")) param.setResult(aid);
             }
         };
-        try { XposedHelpers.findAndHookMethod(Settings.Secure.class, "getString",
-                android.content.ContentResolver.class, String.class, h); } catch (Throwable ignored) {}
+        // Settings.Secure and Settings.System both expose getString/getStringForUser; cover both.
+        try { XposedBridge.hookAllMethods(Settings.Secure.class, "getString", h); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(Settings.Secure.class, "getStringForUser", h); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(Settings.System.class, "getString", h); } catch (Throwable ignored) {}
     }
 
     // ---- TelephonyManager: imei/deviceid/subscriber/simserial/line1/operator ----
@@ -155,12 +159,46 @@ public class HookEntry implements IXposedHookLoadPackage {
         rc(ba, "getAddress", p.get("bluetooth_mac"));
     }
 
-    // ---- AdvertisingIdClient.Info.getId ----
+    // ---- AdvertisingIdClient.Info.getId + the static getAdvertisingIdInfo factory ----
+    // Hooking only Info.getId leaks the real value when getId is inlined or the Info is built from
+    // a Binder IPC result that doesn't route through our hook. So ALSO hook the static factory
+    // getAdvertisingIdInfo(Context) and replace the whole returned Info with our fake id.
     private void hookAdvertisingId(XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
-        Class<?> info = XposedHelpers.findClassIfExists(
+        final String adid = p.get("advertising_id");
+        if (adid == null) return;
+        final Class<?> info = XposedHelpers.findClassIfExists(
             "com.google.android.gms.ads.identifier.AdvertisingIdClient$Info", lp.classLoader);
-        if (info == null) return;
-        rc(info, "getId", p.get("advertising_id"));
+        Class<?> client = XposedHelpers.findClassIfExists(
+            "com.google.android.gms.ads.identifier.AdvertisingIdClient", lp.classLoader);
+        // Primary: swap the Info returned by the static factory (covers inlined getId / IPC result).
+        if (client != null && info != null) {
+            try {
+                XposedBridge.hookAllMethods(client, "getAdvertisingIdInfo", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        Object real = param.getResult();
+                        boolean lat = false;
+                        if (real != null) {
+                            // preserve the real limit-ad-tracking flag (plain reflection; no helper deps)
+                            try {
+                                java.lang.reflect.Method m = real.getClass().getMethod("isLimitAdTrackingEnabled");
+                                Object v = m.invoke(real);
+                                if (v instanceof Boolean) lat = (Boolean) v;
+                            } catch (Throwable ignored) {}
+                        }
+                        try {
+                            java.lang.reflect.Constructor<?> ctor =
+                                info.getConstructor(String.class, boolean.class);
+                            ctor.setAccessible(true);
+                            param.setResult(ctor.newInstance(adid, lat));
+                        } catch (Throwable ignored) {
+                            // if the (String,boolean) ctor shape changed, fall back to getId hook below
+                        }
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // Belt-and-suspenders: also force Info.getId to our value.
+        if (info != null) rc(info, "getId", adid);
     }
 
     // ---- GSF id: content query to com.google.android.gsf.gservices returning android_id ----

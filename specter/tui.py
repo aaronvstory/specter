@@ -14,11 +14,30 @@ from rich.text import Text
 from rich import box
 
 from .theme import THEME, chip
+
+
+def _version():
+    """Single source of truth for the version — installed package metadata, else the VERSION file."""
+    try:
+        from importlib.metadata import version
+        return version("specter")
+    except Exception:
+        try:
+            here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            with open(os.path.join(here, "VERSION"), encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception:
+            return "0.0.0"
+
+
+VERSION = _version()
 from . import profile as P
 from . import device as D
 from .identifiers import UNIQUE_KEYS
 
-DEFAULT_PKG = "com.doordash.driverapp"
+# Fleet safety: the dev tool defaults to the DevInfo test app, NEVER a real fleet app
+# (Dasher/system). Push elsewhere only by explicit --pkg.
+DEFAULT_PKG = "com.liuzh.deviceinfo"
 
 
 def _load(path, default):
@@ -28,26 +47,35 @@ def _load(path, default):
         return default
 
 
-def _key_reader():
-    """Single-keypress reader, cross-platform."""
+# Single source of truth for the main menu: (key, label, action-method). The key is both the
+# numbered/lettered shortcut and the questionary/rich value, so muscle memory works in every
+# renderer. Matches the CustomerDaisy/persona-swapper questionnaire style (arrow-select with a
+# rich fallback) instead of a raw single-keypress loop.
+MENU = [
+    ("n", "New identity", "act_new"),
+    ("p", "Push to device (adb)", "act_push"),
+    ("s", "Save to vault", "act_save"),
+    ("r", "Reuse a saved identity", "act_reuse"),
+    ("d", "Details (all fields)", "act_details"),
+    ("t", "Stats (issued ledger)", "act_stats"),
+    ("v", "Verify on-device", "act_verify"),
+    ("q", "Quit", None),
+]
+
+
+def _menu_choice(console):
+    """Ask the user to pick a menu item — questionary arrow-select, rich Prompt fallback."""
     try:
-        import msvcrt  # Windows
-        def read():
-            ch = msvcrt.getwch()
-            return ch
-        return read
-    except ImportError:
-        import termios, tty, sys
-        def read():
-            fd = sys.stdin.fileno()
-            old = termios.tcgetattr(fd)
-            try:
-                tty.setraw(fd)
-                ch = sys.stdin.read(1)
-            finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old)
-            return ch
-        return read
+        import questionary
+        choices = [questionary.Choice(f"{k.upper()}  {label}", value=k) for k, label, _ in MENU]
+        ans = questionary.select("What next?", choices=choices, qmark="👻", instruction=" ").ask()
+        return ans or "q"  # ask() returns None on Ctrl-C
+    except Exception:
+        # rich fallback: numbered prompt (no questionary or non-interactive terminal)
+        from rich.prompt import Prompt
+        keys = [k for k, _, _ in MENU]
+        console.print("  " + "   ".join(f"[key]{k}[/] {label}" for k, label, _ in MENU))
+        return Prompt.ask("[key]choose[/]", choices=keys, default="n", show_choices=False)
 
 
 class Dashboard:
@@ -103,16 +131,15 @@ class Dashboard:
         count = len(used.get("gsf_id", []))
         left = Text.assemble(("issued (never reused): ", "muted"), (str(count), "fresh"),
                              ("   target: ", "muted"), (self.pkg, "device"))
-        keys = Text("  [n]ew  [p]ush  [s]ave  [r]euse  [d]etails  [v]erify  [t]stats  [q]uit", style="muted")
         # msg may contain rich markup (chips) — render it, don't print the tags literally
         status = Text.from_markup(self.msg) if "[" in self.msg else Text(self.msg, style=self.msg_style)
-        return Group(left, status, keys)
+        return Group(left, status)
 
     def render(self):
         top = Table.grid(expand=True)
         top.add_column(ratio=3); top.add_column(ratio=2)
         top.add_row(self._active_panel(), self._vault_panel())
-        header = Text("  👻 specter — device identity rotation", style="brand")
+        header = Text(f"  👻 specter v{VERSION} — device identity rotation", style="brand")
         return Group(header, top, self._footer())
 
     # ---- actions ----
@@ -180,28 +207,22 @@ class Dashboard:
 
 def run(root):
     dash = Dashboard(root)
-    read = _key_reader()
     con = dash.console
+    actions = {k: fn for k, _, fn in MENU if fn}
     while True:
         con.clear()
         con.print(dash.render())
+        con.print()
         try:
-            c = read().lower()
+            choice = _menu_choice(con)
         except (KeyboardInterrupt, EOFError):
             break
-        if c == "q":
+        if choice == "q":
             break
-        elif c == "n":
-            dash.act_new()
-        elif c == "p":
-            dash.act_push()
-        elif c == "s":
-            dash.act_save()
-        elif c == "r":
-            dash.act_reuse()
-        elif c == "d":
-            dash.act_details()
-        elif c == "t":
-            dash.act_stats()
-        elif c == "v":
-            dash.act_verify()
+        fn = actions.get(choice)
+        if fn:
+            try:
+                getattr(dash, fn)()
+            except Exception as e:
+                dash.msg, dash.msg_style = f"{fn} errored: {e}", "bad"
+    con.print("[muted]bye 👻[/]")

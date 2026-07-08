@@ -33,7 +33,7 @@ from .validation import validate_pkg
 from . import profile as P
 from .identifiers import SPECS, UNIQUE_KEYS
 
-DEFAULT_PKG = "com.doordash.driverapp"
+DEFAULT_PKG = "com.liuzh.deviceinfo"  # fleet safety: DevInfo test app, never a real fleet app
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPORTS = os.path.join(ROOT, "reports")
 

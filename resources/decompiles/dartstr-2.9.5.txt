@@ -1,0 +1,225 @@
+ New identity generated successfully!
+ it will clear all the deleted profiles and their backup data.
+ profiles
+ profiles to folder
+ profiles...
+" is a lazy box. You can only use HiveLists with normal boxes.
+.hive
+.hivec
+/api/v1/profiles
+/api/v1/profiles/delete
+:saved_try_context_var
+A Firebase App named "[DEFAULT]" already exists
+Advertising ID:
+Advertising Id:
+All Profiles
+All profiles: 
+Anti Fingerprinting
+Are you sure you want to delete the selected profiles? This action cannot be undone.
+Are you sure you want to delete this profile? THIS ACTION CAN NOT BE UNDONE.
+Box not found. Did you forget to call Hive.openBox()?
+CacheExtentStyle.
+Canvas::save
+Canvas::saveLayer
+Canvas::saveLayerWithoutBounds
+Changes saved!
+Check back later for profiles to restore
+Clear Cache
+Create Profile
+Create new profile
+Create selected profiles
+Creating folder and moving profile...
+Creating new profile
+Creating profile for profileId=
+Creating profile with folder: 
+Creating profile with name: 
+Creating profiles...
+Delete profile
+Delete selected profiles
+Deleting profile
+Device fingerprint, if you don't know what it is, don't change it
+Enter at least 3 characters to search for saved configurations.
+Enter new profile name
+Enter no. by which IMEI will be incremented on each random
+Enter profile name
+Error fetching existingProfileIds: 
+Error queuing profile creation: 
+Error queuing profile deletion: 
+Error queuing profile update: 
+Error recording profile view: 
+Failed to create profile 
+Failed to create profile and queue operation
+Failed to delete profile and queue operation
+Failed to get new profile ID for 
+Failed to import profile: 
+Failed to update profile and queue operation
+Fetching profile...
+Fingerprint:
+Fingerprint: 
+Fortuna PRNG cannot generate more than 1MB of random data per invocation
+GSF Id:
+Generate
+Get new profile
+Google Services Framework (GSF) ID:
+Hardware Serial:
+HiveError: 
+IMEI: 
+Import Profile
+Import profile
+Importing profile
+Importing profile for package: 
+Integrity check failed
+LaunchScreenSaver
+MegamorphicCache
+Moving profile...
+Network data integrity check failed, make sure you are connected to internet.
+Network data integrity check failed.
+NextUserProfile
+No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Please delete previous profile or use different name.
+Previous profile saved!
+Profile
+Profile 
+Profile Details
+Profile ID
+Profile Name
+Profile already exists
+Profile created successfully
+Profile creation failed
+Profile delete failed
+Profile delete failed: 
+Profile deleted!
+Profile deletion queued. It will be deleted when online.
+Profile import failed
+Profile name cannot be empty
+Profile name is same as old name
+Profile name:
+Profile queued for sync. It will be synced when online.
+Profile update failed: 
+Profile update queued for sync. It will be synced when online.
+Profile updated!
+Profile with this name already exists
+Profiles
+Profiles Created
+Random behaviour (if selected IMEI will be random no. else incremented by increment value provided below)
+Randomize
+Registering type adapters for dynamic type is must be avoided, otherwise all the write requests to Hive will be handled by given adapter. Please explicitly provide adapter type on registerAdapter method to avoid this kind of issues. For example if you want to register MyTypeAdapter for MyType class you can call like this: registerAdapter<MyType>(MyTypeAdapter())
+Rename profile
+Renaming profile
+SIM Card Serial:
+Save app data and restore later if needed. Backup data is stored locally only.
+Search by app or profile
+Select Profiles
+SingleTargetCache
+SubtypeTestCache
+This will delete all the local profiles and fetch the latest profiles from the server.
+This will generate a completely new identity for:
+Tip: Make any changes in profile eg. try adding notes.
+Tip: Try adding notes to profile.
+WeakSerializationReference
+Wipes cached data before data restore. Might increase operation time.
+You have to be logged-in to import profile.
+You have to be logged-in to new create profile.
+You need to be a alpha member to create profile.
+You need to be a alpha member to delete profile.
+You need to be a alpha member to import profile.
+You need to initialize Hive or provide a path to store the box.
+[firebase_auth/network-request-failed]
+[firebase_auth/user-not-found]
+_GrowableList.generate
+_List.generate
+advertising_id_switch
+android_id_switch
+antiAliasWithSaveLayer
+anti_fingerprinting
+anti_fingerprinting_switch
+antifingerprinting
+cache
+cancel_imei_edit
+clear_cache_toggle
+create-profiles
+create_profile
+create_profile_premium
+data integrity check failed
+delete_profile
+dev.flutter.pigeon.firebase_core_platform_interface.FirebaseCoreHostApi.initializeApp
+dev.flutter.pigeon.firebase_core_platform_interface.FirebaseCoreHostApi.initializeCore
+deviceFingerprint
+deviceFingerprintSwitch
+device_spoof_randomize
+edit_imei
+existingProfileIds
+firebase_crashlytics
+flag_imei1
+flag_imei2
+group_clear_cache_toggle
+gsf_id_switch
+gsfid
+gsfid_val
+imei1
+imei1_switch
+imei2
+imei2_edit
+imei2_switch
+imei_behave
+imei_chk1
+imei_chk2
+imei_no_val
+imei_switch
+imei_val1
+imei_val2
+import_profile
+incrementImei
+increment_imei
+integrity-check-failed
+is_anti_fingerprinting
+is_clear_cache
+is_gsf
+is_rimei
+log_integrity
+network_data_integrity_failed
+open_search_profile
+persistentCallbacks
+persistentFooter
+plugins.flutter.io/firebase_crashlytics
+profile
+profileIds
+profile_data
+profile_id
+profile_page
+profiles
+profilesNotToDelete
+randomGSFID
+randomIMEI
+randomMediaDRM
+randomSerialID
+randomSimCardSerial
+random_imei
+randomize_adsid
+randomize_all
+randomize_all_request
+randomize_android_id
+randomize_bluetooth_mac
+randomize_cancel
+randomize_device_spoof
+randomize_gmail
+randomize_gsf_id
+randomize_imei
+randomize_media_drm
+randomize_sim_operator
+refresh_profiles_list
+rename_profile
+savePath
+save_imei_edit
+save_sim_operator
+serial
+serial_random
+serial_switch
+serial_val
+setIMEI
+set_imei
+sim_card_serial_random
+sim_card_serial_switch
+update profile data: 
+useAdvertisingIdForDeviceId
+view_profile_details

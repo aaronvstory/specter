@@ -1,0 +1,266 @@
+ Generating New Identity
+ Get New Identity
+ New identity generated successfully!
+ more settings
+ with settings - 
+, groupMembers: 
+, isGroup: 
+, location: 
+/api/v1/groups
+/api/v1/groups/delete
+:finally_ret_val
+Add new group!
+Add your notes here...
+Anti Fingerprinting
+App/Group name:
+Backup App Data
+Backup import has been canceled as the user did not choose a folder.
+Clear Data Only
+Config Settings
+Create new group
+Creating new group
+Deleting group
+Device Simulation
+Edit
+EditableText-
+Enter group name (should be unique)
+Error sanitizing group_members: 
+Error searching location: 
+Error toggling location spoofing: 
+Error updating location spoofing: 
+Failed to delete group: 
+Failed to fetch groups
+Failed to get new profile ID for 
+Failed to import profile: 
+Failed to load folders for group: 
+Failed to load groups: 
+Failed to parse group_members: 
+Failed to sync groups: 
+Failed to update group
+FocusTraversalGroup
+Force Stop Only
+Force stops and clears the app's data without backing up or restoring it.
+Force stops the app only; no backup, restore, or data clear is performed.
+Get new identity
+Get new profile
+Goto Settings(Gear Icon) -> Click on update geergit -> click on allow from this source -> install
+Group
+Group members before cleanup: 
+Group with this name already exists, please try to avoid using any special charactors in the name (if any).
+GroupAlertBehavior.
+GroupFirst
+GroupLast
+GroupNext
+GroupPrevious
+Hide Mock Location
+Identity
+Import Backup
+Import Den file
+Import Profile
+Import completed!
+Import failed.
+Import profile
+Importance.
+Importing backup...
+Importing profile
+Importing profile for package: 
+Invalid group_members json in acn.data: 
+Invalid group_members json in currentConf: 
+Invalid group_members json in group: 
+IsolateGroup
+Loading groups...
+Location
+Location Spoofing
+Location search error: 
+Location search failed: 
+Location spoofing 
+Location updated: 
+No other groups found
+Other Groups
+OverlayChildLocation.
+Please create group!
+Please force stop and open again.
+Please login to create groups
+Please refresh list of group by swiping down.
+Please wait while we create your new identity...
+Processing group member: 
+Profile import failed
+Randomize
+RegExp_getGroupCount
+Search for a location...
+Selected Location
+Server response has no Location header for redirect
+Settings
+Settings Preview
+TextInput.setEditableSizeAndTransform
+TextInput.setEditingState
+TextInputClient.updateEditingState
+TextInputClient.updateEditingStateWithDeltas
+TextInputClient.updateEditingStateWithTag
+The FutureGroup is closed.
+This Group
+This will generate a completely new identity for:
+Unable to import backup for 
+You are not an alpha member. Please get the alpha membership to use location spoofing.
+You have to be logged-in to import profile.
+You need to be a alpha member to import profile.
+_Editable must be mounted.
+_FfiIsolateGroupBoundCallback
+_SourceLocation
+_updateUserSettingsData@17065589
+adsid_val
+advertising_id_switch
+android_id_switch
+anti_fingerprinting_switch
+appGroupId
+app_enable_switch
+app_settings_page
+backup_app_data_switch
+bluetooth_mac_switch
+bmac_val
+cancel_imei_edit
+ciso_val
+citem_val
+conf_settings_page
+create_group
+create_group_error
+creategroups
+device_spoof_randomize
+device_spoof_switch
+deviceid_val
+edit_
+edit_imei
+editable
+editingValue
+email_val
+fetchGroupsFromServer error: 
+geergit_settings
+gestureSettings
+get:_identityHashCode@0150898
+gmail_switch
+group id is null or empty: 
+groupAlertBehavior
+groupIcon
+groupId
+groupKey
+groupName
+group_already_exists
+group_clear_cache_toggle
+group_clear_data_only_toggle
+group_delete
+group_delete_cancel
+group_disable_backup_restore_toggle
+group_force_stop_only_toggle
+group_id
+group_members
+group_name
+group_preserve_permissions_toggle
+group_refresh_server
+group_target_app_added
+group_target_app_removed
+group_undetectable_toggle
+groups
+gsf_id_switch
+gsfid_val
+hide_mock_location_switch
+identityHashCode
+identityStorage
+imei1_switch
+imei2_edit
+imei2_switch
+imei_no_val
+imei_switch
+import
+import backup: 
+importBackupFromLocal
+import_backup
+import_profile
+importance
+isGroup
+is_active
+is_ads
+is_and
+is_anti_fingerprinting
+is_apply
+is_bmac
+is_bssid
+is_clear_cache
+is_clear_data_only
+is_device_legit
+is_device_legit_ex
+is_device_spoof
+is_disable_backup_restore
+is_force_stop_only
+is_group_app
+is_group_member
+is_gsf
+is_hr
+is_im
+is_im1
+is_im2
+is_m_drm
+is_mail
+is_mml
+is_num
+is_op
+is_part_of_group
+is_preserve_permissions
+is_rimei
+is_scs
+is_ser
+is_ssid
+is_ssub
+is_undetectable
+is_vic_bkp
+is_whatsapp_support
+is_wmac
+is_xp
+legit_device_experimental_switch
+legit_device_switch
+location
+locationListening
+locationSpoofSwitch
+location_spoofing_toggle
+location_spoofing_toggled
+location_spoofing_updated
+mitem_val
+mob_val
+mobile_number_switch
+myLocationButtonEnabled
+myLocationEnabled
+oitem_val
+open_conf_settings
+randomize_adsid
+randomize_all
+randomize_all_request
+randomize_android_id
+randomize_bluetooth_mac
+randomize_cancel
+randomize_device_spoof
+randomize_gmail
+randomize_gsf_id
+randomize_imei
+randomize_media_drm
+randomize_sim_operator
+save_imei_edit
+selected-location
+serial_switch
+serial_val
+setAsGroupSummary
+settings
+settings_page
+sim_card_serial_switch
+sim_operator_edit
+sim_operator_switch
+sim_subscriber_switch
+simcs_val
+subid_val
+theme_switch
+victim_group_open
+while calling onEditingComplete for 
+wifibssid_switch
+wifimac_switch
+wifissid_switch
+wmac_val
+wssid_val
+~group

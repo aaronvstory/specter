@@ -29,4 +29,17 @@ public final class SpoofLogic {
             return fallback;
         }
     }
+
+    /**
+     * True if any arg equals {@code key}. The Settings.Secure/System getString family has several
+     * overloads (getString(cr,name), getStringForUser(cr,name,userId), …) where the setting name
+     * can sit at arg index 1 or elsewhere — so a robust hook scans ALL args rather than assuming a
+     * fixed position. A single fixed-overload hook was why "android_id" leaked in DevInfo while
+     * GSF/serial spoofed. Null-safe.
+     */
+    public static boolean argsContainKey(Object[] args, String key) {
+        if (args == null) return false;
+        for (Object a : args) if (key.equals(String.valueOf(a))) return true;
+        return false;
+    }
 }
