@@ -205,32 +205,34 @@ public final class IdentityService {
     }
 
     /**
-     * Regenerate a SINGLE identifier in-place (the per-card RANDOMIZE button). Carrier-linked keys
-     * (imsi/iccid) are regenerated against the profile's existing carrier so coherence is kept;
-     * imei1/imei2 keep the existing device's TAC. Returns the new value (or the old one for
-     * non-rotatable keys).
+     * Compute a fresh value for a SINGLE identifier (the per-card RANDOMIZE button). Carrier-linked
+     * keys (imsi/iccid) use the profile's existing carrier so coherence is kept; imei1/imei2 keep the
+     * device's TAC. Returns the new value, or the existing one for non-rotatable keys.
      *
-     * BAN-CRITICAL: for globally-unique keys, the new value is checked against the no-reuse ledger
-     * and recorded + persisted — exactly like generateUnique(). Without this, a user who randomized
-     * a single id then applied would leak a value that a later generateUnique() could hand out again
-     * (the "coordinated accounts" reuse this tool exists to prevent).
+     * IMPORTANT: this does NOT mutate {@code context} — the caller applies the result to the shared
+     * profile on the UI thread. That keeps every mutation of the UI-owned profile map on a single
+     * thread (this method runs on a worker for the ledger I/O), avoiding a data race on the map.
+     *
+     * BAN-CRITICAL: for globally-unique keys, the value is checked against the no-reuse ledger and
+     * recorded + persisted before it's returned — so a randomized-then-applied id can never be
+     * reissued by a later generateUnique() (the "coordinated accounts" reuse this tool prevents).
+     *
+     * @param context a snapshot of the current profile (read-only here) for carrier/TAC coherence.
      */
-    public String randomizeField(Map<String, String> p, String key) {
+    public String randomizeField(Map<String, String> context, String key) {
         Generators.Rng r = secureRng();
         if (!isUniqueKey(key)) {
-            String v = genOne(r, p, key);          // e.g. wifi_ssid — not ledgered
-            if (v != null) p.put(key, v);
-            return p.get(key);
+            String v = genOne(r, context, key);    // e.g. wifi_ssid — not ledgered
+            return v != null ? v : context.get(key);
         }
         synchronized (LEDGER_LOCK) {
             UsedStore store = loadLedger();
             for (int tries = 0; tries < 1000; tries++) {
-                String v = genOne(r, p, key);
-                if (v == null) return p.get(key);
+                String v = genOne(r, context, key);
+                if (v == null) return context.get(key);
                 if (!Generators.validate(key, v)) continue;
                 if (store.recordOne(key, v)) {   // claims it iff never issued before for this key
                     saveLedger(store);
-                    p.put(key, v);
                     return v;
                 }
             }

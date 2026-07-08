@@ -209,11 +209,18 @@ public class MainActivity extends Activity {
         });
         Button rand = flatButton("RANDOMIZE", 0xFF2A2F3A, v -> {
             if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
-            // ledger read-modify-write + su-free work off the UI thread; update UI on completion
+            // Snapshot the profile on the UI thread (carrier/TAC context); do ledger I/O off-thread;
+            // apply the new value back to the shared map ONLY on the UI thread. Every mutation of
+            // `profile` thus happens on one thread — no data race on the LinkedHashMap.
+            final Map<String, String> ctx = new LinkedHashMap<>(profile);
             new Thread(() -> {
                 try {
-                    final String nv = svc.randomizeField(profile, f.key);
-                    runOnUiThread(() -> { val.setText(nv); status.setText(f.label + " randomized — APPLY to push."); });
+                    final String nv = svc.randomizeField(ctx, f.key);
+                    runOnUiThread(() -> {
+                        profile.put(f.key, nv);
+                        val.setText(nv);
+                        status.setText(f.label + " randomized — APPLY to push.");
+                    });
                 } catch (Throwable t) {
                     runOnUiThread(() -> status.setText("Randomize failed: " + t.getMessage()));
                 }
