@@ -98,8 +98,12 @@ public final class IdentityService {
             }
             return UsedStore.fromParsed(parsed);
         } catch (Exception e) {
-            // FAIL CLOSED: quarantine the bad ledger and refuse rather than reuse ids.
-            f.renameTo(new File(f.getParentFile(), "used_ids.json.corrupt"));
+            // FAIL CLOSED: refuse rather than reuse ids. The throw below is the actual guard;
+            // quarantine is best-effort operator convenience. Clear any prior .corrupt so the
+            // rename can't silently fail on an existing target.
+            File q = new File(f.getParentFile(), "used_ids.json.corrupt");
+            q.delete();
+            f.renameTo(q);
             throw new UsedStore.CorruptLedger("ledger unparseable (quarantined): " + e.getMessage(), e);
         }
     }
