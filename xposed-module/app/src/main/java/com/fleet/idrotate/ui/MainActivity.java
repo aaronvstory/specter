@@ -82,7 +82,11 @@ public class MainActivity extends Activity {
     // ---------- top chrome ----------
     private View header() {
         TextView t = new TextView(this);
-        t.setText("Specter");
+        String ver = "";
+        try {
+            ver = " v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Throwable ignored) {}
+        t.setText("Specter" + ver);
         t.setTextColor(0xFFE6E9EF);
         t.setTextSize(22);
         t.setPadding(dp(16), dp(14), dp(16), dp(2));

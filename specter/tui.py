@@ -14,6 +14,23 @@ from rich.text import Text
 from rich import box
 
 from .theme import THEME, chip
+
+
+def _version():
+    """Single source of truth for the version — installed package metadata, else the VERSION file."""
+    try:
+        from importlib.metadata import version
+        return version("specter")
+    except Exception:
+        try:
+            here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            with open(os.path.join(here, "VERSION"), encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception:
+            return "0.0.0"
+
+
+VERSION = _version()
 from . import profile as P
 from . import device as D
 from .identifiers import UNIQUE_KEYS
@@ -122,7 +139,7 @@ class Dashboard:
         top = Table.grid(expand=True)
         top.add_column(ratio=3); top.add_column(ratio=2)
         top.add_row(self._active_panel(), self._vault_panel())
-        header = Text("  👻 specter — device identity rotation", style="brand")
+        header = Text(f"  👻 specter v{VERSION} — device identity rotation", style="brand")
         return Group(header, top, self._footer())
 
     # ---- actions ----

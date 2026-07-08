@@ -27,7 +27,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Per-app identifier spoofing (GeerGit replacement). Rotates android_id, IMEI, serial, MACs, GSF, MediaDRM, advertising id, SIM + Build.* from a pushed profile.json. Scope target apps in LSPosed." />
+            android:value="Specter v0.2.0 — standalone on-device identifier rotation (GeerGit replacement). Generates + self-applies android_id, IMEI, serial, MACs, GSF, MediaDRM, advertising id, SIM + Build.* with no PC. Scope target apps in LSPosed." />
         <meta-data
             android:name="xposedminversion"
             android:value="93" />
