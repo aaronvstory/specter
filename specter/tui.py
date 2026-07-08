@@ -1,7 +1,7 @@
 """
-tui.py — ghostprint dashboard (rich-based, themed, light/dark safe).
+tui.py — specter dashboard (rich-based, themed, light/dark safe).
 
-Keys:  n new · p push→pkg · s save · r reuse · d show all fields · q quit
+Keys:  n new · p push · s save · r reuse · d details · v verify · t stats · q quit
 Shows: active identity (key fields), saved-profile vault, issued-count ledger, device status.
 """
 import json
@@ -16,7 +16,7 @@ from rich import box
 from .theme import THEME, chip
 from . import profile as P
 from . import device as D
-from .identifiers import SPECS, BUILD_FIELDS
+from .identifiers import UNIQUE_KEYS
 
 DEFAULT_PKG = "com.doordash.driverapp"
 
@@ -103,7 +103,7 @@ class Dashboard:
         count = len(used.get("gsf_id", []))
         left = Text.assemble(("issued (never reused): ", "muted"), (str(count), "fresh"),
                              ("   target: ", "muted"), (self.pkg, "device"))
-        keys = Text("  [n]ew  [p]ush  [s]ave  [r]euse  [d]etails  [q]uit", style="muted")
+        keys = Text("  [n]ew  [p]ush  [s]ave  [r]euse  [d]etails  [v]erify  [t]stats  [q]uit", style="muted")
         status = Text(self.msg, style=self.msg_style)
         return Group(left, status, keys)
 
@@ -111,14 +111,13 @@ class Dashboard:
         top = Table.grid(expand=True)
         top.add_column(ratio=3); top.add_column(ratio=2)
         top.add_row(self._active_panel(), self._vault_panel())
-        header = Text("  ghostprint — device identity rotation", style="brand")
+        header = Text("  👻 specter — device identity rotation", style="brand")
         return Group(header, top, self._footer())
 
     # ---- actions ----
     def act_new(self):
         store = P.UsedStore(self.USED)
         p = P.generate_unique(store)
-        store.save()
         json.dump(p, open(self.ACTIVE, "w"), indent=2)
         self.msg = f"{chip('NEW','chip.new')} {p['build_model']}  gsf={p['gsf_id']}"
         self.msg_style = "good"
@@ -156,6 +155,27 @@ class Dashboard:
         self.console.print(Panel(json.dumps(_load(self.ACTIVE, {}), indent=2), title="active profile (all fields)"))
         self.console.input("[muted]press Enter[/]")
 
+    def act_stats(self):
+        used = _load(self.USED, {})
+        from .identifiers import UNIQUE_KEYS
+        from rich.table import Table as _T
+        t = _T(box=None)
+        t.add_column("identifier", style="key"); t.add_column("issued", style="fresh")
+        for k in UNIQUE_KEYS:
+            t.add_row(k, str(len(used.get(k, []))))
+        self.console.clear()
+        self.console.print(Panel(t, title="[brand]issued identities (never reused)[/]", border_style="cyan"))
+        self.console.input("[muted]press Enter[/]")
+
+    def act_verify(self):
+        from . import verify
+        self.console.clear()
+        try:
+            verify.run_questionnaire(console=self.console)
+        except Exception as e:
+            self.msg, self.msg_style = f"verify errored: {e}", "bad"
+        self.console.input("\n[muted]press Enter to return to dashboard[/]")
+
 
 def run(root):
     dash = Dashboard(root)
@@ -180,3 +200,7 @@ def run(root):
             dash.act_reuse()
         elif c == "d":
             dash.act_details()
+        elif c == "t":
+            dash.act_stats()
+        elif c == "v":
+            dash.act_verify()
