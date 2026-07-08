@@ -57,9 +57,25 @@ public final class Profile {
         return devices.get(r.next(devices.size()));
     }
 
-    /** Build a full 27-field identity. Device rows are [name, manufacturer, brand, device, product, "model:release", build_id, incremental, patch]. */
+    static List<String> pickDevice(Generators.Rng r, List<List<String>> devices, boolean bias, Country country) {
+        if (bias && country != null) {
+            Set<String> brands = new HashSet<>(Arrays.asList(country.commonBrands));
+            List<List<String>> pool = new ArrayList<>();
+            for (List<String> d : devices)
+                if (d.size() > 2 && brands.contains(d.get(2).toLowerCase())) pool.add(d);
+            if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
+        }
+        return devices.get(r.next(devices.size()));
+    }
+
+    /** Build a full 27-field identity for the US (back-compat overload; seeded output unchanged). */
     public static Map<String, String> build(Generators.Rng r, List<List<String>> devices, boolean usBias) {
-        List<String> dev = pickDevice(r, devices, usBias);
+        return build(r, devices, usBias, Country.US);
+    }
+
+    /** Build a full 27-field identity. Device rows are [name, manufacturer, brand, device, product, "model:release", build_id, incremental, patch]. */
+    public static Map<String, String> build(Generators.Rng r, List<List<String>> devices, boolean usBias, Country country) {
+        List<String> dev = pickDevice(r, devices, usBias, country);
         String manufacturer = dev.get(1), brand = dev.get(2), device = dev.get(3), product = dev.get(4);
         String modelRel = dev.get(5);
         int colon = modelRel.indexOf(':');
@@ -71,7 +87,7 @@ public final class Profile {
         String fingerprint = brand + "/" + product + "/" + device + ":" + release + "/" + buildId
                 + "/" + incremental + ":user/release-keys";
 
-        String[] carrier = US_CARRIERS[r.next(US_CARRIERS.length)];
+        String[] carrier = country.carriers[r.next(country.carriers.length)];
         String mccmnc = carrier[0], carrierName = carrier[1];
 
         // One TAC per device (manufacturer), shared by both IMEIs; imei1 != imei2 (serial differs).
@@ -89,7 +105,7 @@ public final class Profile {
         p.put("wifi_mac", Generators.macUpper(r));
         p.put("wifi_bssid", Generators.macLower(r));
         p.put("wifi_ssid", Generators.ssid(r));
-        p.put("mobile_number", Generators.phoneUs(r));
+        p.put("mobile_number", Generators.phoneForCountry(r, country.phoneKind));
         p.put("sim_operator_mccmnc", mccmnc);
         p.put("sim_operator_name", carrierName);
         p.put("sim_subscriber_imsi", Generators.imsi(r, mccmnc));

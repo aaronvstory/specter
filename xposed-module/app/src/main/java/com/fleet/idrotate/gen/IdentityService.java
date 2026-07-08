@@ -29,9 +29,14 @@ public final class IdentityService {
 
     private final Context ctx;
     private final RootWriter.Shell shell;
+    private Country country = Country.US;   // set from the Settings country picker
 
     public IdentityService(Context ctx) { this(ctx, new RootWriter.SuShell()); }
     public IdentityService(Context ctx, RootWriter.Shell shell) { this.ctx = ctx; this.shell = shell; }
+
+    /** Set the SIM/phone country for subsequent generation (from the Settings picker). */
+    public void setCountry(Country c) { if (c != null) this.country = c; }
+    public Country getCountry() { return country; }
 
     // One SecureRandom for the process — reseeding a fresh instance per call is a known perf
     // anti-pattern and needless; SecureRandom is thread-safe.
@@ -141,7 +146,7 @@ public final class IdentityService {
             UsedStore store = loadLedger();
             Generators.Rng r = secureRng();
             for (int tries = 0; tries < 1000; tries++) {
-                Map<String, String> p = Profile.build(r, devices, true);
+                Map<String, String> p = Profile.build(r, devices, true, country);
                 if (!Profile.isValid(p)) continue;
                 if (store.collides(p)) continue;
                 if (store.record(p)) { saveLedger(store); return p; }
@@ -185,6 +190,9 @@ public final class IdentityService {
         if (mccmnc == null || mccmnc.isEmpty()) mccmnc = "310260"; // T-Mobile
         String imei1 = p.getOrDefault("imei1", "");
         String tac = imei1.length() >= 8 ? imei1.substring(0, 8) : null;
+        // Phone format follows the profile's own carrier country (MCC 234/235 = UK, else NANP),
+        // so a per-field phone regen stays coherent with the existing SIM.
+        String phoneKind = (mccmnc.startsWith("234") || mccmnc.startsWith("235")) ? "uk" : "nanp";
         switch (key) {
             case "android_id":          return Generators.hex16(r);
             case "serial":              return Generators.hex16upper(r);
@@ -195,7 +203,7 @@ public final class IdentityService {
             case "wifi_mac":            return Generators.macUpper(r);
             case "wifi_bssid":          return Generators.macLower(r);
             case "wifi_ssid":           return Generators.ssid(r);
-            case "mobile_number":       return Generators.phoneUs(r);
+            case "mobile_number":       return Generators.phoneForCountry(r, phoneKind);
             case "sim_subscriber_imsi": return Generators.imsi(r, mccmnc);
             case "sim_serial_iccid":    return Generators.iccid(r, mccmnc);
             case "gsf_id":              return Generators.gsf(r);

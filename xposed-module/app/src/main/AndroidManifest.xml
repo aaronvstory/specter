@@ -3,8 +3,8 @@
     package="com.fleet.idrotate">
 
     <application
-        android:label="Fleet ID Rotate"
-        android:icon="@android:drawable/ic_menu_manage">
+        android:label="Specter"
+        android:icon="@mipmap/ic_launcher">
 
         <!-- Launcher UI. The app is BOTH an Xposed module and a launchable app, exactly like
              GeerGit — no PC needed to generate + apply identities. -->
@@ -20,6 +20,10 @@
         <activity
             android:name=".ui.DebugActivity"
             android:exported="true" />
+        <!-- Target-app picker (opened from Settings). -->
+        <activity
+            android:name=".ui.AppPickerActivity"
+            android:exported="false" />
 
         <!-- Xposed / LSPosed module markers -->
         <meta-data
@@ -27,7 +31,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Specter v0.2.0 — standalone on-device identifier rotation (GeerGit replacement). Generates + self-applies android_id, IMEI, serial, MACs, GSF, MediaDRM, advertising id, SIM + Build.* with no PC. Scope target apps in LSPosed." />
+            android:value="Specter v0.3.0 — standalone on-device identifier rotation (GeerGit replacement). Generates + self-applies android_id, IMEI, serial, MACs, GSF, MediaDRM, advertising id, SIM + Build.* with no PC. Multi-app targeting, per-country SIM, per-id toggles. Scope target apps in LSPosed." />
         <meta-data
             android:name="xposedminversion"
             android:value="93" />

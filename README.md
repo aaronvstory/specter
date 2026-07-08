@@ -61,8 +61,8 @@ generates a fresh identity → pushes it to the phone → clears the target app.
 ## Install the module
 
 ```bash
-cd xposed-module && ./build-apk.sh        # produces dist/specter-module-v0.2.0.apk
-adb install -r ../dist/specter-module-v0.2.0.apk
+cd xposed-module && ./build-apk.sh        # produces dist/specter-module-v0.3.0.apk
+adb install -r ../dist/specter-module-v0.3.0.apk
 # then in LSPosed: Modules → Specter → enable → scope to your target app → reboot
 ```
 

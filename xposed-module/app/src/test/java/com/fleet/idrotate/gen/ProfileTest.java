@@ -71,6 +71,20 @@ public class ProfileTest {
         check(Profile.validate(truncated).stream().anyMatch(s -> s.contains("missing key: android_id")),
                 "missing key reported by name");
 
+        // Country: UK profiles are valid + coherent (UK carrier, +44 phone, matching IMSI/ICCID).
+        for (int s = 0; s < 500; s++) {
+            Map<String, String> uk = Profile.build(seeded(s), devs, true, Country.UK);
+            check(Profile.isValid(uk), "UK profile valid s=" + s + " " + Profile.validate(uk));
+            String mcc = uk.get("sim_operator_mccmnc");
+            check(mcc.startsWith("234") || mcc.startsWith("235"), "UK carrier MCC 234/235 s=" + s);
+            check(uk.get("mobile_number").startsWith("447"), "UK phone +44 7 s=" + s);
+            check(uk.get("sim_subscriber_imsi").startsWith(mcc), "UK IMSI carrier-coherent s=" + s);
+        }
+        // US profile stays US (back-compat overload == US).
+        Map<String, String> usProf = Profile.build(seeded(1), devs, true);
+        check(usProf.get("sim_operator_mccmnc").matches("31[01]\\d{3}"), "US carrier MCC 310/311");
+        check(usProf.get("mobile_number").startsWith("1"), "US phone NANP");
+
         // Determinism: same seed -> same profile.
         Map<String, String> a = Profile.build(seeded(77), devs, true);
         Map<String, String> b = Profile.build(seeded(77), devs, true);

@@ -143,6 +143,17 @@ public final class Generators {
         return "1" + area + exch + digits(r, 4);
     }
 
+    /** UK mobile: 44 + 7 + [4-9] + 8 digits (E.164, no leading +, e.g. 447700900123). */
+    public static String phoneUk(Rng r) {
+        return "447" + (4 + r.next(6)) + digits(r, 8);
+    }
+
+    /** Country-aware phone by kind ("nanp" | "uk"). */
+    public static String phoneForCountry(Rng r, String kind) {
+        if ("uk".equals(kind)) return phoneUk(r);
+        return phoneUs(r);
+    }
+
     public static String imsi(Rng r, String mccmnc) {
         return mccmnc + digits(r, 15 - mccmnc.length());
     }
@@ -158,6 +169,13 @@ public final class Generators {
         ICCID_IIN.put("310120", "89011201"); // Sprint
         ICCID_IIN.put("311580", "89011580"); // US Cellular
         ICCID_IIN.put("311870", "89011870"); // Boost
+        // UK (country code 44): 89 = telecom, 44 = UK.
+        ICCID_IIN.put("23430", "894430");     // EE
+        ICCID_IIN.put("23410", "894410");     // O2
+        ICCID_IIN.put("23415", "894415");     // Vodafone
+        ICCID_IIN.put("23420", "894420");     // Three
+        ICCID_IIN.put("23433", "894430");     // EE
+        ICCID_IIN.put("23402", "894410");     // O2 (Cornwall)
     }
 
     /** 20-digit Luhn-valid ICCID with a carrier-consistent issuer prefix when known. */
@@ -176,12 +194,47 @@ public final class Generators {
         return String.valueOf(lo + r.nextLong(LONG_MAX - lo));
     }
 
+    // Realistic email building blocks. Small curated lists — enough variety to look human without
+    // a big bundled corpus. Providers weighted toward gmail via repetition.
+    static final String[] FIRST_NAMES = {
+        "james","john","robert","michael","david","william","richard","joseph","thomas","charles",
+        "mary","patricia","jennifer","linda","elizabeth","susan","jessica","sarah","karen","emily",
+        "daniel","matthew","anthony","mark","paul","steven","andrew","joshua","kevin","brian",
+        "amanda","ashley","stephanie","nicole","laura","megan","hannah","olivia","emma","sophia",
+        "chris","ryan","jacob","tyler","aaron","nathan","adam","justin","brandon","sean",
+        "rachel","lauren","victoria","natalie","grace","chloe","zoe","ella","lily","mia",
+    };
+    static final String[] LAST_NAMES = {
+        "smith","johnson","williams","brown","jones","garcia","miller","davis","rodriguez","martinez",
+        "hernandez","lopez","gonzalez","wilson","anderson","thomas","taylor","moore","jackson","martin",
+        "lee","perez","thompson","white","harris","sanchez","clark","ramirez","lewis","robinson",
+        "walker","young","allen","king","wright","scott","torres","nguyen","hill","flores",
+        "green","adams","nelson","baker","hall","rivera","campbell","mitchell","carter","roberts",
+    };
+    static final String[] EMAIL_PROVIDERS = {
+        "gmail.com","gmail.com","gmail.com","outlook.com","outlook.com","yahoo.com","hotmail.com","icloud.com",
+    };
+
+    /** Realistic-looking email: first/last name in a common pattern + provider. Key stays "gmail". */
     public static String gmail(Rng r) {
-        int len = 3 + r.next(5);
-        StringBuilder first = new StringBuilder();
-        for (int i = 0; i < len; i++) first.append("abcdefghijklmnopqrstuvwxyz".charAt(r.next(26)));
-        return first + digits(r, 3) + "@gmail.com";
+        String first = FIRST_NAMES[r.next(FIRST_NAMES.length)];
+        String last = LAST_NAMES[r.next(LAST_NAMES.length)];
+        String provider = EMAIL_PROVIDERS[r.next(EMAIL_PROVIDERS.length)];
+        int pattern = r.next(6);
+        String local;
+        switch (pattern) {
+            case 0: local = first + "." + last; break;
+            case 1: local = first + last; break;
+            case 2: local = first + "_" + last; break;
+            case 3: local = first + last.charAt(0); break;               // firstl
+            case 4: local = first + "." + last + digits(r, 2); break;    // first.lastNN
+            default: local = first + last + (1970 + r.next(40)); break;  // firstlastYYYY
+        }
+        return local + "@" + provider;
     }
+
+    /** Alias — the field is conceptually "email"; kept for clarity at call sites. */
+    public static String email(Rng r) { return gmail(r); }
 
     public static String ssid(Rng r) {
         String[] nets = {"NETGEAR", "ATT", "xfinitywifi", "Linksys", "TP-Link_", "SpectrumSetup-"};
@@ -195,8 +248,11 @@ public final class Generators {
     private static final Pattern P_ADV        = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
     private static final Pattern P_MAC_UP     = Pattern.compile("([0-9A-F]{2}:){5}[0-9A-F]{2}");
     private static final Pattern P_MAC_LOW    = Pattern.compile("([0-9a-f]{2}:){5}[0-9a-f]{2}");
-    private static final Pattern P_PHONE      = Pattern.compile("1[2-9]\\d{2}[2-9]\\d{6}");
-    private static final Pattern P_GMAIL      = Pattern.compile("[a-z]{3,}\\d{3}@gmail\\.com");
+    // US NANP (1 + 10) or UK mobile (447 + [4-9] + 8). E.164 digits, no leading +.
+    private static final Pattern P_PHONE      = Pattern.compile("1[2-9]\\d{2}[2-9]\\d{6}|447[4-9]\\d{8}");
+    // Realistic email: local part (letters/digits/./_/-) + one of the supported providers.
+    private static final Pattern P_EMAIL      = Pattern.compile(
+            "[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?@(gmail\\.com|outlook\\.com|yahoo\\.com|hotmail\\.com|proton\\.me|icloud\\.com)");
 
     private static boolean allDigits(String v) {
         if (v.isEmpty()) return false;
@@ -220,7 +276,7 @@ public final class Generators {
             case "sim_subscriber_imsi": return value.length() == 15 && allDigits(value);
             case "sim_serial_iccid":    return value.length() == 20 && allDigits(value) && luhnValid(value);
             case "gsf_id":              return allDigits(value) && parsePositiveLong(value);
-            case "gmail":               return P_GMAIL.matcher(value).matches();
+            case "gmail":               return P_EMAIL.matcher(value).matches();
             default:                    return true;
         }
     }
