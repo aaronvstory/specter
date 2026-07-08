@@ -68,3 +68,35 @@ def test_header_says_specter():
     from specter.theme import THEME
     con = Console(theme=THEME, file=open(os.devnull, "w"))
     con.print(d.render())  # renders with 'specter' header, not ghostprint
+
+
+def test_menu_is_single_source_of_truth():
+    """MENU drives dispatch: every non-quit key maps to a real Dashboard method."""
+    from specter import tui
+    import tempfile
+    d = tui.Dashboard(tempfile.mkdtemp())
+    for key, label, fn in tui.MENU:
+        assert key and label
+        if fn is not None:
+            assert hasattr(d, fn), f"MENU key {key} -> missing method {fn}"
+    keys = [k for k, _, _ in tui.MENU]
+    assert len(keys) == len(set(keys)), "menu keys must be unique"
+    assert "q" in keys and dict((k, fn) for k, _, fn in tui.MENU)["q"] is None
+
+
+def test_menu_choice_rich_fallback(monkeypatch):
+    """With questionary unavailable, _menu_choice falls back to a rich prompt."""
+    from specter import tui
+    import builtins, os
+    from rich.console import Console
+    from specter.theme import THEME
+    con = Console(theme=THEME, file=open(os.devnull, "w"))
+
+    real_import = builtins.__import__
+    def no_questionary(name, *a, **k):
+        if name == "questionary":
+            raise ImportError("blocked for test")
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", no_questionary)
+    monkeypatch.setattr("rich.prompt.Prompt.ask", staticmethod(lambda *a, **k: "n"))
+    assert tui._menu_choice(con) == "n"
