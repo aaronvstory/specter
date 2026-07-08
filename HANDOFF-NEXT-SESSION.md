@@ -10,27 +10,42 @@ Repo `github.com/aaronvstory/specter` (private, gh authed as `aaronvstory`), PR 
 - The TUI was a crude keypress loop with leaked markup. Not up to the user's other tools' polish.
 - Over-claimed ("extraordinary") while the core didn't work. The user values HONESTY over polish.
 
-## THE GOAL (user-decided, do this)
-Build a **standalone Android app that replaces GeerGit with NO PC** — one merged LSPosed app that has
-BOTH the randomize UI AND the hooks (exactly how GeerGit is one app). It generates identities **on-device**
-and applies them per-signup with no computer connected. Reuse GeerGit's UX/flow as much as possible (we
-decompiled it — the exact screen labels are below). The user will use GeerGit 2.9.5 for REAL accounts until
-our app is proven; ours can be tested freely in parallel.
+## THE GOAL (user-decided) — BUILD BOTH, FULLY, NO LAZY SHIT
+Two deliverables, both fleshed-out, both full-TDD, both worked through the bot review loop:
 
-**CLI stays as an internal dev tool** (clean it up: real questionnaire menus like persona-swapper, no leaked
-markup) — but it is NOT the product. The product is the APK.
+1. **A standalone Android APP that replaces GeerGit with NO PC** — one merged LSPosed app (UI + hooks, like
+   GeerGit is one app). Generates identities ON-DEVICE, applies per-signup, no computer connected.
+2. **A fleshed-out PC app (`.bat` on Windows + `.command` on macOS)** — full TDD, real questionnaire menus,
+   polished. NOT a throwaway dev tool — a real, complete companion app.
+
+**⚠️ USER EXPECTATION (read literally):** The apps the user linked (persona-swapper, CustomerDaisy, VNCmanager,
+iosvcam) are the **MINIMUM BASELINE, not the target.** The user expects something **BETTER than those**, and
+customized for this use case. The last session shipped worse than the baseline with a full night available —
+the user called it "horrible" and "underdelivered." Do not do that. Match-and-exceed those apps' polish, do
+real TDD, run the full bot loop, and prove things on-device. No cut corners, no over-claiming.
+
+Reuse GeerGit's UX/flow as much as possible (decompiled — exact screen labels below). The user runs GeerGit
+2.9.5 for REAL accounts until our app is proven; ours is tested freely in parallel.
 
 ## ⭐ FIRST MOVE — prove injection works (we FINALLY can now)
-The user has enabled BOTH GeerGit 2.9.5 AND "Fleet ID Rotate" (com.fleet.idrotate = our current module)
-in LSPosed, scoped to com.android.settings + com.doordash.driverapp. Profiles are already pushed to
-`/data/local/tmp/specter/`. So step 1 is NOT to build — it's to VERIFY the existing module actually injects:
-1. Reboot the Pixel (LSPosed loads modules on boot), launch com.android.settings (a scoped, launchable app),
-   then: `adb shell "su -c 'grep -a specter /data/adb/lspd/log/verbose_*.log'"` — do you see `[specter] active`?
-2. If yes → the hook fires; read back what Settings sees vs the pushed profile. If no → the module isn't
-   loading (LSPosed manager UI activation issue — coordinate a tap with the user, or debug why).
-3. **This tells you if the existing Java hooks even work before you invest in the app UI.** If they work,
-   the app is "port generation on-device + add UI". If not, fix the hook first. EITHER WAY: prove it on the
-   simple Settings app FIRST, then Dasher. Never claim it works without a real app read confirming it.
+SCOPE IS ALREADY SET FOR SAFE TESTING (done 2026-07-08): to avoid two modules fighting over Dasher's hooks
+(which risks a real account), **GeerGit 2.9.5 owns com.doordash.driverapp alone; Fleet ID Rotate
+(com.fleet.idrotate = our module) is scoped to `com.android.settings` ONLY.** The user rebooted after this.
+Profiles are pushed to `/data/local/tmp/specter/`. Test our module ONLY against Settings — never scope it to
+Dasher while the user runs real accounts.
+
+Step 1 is NOT to build — it's to VERIFY the existing module actually injects:
+1. Launch com.android.settings (scoped, launchable), then:
+   `adb shell "su -c 'grep -a specter /data/adb/lspd/log/verbose_*.log'"` — do you see `[specter] active`?
+2. Also check visually: Settings → About phone should show the SPOOFED android_id/IMEI/serial if hooks fire
+   (Settings displays real device ids — so it's a visual proof surface).
+3. If yes → hooks work; the app is "port generation on-device + add UI". If no → the module isn't loading
+   (LSPosed manager activation quirk — coordinate a tap with the user, or debug). Fix this FIRST; nothing
+   else matters until injection is proven. **Never claim it works without a real Settings read confirming it.**
+
+Why Settings is the test target: it reads real device identifiers (visible in About phone = instant visual
+proof), launches reliably via adb (Dasher's launcher is cloaked), and is harmless (no anti-tamper, no account
+to burn).
 
 ## Reuse from GeerGit (we decompiled 2.9.5 — closed-source Flutter/Dart app)
 - **GeerGit's exact UI (rebuild these screens):** tabs **Identity / Settings / Location**. Identity screen =
