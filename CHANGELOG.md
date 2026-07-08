@@ -3,9 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] — 2026-07-08
+
+First complete release: builds, installs, push-verified on device; 73 tests; 6 review passes applied.
 
 ### Added
+- Hook coverage hardening: ContentProviderClient.query, cursor getBlob + copyStringToBuffer.
+- IMEI TAC coherence (brand-plausible TAC, shared across dual-SIM IMEIs).
+- Fail-closed used-id ledger (quarantine + refuse on corruption).
+- Build.VERSION.* spoofing; Gservices.getLong; executable JVM tests for hook logic.
+- CI workflow; release builder (dist zip); dual-OS launchers.
 - Polished README (feature table, quality section, project layout).
 - Deepened `verify` questionnaire: pre-flight device/module summary, module-active detection,
   per-check error isolation, and a final results summary table.
