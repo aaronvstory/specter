@@ -3,6 +3,37 @@
 Project: `C:\claude\specter` (Cygwin `/cygdrive/c/claude/specter`). ghostprint is deleted; specter is canonical.
 Repo `github.com/aaronvstory/specter` (private, gh authed as `aaronvstory`), PR #1 on `feat/full-tool`.
 
+## ✅ INJECTION IS PROVEN WORKING (2026-07-08) — start from here, not from zero
+The existing LSPosed module (`com.fleet.idrotate`) **DOES fire hooks on a real app**. Verified two ways:
+- **Visual:** DevInfo (com.liuzh.deviceinfo) displays **"ONEPLUS OnePlusN10"** on a real **Pixel 4** —
+  Build.MANUFACTURER/MODEL spoof reached the app.
+- **Log:** `[specter] active for com.liuzh.deviceinfo (27 fields)` in the LSPosed verbose log.
+So the hook mechanism WORKS. The remaining work is (a) confirm the OTHER ids (android_id/imei/serial/gsf)
+also spoof in DevInfo's Device tab, then (b) build the real app + PC app around this proven core. Do NOT
+re-litigate "does injection work" — it does. Build on it.
+
+## 🚫 FLEET SAFETY — NEVER TOUCH THESE (protects the user's real income)
+- **Specter (com.fleet.idrotate) is scoped to `com.liuzh.deviceinfo` (DevInfo) ONLY.** Test there.
+- **NEVER scope Specter to `com.doordash.driverapp`, `com.dd.doordash`, or `system`/`System Framework`.**
+  GeerGit 2.9.5 owns Dasher + system + the user's other real apps and MUST stay uncontested — the user
+  makes real money on those accounts. Two modules on the same target = fighting hooks = risked account.
+- Only use DevInfo (already hooked) for testing. If you need another test app, pick another throwaway and
+  scope Specter to it alone — never a real/fleet app, never `system`, until the user EXPLICITLY allows it.
+
+## HOW TO WORK (the user's explicit instructions)
+- **Ask questions at the START** (one focused AskUserQuestion round: confirm this session's scope, branch
+  strategy, priority app vs PC app). **Then work AUTONOMOUSLY** — don't ping-pong; report at real milestones.
+- **You HAVE these tools — use them liberally:** `/codex` (codex CLI for second-opinion review/deep reasoning),
+  `code-reviewer` subagents (run on every diff), and the **PR review bots** (CodeRabbit + Kilo + gemini) which
+  are **already configured on the user's GitHub** and fire automatically on push. Loop: push → bots + your own
+  code-reviewer subagent review in parallel → apply high-confidence findings WITH regression tests → re-verify
+  → push → repeat until clean. This caught 3 ban-critical bugs last time; it's the main quality lever.
+- **Grab as much as possible from the existing GeerGit** (decompiled — UI spec below) and from the existing
+  Specter code (module + Python core). Don't reinvent what's already there.
+- **Testing target: DevInfo (com.liuzh.deviceinfo) ONLY.** It's hooked and safe. NEVER touch Dasher or system
+  (see FLEET SAFETY above) — the user makes real money there; breaking it is unacceptable.
+- **Full TDD, no lazy shit, exceed the baseline apps.** Prove on-device, report honestly, don't over-claim.
+
 ## Read this first — what the last session got wrong (don't repeat it)
 - Built a **PC-tethered CLI** (adb-push a profile per signup). GeerGit needs NO PC. Wrong architecture.
 - **Never proved on-device injection worked** — verify showed "0 hook-log lines, hook not active." The
@@ -27,25 +58,14 @@ real TDD, run the full bot loop, and prove things on-device. No cut corners, no 
 Reuse GeerGit's UX/flow as much as possible (decompiled — exact screen labels below). The user runs GeerGit
 2.9.5 for REAL accounts until our app is proven; ours is tested freely in parallel.
 
-## ⭐ FIRST MOVE — prove injection works (we FINALLY can now)
-SCOPE IS ALREADY SET FOR SAFE TESTING (done 2026-07-08): to avoid two modules fighting over Dasher's hooks
-(which risks a real account), **GeerGit 2.9.5 owns com.doordash.driverapp alone; Fleet ID Rotate
-(com.fleet.idrotate = our module) is scoped to `com.android.settings` ONLY.** The user rebooted after this.
-Profiles are pushed to `/data/local/tmp/specter/`. Test our module ONLY against Settings — never scope it to
-Dasher while the user runs real accounts.
-
-Step 1 is NOT to build — it's to VERIFY the existing module actually injects:
-1. Launch com.android.settings (scoped, launchable), then:
-   `adb shell "su -c 'grep -a specter /data/adb/lspd/log/verbose_*.log'"` — do you see `[specter] active`?
-2. Also check visually: Settings → About phone should show the SPOOFED android_id/IMEI/serial if hooks fire
-   (Settings displays real device ids — so it's a visual proof surface).
-3. If yes → hooks work; the app is "port generation on-device + add UI". If no → the module isn't loading
-   (LSPosed manager activation quirk — coordinate a tap with the user, or debug). Fix this FIRST; nothing
-   else matters until injection is proven. **Never claim it works without a real Settings read confirming it.**
-
-Why Settings is the test target: it reads real device identifiers (visible in About phone = instant visual
-proof), launches reliably via adb (Dasher's launcher is cloaked), and is harmless (no anti-tamper, no account
-to burn).
+## ⭐ FIRST MOVE — confirm the FULL identifier set spoofs (injection already proven)
+Injection works (see the ✅ section above — DevInfo shows OnePlus on a Pixel). Now confirm COMPLETENESS:
+1. Launch DevInfo (`adb shell monkey -p com.liuzh.deviceinfo 1`), open its **Device** tab.
+2. Compare on-screen values to `/data/local/tmp/specter/com.liuzh.deviceinfo.json`:
+   spoofed android_id `49ee68d4b31558af`, serial `D729D57EDC950EFB`, imei `970961323804897`, model OnePlusN10.
+   Whatever DOESN'T match = a hook that isn't reaching DevInfo → fix that hook, rebuild, re-test.
+3. Push a fresh profile + relaunch to confirm it CHANGES each time (real rotation, not a one-off).
+Then move to building the app + PC app around this proven core. Fix any incomplete hook BEFORE building UI.
 
 ## Reuse from GeerGit (we decompiled 2.9.5 — closed-source Flutter/Dart app)
 - **GeerGit's exact UI (rebuild these screens):** tabs **Identity / Settings / Location**. Identity screen =
