@@ -33,3 +33,9 @@ nul
 /dist/specter-v*.zip
 /dist/specter-v*/
 /xposed-module/.jvm-test-out/
+
+# resources: keep large binaries local, version only the text research/index
+/resources/geergit-apks/*.apk
+/resources/decompiles/*.so
+/resources/decompiles/geergit-*-dex-java/
+/resources/device-backups/*.tgz

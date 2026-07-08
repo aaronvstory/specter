@@ -1,0 +1,120 @@
+### 2.9.6-installed
+
+## pyshivam classes (3):
+  Lcom/pyshivam/geergit/MainActivity;
+  Lcom/pyshivam/geergit/xposed/Xposed$handleLoadPackage$$inlined$hookAfterMethod$default$1;
+  Lcom/pyshivam/geergit/xposed/Xposed;
+
+## identifier strings (111):
+   installationUuid
+   is not an instance of com.google.firebase.components.ComponentRegistrar
+  $a\
+${METADATA_SERIALIZED}
+  ${METADATA_SERIALIZED}
+  , firebaseAuthenticationToken=
+  , firebaseInstallationId=
+  , installationUuid=
+  , organization=null, installationUuid=
+  .com.google.firebase.crashlytics
+  .com.google.firebase.crashlytics-ndk
+  .com.google.firebase.crashlytics.files.v1
+  .com.google.firebase.crashlytics.files.v2
+  /installations
+  /installations/
+  @com.google.firebase.encoders.proto.Protobuf(tag=
+  Created new Crashlytics installation ID: 
+  Determining Crashlytics installation ID...
+  Error getting Firebase installation id .
+  Error getting Firebase installation id.
+  Landroid/media/MediaDrm;
+  Landroid/os/Build;
+  Landroid/provider/Settings$Secure;
+  Lcom/google/firebase/FirebaseCommonKtxRegistrar;
+  Lcom/google/firebase/FirebaseCommonRegistrar;
+  Lcom/google/firebase/components/ComponentDiscoveryService;
+  Lcom/google/firebase/components/ComponentRegistrar;
+  Lcom/google/firebase/concurrent/ExecutorsRegistrar;
+  Lcom/google/firebase/crashlytics/CrashlyticsRegistrar;
+  Lcom/google/firebase/crashlytics/FirebaseCrashlyticsKtxRegistrar;
+  Lcom/google/firebase/datatransport/TransportRegistrar;
+  Lcom/google/firebase/installations/FirebaseInstallationsKtxRegistrar;
+  Lcom/google/firebase/installations/FirebaseInstallationsRegistrar;
+  Lcom/google/firebase/provider/FirebaseInitProvider;
+  Lcom/google/firebase/sessions/FirebaseSessionsRegistrar;
+  Lio/flutter/plugins/firebase/core/FlutterFirebaseCoreRegistrar;
+  Lio/flutter/plugins/firebase/core/FlutterFirebasePlugin;
+  Lio/flutter/plugins/firebase/core/FlutterFirebasePluginRegistry;
+  Lio/flutter/plugins/firebase/crashlytics/FirebaseCrashlyticsTestCrash;
+  Lio/flutter/plugins/firebase/crashlytics/FlutterError;
+  Lio/flutter/plugins/firebase/crashlytics/FlutterFirebaseAppRegistrar;
+  MEMOIZED_SERIALIZED_SIZE_MASK
+  METADATA_COMMAND_ARGUMENTS_SERIALIZED_TOKEN
+  Null installationUuid
+  PersistedInstallationEntry{firebaseInstallationId=
+  Please set a valid API key. A Firebase API key is required to communicate with Firebase server APIs: It authenticates your project with Google.Please refer to https://firebase.google.com/support/privacy/init-options.
+  Please set your Application ID. A valid Firebase App ID is required to communicate with Firebase server APIs: It identifies your application with Firebase.Please refer to https://firebase.google.com/support/privacy/init-options.
+  Please set your Project ID. A valid Firebase Project ID is required to communicate with Firebase server APIs: It identifies your application with Firebase.Please refer to https://firebase.google.com/support/privacy/init-options.
+  Skipping profile installation for 
+  The Crashlytics build ID is missing. This occurs when the Crashlytics Gradle plugin is missing from your app's build configuration. Please review the Firebase Crashlytics onboarding instructions at https://firebase.google.com/docs/crashlytics/get-started?platform=android#add-plugin
+  UNINITIALIZED_SERIALIZED_SIZE
+  advertising_id
+  android_id
+  com.google.firebase-firebase-common
+  com.google.firebase-firebase-crashlytics
+  com.google.firebase-firebase-installations
+  com.google.firebase-firebase-sessions
+  com.google.firebase.common.prefs:
+  com.google.firebase.components.ComponentRegistrar
+  com.google.firebase.components:
+  com.google.firebase.crash.FirebaseCrash
+  com.google.firebase.crashlytics
+  com.google.firebase.crashlytics.build_ids_arch
+  com.google.firebase.crashlytics.build_ids_build_id
+  com.google.firebase.crashlytics.build_ids_lib
+  com.google.firebase.crashlytics.mapping_file_id
+  com.google.firebase.crashlytics.unity_version
+  com.google.firebase.crashlytics.version_control_info
+  com.google.firebase.firebaseinitprovider
+  com.google.firebase.sessions.ProcessData
+  com.google.firebase.sessions.SessionData
+  com.google.firebase.sessions.SessionDetails
+  com.google.firebase.sessions.Time
+  com.google.firebase.sessions.settings.SessionConfigs
+  crashlytics.installation.id
+  dev.flutter.pigeon.firebase_core_platform_interface.FirebaseAppHostApi.delete
+  dev.flutter.pigeon.firebase_core_platform_interface.FirebaseAppHostApi.setAutomaticDataCollectionEnabled
+  dev.flutter.pigeon.firebase_core_platform_interface.FirebaseAppHostApi.setAutomaticResourceManagementEnabled
+  dev.flutter.pigeon.firebase_core_platform_interface.FirebaseCoreHostApi.initializeApp
+  dev.flutter.pigeon.firebase_core_platform_interface.FirebaseCoreHostApi.initializeCore
+  dev.flutter.pigeon.firebase_core_platform_interface.FirebaseCoreHostApi.optionsFromResource
+  fire-installations
+  firebase-settings.crashlytics.com
+  firebase.installation.id
+  firebaseApp
+  firebaseAuthenticationToken
+  firebaseInstallationId
+  firebaseInstallationsApi
+  firebaseSessions
+  firebaseSessions/sessionConfigsDataStore.data
+  firebaseSessions/sessionDataStore.data
+  firebaseSessionsComponent
+  firebase_crashlytics
+  firebase_crashlytics_collection_enabled
+  firebase_crashlytics_collection_enabled manifest flag
+  firebase_data_collection_default_enabled
+  firebase_database_url
+  firebase_sessions_enabled
+  firebase_sessions_sampling_rate
+  firebase_sessions_sessions_restart_timeout
+  getAdvertisingIdInfo
+  getDeviceId
+  getNetworkOperatorName
+  getSerializableExtra
+  https://firebase-settings.crashlytics.com/spi/v2/platforms/android/gmp/
+  https://firebaseinstallations.googleapis.com/v1/
+  installation
+  installationUuid
+  plugins.flutter.io/firebase_crashlytics
+  plugins.flutter.io/firebase_crashlytics_test_stream
+  useAdvertisingIdForDeviceId
+  x-firebase-client
