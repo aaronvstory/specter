@@ -19,6 +19,11 @@ import java.util.Set;
  */
 public final class UsedStore {
 
+    /** Raised when the on-disk ledger exists but is unreadable — the loader FAILS CLOSED (throws). */
+    public static final class CorruptLedger extends RuntimeException {
+        public CorruptLedger(String m, Throwable t) { super(m, t); }
+    }
+
     private final Map<String, Set<String>> sets = new LinkedHashMap<>();
 
     /** Fresh, legitimately-empty ledger. */

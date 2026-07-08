@@ -17,9 +17,12 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
     app/src/main/java/com/fleet/idrotate/gen/Generators.java \
     app/src/main/java/com/fleet/idrotate/gen/Profile.java \
     app/src/main/java/com/fleet/idrotate/gen/UsedStore.java \
+    app/src/main/java/com/fleet/idrotate/gen/RootWriter.java \
     app/src/test/java/com/fleet/idrotate/SpoofLogicTest.java \
     app/src/test/java/com/fleet/idrotate/gen/GeneratorsTest.java \
-    app/src/test/java/com/fleet/idrotate/gen/ProfileTest.java
+    app/src/test/java/com/fleet/idrotate/gen/ProfileTest.java \
+    app/src/test/java/com/fleet/idrotate/gen/RootWriterTest.java
 "$JAVA" -cp "$OUT" com.fleet.idrotate.SpoofLogicTest
 "$JAVA" -cp "$OUT" com.fleet.idrotate.gen.GeneratorsTest
 "$JAVA" -cp "$OUT" com.fleet.idrotate.gen.ProfileTest
+"$JAVA" -cp "$OUT" com.fleet.idrotate.gen.RootWriterTest
