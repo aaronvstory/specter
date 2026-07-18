@@ -20,8 +20,9 @@ import java.util.Arrays;
 public final class Profile {
     private Profile() {}
 
+    // Dominant US-market Android makers only — so device brand reads as a genuine US phone.
     static final Set<String> US_COMMON_BRANDS = new HashSet<>(Arrays.asList(
-            "samsung", "google", "motorola", "oneplus", "lge"));
+            "samsung", "google", "motorola", "lge"));
 
     /** {mccmnc, name} US carriers (MCC 310/311), same order as Python US_CARRIERS. */
     static final String[][] US_CARRIERS = {
@@ -37,7 +38,9 @@ public final class Profile {
             "sim_operator_mccmnc", "sim_operator_name", "sim_subscriber_imsi", "sim_serial_iccid",
             "gmail", "build_manufacturer", "build_brand", "build_device", "build_product",
             "build_model", "build_release", "build_id", "build_incremental", "build_fingerprint",
-            "build_security_patch",
+            "build_security_patch", "build_bootloader",
+            "build_hardware", "build_board", "build_kernel_version", "build_radio",
+            "total_ram", "total_storage", "build_host", "build_display",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -73,7 +76,7 @@ public final class Profile {
         return build(r, devices, usBias, Country.US);
     }
 
-    /** Build a full 27-field identity. Device rows are [name, manufacturer, brand, device, product, "model:release", build_id, incremental, patch]. */
+    /** Build a full 28-field identity. Device rows are [name, manufacturer, brand, device, product, "model:release", build_id, incremental, patch]. */
     public static Map<String, String> build(Generators.Rng r, List<List<String>> devices, boolean usBias, Country country) {
         List<String> dev = pickDevice(r, devices, usBias, country);
         String manufacturer = dev.get(1), brand = dev.get(2), device = dev.get(3), product = dev.get(4);
@@ -121,6 +124,19 @@ public final class Profile {
         p.put("build_incremental", incremental);
         p.put("build_fingerprint", fingerprint);
         p.put("build_security_patch", patch);
+        p.put("build_bootloader", Generators.bootloader(r, brand, device));
+        // Fingerprint-hash signals (FingerprintJS reads these): keep coherent with the device.
+        // HARDWARE/BOARD track the platform (device codename); kernel is high-entropy, per-identity.
+        p.put("build_hardware", device);
+        p.put("build_board", device);
+        p.put("build_kernel_version", Generators.kernelVersion(r));
+        p.put("build_radio", Generators.radioVersion(r));
+        p.put("total_ram", Generators.totalRamBytes(r));
+        p.put("total_storage", Generators.totalStorageBytes(r));
+        // Build.HOST leaks the real build-farm hostname (e.g. "abfarm-00902" = Google infra — incoherent
+        // on a spoofed Samsung/Moto). Build.DISPLAY is the build display id, ==build_id on real devices.
+        p.put("build_host", Generators.buildHost(r));
+        p.put("build_display", buildId);
         return p;
     }
 

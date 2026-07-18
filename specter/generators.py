@@ -65,6 +65,60 @@ def _tac_for_brand(r, brand):
     tacs = _TAC_BY_BRAND.get((brand or "").lower(), ["35000000"])
     return tacs[r(len(tacs))]
 
+_KERNEL_BASES = ["4.9", "4.14", "4.19", "5.4", "5.10", "5.15"]
+
+def kernel_version(r):
+    """os.version kernel string, e.g. '4.14.180-perf-g0a1b2c3' (mirrors Java kernelVersion)."""
+    base = _KERNEL_BASES[r(len(_KERNEL_BASES))]
+    patch = 50 + r(250)
+    tag = "-perf" if r(2) == 0 else "-android" + str(10 + r(4))
+    return f"{base}.{patch}{tag}-g" + hexs(r, 4)
+
+def build_host(r):
+    """Build.HOST — model-agnostic build-farm hostname (mirrors Java buildHost). Real value leaks the
+    Google build host (e.g. 'abfarm-00902'), incoherent on a spoofed Samsung/Moto."""
+    pre = ["abfarm", "wprd", "SWDG", "vf-build", "r-build", "prod"]
+    return pre[r(len(pre))] + "-" + digits(r, 5)
+
+_RADIO_PREFIXES = ["g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"]
+
+def radio_version(r):
+    """Build.getRadioVersion() baseband string (mirrors Java radioVersion). Confirmed FP leak."""
+    pre = _RADIO_PREFIXES[r(len(_RADIO_PREFIXES))]
+    return f"{pre}-{digits(r,5)}-{digits(r,6)}-" + chr(ord('A')+r(6)) + f"-{digits(r,7)}"
+
+def bootloader(r, brand, device):
+    """Build.BOOTLOADER — DEVICE-coherent, generic-shaped (mirrors Java bootloader). Derived from the
+    picked device codename so it can never imply a different model than the one being spoofed."""
+    b = (brand or "").lower()
+    dev = device or "device"
+    if b == "google":
+        return f"{dev.lower()}-{1 + r(3)}.{r(9)}-{digits(r, 7)}"
+    if b == "samsung":
+        code = dev.replace("SM-", "").upper()
+        return code + "XXU" + str(1 + r(9)) + chr(ord('A')+r(26)) + chr(ord('A')+r(26)) + chr(ord('A')+r(26))
+    if b == "motorola":
+        return f"MBM-{digits(r, 2)}.{digits(r, 2)}-{digits(r, 3)}"
+    if b == "lge":
+        return f"LGE-{dev.upper()}-{digits(r, 4)}"
+    return "BL" + chr(ord('A')+r(26)) + f"{digits(r, 2)}.{digits(r, 4)}-{digits(r, 4)}"
+
+_RAM_GB = [3, 4, 6, 8, 12]
+_STORAGE_GB = [32, 64, 128, 256]
+
+def total_ram_bytes(r):
+    """total RAM in bytes as ActivityManager.MemoryInfo.totalMem reports (mirrors Java totalRamBytes)."""
+    gb = _RAM_GB[r(len(_RAM_GB))]
+    nominal = gb * 1024 * 1024 * 1024
+    reported = nominal - (nominal * (3 + r(6)) // 100)
+    return str((reported // (1024 * 1024)) * 1024 * 1024)
+
+def total_storage_bytes(r):
+    """total internal storage in bytes (mirrors Java totalStorageBytes)."""
+    gb = _STORAGE_GB[r(len(_STORAGE_GB))]
+    nominal = gb * 1000 * 1000 * 1000
+    return str(nominal * (90 + r(5)) // 100)
+
 def imei(r, tac=None):
     """15-digit Luhn-valid IMEI. If a TAC is given, use it as the first 8 digits (brand-coherent)."""
     if tac and len(tac) == 8 and tac.isdigit():
@@ -96,12 +150,9 @@ def phone_us(r):
     exch = str(2 + r(8)) + digits(r, 2)
     return "1" + area + exch + digits(r, 4)
 
-def phone_uk(r):
-    # UK mobile E.164 (no +): 44 + 7 + [4-9] + 8 digits.
-    return "447" + str(4 + r(6)) + digits(r, 8)
-
 def phone_for_country(r, kind):
-    return phone_uk(r) if kind == "uk" else phone_us(r)
+    # USA-only build: always NANP. (kept for the build_profile call signature)
+    return phone_us(r)
 
 def imsi(r, mccmnc):
     return mccmnc + digits(r, 15 - len(mccmnc))        # IMSI = MCC+MNC+MSIN, 15 digits
@@ -117,12 +168,11 @@ _ICCID_IIN = {
     "310120": "89011201",  # Sprint
     "311580": "89011580",  # US Cellular
     "311870": "89011870",  # Boost
-    "23430": "894430",     # EE (UK)
-    "23410": "894410",     # O2 (UK)
-    "23415": "894415",     # Vodafone (UK)
-    "23420": "894420",     # Three (UK)
-    "23433": "894430",     # EE (UK)
-    "23402": "894410",     # O2 (UK)
+    "310004": "89148000",  # Verizon
+    "310090": "89014104",  # AT&T
+    "312530": "89011201",  # Sprint
+    "311882": "89014103",  # Mint Mobile (T-Mobile MVNO)
+    "310240": "89014103",  # T-Mobile
 }
 
 def iccid(r, mccmnc=None):
@@ -197,7 +247,7 @@ def validate(key, value):
         "bluetooth_mac":       lambda v: bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", v)),
         "wifi_mac":            lambda v: bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", v)),
         "wifi_bssid":          lambda v: bool(re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", v)),
-        "mobile_number":       lambda v: bool(re.fullmatch(r"1[2-9]\d{2}[2-9]\d{6}|447[4-9]\d{8}", v)),
+        "mobile_number":       lambda v: bool(re.fullmatch(r"1[2-9]\d{2}[2-9]\d{6}", v)),
         "sim_subscriber_imsi": lambda v: len(v) == 15 and v.isdigit(),
         "sim_serial_iccid":    lambda v: len(v) == 20 and v.isdigit() and luhn_valid(v),
         "gsf_id":              lambda v: v.isdigit() and 0 < int(v) <= LONG_MAX,

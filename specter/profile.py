@@ -19,30 +19,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DEVICES_PATH = os.path.join(ROOT, "data", "devices.json")
 
-US_COMMON_BRANDS = {"samsung", "google", "motorola", "oneplus", "lge"}
+US_COMMON_BRANDS = {"samsung", "google", "motorola", "lge"}
 
 # real US carriers (MCC 310/311) so the SIM identity is coherent for a US driver
 US_CARRIERS = [
     ("310260", "T-Mobile"), ("311480", "Verizon"), ("310410", "AT&T"),
     ("310120", "Sprint"), ("311580", "US Cellular"), ("310030", "AT&T"),
     ("310160", "T-Mobile"), ("311870", "Boost Mobile"),
+    ("310004", "Verizon"), ("310090", "AT&T"), ("312530", "Sprint"),
+    ("311882", "Mint Mobile"), ("310240", "T-Mobile"),
 ]
 
-UK_CARRIERS = [
-    ("23430", "EE"), ("23410", "O2"), ("23415", "Vodafone"),
-    ("23420", "Three"), ("23433", "EE"), ("23402", "O2"),
-]
-
-# Per-country data: carriers, phone kind, device-brand bias. Adding a country is a data edit.
+# USA-only build. One coherent US market: US carriers + NANP phones + US-market device brands.
 COUNTRIES = {
     "US": {"name": "United States", "carriers": US_CARRIERS, "phone": "nanp",
-           "brands": {"samsung", "google", "motorola", "oneplus", "lge"}},
-    "UK": {"name": "United Kingdom", "carriers": UK_CARRIERS, "phone": "uk",
-           "brands": {"samsung", "google", "oneplus", "xiaomi", "sony"}},
+           "brands": {"samsung", "google", "motorola", "lge"}},
 }
 
 def country_of(code):
-    return COUNTRIES.get((code or "US").upper(), COUNTRIES["US"])
+    return COUNTRIES["US"]
 
 
 def _load_devices():
@@ -118,6 +113,15 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "build_incremental": incremental,
         "build_fingerprint": fingerprint,
         "build_security_patch": patch,
+        "build_bootloader": G.bootloader(r, brand, device),
+        "build_hardware": device,
+        "build_board": device,
+        "build_kernel_version": G.kernel_version(r),
+        "build_radio": G.radio_version(r),
+        "total_ram": G.total_ram_bytes(r),
+        "total_storage": G.total_storage_bytes(r),
+        "build_host": G.build_host(r),
+        "build_display": build_id,
     }
 
 

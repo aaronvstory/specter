@@ -53,10 +53,37 @@ public class ProfileTest {
             Map<String, String> p = Profile.build(seeded(s), devs, true);
             List<String> errs = Profile.validate(p);
             check(errs.isEmpty(), "profile valid s=" + s + " " + errs);
-            // all 27 keys present
-            check(p.size() == Profile.KEYS.length, "27 keys s=" + s);
+            // all keys present
+            check(p.size() == Profile.KEYS.length, "all keys s=" + s);
             // coherence spot-checks
             check(p.get("build_fingerprint").contains(p.get("build_brand")), "brand in fp s=" + s);
+            // BOOTLOADER present, non-empty, and DEVICE-coherent — it must be derived from the picked
+            // device codename so it can never imply a different model (a Galaxy A01 must not report a
+            // Galaxy S21 bootloader). Google embeds the codename; LG embeds the device; Samsung embeds
+            // the model code (SM- stripped, uppercased).
+            String bl = p.get("build_bootloader");
+            String brand = p.get("build_brand").toLowerCase();
+            String device = p.get("build_device");
+            check(bl != null && !bl.isEmpty() && !bl.contains(" "), "bootloader shape s=" + s + " " + bl);
+            boolean coherent =
+                brand.equals("google")   ? bl.startsWith(device.toLowerCase() + "-") :
+                brand.equals("samsung")  ? bl.startsWith(device.replace("SM-", "").toUpperCase() + "XXU") :
+                brand.equals("lge")      ? bl.startsWith("LGE-" + device.toUpperCase() + "-") :
+                brand.equals("motorola") ? bl.startsWith("MBM-") : bl.startsWith("BL");
+            check(coherent, "bootloader device-coherent s=" + s + " dev=" + device + " bl=" + bl);
+            // RAM/storage present as plausible byte counts (fingerprint-hash hardware signals).
+            check(p.get("total_ram").matches("\\d{9,11}"), "ram bytes s=" + s + " " + p.get("total_ram"));
+            check(p.get("total_storage").matches("\\d{10,12}"), "storage bytes s=" + s + " " + p.get("total_storage"));
+            // HOST is a farm-style hostname (generated, not the device's real build host); DISPLAY==build_id.
+            check(p.get("build_host").matches("[A-Za-z-]+-\\d{5}"), "host shape s=" + s + " " + p.get("build_host"));
+            check(p.get("build_display").equals(p.get("build_id")), "display==build_id s=" + s);
+            // Fingerprint-hash hardware signals: kernel plausible; HARDWARE/BOARD coherent with device.
+            check(p.get("build_kernel_version").matches("\\d+\\.\\d+\\.\\d+-.*-g[0-9a-f]{8}"), "kernel shape s=" + s + " " + p.get("build_kernel_version"));
+            check(p.get("build_hardware").equals(p.get("build_device")), "hardware==device s=" + s);
+            check(p.get("build_board").equals(p.get("build_device")), "board==device s=" + s);
+            // Radio/baseband present, non-empty, plausible (no whitespace, has a vendor prefix + digits)
+            String radio = p.get("build_radio");
+            check(radio != null && !radio.isEmpty() && !radio.contains(" ") && radio.contains("-"), "radio shape s=" + s + " " + radio);
             check(p.get("sim_subscriber_imsi").startsWith(p.get("sim_operator_mccmnc")), "imsi carrier s=" + s);
             // dual-SIM: imei1 != imei2 but share the TAC (first 8 digits)
             check(!p.get("imei1").equals(p.get("imei2")), "imei1 != imei2 s=" + s);
@@ -71,18 +98,21 @@ public class ProfileTest {
         check(Profile.validate(truncated).stream().anyMatch(s -> s.contains("missing key: android_id")),
                 "missing key reported by name");
 
-        // Country: UK profiles are valid + coherent (UK carrier, +44 phone, matching IMSI/ICCID).
+        // USA-only: every profile is a coherent US identity — US carrier (MCC 310–316), NANP phone,
+        // IMSI matching the carrier, and a US-market device brand.
+        java.util.Set<String> usBrands = new HashSet<>(Arrays.asList("samsung", "google", "motorola", "lge"));
         for (int s = 0; s < 500; s++) {
-            Map<String, String> uk = Profile.build(seeded(s), devs, true, Country.UK);
-            check(Profile.isValid(uk), "UK profile valid s=" + s + " " + Profile.validate(uk));
-            String mcc = uk.get("sim_operator_mccmnc");
-            check(mcc.startsWith("234") || mcc.startsWith("235"), "UK carrier MCC 234/235 s=" + s);
-            check(uk.get("mobile_number").startsWith("447"), "UK phone +44 7 s=" + s);
-            check(uk.get("sim_subscriber_imsi").startsWith(mcc), "UK IMSI carrier-coherent s=" + s);
+            Map<String, String> us = Profile.build(seeded(s), devs, true, Country.US);
+            check(Profile.isValid(us), "US profile valid s=" + s + " " + Profile.validate(us));
+            String mcc = us.get("sim_operator_mccmnc");
+            check(mcc.matches("31[0-6]\\d{3}"), "US carrier MCC 310-316 s=" + s + " " + mcc);
+            check(us.get("mobile_number").matches("1[2-9]\\d{2}[2-9]\\d{6}"), "US NANP phone s=" + s);
+            check(us.get("sim_subscriber_imsi").startsWith(mcc), "US IMSI carrier-coherent s=" + s);
+            check(usBrands.contains(us.get("build_brand").toLowerCase()), "US-market brand s=" + s + " " + us.get("build_brand"));
         }
-        // US profile stays US (back-compat overload == US).
+        // Back-compat overload == US.
         Map<String, String> usProf = Profile.build(seeded(1), devs, true);
-        check(usProf.get("sim_operator_mccmnc").matches("31[01]\\d{3}"), "US carrier MCC 310/311");
+        check(usProf.get("sim_operator_mccmnc").matches("31[0-6]\\d{3}"), "US carrier MCC 310-316");
         check(usProf.get("mobile_number").startsWith("1"), "US phone NANP");
 
         // Determinism: same seed -> same profile.

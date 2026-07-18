@@ -101,6 +101,85 @@ public final class Generators {
         return tacs[r.next(tacs.length)];
     }
 
+    /** Build.BOOTLOADER — DEVICE-coherent, generic-shaped bootloader string. Derived from the device
+     *  codename (not a fixed table of real model-specific firmware prefixes, which would mismatch the
+     *  picked device — e.g. a Galaxy A01 must never report a Galaxy S21 bootloader). The shape follows
+     *  each OEM's real style but the identifying part comes from THIS device, so it can't contradict it. */
+    public static String bootloader(Rng r, String brand, String device) {
+        String b = brand == null ? "" : brand.toLowerCase();
+        String dev = device == null ? "device" : device;
+        if (b.equals("google")) {
+            // Pixel-family: "<codename>-1.2-7683913" — codename IS the device, always coherent.
+            return dev.toLowerCase() + "-" + (1 + r.next(3)) + "." + r.next(9) + "-" + digits(r, 7);
+        }
+        if (b.equals("samsung")) {
+            // Samsung firmware code is derived from the actual model (e.g. SM-A013G -> "A013GXXU..").
+            String code = dev.replace("SM-", "").toUpperCase();
+            return code + "XXU" + (1 + r.next(9)) + (char) ('A' + r.next(26))
+                    + (char) ('A' + r.next(26)) + (char) ('A' + r.next(26));
+        }
+        if (b.equals("motorola")) return "MBM-" + digits(r, 2) + "." + digits(r, 2) + "-" + digits(r, 3);
+        if (b.equals("lge"))      return "LGE-" + dev.toUpperCase() + "-" + digits(r, 4);
+        // generic OEM: a plausible alnum bootloader that names no specific model.
+        return "BL" + (char) ('A' + r.next(26)) + digits(r, 2) + "." + digits(r, 4) + "-" + digits(r, 4);
+    }
+
+    // Real Android kernel major.minor lines actually shipped on phones (Linux LTS branches used by
+    // Android). Keeping to real branches means the kernel string never looks synthetic.
+    static final String[] KERNEL_BASES = {"4.9", "4.14", "4.19", "5.4", "5.10", "5.15"};
+
+    /** os.version / uname kernel string, e.g. "4.14.180-perf-g0a1b2c3". High-entropy fingerprint signal. */
+    public static String kernelVersion(Rng r) {
+        String base = KERNEL_BASES[r.next(KERNEL_BASES.length)];
+        int patch = 50 + r.next(250);
+        String tag = (r.next(2) == 0) ? "-perf" : "-android" + (10 + r.next(4));
+        return base + "." + patch + tag + "-g" + hexs(r, 4);   // -g + 8 hex = a git-ish suffix
+    }
+
+    /** Build.HOST — the build-farm hostname. Real ones look like "abfarm-00902" or "SWDG5305". We
+     *  generate a model-agnostic farm-style hostname so it can't leak the real (Google) build host or
+     *  imply a specific OEM's infra. */
+    public static String buildHost(Rng r) {
+        String[] pre = {"abfarm", "wprd", "SWDG", "vf-build", "r-build", "prod"};
+        String p = pre[r.next(pre.length)];
+        return p + "-" + digits(r, 5);
+    }
+
+    // Baseband/radio version prefixes by SoC vendor — real basebands look like "g8150-00088-210507-B..."
+    // (Qualcomm) or "M8998-2010..." Keeping a realistic vendor prefix avoids a synthetic-looking radio.
+    static final String[] RADIO_PREFIXES = {"g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"};
+
+    /** Build.getRadioVersion() / Build.RADIO — SoC-plausible baseband string. Confirmed FP leak. */
+    public static String radioVersion(Rng r) {
+        String pre = RADIO_PREFIXES[r.next(RADIO_PREFIXES.length)];
+        // e.g. "g8150-00088-210507-B-7345963"
+        return pre + "-" + digits(r, 5) + "-" + digits(r, 6) + "-"
+                + (char) ('A' + r.next(6)) + "-" + digits(r, 7);
+    }
+
+    // Realistic Android RAM tiers (nominal GB). Reported totalMem is ~3-8% below nominal (kernel/
+    // reserved), so we model that so the value looks like a real ActivityManager reading.
+    static final int[] RAM_GB = {3, 4, 6, 8, 12};
+    static final int[] STORAGE_GB = {32, 64, 128, 256};
+
+    /** total RAM in BYTES (as ActivityManager.MemoryInfo.totalMem reports it), device-plausible. */
+    public static String totalRamBytes(Rng r) {
+        long gb = RAM_GB[r.next(RAM_GB.length)];
+        long nominal = gb * 1024L * 1024L * 1024L;
+        // reported totalMem is a bit under nominal — shave 3-8%, then round to a MB boundary.
+        long reported = nominal - (nominal * (3 + r.next(6)) / 100);
+        return String.valueOf((reported / (1024L * 1024L)) * 1024L * 1024L);
+    }
+
+    /** total internal storage in BYTES, device-plausible (StatFs-style). */
+    public static String totalStorageBytes(Rng r) {
+        long gb = STORAGE_GB[r.next(STORAGE_GB.length)];
+        // usable storage is ~90-94% of nominal after formatting/system.
+        long nominal = gb * 1000L * 1000L * 1000L;   // storage is marketed in decimal GB
+        long reported = nominal * (90 + r.next(5)) / 100;
+        return String.valueOf(reported);
+    }
+
     /** 15-digit Luhn-valid IMEI; if a valid 8-digit TAC is given, use it as the first 8 digits. */
     public static String imei(Rng r, String tac) {
         String body;
@@ -143,14 +222,8 @@ public final class Generators {
         return "1" + area + exch + digits(r, 4);
     }
 
-    /** UK mobile: 44 + 7 + [4-9] + 8 digits (E.164, no leading +, e.g. 447700900123). */
-    public static String phoneUk(Rng r) {
-        return "447" + (4 + r.next(6)) + digits(r, 8);
-    }
-
-    /** Country-aware phone by kind ("nanp" | "uk"). */
+    /** Phone by country kind. USA-only build: always NANP. (kept for the Profile call signature) */
     public static String phoneForCountry(Rng r, String kind) {
-        if ("uk".equals(kind)) return phoneUk(r);
         return phoneUs(r);
     }
 
@@ -169,13 +242,11 @@ public final class Generators {
         ICCID_IIN.put("310120", "89011201"); // Sprint
         ICCID_IIN.put("311580", "89011580"); // US Cellular
         ICCID_IIN.put("311870", "89011870"); // Boost
-        // UK (country code 44): 89 = telecom, 44 = UK.
-        ICCID_IIN.put("23430", "894430");     // EE
-        ICCID_IIN.put("23410", "894410");     // O2
-        ICCID_IIN.put("23415", "894415");     // Vodafone
-        ICCID_IIN.put("23420", "894420");     // Three
-        ICCID_IIN.put("23433", "894430");     // EE
-        ICCID_IIN.put("23402", "894410");     // O2 (Cornwall)
+        ICCID_IIN.put("310004", "89148000"); // Verizon
+        ICCID_IIN.put("310090", "89014104"); // AT&T
+        ICCID_IIN.put("312530", "89011201"); // Sprint
+        ICCID_IIN.put("311882", "89014103"); // Mint Mobile (T-Mobile MVNO)
+        ICCID_IIN.put("310240", "89014103"); // T-Mobile
     }
 
     /** 20-digit Luhn-valid ICCID with a carrier-consistent issuer prefix when known. */
@@ -248,8 +319,8 @@ public final class Generators {
     private static final Pattern P_ADV        = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
     private static final Pattern P_MAC_UP     = Pattern.compile("([0-9A-F]{2}:){5}[0-9A-F]{2}");
     private static final Pattern P_MAC_LOW    = Pattern.compile("([0-9a-f]{2}:){5}[0-9a-f]{2}");
-    // US NANP (1 + 10) or UK mobile (447 + [4-9] + 8). E.164 digits, no leading +.
-    private static final Pattern P_PHONE      = Pattern.compile("1[2-9]\\d{2}[2-9]\\d{6}|447[4-9]\\d{8}");
+    // US NANP only: 1 + area[2-9]XX + exchange[2-9]XX + 4 digits. E.164 digits, no leading +.
+    private static final Pattern P_PHONE      = Pattern.compile("1[2-9]\\d{2}[2-9]\\d{6}");
     // Realistic email: local part (letters/digits/./_/-) + one of the supported providers.
     private static final Pattern P_EMAIL      = Pattern.compile(
             "[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?@(gmail\\.com|outlook\\.com|yahoo\\.com|hotmail\\.com|proton\\.me|icloud\\.com)");

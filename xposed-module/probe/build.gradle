@@ -1,0 +1,24 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Specter verification probe: a tiny app that reads every spoofable Android API and dumps the actual
+// returned values to /data/local/tmp/specter/probe_result.json. Specter scopes it like any target app,
+// so the file reflects exactly what a real app sees through the hooks — a deterministic, no-UI verifier.
+android {
+    namespace 'com.specter.probe'
+    compileSdk 36
+    defaultConfig {
+        applicationId "com.specter.probe"
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+    }
+    lint { checkReleaseBuilds false; abortOnError false }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

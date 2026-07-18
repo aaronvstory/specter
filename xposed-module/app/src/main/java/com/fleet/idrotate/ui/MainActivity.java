@@ -257,10 +257,44 @@ public class MainActivity extends Activity {
     }
 
     private void renderIdentity() {
+        // GeerGit-style flow: (1) pick the target app, (2) see what will be randomized (all on by
+        // default), (3) hit RANDOMIZE ALL. The target header sits at the top so the app you're
+        // spoofing is always in view alongside its identifiers.
+        content.addView(targetHeader());
         content.addView(sectionLabel("Device simulation"));
         for (IdentityFields.Field f : IdentityFields.DEVICE) content.addView(deviceRow(f));
         content.addView(sectionLabel("Identifiers"));
         for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
+    }
+
+    /** Target-app card at the top of the Identity tab: shows the selected app(s) + a Change button. */
+    private View targetHeader() {
+        LinearLayout card = cardBox();
+        Set<String> targets = Targets.get(prefs);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout txt = new LinearLayout(this);
+        txt.setOrientation(LinearLayout.VERTICAL);
+        txt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        txt.addView(label("Target app"));
+        if (targets.isEmpty()) {
+            TextView none = value("None selected — tap Change");
+            none.setTextColor(Theme.DIM);
+            txt.addView(none);
+        } else {
+            for (String pkg : targets) {
+                TextView t = value(pkg);
+                if (Targets.isRisky(pkg)) { t.setTextColor(Theme.RED); t.setText(pkg + "  ⚠ fleet/system"); }
+                txt.addView(t);
+            }
+        }
+        row.addView(txt);
+        row.addView(button("Change", false, v ->
+                startActivity(new Intent(this, AppPickerActivity.class))));
+        card.addView(row);
+        return card;
     }
 
     private View sectionLabel(String s) {
@@ -359,48 +393,25 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(this, AppPickerActivity.class))));
         content.addView(selRow);
 
-        // Country
-        content.addView(sectionLabel("SIM country"));
-        LinearLayout ccard = cardBox();
-        ccard.addView(label("Carrier + phone number country"));
-        LinearLayout crow = new LinearLayout(this);
-        crow.setOrientation(LinearLayout.HORIZONTAL);
-        String cur = prefs.getString("country", "US");
-        for (Country c : Country.all()) {
-            boolean active = c.code.equals(cur);
-            Button cb = button(c.name, active, v -> {
-                prefs.edit().putString("country", c.code).apply();
-                svc.setCountry(c);
-                status.setText("Country: " + c.name + " — RANDOMIZE ALL to apply.");
-                render();
-            });
-            crow.addView(cb);
-        }
-        ccard.addView(crow);
-        content.addView(ccard);
+        // USA-only build: carrier + phone are always randomized within the US (T-Mobile/Verizon/
+        // AT&T/Sprint/US Cellular/MVNOs, NANP numbers). No country picker — one coherent US market.
 
-        // GeerGit-parity toggles (behavioral; wired where a hook exists, else marked)
-        content.addView(sectionLabel("Options"));
-        for (String opt : new String[]{"Anti Fingerprinting", "Hide Mock Location",
-                "Location Spoofing", "Backup App Data", "Force Stop Only", "Clear Data Only"}) {
-            content.addView(togglePlaceholder(opt));
-        }
-    }
-
-    private View togglePlaceholder(final String name) {
-        LinearLayout card = cardBox();
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView t = label(name);
-        t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        final Switch sw = new Switch(this);
-        sw.setChecked(prefs.getBoolean("opt_" + name, false));
-        sw.setOnCheckedChangeListener((v, checked) -> prefs.edit().putBoolean("opt_" + name, checked).apply());
-        row.addView(t);
-        row.addView(sw);
-        card.addView(row);
-        return card;
+        // Anti-fingerprinting is ALWAYS ON — it's the whole point. Every identity is generated
+        // coherently (device ⇄ carrier ⇄ radio ⇄ kernel all match one real US phone) and every
+        // fingerprint-hash signal we can reach is spoofed. There's no toggle because turning it off
+        // would just be "leak the real device" — never useful. (The dev's experimental
+        // "device spoofing / anti-fingerprinting / make device legit" options are deliberately NOT
+        // mirrored — he advised against them.)
+        content.addView(sectionLabel("Anti-fingerprinting"));
+        LinearLayout info = cardBox();
+        info.addView(label("Always on"));
+        TextView desc = value("Coherent identity + deep signal spoofing (Build, bootloader, radio, "
+                + "kernel, HARDWARE/BOARD) are applied automatically on every identity.");
+        desc.setTextColor(Theme.DIM);
+        info.addView(desc);
+        content.addView(info);
+        // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
+        // as a dead toggle until it actually works.
     }
 
     private void renderLocation() {

@@ -31,6 +31,21 @@ def test_module_spoofs_build_version():
         assert f in java, f"Build.VERSION.{f} not spoofed"
 
 
+def test_module_spoofs_bootloader():
+    """Build.BOOTLOADER must be spoofed (GeerGit 2.7.0 parity: deviceBootloader) and generated."""
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
+    assert '"BOOTLOADER"' in java, "module must spoof Build.BOOTLOADER"
+    from specter.identifiers import BUILD_FIELDS
+    assert "build_bootloader" in BUILD_FIELDS, "build_bootloader missing from canonical key list"
+    from specter import generators as G
+    c = [0]
+    r = lambda n: (c.__setitem__(0, c[0] + 1) or (c[0] * 2654435761) % n)
+    bl = G.bootloader(r, "google", "flame")
+    assert bl and " " not in bl, f"bootloader must be non-empty, no spaces: {bl!r}"
+    # device-coherent: Google bootloader embeds the device codename (no cross-model mismatch)
+    assert bl.startswith("flame-"), f"bootloader must embed the device codename: {bl!r}"
+
+
 def test_module_hooks_gservices_getlong():
     """GSF read via Gservices.getLong must be covered, not just getString."""
     java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()

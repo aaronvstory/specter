@@ -47,6 +47,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookAdvertisingId(lpparam, p);
         hookGsf(lpparam, p);
         hookMediaDrm(lpparam, p);
+        hookHardwareInfo(lpparam, p);
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -87,10 +88,22 @@ public class HookEntry implements IXposedHookLoadPackage {
         setStatic("FINGERPRINT",  p.get("build_fingerprint"));
         setStatic("SERIAL",       p.get("serial"));
         setStatic("ID",           p.get("build_id"));
-        // getSerial() (API 26+) is a method, not just the field
+        setStatic("BOOTLOADER",   p.get("build_bootloader"));
+        // Fingerprint-hash hardware signals (FingerprintJS reads HARDWARE/BOARD; kernel via os.version).
+        setStatic("HARDWARE",     p.get("build_hardware"));
+        setStatic("BOARD",        p.get("build_board"));
+        setStatic("RADIO",        p.get("build_radio"));
+        setStatic("HOST",         p.get("build_host"));
+        setStatic("DISPLAY",      p.get("build_display"));
+        hookKernelVersion(p.get("build_kernel_version"));
+        hookRadioVersion(p.get("build_radio"));
+        // getSerial() (API 26+) is a method, not just the field. Zero-arg -> hookAllMethods
+        // (findAndHookMethod's varargs overload NoSuchMethodErrors against obfuscated XposedHelpers).
         try {
-            XposedHelpers.findAndHookMethod(Build.class, "getSerial",
-                XC_MethodReplacement.returnConstant(p.get("serial")));
+            final String ser = p.get("serial");
+            if (ser != null) XposedBridge.hookAllMethods(Build.class, "getSerial", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(ser); }
+            });
         } catch (Throwable ignored) {}
         // Build.VERSION.* must match the spoofed fingerprint's Android version, or an app that
         // reads VERSION.RELEASE/INCREMENTAL/SECURITY_PATCH sees a mismatch vs the fingerprint.
@@ -103,6 +116,81 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (val == null) return;
         try {
             XposedHelpers.setStaticObjectField(Build.VERSION.class, field, val);
+        } catch (Throwable ignored) {}
+    }
+
+    // ---- kernel version (os.version) — a high-entropy FingerprintJS signal ----
+    private void hookKernelVersion(final String kernel) {
+        if (kernel == null) return;
+        // hookAllMethods over findAndHookMethod (the varargs overload NoSuchMethodErrors against
+        // LSPosed's obfuscated XposedHelpers). Cover System.getProperty AND the raw SystemProperties.
+        try {
+            XposedBridge.hookAllMethods(System.class, "getProperty", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && "os.version".equals(mp.args[0])) mp.setResult(kernel);
+                }
+            });
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
+            XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && "os.version".equals(mp.args[0])) mp.setResult(kernel);
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    // ---- baseband/radio — a confirmed FingerprintJS leak. DevInfo (and getRadioVersion itself)
+    //      read it from the "gsm.version.baseband" system property, so hook SystemProperties.get
+    //      for the baseband keys AND Build.getRadioVersion for callers that use the API directly. ----
+    private void hookRadioVersion(final String radio) {
+        if (radio == null) return;
+        try {
+            // hookAllMethods is robust for the zero-arg getRadioVersion (findAndHookMethod's varargs
+            // overload isn't reliably resolvable against LSPosed's obfuscated XposedHelpers).
+            XposedBridge.hookAllMethods(Build.class, "getRadioVersion", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    mp.setResult(radio);
+                }
+            });
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
+            XC_MethodHook h = new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && mp.args[0] instanceof String) {
+                        String key = (String) mp.args[0];
+                        if ("gsm.version.baseband".equals(key) || "ril.baseband".equals(key)) {
+                            mp.setResult(radio);
+                        }
+                    }
+                }
+            };
+            // get(String) and get(String, String) overloads
+            XposedBridge.hookAllMethods(sp, "get", h);
+        } catch (Throwable ignored) {}
+    }
+
+    // ---- RAM (ActivityManager.MemoryInfo.totalMem) — a FingerprintJS hardware signal ----
+    private void hookHardwareInfo(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String ramStr = p.get("total_ram");
+        if (ramStr == null) return;
+        final long ram;
+        try { ram = Long.parseLong(ramStr); } catch (Throwable t) { return; }
+        try {
+            Class<?> am = XposedHelpers.findClass("android.app.ActivityManager", lp.classLoader);
+            XposedBridge.hookAllMethods(am, "getMemoryInfo", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && mp.args[0] != null) {
+                        // totalMem is a public field on ActivityManager.MemoryInfo — set it directly.
+                        try {
+                            Field f = mp.args[0].getClass().getField("totalMem");
+                            f.setLong(mp.args[0], ram);
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            });
         } catch (Throwable ignored) {}
     }
 
