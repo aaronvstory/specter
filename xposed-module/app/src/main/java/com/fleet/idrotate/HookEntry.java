@@ -126,12 +126,33 @@ public class HookEntry implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
-    // ---- baseband/radio (Build.getRadioVersion) — a confirmed FingerprintJS leak ----
+    // ---- baseband/radio — a confirmed FingerprintJS leak. DevInfo (and getRadioVersion itself)
+    //      read it from the "gsm.version.baseband" system property, so hook SystemProperties.get
+    //      for the baseband keys AND Build.getRadioVersion for callers that use the API directly. ----
     private void hookRadioVersion(final String radio) {
         if (radio == null) return;
         try {
-            XposedHelpers.findAndHookMethod(Build.class, "getRadioVersion",
-                XC_MethodReplacement.returnConstant(radio));
+            XposedHelpers.findAndHookMethod(Build.class, "getRadioVersion", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    XposedBridge.log("[specter] getRadioVersion() called -> spoofing to " + radio);
+                    mp.setResult(radio);
+                }
+            });
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
+            XC_MethodHook h = new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && mp.args[0] instanceof String) {
+                        String key = (String) mp.args[0];
+                        if ("gsm.version.baseband".equals(key) || "ril.baseband".equals(key)) {
+                            mp.setResult(radio);
+                        }
+                    }
+                }
+            };
+            // get(String) and get(String, String) overloads
+            XposedBridge.hookAllMethods(sp, "get", h);
         } catch (Throwable ignored) {}
     }
 
