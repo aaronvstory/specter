@@ -84,17 +84,26 @@ _SOC_BY_DEVICE = {
     "flame": "msmnile", "coral": "msmnile", "redfin": "lito", "bramble": "lito",
     "sunfish": "sm6150", "barbet": "lito", "oriole": "gs101", "raven": "gs101",
     "blueline": "sdm845", "crosshatch": "sdm845", "walleye": "msm8998",
-    "h1": "msm8996", "rs988": "msm8996",
+    "sailfish": "msm8996", "marlin": "msm8996", "taimen": "msm8998",
+    "h1": "msm8996", "elsa": "msm8996", "joan": "msm8998",
 }
 _SOC_POOL = ["msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
              "sm8350", "sm6150", "kona", "lahaina", "trinket", "bengal"]
 
-def soc_platform(r, device):
-    """ro.board.platform (SoC codename) — device-coherent where known, else a real-SoC-pool pick
-    (mirrors Java socPlatform). Never a made-up string, never more-wrong than the real leak."""
-    known = _SOC_BY_DEVICE.get((device or "").lower())
-    if known is not None:
-        return known
+def soc_platform(r, product):
+    """ro.board.platform (SoC codename) — takes the PRODUCT codename (Build.PRODUCT, e.g. "flame",
+    "h1_lra_us"), NOT the marketing device name (devices.json stores "Pixel 4" in the device slot).
+    LG products carry a region suffix; match the leading token before "_". Mirrors Java socPlatform."""
+    if product:
+        key = product.lower()
+        known = _SOC_BY_DEVICE.get(key)
+        if known is not None:
+            return known
+        us = key.find("_")                   # strip LG regional suffix: h1_lra_us -> h1
+        if us > 0:
+            known = _SOC_BY_DEVICE.get(key[:us])
+            if known is not None:
+                return known
     return _SOC_POOL[r(len(_SOC_POOL))]
 
 _RADIO_PREFIXES = ["g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"]

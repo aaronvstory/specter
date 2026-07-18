@@ -124,11 +124,18 @@ public final class Profile {
         p.put("build_incremental", incremental);
         p.put("build_fingerprint", fingerprint);
         p.put("build_security_patch", patch);
-        p.put("build_bootloader", Generators.bootloader(r, brand, device));
-        // Fingerprint-hash signals (FingerprintJS reads these): keep coherent with the device.
-        // HARDWARE/BOARD track the platform (device codename); kernel is high-entropy, per-identity.
-        p.put("build_hardware", device);
-        p.put("build_board", device);
+        // The board/platform CODENAME on real devices lives in the product slot (e.g. "flame" for a
+        // Pixel 4) — NOT the marketing device name ("Pixel 4"). LG products carry a region suffix.
+        String codename = product;
+        int usx = codename.indexOf('_');          // strip LG regional suffix: h1_lra_us -> h1
+        if (usx > 0) codename = codename.substring(0, usx);
+        // Bootloader: Samsung derives it from the SM- model (device slot); Google/others from the
+        // codename (device slot = "Pixel 4" would yield a space-containing, incoherent bootloader).
+        String blBase = "samsung".equalsIgnoreCase(brand) ? device : codename;
+        p.put("build_bootloader", Generators.bootloader(r, brand, blBase));
+        // Build.HARDWARE/BOARD are the board codename too.
+        p.put("build_hardware", codename);
+        p.put("build_board", codename);
         p.put("build_kernel_version", Generators.kernelVersion(r));
         p.put("build_radio", Generators.radioVersion(r));
         p.put("total_ram", Generators.totalRamBytes(r));
@@ -139,7 +146,7 @@ public final class Profile {
         p.put("build_display", buildId);
         // ro.board.platform (SoC codename) — device-coherent, so the fingerprint's CPU/SoC portion
         // rotates per identity instead of leaking the real phone's SoC on every signup.
-        p.put("soc_platform", Generators.socPlatform(r, device));
+        p.put("soc_platform", Generators.socPlatform(r, product));
         return p;
     }
 

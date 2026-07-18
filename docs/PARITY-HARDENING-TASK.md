@@ -140,6 +140,16 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   callback for kernel/baseband/SoC instead of three separate hooks on Android's hottest property-read
   path. Same behavior (20/20 spoofed on-device), -42 lines, less per-read overhead.
 
+- 2026-07-18: CRITICAL coherence bug FIXED (code-reviewer finding, confidence 90). The SoC map keyed
+  on device CODENAMES (flame, oriole, h1) but devices.json stores the MARKETING name ("Pixel 4", "RS988")
+  in the device slot for Google/LG — so 12/13 map entries never matched and every spoofed Pixel/LG got a
+  RANDOM incoherent SoC (a "Pixel 6" could report a 2016 Snapdragon 820). Fixed: socPlatform now keys on
+  Build.PRODUCT (the real codename, with LG region-suffix stripping h1_lra_us->h1). Same root cause also
+  broke build_hardware/build_board (reported "Pixel 4" instead of "flame") and Google bootloader (space
+  bug "pixel 4-..."). All now use the codename. Java<->Python byte-parity re-proven (flame->msmnile,
+  oriole->gs101, h1_lra_us->msm8996 identical). DEVICE DISCONNECTED mid-build — on-device proof DEFERRED
+  to next cycle (code+tests green: JVM 53,563 / Python 78).
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)

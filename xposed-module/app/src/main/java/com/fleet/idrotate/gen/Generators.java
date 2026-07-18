@@ -162,18 +162,34 @@ public final class Generators {
         SOC_BY_DEVICE.put("blueline", "sdm845"); // Pixel 3  = SD845
         SOC_BY_DEVICE.put("crosshatch", "sdm845"); // Pixel 3 XL
         SOC_BY_DEVICE.put("walleye", "msm8998"); // Pixel 2  = SD835
-        SOC_BY_DEVICE.put("h1", "msm8996");      // LG G5    = SD820
-        SOC_BY_DEVICE.put("rs988", "msm8996");   // LG G5 (US) — keys are lowercase (case-insensitive lookup)
+        SOC_BY_DEVICE.put("sailfish", "msm8996");  // Pixel   = SD821
+        SOC_BY_DEVICE.put("marlin", "msm8996");    // Pixel XL
+        SOC_BY_DEVICE.put("taimen", "msm8998");    // Pixel 2 XL
+        SOC_BY_DEVICE.put("h1", "msm8996");        // LG G5 (product is h1_<region>; matched by prefix) = SD820
+        SOC_BY_DEVICE.put("elsa", "msm8996");      // LG V20 (elsa_<region>) = SD820
+        SOC_BY_DEVICE.put("joan", "msm8998");      // LG V30 (joan_<region>) = SD835
+        // Keys are the Build.PRODUCT codename (lowercase). LG products carry a region suffix
+        // (h1_lra_us) matched by the leading token in socPlatform. Marketing names (RS988) are NOT keys.
     }
     // Real Qualcomm platform names (a plausible pool for unmapped devices — all shipped on US phones).
     static final String[] SOC_POOL = {"msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
             "sm8350", "sm6150", "kona", "lahaina", "trinket", "bengal"};
 
     /** ro.board.platform (SoC codename). Device-coherent where known, else a real-SoC-pool pick.
-     *  Lookup is case-insensitive (device codenames vary in casing across the device DB). */
-    public static String socPlatform(Rng r, String device) {
-        String known = SOC_BY_DEVICE.get(device == null ? "" : device.toLowerCase());
-        if (known != null) return known;
+     *  Takes the PRODUCT codename (Build.PRODUCT, e.g. "flame", "h1_lra_us") — NOT the marketing device
+     *  name (devices.json stores "Pixel 4" in the device slot for Google/LG, so keying on device never
+     *  matched). LG products carry a regional suffix (h1_lra_us); match on the leading token before "_". */
+    public static String socPlatform(Rng r, String product) {
+        if (product != null) {
+            String key = product.toLowerCase();
+            String known = SOC_BY_DEVICE.get(key);
+            if (known != null) return known;
+            int us = key.indexOf('_');           // strip LG regional suffix: h1_lra_us -> h1
+            if (us > 0) {
+                known = SOC_BY_DEVICE.get(key.substring(0, us));
+                if (known != null) return known;
+            }
+        }
         return SOC_POOL[r.next(SOC_POOL.length)];
     }
 
