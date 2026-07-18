@@ -82,6 +82,26 @@ public class ProbeActivity extends Activity {
                 put(o, "bt_addr_settings", Settings.Secure.getString(getContentResolver(), "bluetooth_address"));
             } catch (Throwable t) { put(o, "bt_addr_settings", "ERR:" + t); }
 
+            // BluetoothAdapter.getAddress() — the adapter path to the BT MAC (vs the Settings path above)
+            try {
+                android.bluetooth.BluetoothAdapter ba = android.bluetooth.BluetoothAdapter.getDefaultAdapter();
+                put(o, "bt_addr_adapter", ba == null ? "null-adapter" : ba.getAddress());
+            } catch (Throwable t) { put(o, "bt_addr_adapter", "ERR:" + t); }
+
+            // GSF id via the Gservices content provider (a FingerprintJS deviceId source)
+            try {
+                android.database.Cursor cur = getContentResolver().query(
+                        android.net.Uri.parse("content://com.google.android.gsf.gservices"),
+                        null, null, new String[]{"android_id"}, null);
+                if (cur != null) {
+                    if (cur.moveToFirst() && cur.getColumnCount() >= 2) {
+                        long id = Long.parseLong(cur.getString(1));
+                        put(o, "gsf_id", String.valueOf(id));
+                    }
+                    cur.close();
+                }
+            } catch (Throwable t) { put(o, "gsf_id", "ERR:" + t); }
+
             // Settings.Global dev-mode tells — should read 0 (hide the developer/rooted-device signal)
             try {
                 put(o, "adb_enabled", String.valueOf(Settings.Global.getInt(getContentResolver(), "adb_enabled", -1)));

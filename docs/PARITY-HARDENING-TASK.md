@@ -163,6 +163,13 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   real SoC platform token. Prevents a silent recurrence of the SoC-map-dead-code bug. All hold; full
   Python suite now 84 tests. Device still disconnected (4th cycle) — on-device proof deferred.
 
+- 2026-07-18: Verifier COVERAGE audit + expansion. Audited probe/verifier vs all 37 generated fields —
+  found the verifier only checked 20. Added the readable ones: build_product/release/incremental (probe
+  already read them), plus new probe reads for BluetoothAdapter.getAddress (adapter path vs Settings path),
+  and GSF id via the gservices provider. Verifier now covers 25 fields (both BT-MAC paths + GSF deviceId).
+  Probe compiles clean. Telephony fields (IMEI/IMSI/ICCID/carrier) stay probe-unverifiable (READ_PHONE_STATE
+  gated) — proven instead by the JVM SpoofLogic + coherence tests. Device still disconnected (5th cycle).
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
