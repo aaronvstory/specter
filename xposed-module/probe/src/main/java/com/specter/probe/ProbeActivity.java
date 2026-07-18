@@ -77,6 +77,11 @@ public class ProbeActivity extends Activity {
                 put(o, "android_id", Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID));
             } catch (Throwable t) { put(o, "android_id", "ERR:" + t); }
 
+            // Settings.Secure bluetooth_address — a second BT-MAC path a fingerprinter can read
+            try {
+                put(o, "bt_addr_settings", Settings.Secure.getString(getContentResolver(), "bluetooth_address"));
+            } catch (Throwable t) { put(o, "bt_addr_settings", "ERR:" + t); }
+
             // RAM (ActivityManager.MemoryInfo.totalMem) — a FingerprintJS hardware signal
             try {
                 android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);

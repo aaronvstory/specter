@@ -46,6 +46,15 @@ def test_module_spoofs_bootloader():
     assert bl.startswith("flame-"), f"bootloader must embed the device codename: {bl!r}"
 
 
+def test_module_spoofs_bluetooth_address_via_settings():
+    """Settings.Secure.getString(cr, 'bluetooth_address') is a second path to the BT MAC that
+    BluetoothAdapter.getAddress() doesn't cover — the module must spoof it there too, or it leaks."""
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
+    assert '"bluetooth_address"' in java, "module must spoof Settings.Secure bluetooth_address"
+    # it must use the profile's bluetooth_mac value (coherent with BluetoothAdapter.getAddress)
+    assert "bluetooth_mac" in java, "bluetooth_address spoof must reuse the generated bluetooth_mac"
+
+
 def test_module_hooks_gservices_getlong():
     """GSF read via Gservices.getLong must be covered, not just getString."""
     java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()

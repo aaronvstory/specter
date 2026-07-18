@@ -219,10 +219,16 @@ public class HookEntry implements IXposedHookLoadPackage {
     // android_id leaked the real value) — the key can be at any arg position, so scan all args.
     private void hookSettingsSecure(final Map<String, String> p) {
         final String aid = p.get("android_id");
+        final String btMac = p.get("bluetooth_mac");
         if (aid == null) return;
         XC_MethodHook h = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (SpoofLogic.argsContainKey(param.args, "android_id")) param.setResult(aid);
+                if (SpoofLogic.argsContainKey(param.args, "android_id")) { param.setResult(aid); return; }
+                // Settings.Secure.getString(cr, "bluetooth_address") is a SECOND path to the BT MAC that
+                // BluetoothAdapter.getAddress() doesn't cover — spoof it here too, or it leaks the real MAC.
+                if (btMac != null && SpoofLogic.argsContainKey(param.args, "bluetooth_address")) {
+                    param.setResult(btMac);
+                }
             }
         };
         // Settings.Secure and Settings.System both expose getString/getStringForUser; cover both.

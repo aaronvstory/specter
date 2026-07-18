@@ -117,6 +117,13 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   Cores left real (unspoofable/breaks thread pools); ABI left real (near-constant, already coherent).
   On-device: 20/20 spoofed, 0 leaks. Next: /proc/cpuinfo file-hook (the raw CPU text FingerprintJS hashes).
 
+- 2026-07-18: Settings.Secure.bluetooth_address LEAK closed. It's a SECOND path to the BT MAC that
+  BluetoothAdapter.getAddress() doesn't cover — was leaking the real MAC (88:54:1F:05:26:50). Now the
+  Settings.Secure hook also returns the profile's bluetooth_mac (coherent with the adapter). On-device:
+  bt_addr_settings = spoofed FA:BD:EE:95:2D:87. Also decided NOT to hook /proc/cpuinfo file reads:
+  high-risk (intercepts all file I/O), stub lacks hookAllConstructors, and ro.board.platform already
+  spoofs the SoC name most tools derive — bad risk/reward, reverted. Cores/ABI stay real (see prior note).
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
