@@ -85,6 +85,16 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
 
 ## Running log (cron appends here each cycle)
 - 2026-07-18: task created; PR #3 merged to main; branch cut; confirmed BOOTLOADER gap.
+- 2026-07-18: USA-only SHIPPED (8e23946) — UK removed, US-market brands (samsung/google/motorola/lge)
+  + US carriers (MCC 310-316) + NANP phones only. GeerGit-style UI (2043a94): target-app header on
+  Identity tab, per-id toggles default ON. Built + installed + on-device proven (Samsung/Sprint/NANP,
+  build_bootloader A515USQU9IEN, 28 keys). Phase 1 parity COMPLETE.
+- 2026-07-18: ANTI-FINGERPRINT root cause found (docs/ANTI-FINGERPRINT-STRATEGY.md): FingerprintJS
+  computes deviceId (GSF/mediaDrm/androidId — Specter spoofs ✅) AND fingerprint (MurmurHash of ~30
+  hardware/OS/apps signals — Specter spoofs only ~4). The unspoofed hardware signals stay REAL → the
+  fingerprint hash barely rotates → "sometimes detected". Phase 2 = spoof the fingerprint's dominant
+  signals (installed-apps, RAM/storage/CPU/kernel/ABI) coherently + per-identity. FPJS Pro demo installed
+  as the test detector.
 - 2026-07-18: Build.BOOTLOADER parity SHIPPED (89e09d5) — generator+profile+hook+tests, JVM 45,063 /
   Python 76 green. PR #4 opened. Autonomous cron `specter-parity` (a1f2d8fc) scheduled :18/:43 hourly.
 
