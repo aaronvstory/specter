@@ -74,6 +74,12 @@ def kernel_version(r):
     tag = "-perf" if r(2) == 0 else "-android" + str(10 + r(4))
     return f"{base}.{patch}{tag}-g" + hexs(r, 4)
 
+def build_host(r):
+    """Build.HOST — model-agnostic build-farm hostname (mirrors Java buildHost). Real value leaks the
+    Google build host (e.g. 'abfarm-00902'), incoherent on a spoofed Samsung/Moto."""
+    pre = ["abfarm", "wprd", "SWDG", "vf-build", "r-build", "prod"]
+    return pre[r(len(pre))] + "-" + digits(r, 5)
+
 _RADIO_PREFIXES = ["g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"]
 
 def radio_version(r):

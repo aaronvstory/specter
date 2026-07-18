@@ -74,6 +74,9 @@ public class ProfileTest {
             // RAM/storage present as plausible byte counts (fingerprint-hash hardware signals).
             check(p.get("total_ram").matches("\\d{9,11}"), "ram bytes s=" + s + " " + p.get("total_ram"));
             check(p.get("total_storage").matches("\\d{10,12}"), "storage bytes s=" + s + " " + p.get("total_storage"));
+            // HOST is a farm-style hostname (generated, not the device's real build host); DISPLAY==build_id.
+            check(p.get("build_host").matches("[A-Za-z-]+-\\d{5}"), "host shape s=" + s + " " + p.get("build_host"));
+            check(p.get("build_display").equals(p.get("build_id")), "display==build_id s=" + s);
             // Fingerprint-hash hardware signals: kernel plausible; HARDWARE/BOARD coherent with device.
             check(p.get("build_kernel_version").matches("\\d+\\.\\d+\\.\\d+-.*-g[0-9a-f]{8}"), "kernel shape s=" + s + " " + p.get("build_kernel_version"));
             check(p.get("build_hardware").equals(p.get("build_device")), "hardware==device s=" + s);

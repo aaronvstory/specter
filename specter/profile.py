@@ -120,6 +120,8 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "build_radio": G.radio_version(r),
         "total_ram": G.total_ram_bytes(r),
         "total_storage": G.total_storage_bytes(r),
+        "build_host": G.build_host(r),
+        "build_display": build_id,
     }
 
 

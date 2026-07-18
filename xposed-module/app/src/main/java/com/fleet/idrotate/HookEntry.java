@@ -93,6 +93,8 @@ public class HookEntry implements IXposedHookLoadPackage {
         setStatic("HARDWARE",     p.get("build_hardware"));
         setStatic("BOARD",        p.get("build_board"));
         setStatic("RADIO",        p.get("build_radio"));
+        setStatic("HOST",         p.get("build_host"));
+        setStatic("DISPLAY",      p.get("build_display"));
         hookKernelVersion(p.get("build_kernel_version"));
         hookRadioVersion(p.get("build_radio"));
         // getSerial() (API 26+) is a method, not just the field. Zero-arg -> hookAllMethods

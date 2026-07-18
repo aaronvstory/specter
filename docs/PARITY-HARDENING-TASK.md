@@ -98,6 +98,11 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
 - 2026-07-18: Build.BOOTLOADER parity SHIPPED (89e09d5) — generator+profile+hook+tests, JVM 45,063 /
   Python 76 green. PR #4 opened. Autonomous cron `specter-parity` (a1f2d8fc) scheduled :18/:43 hourly.
 
+- 2026-07-18: Build.HOST + Build.DISPLAY spoofed (cron cycle). HOST leaked the real Google build host
+  (abfarm-00902 — incoherent on a spoofed Samsung/LG); now a generic farm hostname. DISPLAY==build_id.
+  Byte-parity proven. On-device: 19/19 spoofed, 0 leaks (coherent LG G5 RS988). TAGS/TYPE skipped
+  (constant "release-keys"/"user" — cosmetic, no linkage value; logged decision).
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)

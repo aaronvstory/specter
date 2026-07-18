@@ -43,6 +43,7 @@ public class ProbeActivity extends Activity {
             put(o, "build_hardware", Build.HARDWARE);
             put(o, "build_board", Build.BOARD);
             put(o, "build_host", Build.HOST);
+            put(o, "build_display", Build.DISPLAY);
             put(o, "build_release", Build.VERSION.RELEASE);
             put(o, "build_incremental", Build.VERSION.INCREMENTAL);
             put(o, "build_security_patch", Build.VERSION.SECURITY_PATCH);

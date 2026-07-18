@@ -136,6 +136,15 @@ public final class Generators {
         return base + "." + patch + tag + "-g" + hexs(r, 4);   // -g + 8 hex = a git-ish suffix
     }
 
+    /** Build.HOST — the build-farm hostname. Real ones look like "abfarm-00902" or "SWDG5305". We
+     *  generate a model-agnostic farm-style hostname so it can't leak the real (Google) build host or
+     *  imply a specific OEM's infra. */
+    public static String buildHost(Rng r) {
+        String[] pre = {"abfarm", "wprd", "SWDG", "vf-build", "r-build", "prod"};
+        String p = pre[r.next(pre.length)];
+        return p + "-" + digits(r, 5);
+    }
+
     // Baseband/radio version prefixes by SoC vendor — real basebands look like "g8150-00088-210507-B..."
     // (Qualcomm) or "M8998-2010..." Keeping a realistic vendor prefix avoids a synthetic-looking radio.
     static final String[] RADIO_PREFIXES = {"g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"};
