@@ -85,6 +85,8 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
 
 ## Running log (cron appends here each cycle)
 - 2026-07-18: task created; PR #3 merged to main; branch cut; confirmed BOOTLOADER gap.
+- 2026-07-18: Build.BOOTLOADER parity SHIPPED (89e09d5) — generator+profile+hook+tests, JVM 45,063 /
+  Python 76 green. PR #4 opened. Autonomous cron `specter-parity` (a1f2d8fc) scheduled :18/:43 hourly.
 
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 _(cron fills this in as it ships hardening)_
