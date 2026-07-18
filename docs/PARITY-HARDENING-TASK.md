@@ -1,0 +1,90 @@
+# Autonomous task: GeerGit 2.7.0 identifier parity + anti-detection hardening
+
+**Branch:** `feat/geergit-parity-hardening` → PR → auto-merge to main when green.
+**Owner:** autonomous cron (`specter-parity`). **Started:** 2026-07-18.
+
+## Mission (user's words)
+"Make sure the identifiers and everything is at least on par with GeerGit 2.7.0. Investigate how we can
+hide more stuff / better in our app vs GeerGit. Keep it as friendly to use as GeerGit."
+We need **identifier rotation**; we do NOT care about profile backups or GPS spoofing.
+
+## Autonomy contract
+- Full loop: build · test · commit · push · open/label PR · run bots · fix findings · **auto-merge when
+  green** (bots pass + JVM + Python + on-device DevInfo checks pass). No merge-gate wait.
+- **On-device: DevInfo (`com.liuzh.deviceinfo`) ONLY.** NEVER install/scope/drive Dasher, DoorDash,
+  GeerGit, `system`, or `android`. The Pixel makes real income on GeerGit — never fight it.
+- Each phase = its own commit(s), pushed as it completes. Small commits, clear messages.
+- Every change is TDD: a failing JVM/Python assert first, then the fix, both suites green before push.
+- Windows EOL discipline: CRLF-committed files stay CRLF (byte-restore); `git ls-files --eol` check;
+  no `nul` files; verify `git diff --stat` ≈ the logical edit after each edit.
+
+## PHASE 1 — Exact identifier parity with GeerGit 2.7.0
+
+GeerGit 2.7.0's identifier surface (from libapp.so string analysis):
+`android_id, gsf_id, advertising_id, imei (imei1+imei2), serial, sim_card_serial (iccid),
+sim_operator (mccmnc+name), sim_subscriber (imsi), mobile_number, wifi_mac, wifi_ssid, wifi_bssid,
+bluetooth_mac, media_drm, gmail, device_spoof (Build.*), legit_device, deviceBootloader`.
+
+### Coverage audit (verify each — present in HookEntry.java AND generated in Profile.java AND proven
+### to rotate on DevInfo):
+- [ ] android_id, gsf_id, advertising_id — present. **Verify rotates on DevInfo.**
+- [ ] IMEI — Specter hooks getImei/getDeviceId. **GeerGit has imei1 AND imei2 (dual-SIM). Verify
+      Specter handles slot index (getImei(0)/getImei(1)) → distinct values, not the same.**
+- [ ] serial, sim_serial_iccid, sim_operator (mccmnc+name), sim_subscriber_imsi, mobile_number — present.
+- [ ] wifi_mac/ssid/bssid, bluetooth_mac, media_drm, gmail — present.
+- [ ] Build.* device_spoof — present for MANUFACTURER/BRAND/DEVICE/PRODUCT/MODEL/FINGERPRINT/ID/
+      SERIAL/RELEASE/INCREMENTAL/SECURITY_PATCH.
+
+### KNOWN GAP (confirmed): `Build.BOOTLOADER`
+GeerGit 2.7.0 has `deviceBootloader`/`deviceBootloaderSwitch`; Specter does NOT spoof `Build.BOOTLOADER`.
+**Add it:** generator (coherent per-brand bootloader string), profile key `build_bootloader`, hook
+`Build.BOOTLOADER`, Java+Python parity, tests, toggle. First parity fix.
+
+### Audit for other missing Build fields GeerGit/fingerprinters read:
+`Build.HARDWARE, Build.BOARD, Build.HOST, Build.TAGS, Build.TYPE, Build.DISPLAY, Build.RADIO/getRadioVersion(),
+Build.VERSION.SDK_INT/CODENAME, Build.SUPPORTED_ABIS, Build.FINGERPRINT` (have), `Build.BOOTLOADER` (gap).
+For each: does a real fingerprinter read it? Is it coherent with the spoofed device? Add if it's a
+linkage risk, skip if cosmetic (log the decision).
+
+**Phase-1 exit:** every GeerGit-2.7.0 identifier is generated + hooked + proven to rotate on DevInfo
+(read back EVERY field, per the 2.9.6-regression lesson — not a sample). PR opened, bots green, merged.
+
+## PHASE 2 — Hide better than GeerGit (aggressive, but never crash a real app)
+
+GeerGit 2.7.0's "hiding" is thin: an "Anti Fingerprinting" toggle + its own `_adb@`/integrity checks.
+It does NOT deeply spoof the class of signals below. Investigate + add where it's a real linkage/
+detection risk AND low-crash-risk. Each item: research first (is it read by DoorDash's fraud stack /
+FingerprintJS-class SDKs?), then implement narrowly, then prove on DevInfo.
+
+Candidates (investigate + rank by payoff/risk):
+1. **Value coherence** — the strongest anti-detection lever. A spoofed device must be internally
+   consistent: MODEL↔FINGERPRINT↔BOOTLOADER↔RADIO↔ABI↔SDK all match ONE real device profile, and
+   MCC/MNC↔operator-name↔phone-country↔ICCID-IIN all match ONE carrier. Incoherent combos are the
+   easiest fraud signal. Audit Specter's generators for any incoherent pairing; fix.
+2. **Hook-artifact hygiene** — ensure Specter's hooks don't leave detectable traces (stack frames,
+   timing, exception messages) a target could read. Compare our hook style to GeerGit's leaf-getter style.
+3. **`Settings.Secure`/`Settings.Global` breadth** — beyond android_id, are there other Secure/Global
+   keys a fingerprinter reads (e.g. `bluetooth_address`, `install_id`)? Audit.
+4. **getRadioVersion / baseband** — GeerGit references Bootloader/baseband; verify coherent spoof.
+5. **DRM/Widevine depth** — media_drm_id present; verify it's the id a fingerprinter actually reads
+   (MediaDrm PROPERTY_DEVICE_UNIQUE_ID / getPropertyByteArray), not just a getter.
+6. **Per-target isolation** — confirm two target apps get DIFFERENT identities (GeerGit's model), and
+   the same app re-randomized gets a NEW identity every time (the 2.9.6 GSF-staleness lesson).
+7. **NEW spoofs GeerGit lacks entirely** (only if low-risk): screen/density is risky (breaks layout —
+   skip), but things like `Build.getSerial()` fallbacks, `SystemProperties.get()` direct reads, or
+   `/proc`-based signals may be worth narrow coverage. Research each; skip anything that could ANR/crash.
+
+**Phase-2 exit:** each shipped hardening is researched (why it matters), implemented narrowly, proven on
+DevInfo, and documented in this file's "What made Specter better" log below. PR(s) opened, bots green,
+merged.
+
+## Friendliness parity (throughout)
+GeerGit's UX: per-identifier toggle + per-field Randomize + Randomize All + clear labels. Specter has
+toggles + Randomize All. Audit for friendliness gaps: per-field randomize buttons? clear empty/error
+states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
+
+## Running log (cron appends here each cycle)
+- 2026-07-18: task created; PR #3 merged to main; branch cut; confirmed BOOTLOADER gap.
+
+## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
+_(cron fills this in as it ships hardening)_
