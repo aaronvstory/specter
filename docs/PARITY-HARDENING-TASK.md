@@ -124,6 +124,13 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   high-risk (intercepts all file I/O), stub lacks hookAllConstructors, and ro.board.platform already
   spoofs the SoC name most tools derive — bad risk/reward, reverted. Cores/ABI stay real (see prior note).
 
+- 2026-07-18: Settings.Global DEV-MODE TELLS hidden. FingerprintJS reads adb_enabled +
+  development_settings_enabled — both were 1 on this rooted fleet phone (a strong "not a normal user /
+  developer device" signal, stable across every signup). Now spoofed to 0 via a Settings.Global getInt/
+  getString hook, so the device reads as an ordinary consumer phone. On-device: adb_enabled=0,
+  dev_settings=0 (real=1). Also case-insensitive SoC lookup (gemini finding) + bluetooth_address leak
+  closed this session. animation-scales/http_proxy left real (normal defaults, no signal).
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)

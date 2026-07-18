@@ -41,6 +41,7 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         hookBuildFields(p);
         hookSettingsSecure(p);
+        hookSettingsGlobal(p);
         hookTelephony(lpparam, p);
         hookWifi(lpparam, p);
         hookBluetooth(lpparam, p);
@@ -235,6 +236,33 @@ public class HookEntry implements IXposedHookLoadPackage {
         try { XposedBridge.hookAllMethods(Settings.Secure.class, "getString", h); } catch (Throwable ignored) {}
         try { XposedBridge.hookAllMethods(Settings.Secure.class, "getStringForUser", h); } catch (Throwable ignored) {}
         try { XposedBridge.hookAllMethods(Settings.System.class, "getString", h); } catch (Throwable ignored) {}
+    }
+
+    // ---- Settings.Global device-state tells — hide the "developer/rooted device" fingerprint ----
+    // FingerprintJS reads adb_enabled + development_settings_enabled. On this fleet phone both are 1
+    // (a strong "not a normal user" signal, stable across every signup). Return 0 so the device looks
+    // like an ordinary consumer phone. These are read via getInt AND getString — cover both.
+    private void hookSettingsGlobal(final Map<String, String> p) {
+        final java.util.Set<String> devTells = new java.util.HashSet<>(java.util.Arrays.asList(
+                "adb_enabled", "development_settings_enabled"));
+        XC_MethodHook getInt = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (argsContainAny(param.args, devTells)) param.setResult(0);
+            }
+        };
+        XC_MethodHook getStr = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (argsContainAny(param.args, devTells)) param.setResult("0");
+            }
+        };
+        try { XposedBridge.hookAllMethods(Settings.Global.class, "getInt", getInt); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(Settings.Global.class, "getString", getStr); } catch (Throwable ignored) {}
+    }
+
+    private static boolean argsContainAny(Object[] args, java.util.Set<String> keys) {
+        if (args == null) return false;
+        for (Object a : args) if (a instanceof String && keys.contains(a)) return true;
+        return false;
     }
 
     // ---- TelephonyManager: imei/deviceid/subscriber/simserial/line1/operator ----

@@ -82,6 +82,12 @@ public class ProbeActivity extends Activity {
                 put(o, "bt_addr_settings", Settings.Secure.getString(getContentResolver(), "bluetooth_address"));
             } catch (Throwable t) { put(o, "bt_addr_settings", "ERR:" + t); }
 
+            // Settings.Global dev-mode tells — should read 0 (hide the developer/rooted-device signal)
+            try {
+                put(o, "adb_enabled", String.valueOf(Settings.Global.getInt(getContentResolver(), "adb_enabled", -1)));
+                put(o, "dev_settings", String.valueOf(Settings.Global.getInt(getContentResolver(), "development_settings_enabled", -1)));
+            } catch (Throwable t) { put(o, "adb_enabled", "ERR:" + t); }
+
             // RAM (ActivityManager.MemoryInfo.totalMem) — a FingerprintJS hardware signal
             try {
                 android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);

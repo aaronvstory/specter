@@ -55,6 +55,15 @@ def test_module_spoofs_bluetooth_address_via_settings():
     assert "bluetooth_mac" in java, "bluetooth_address spoof must reuse the generated bluetooth_mac"
 
 
+def test_module_hides_dev_mode_tells():
+    """adb_enabled + development_settings_enabled read 1 on this rooted fleet phone — a strong
+    'not a normal user' fingerprint. The module must spoof them to 0 via Settings.Global."""
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
+    assert '"adb_enabled"' in java, "must hide adb_enabled"
+    assert '"development_settings_enabled"' in java, "must hide development_settings_enabled"
+    assert "Settings.Global.class" in java, "must hook Settings.Global (not just Secure/System)"
+
+
 def test_module_hooks_gservices_getlong():
     """GSF read via Gservices.getLong must be covered, not just getString."""
     java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/fleet/idrotate/HookEntry.java")).read()
