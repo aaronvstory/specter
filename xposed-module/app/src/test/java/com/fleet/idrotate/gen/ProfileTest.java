@@ -57,9 +57,17 @@ public class ProfileTest {
             check(p.size() == Profile.KEYS.length, "all keys s=" + s);
             // coherence spot-checks
             check(p.get("build_fingerprint").contains(p.get("build_brand")), "brand in fp s=" + s);
-            // BOOTLOADER present, non-empty, brand-coherent (no whitespace, plausible OEM shape)
+            // BOOTLOADER present, non-empty, and brand-COHERENT (the prefix matches the brand's OEM
+            // family — Google=lowercase codename, Samsung=G/N/A model code, Motorola=MBM/MOTO, LG=LGE).
             String bl = p.get("build_bootloader");
+            String brand = p.get("build_brand").toLowerCase();
             check(bl != null && !bl.isEmpty() && !bl.contains(" "), "bootloader shape s=" + s + " " + bl);
+            boolean coherent =
+                brand.equals("google")   ? bl.matches("(slider|redfin|barbet|raven|oriole)-.*") :
+                brand.equals("samsung")  ? bl.startsWith("G") || bl.startsWith("N") || bl.startsWith("A") :
+                brand.equals("motorola") ? bl.startsWith("MBM") || bl.startsWith("MOTO") :
+                brand.equals("lge")      ? bl.startsWith("LGE") : true;
+            check(coherent, "bootloader brand-coherent s=" + s + " brand=" + brand + " bl=" + bl);
             // Fingerprint-hash hardware signals: kernel plausible; HARDWARE/BOARD coherent with device.
             check(p.get("build_kernel_version").matches("\\d+\\.\\d+\\.\\d+-.*-g[0-9a-f]{8}"), "kernel shape s=" + s + " " + p.get("build_kernel_version"));
             check(p.get("build_hardware").equals(p.get("build_device")), "hardware==device s=" + s);
