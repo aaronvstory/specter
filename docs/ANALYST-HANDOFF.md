@@ -155,6 +155,15 @@ interstitials) — drive past with `KEYCODE_BACK` + `am force-stop com.android.v
 
 ## 6. Security / ban-critical properties (what to scrutinize first)
 
+**Hook-surface / scope design (read `docs/PAIRIP-CONSTRAINT.md`):** Prefer NARROW hooks (identifier
+leaf-getters) and per-app scope; avoid `system` scope. Reasons are **fragility** (a smaller hook surface
+survives app updates better) and **system-scope side effects** (system scope can leak a spoofed profile
+into `PackageManager` → Play "not compatible"). NOT because of pairip — an earlier claim that pairip
+crashes the app on broad hooks was **disproved**: a Dasher crash traced to a broken base-only install
+(`libpairipcore.so` missing), and GeerGit runs broad + system-scope hooks on Dasher fine. Fleet safety
+still holds: never scope Specter to Dasher/DoorDash/system while GeerGit owns the fleet (income), and only
+test on Dasher with explicit user go.
+
 These are the properties the whole tool depends on. If you audit anything, audit these:
 
 1. **No reuse, ever.** Every globally-unique id (`Profile.UNIQUE_KEYS`: android_id, IMEIs, serial,

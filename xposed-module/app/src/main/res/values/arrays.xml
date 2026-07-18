@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Default scope suggestion shown in LSPosed. You can add/remove in the LSPosed UI. -->
+    <!-- Default scope suggestion shown in LSPosed. DevInfo (the safe test target) ONLY.
+         NEVER default to Dasher/DoorDash/system: (1) GeerGit owns the fleet apps, (2) Dasher is
+         pairip-protected and kills broad hooks / crashes on tamper. Scope real apps only after the
+         hooks are proven pairip-safe (narrow, identifier-getters only). See docs/PAIRIP-CONSTRAINT.md. -->
     <string-array name="xposed_scope">
-        <item>com.doordash.driverapp</item>
-        <item>com.dd.doordash</item>
+        <item>com.liuzh.deviceinfo</item>
     </string-array>
 </resources>

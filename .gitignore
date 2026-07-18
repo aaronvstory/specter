@@ -39,3 +39,4 @@ nul
 /resources/decompiles/*.so
 /resources/decompiles/geergit-*-dex-java/
 /resources/device-backups/*.tgz
+resources/*.zip

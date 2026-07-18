@@ -63,7 +63,20 @@ public class GeneratorsTest {
             check(Generators.validate("bluetooth_mac", Generators.macUpper(g)), "mac_upper valid s=" + s);
             check(Generators.validate("wifi_bssid", Generators.macLower(g)), "mac_lower valid s=" + s);
             check(Generators.validate("mobile_number", Generators.phoneUs(g)), "phone valid s=" + s);
-            check(Generators.validate("gmail", Generators.gmail(g)), "gmail valid s=" + s);
+            check(Generators.validate("mobile_number", Generators.phoneUk(g)), "uk phone valid s=" + s);
+            check(Generators.validate("gmail", Generators.gmail(g)), "email valid s=" + s);
+
+            // Email realism: contains a real name from the list, no random-consonant-soup, a known provider.
+            String em = Generators.gmail(g);
+            String localPart = em.substring(0, em.indexOf('@'));
+            boolean hasKnownName = false;
+            for (String fn : Generators.FIRST_NAMES) if (localPart.contains(fn)) { hasKnownName = true; break; }
+            check(hasKnownName, "email uses a real first name s=" + s + " (" + em + ")");
+            check(em.matches(".*@(gmail|outlook|yahoo|hotmail|proton|icloud)\\..*"), "email known provider s=" + s);
+
+            // UK phone shape: E.164 447 + [4-9] + 8 digits.
+            String uk = Generators.phoneUk(g);
+            check(uk.startsWith("447") && uk.length() == 12, "uk phone 447+9 digits s=" + s);
 
             // IMEI: 15-digit, Luhn-valid, brand TAC prefix respected.
             String imei = Generators.imei(g, "86293403"); // oneplus TAC

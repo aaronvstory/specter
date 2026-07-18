@@ -28,6 +28,22 @@ US_CARRIERS = [
     ("310160", "T-Mobile"), ("311870", "Boost Mobile"),
 ]
 
+UK_CARRIERS = [
+    ("23430", "EE"), ("23410", "O2"), ("23415", "Vodafone"),
+    ("23420", "Three"), ("23433", "EE"), ("23402", "O2"),
+]
+
+# Per-country data: carriers, phone kind, device-brand bias. Adding a country is a data edit.
+COUNTRIES = {
+    "US": {"name": "United States", "carriers": US_CARRIERS, "phone": "nanp",
+           "brands": {"samsung", "google", "motorola", "oneplus", "lge"}},
+    "UK": {"name": "United Kingdom", "carriers": UK_CARRIERS, "phone": "uk",
+           "brands": {"samsung", "google", "oneplus", "xiaomi", "sony"}},
+}
+
+def country_of(code):
+    return COUNTRIES.get((code or "US").upper(), COUNTRIES["US"])
+
 
 def _load_devices():
     return json.load(open(DEVICES_PATH, encoding="utf-8"))
@@ -47,16 +63,18 @@ def _seeded(seed):
     return r
 
 
-def _pick_device(r, devices, us_bias):
+def _pick_device(r, devices, us_bias, brands=None):
     if us_bias:
-        pool = [d for d in devices if len(d) > 2 and d[2].lower() in US_COMMON_BRANDS]
+        pool_brands = brands if brands is not None else US_COMMON_BRANDS
+        pool = [d for d in devices if len(d) > 2 and d[2].lower() in pool_brands]
         if pool:
             return pool[r(len(pool))]
     return devices[r(len(devices))]
 
 
-def build_profile(r, devices, us_bias=True):
-    dev = _pick_device(r, devices, us_bias)
+def build_profile(r, devices, us_bias=True, country="US"):
+    cc = country_of(country)
+    dev = _pick_device(r, devices, us_bias, cc["brands"])
     manufacturer, brand, device, product = dev[1], dev[2], dev[3], dev[4]
     model_rel = dev[5]
     model = model_rel.split(":")[0]
@@ -66,7 +84,7 @@ def build_profile(r, devices, us_bias=True):
     patch = dev[8] if len(dev) > 8 else "2021-01-01"
     fingerprint = f"{brand}/{product}/{device}:{release}/{build_id}/{incremental}:user/release-keys"
 
-    mccmnc, carrier = US_CARRIERS[r(len(US_CARRIERS))]
+    mccmnc, carrier = cc["carriers"][r(len(cc["carriers"]))]
 
     # One TAC per device (from the manufacturer), shared by both IMEIs — real dual-SIM devices
     # share the TAC and differ only in the serial portion. imei1 != imei2 (different serials).
@@ -84,7 +102,7 @@ def build_profile(r, devices, us_bias=True):
         "wifi_mac": G.mac_upper(r),
         "wifi_bssid": G.mac_lower(r),
         "wifi_ssid": G.ssid(r),
-        "mobile_number": G.phone_us(r),
+        "mobile_number": G.phone_for_country(r, cc["phone"]),
         "sim_operator_mccmnc": mccmnc,
         "sim_operator_name": carrier,
         "sim_subscriber_imsi": G.imsi(r, mccmnc),
@@ -258,7 +276,7 @@ class _file_lock:
         self.fh.close()
 
 
-def generate_unique(used_store, us_bias=True, seed=None, max_tries=1000):
+def generate_unique(used_store, us_bias=True, seed=None, max_tries=1000, country="US"):
     """Generate a validated, never-before-used profile. Records it atomically. Returns the profile."""
     devices = _load_devices()
     r = _seeded(seed) if seed is not None else _csprng
@@ -268,7 +286,7 @@ def generate_unique(used_store, us_bias=True, seed=None, max_tries=1000):
     if used_store is not None:
         used_store._refresh_from_disk()
     for _ in range(max_tries):
-        p = build_profile(r, devices, us_bias)
+        p = build_profile(r, devices, us_bias, country)
         ok, errs = validate(p)
         if not ok:
             continue

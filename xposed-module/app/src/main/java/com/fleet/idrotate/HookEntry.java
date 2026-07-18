@@ -229,10 +229,13 @@ public class HookEntry implements IXposedHookLoadPackage {
                 });
             } catch (Throwable ignored) {}
         }
-        // Intercept the raw ContentResolver.query() to the gservices provider — the dominant
-        // real-world path (Play Services client + many apps read GSF android_id via a direct
-        // cursor against content://com.google.android.gsf.gservices, bypassing Gservices).
-        // We wrap the returned Cursor so a row whose key == "android_id" reports our fake value.
+        // Broad path: wrap ContentResolver.query / ContentProviderClient.query so a direct gservices
+        // cursor read of "android_id" returns our fake GSF. This is a LARGE, fragile hook surface
+        // (every provider read in the process), so we gate it to the DevInfo TEST app ONLY — DevInfo
+        // reads GSF via this cursor path (confirmed by dexdump), so it's how we keep GSF fully
+        // verifiable on our test target. Real targets use the narrow Gservices.getString/getLong hooks
+        // above only (GeerGit's approach — smaller surface, less fragile). See docs/PAIRIP-CONSTRAINT.md.
+        if (!"com.liuzh.deviceinfo".equals(lp.packageName)) return;
         final XC_MethodHook wrapCursor = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 try {
@@ -245,13 +248,10 @@ public class HookEntry implements IXposedHookLoadPackage {
                 } catch (Throwable ignored) {}
             }
         };
-        // ContentResolver.query — the common path.
         try {
             XposedBridge.hookAllMethods(
                 XposedHelpers.findClass("android.content.ContentResolver", lp.classLoader), "query", wrapCursor);
         } catch (Throwable ignored) {}
-        // ContentProviderClient.query — some clients hold a provider client and query it directly,
-        // bypassing ContentResolver.query. Same wrap, so it can't leak the real GSF.
         try {
             XposedBridge.hookAllMethods(
                 XposedHelpers.findClass("android.content.ContentProviderClient", lp.classLoader), "query", wrapCursor);

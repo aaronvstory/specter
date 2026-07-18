@@ -15,6 +15,7 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
 "$JAVAC" -d "$OUT" \
     app/src/main/java/com/fleet/idrotate/SpoofLogic.java \
     app/src/main/java/com/fleet/idrotate/gen/Generators.java \
+    app/src/main/java/com/fleet/idrotate/gen/Country.java \
     app/src/main/java/com/fleet/idrotate/gen/Profile.java \
     app/src/main/java/com/fleet/idrotate/gen/UsedStore.java \
     app/src/main/java/com/fleet/idrotate/gen/RootWriter.java \

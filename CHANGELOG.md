@@ -3,6 +3,38 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.3.0] — 2026-07-08
+
+UI/UX polish + real multi-app targeting, per-country SIM, and realistic emails. The app now
+carries one name (Specter), a logo, and the warm-dark charcoal theme.
+
+### Added
+- **Multi-app targeting**: an app picker (PackageManager) with a Show-system-apps toggle
+  (user apps by default), search, Select/Deselect all, and multi-select. APPLY writes the
+  profile to every selected target. Fleet-safety warning on Dasher/system packages.
+- **Per-country SIM**: USA + UK, with an extensible Country structure (carriers, phone format,
+  ICCID IIN, brand bias). Settings has a country picker; UK generates EE/O2/Vodafone/Three
+  carriers + +44 7 phone numbers. `specter --country` on the CLI.
+- **Realistic emails**: real first/last names in common patterns (first.last, firstlast+year, …)
+  across gmail/outlook/yahoo/hotmail/icloud, replacing the old random-letter `xxxx###@gmail.com`.
+  (GeerGit's own 'normal emails' are server-side and byte-identical across its versions — this is
+  an independent implementation, not a port.)
+- **Per-identifier on/off toggles**: each id card has a switch; disabled ids are omitted from the
+  applied profile so the hook leaves them REAL (GeerGit's *_switch parity).
+- **Branding**: gold ghost logo (vector) as header mark + adaptive launcher icon; charcoal/gold
+  theme via a single Theme token class; version shown small next to the wordmark.
+
+### Fixed
+- **Tab active-state**: switching Identity/Settings/Location now highlights the active tab (gold).
+  Previously the tab bar was built once and never re-tinted.
+- One name only: the LSPosed module + app label is **Specter** (was 'Fleet ID Rotate').
+
+### Notes
+- Java + Python generation stay byte-parity (same seeded emails/phones). JVM 44,063 asserts +
+  Python 75 tests green.
+- Deferred (2.9.7-beta parity, later): Hide Airplane Mode, Randomize Battery Level, Spoof Battery
+  Cycle Count, i18n, profile-transfer (server feature).
+
 ## [0.2.0] — 2026-07-08
 
 Pivot from a PC-tethered CLI to a **standalone, no-PC Android app**: Specter now generates

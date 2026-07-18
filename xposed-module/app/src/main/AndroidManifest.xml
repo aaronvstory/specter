@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.fleet.idrotate">
 
+    <!-- See EVERY installed app in the target-app picker. Android 11+ hides other packages by
+         default; this app is a root/LSPosed tool whose whole job is to target arbitrary apps. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <application
-        android:label="Fleet ID Rotate"
-        android:icon="@android:drawable/ic_menu_manage">
+        android:label="Specter"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.Material.NoActionBar">
 
         <!-- Launcher UI. The app is BOTH an Xposed module and a launchable app, exactly like
-             GeerGit — no PC needed to generate + apply identities. -->
+             GeerGit — no PC needed to generate + apply identities. NoActionBar so our own header
+             is the only title (was showing "Specter" twice). -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true">
@@ -20,6 +28,10 @@
         <activity
             android:name=".ui.DebugActivity"
             android:exported="true" />
+        <!-- Target-app picker (opened from Settings). -->
+        <activity
+            android:name=".ui.AppPickerActivity"
+            android:exported="false" />
 
         <!-- Xposed / LSPosed module markers -->
         <meta-data
@@ -27,7 +39,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Specter v0.2.0 — standalone on-device identifier rotation (GeerGit replacement). Generates + self-applies android_id, IMEI, serial, MACs, GSF, MediaDRM, advertising id, SIM + Build.* with no PC. Scope target apps in LSPosed." />
+            android:value="Specter v0.3.0 — standalone on-device identifier rotation (GeerGit replacement). Generates + self-applies android_id, IMEI, serial, MACs, GSF, MediaDRM, advertising id, SIM + Build.* with no PC. Multi-app targeting, per-country SIM, per-id toggles. Scope target apps in LSPosed." />
         <meta-data
             android:name="xposedminversion"
             android:value="93" />

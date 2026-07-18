@@ -96,6 +96,13 @@ def phone_us(r):
     exch = str(2 + r(8)) + digits(r, 2)
     return "1" + area + exch + digits(r, 4)
 
+def phone_uk(r):
+    # UK mobile E.164 (no +): 44 + 7 + [4-9] + 8 digits.
+    return "447" + str(4 + r(6)) + digits(r, 8)
+
+def phone_for_country(r, kind):
+    return phone_uk(r) if kind == "uk" else phone_us(r)
+
 def imsi(r, mccmnc):
     return mccmnc + digits(r, 15 - len(mccmnc))        # IMSI = MCC+MNC+MSIN, 15 digits
 
@@ -110,6 +117,12 @@ _ICCID_IIN = {
     "310120": "89011201",  # Sprint
     "311580": "89011580",  # US Cellular
     "311870": "89011870",  # Boost
+    "23430": "894430",     # EE (UK)
+    "23410": "894410",     # O2 (UK)
+    "23415": "894415",     # Vodafone (UK)
+    "23420": "894420",     # Three (UK)
+    "23433": "894430",     # EE (UK)
+    "23402": "894410",     # O2 (UK)
 }
 
 def iccid(r, mccmnc=None):
@@ -126,9 +139,46 @@ def gsf(r):
     lo = 1_000_000_000_000_000_000
     return str(lo + r(LONG_MAX - lo))
 
+FIRST_NAMES = [
+    "james","john","robert","michael","david","william","richard","joseph","thomas","charles",
+    "mary","patricia","jennifer","linda","elizabeth","susan","jessica","sarah","karen","emily",
+    "daniel","matthew","anthony","mark","paul","steven","andrew","joshua","kevin","brian",
+    "amanda","ashley","stephanie","nicole","laura","megan","hannah","olivia","emma","sophia",
+    "chris","ryan","jacob","tyler","aaron","nathan","adam","justin","brandon","sean",
+    "rachel","lauren","victoria","natalie","grace","chloe","zoe","ella","lily","mia",
+]
+LAST_NAMES = [
+    "smith","johnson","williams","brown","jones","garcia","miller","davis","rodriguez","martinez",
+    "hernandez","lopez","gonzalez","wilson","anderson","thomas","taylor","moore","jackson","martin",
+    "lee","perez","thompson","white","harris","sanchez","clark","ramirez","lewis","robinson",
+    "walker","young","allen","king","wright","scott","torres","nguyen","hill","flores",
+    "green","adams","nelson","baker","hall","rivera","campbell","mitchell","carter","roberts",
+]
+EMAIL_PROVIDERS = [
+    "gmail.com","gmail.com","gmail.com","outlook.com","outlook.com","yahoo.com","hotmail.com","icloud.com",
+]
+
 def gmail(r):
-    first = "".join("abcdefghijklmnopqrstuvwxyz"[r(26)] for _ in range(3 + r(5)))
-    return f"{first}{digits(r,3)}@gmail.com"
+    """Realistic-looking email: real first/last name in a common pattern + provider."""
+    first = FIRST_NAMES[r(len(FIRST_NAMES))]
+    last = LAST_NAMES[r(len(LAST_NAMES))]
+    provider = EMAIL_PROVIDERS[r(len(EMAIL_PROVIDERS))]
+    pattern = r(6)
+    if pattern == 0:
+        local = f"{first}.{last}"
+    elif pattern == 1:
+        local = f"{first}{last}"
+    elif pattern == 2:
+        local = f"{first}_{last}"
+    elif pattern == 3:
+        local = f"{first}{last[0]}"
+    elif pattern == 4:
+        local = f"{first}.{last}{digits(r, 2)}"
+    else:
+        local = f"{first}{last}{1970 + r(40)}"
+    return f"{local}@{provider}"
+
+email = gmail
 
 def ssid(r):
     nets = ["NETGEAR", "ATT", "xfinitywifi", "Linksys", "TP-Link_", "SpectrumSetup-"]
@@ -147,11 +197,11 @@ def validate(key, value):
         "bluetooth_mac":       lambda v: bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", v)),
         "wifi_mac":            lambda v: bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", v)),
         "wifi_bssid":          lambda v: bool(re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", v)),
-        "mobile_number":       lambda v: bool(re.fullmatch(r"1[2-9]\d{2}[2-9]\d{6}", v)),
+        "mobile_number":       lambda v: bool(re.fullmatch(r"1[2-9]\d{2}[2-9]\d{6}|447[4-9]\d{8}", v)),
         "sim_subscriber_imsi": lambda v: len(v) == 15 and v.isdigit(),
         "sim_serial_iccid":    lambda v: len(v) == 20 and v.isdigit() and luhn_valid(v),
         "gsf_id":              lambda v: v.isdigit() and 0 < int(v) <= LONG_MAX,
-        "gmail":               lambda v: bool(re.fullmatch(r"[a-z]{3,}\d{3}@gmail\.com", v)),
+        "gmail":               lambda v: bool(re.fullmatch(r"[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?@(gmail\.com|outlook\.com|yahoo\.com|hotmail\.com|proton\.me|icloud\.com)", v)),
     }
     fn = checks.get(key)
     return True if fn is None else fn(value)
