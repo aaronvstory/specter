@@ -48,6 +48,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookAdvertisingId(lpparam, p);
         hookGsf(lpparam, p);
         hookMediaDrm(lpparam, p);
+        hookSystemProperties(p);
         hookHardwareInfo(lpparam, p);
     }
 
@@ -132,14 +133,6 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
-        try {
-            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
-            XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    if (mp.args.length > 0 && "os.version".equals(mp.args[0])) mp.setResult(kernel);
-                }
-            });
-        } catch (Throwable ignored) {}
     }
 
     // ---- baseband/radio — a confirmed FingerprintJS leak. DevInfo (and getRadioVersion itself)
@@ -156,44 +149,10 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
-        try {
-            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
-            XC_MethodHook h = new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    if (mp.args.length > 0 && mp.args[0] instanceof String) {
-                        String key = (String) mp.args[0];
-                        if ("gsm.version.baseband".equals(key) || "ril.baseband".equals(key)) {
-                            mp.setResult(radio);
-                        }
-                    }
-                }
-            };
-            // get(String) and get(String, String) overloads
-            XposedBridge.hookAllMethods(sp, "get", h);
-        } catch (Throwable ignored) {}
     }
 
     // ---- RAM (ActivityManager.MemoryInfo.totalMem) + SoC platform — FingerprintJS hardware signals ----
     private void hookHardwareInfo(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
-        // ro.board.platform (SoC codename) — spoof it so the fingerprint's CPU/SoC portion rotates
-        // per identity instead of leaking the real phone's SoC on every signup. Read via SystemProperties.
-        final String soc = p.get("soc_platform");
-        if (soc != null) {
-            try {
-                Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
-                XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
-                    @Override protected void afterHookedMethod(MethodHookParam mp) {
-                        if (mp.args.length > 0 && mp.args[0] instanceof String) {
-                            String k = (String) mp.args[0];
-                            if ("ro.board.platform".equals(k) || "ro.hardware.chipname".equals(k)
-                                    || "ro.soc.model".equals(k)) {
-                                mp.setResult(soc);
-                            }
-                        }
-                    }
-                });
-            } catch (Throwable ignored) {}
-        }
         final String ramStr = p.get("total_ram");
         if (ramStr == null) return;
         final long ram;
@@ -208,6 +167,35 @@ public class HookEntry implements IXposedHookLoadPackage {
                             Field f = mp.args[0].getClass().getField("totalMem");
                             f.setLong(mp.args[0], ram);
                         } catch (Throwable ignored) {}
+                    }
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    // ---- ONE SystemProperties.get hook for ALL spoofed props ----
+    // SystemProperties.get is an extremely HOT path — hook it exactly once and dispatch every spoofed
+    // key inside a single callback (kernel os.version, baseband, SoC platform) instead of registering
+    // three separate hooks that each add overhead on every property read.
+    private void hookSystemProperties(final Map<String, String> p) {
+        final String kernel = p.get("build_kernel_version");
+        final String radio = p.get("build_radio");
+        final String soc = p.get("soc_platform");
+        if (kernel == null && radio == null && soc == null) return;
+        try {
+            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
+            XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
+                    String k = (String) mp.args[0];
+                    switch (k) {
+                        case "os.version":
+                            if (kernel != null) mp.setResult(kernel); break;
+                        case "gsm.version.baseband": case "ril.baseband":
+                            if (radio != null) mp.setResult(radio); break;
+                        case "ro.board.platform": case "ro.hardware.chipname": case "ro.soc.model":
+                            if (soc != null) mp.setResult(soc); break;
+                        default: // not a spoofed key — leave the real value
                     }
                 }
             });
