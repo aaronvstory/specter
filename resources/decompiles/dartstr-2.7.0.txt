@@ -1,0 +1,326 @@
+ constructor and forget the 'new' operator?
+ days. Please renew your subscription to continue enjoying premium features.
+ it will clear all the app data backups.
+ it will clear all the deleted profiles and their backup data.
+/api/v1/conf
+/api/v1/conf/operators
+/api/v1/groups
+/api/v1/groups/delete
+/api/v1/login
+/api/v1/profiles
+/api/v1/profiles/delete
+/api/v1/recover
+/api/v1/refresh
+/api/v1/user/privileges
+/api/v1/user/session-check
+/api/v1/user/signup
+Advertising ID:
+Advertising Id:
+All Profiles
+All profiles: 
+Anti Fingerprinting
+Are you sure you want to clean app data backups?
+Are you sure you want to delete the selected profiles? This action cannot be undone.
+Are you sure you want to delete this profile? THIS ACTION CAN NOT BE UNDONE.
+Backup
+Backup App Data
+Backup completed
+Backup failed for 
+Backup import has been canceled as the user did not choose a folder.
+Backup service initialized.
+Backup status: 
+Backup target app on profile change! 
+Backups
+Bluetooth Mac:
+Cleaning all backups
+Clear app data backups
+Clear app data backups?
+Could not launch Telegram
+Country: 
+Create new profile
+Creating new profile
+Creating profile with folder: 
+Delete profile
+Delete selected profiles
+Deleting profile
+Device fingerprint, if you don't know what it is, don't change it
+Email is already in use
+Email: 
+Enter new profile name
+Enter no. by which IMEI will be incremented on each random
+Enter profile name
+Error opening Telegram: 
+Export Backup
+Export backups
+Exporting backup...
+Exporting backups...
+Failed to import profile: 
+Failed to load countries and operators
+Failed to load countries and operators: 
+Fetching profile...
+Fingerprint:
+Fingerprint: 
+GSF Id:
+Get new profile
+Gmail:
+Google Services Framework (GSF) ID:
+Hardware Serial:
+Hide Mock Location
+IMEI
+IMEI: 
+Import Backup
+Import Profile
+Import profile
+Importing backup...j
+Importing profile
+LanguageError
+Lock this country for random operator selection
+MCC/MNC: 
+MCC8
+Media DRM:
+Move selected profiles to folder
+Need alpha membership to export backup
+Need non-trial alpha membership to export backup
+NextUserProfile
+OPERATOR
+Operator: 
+PlatformConfigurationNativeApi::GetRootIsolateToken
+Please check your email and password.
+Please delete previous profile or use different name.
+Please enter valid email
+Premium (
+Premium Subscription
+Premium or higher membership required.
+Previous profile saved!
+Profile
+Profile Details
+Profile ID
+Profile Name
+Profile already exists
+Profile created successfully
+Profile creation failed
+Profile delete failed
+Profile delete failed: 
+Profile deleted!
+Profile import failed
+Profile name cannot be empty
+Profile name is same as old name
+Profile name:
+Profile update failed: 
+Profile updated!
+Profile with this name already exists
+Profiles
+Random behaviour (if selected IMEI will be random no. else incremented by increment value provided below)
+RcLowBattery
+Rename profile
+Renaming profile
+Root Focus Scope
+Root access denied
+Root privilege is not granted
+SIM Card Serial:
+SIM Operator: 
+SecurityContext_TrustBuiltinRoots
+Select Profiles
+Sim Operator:
+Some features will not be available because root privileges are not granted
+The backup export was cancelled because the user did not choose a folder.
+This is likely because the app called `runApp` to render its root widget, which expects the platform to provide a default view to render into (the "implicit" view).
+This widget is the root of the tree, so it has no ancestors, let alone a "
+This will delete all the local profiles and fetch the latest profiles from the server.
+Tip: Make any changes in profile eg. try adding notes.
+Tip: Try adding notes to profile.
+To unlock the premium version via Google Play, please install the app Geergit Premium & Add-ons and make purchase inside this app. Afterwards your purchase will also be available in Geergit.
+Total size of backups
+Unable to backup data for 
+Unable to export backup for 
+Unable to import backup for 
+WeakSerializationReference
+You have to be logged-in to import profile.
+You have to be logged-in to new create profile.
+You need to be a alpha member to create profile.
+You need to be a alpha member to delete profile.
+You need to be a alpha member to import profile.
+Your email address
+_SwitchType.
+_getLocaleClosure@17065589
+_localeClosure@15069316
+_localeClosure@17065589
+_updateLocales@17065589
+advertising_id_switch
+android_id_switch
+anti_fingerprinting
+anti_fingerprinting_switch
+antifingerprinting
+app_enable_switch
+backupVictimApp: 
+backupVictimAppData
+backup_app_data_switch
+backupappdata
+bluetooth_mac_switch
+cancel_imei_edit
+cancel_sim_operator
+carrier
+clean_all_backups
+clean_all_backups_cancel
+com.pyshivam.gplaylicense
+country
+countryCode
+countryName
+country_lk
+create_profile
+create_profile_premium
+dataBackupPath
+decompressLicenses
+deleteAllBackups failed: 
+deleteUnusedBackupData
+deleteUnusedBackupData failed: 
+delete_profile
+deviceFingerprint
+deviceFingerprintSwitch
+device_spoof_card_tap
+device_spoof_page
+device_spoof_randomize
+device_spoof_switch
+drmid
+edit_imei
+email
+emailAddress
+email_val
+email_verified
+exportBackupToLocal
+exportVictimAppBackupToLocal called 
+exportVictimAppBackupToLocal: 
+export_backup
+export_selected_backup
+flag_imei1
+flag_imei2
+getRootAccess
+gmail
+gmail_switch
+gsf_id_switch
+gsfid
+gsfid_val
+hide_mock_location_switch
+hintLocales
+imei
+imei1
+imei1_switch
+imei2
+imei2_edit
+imei2_switch
+imei_behave
+imei_chk1
+imei_chk2
+imei_no_val
+imei_switch
+imei_val1
+imei_val2
+import backup: 
+importBackupFromLocal
+import_backup
+import_profile
+incrementImei
+increment_imei
+initializeBackupRestoreService
+isEmailVerified
+is_ads
+is_and
+is_anti_fingerprinting
+is_apply
+is_bmac
+is_bssid
+is_device_legit
+is_device_legit_ex
+is_device_spoof
+is_group_app
+is_gsf
+is_hr
+is_im
+is_im1
+is_im2
+is_m_drm
+is_mail
+is_mml
+is_num
+is_op
+is_rimei
+is_scs
+is_ser
+is_ssid
+is_ssub
+is_vic_bkp
+is_whatsapp_support
+is_wmac
+is_xp
+language
+legit_device_experimental_switch
+legit_device_switch
+m_drm
+mccmnc
+media_drm_switch
+migrateBackups
+migrateBackups failed: 
+mobile_number_switch
+open_search_profile
+operator
+operators
+parseLicenses
+pathOfBackup
+pathToBackup
+premium
+profile
+profileIds|
+profile_id
+profile_page
+profiles
+profilesNotToDelete
+randomGSFID
+randomGmail
+randomIMEI
+randomMediaDRM
+randomSerialID
+randomSimCardSerial
+random_imei
+randomize_adsid
+randomize_all
+randomize_all_request
+randomize_android_id
+randomize_bluetooth_mac
+randomize_cancel
+randomize_device_spoof
+randomize_gmail
+randomize_gsf_id
+randomize_imei
+randomize_media_drm
+randomize_sim_operator
+refresh_profiles_list
+rename_profile
+root
+save_imei_edit
+save_sim_operator
+select operator 
+serial
+serial_random
+serial_switch
+serial_val
+setIMEI
+set_imei
+set_random_operator
+set_sim_operator
+sim_card_serial_random
+sim_card_serial_switch
+sim_operator_country_set
+sim_operator_edit
+sim_operator_set
+sim_operator_switch
+sim_subscriber_switch
+spoof_device
+support_email
+theme_switch
+update profile data: 
+useAdvertisingIdForDeviceId
+utf8DecodeLicenses
+view_profile_details
+wifibssid_switch
+wifimac_switch
+wifissid_switch
