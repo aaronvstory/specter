@@ -39,6 +39,7 @@ public final class Profile {
             "gmail", "build_manufacturer", "build_brand", "build_device", "build_product",
             "build_model", "build_release", "build_id", "build_incremental", "build_fingerprint",
             "build_security_patch", "build_bootloader",
+            "build_hardware", "build_board", "build_kernel_version",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -123,6 +124,11 @@ public final class Profile {
         p.put("build_fingerprint", fingerprint);
         p.put("build_security_patch", patch);
         p.put("build_bootloader", Generators.bootloader(r, brand));
+        // Fingerprint-hash signals (FingerprintJS reads these): keep coherent with the device.
+        // HARDWARE/BOARD track the platform (device codename); kernel is high-entropy, per-identity.
+        p.put("build_hardware", device);
+        p.put("build_board", device);
+        p.put("build_kernel_version", Generators.kernelVersion(r));
         return p;
     }
 

@@ -74,6 +74,15 @@ _BOOTLOADER_BY_BRAND = {
     "xiaomi":   ["uefi"],
 }
 
+_KERNEL_BASES = ["4.9", "4.14", "4.19", "5.4", "5.10", "5.15"]
+
+def kernel_version(r):
+    """os.version kernel string, e.g. '4.14.180-perf-g0a1b2c3' (mirrors Java kernelVersion)."""
+    base = _KERNEL_BASES[r(len(_KERNEL_BASES))]
+    patch = 50 + r(250)
+    tag = "-perf" if r(2) == 0 else "-android" + str(10 + r(4))
+    return f"{base}.{patch}{tag}-g" + hexs(r, 4)
+
 def bootloader(r, brand):
     """Build.BOOTLOADER: brand-coherent prefix + seeded suffix (mirrors Java Generators.bootloader)."""
     pre = _BOOTLOADER_BY_BRAND.get((brand or "").lower(), ["unknown"])

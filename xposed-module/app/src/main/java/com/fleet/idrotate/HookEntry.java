@@ -88,6 +88,10 @@ public class HookEntry implements IXposedHookLoadPackage {
         setStatic("SERIAL",       p.get("serial"));
         setStatic("ID",           p.get("build_id"));
         setStatic("BOOTLOADER",   p.get("build_bootloader"));
+        // Fingerprint-hash hardware signals (FingerprintJS reads HARDWARE/BOARD; kernel via os.version).
+        setStatic("HARDWARE",     p.get("build_hardware"));
+        setStatic("BOARD",        p.get("build_board"));
+        hookKernelVersion(p.get("build_kernel_version"));
         // getSerial() (API 26+) is a method, not just the field
         try {
             XposedHelpers.findAndHookMethod(Build.class, "getSerial",
@@ -104,6 +108,19 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (val == null) return;
         try {
             XposedHelpers.setStaticObjectField(Build.VERSION.class, field, val);
+        } catch (Throwable ignored) {}
+    }
+
+    // ---- kernel version (os.version) — a high-entropy FingerprintJS signal ----
+    private void hookKernelVersion(final String kernel) {
+        if (kernel == null) return;
+        try {
+            XposedHelpers.findAndHookMethod(System.class, "getProperty", String.class,
+                new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        if ("os.version".equals(mp.args[0])) mp.setResult(kernel);
+                    }
+                });
         } catch (Throwable ignored) {}
     }
 

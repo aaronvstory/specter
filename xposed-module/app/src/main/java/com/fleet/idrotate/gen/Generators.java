@@ -126,6 +126,18 @@ public final class Generators {
                 + (char) ('A' + r.next(26));
     }
 
+    // Real Android kernel major.minor lines actually shipped on phones (Linux LTS branches used by
+    // Android). Keeping to real branches means the kernel string never looks synthetic.
+    static final String[] KERNEL_BASES = {"4.9", "4.14", "4.19", "5.4", "5.10", "5.15"};
+
+    /** os.version / uname kernel string, e.g. "4.14.180-perf-g0a1b2c3". High-entropy fingerprint signal. */
+    public static String kernelVersion(Rng r) {
+        String base = KERNEL_BASES[r.next(KERNEL_BASES.length)];
+        int patch = 50 + r.next(250);
+        String tag = (r.next(2) == 0) ? "-perf" : "-android" + (10 + r.next(4));
+        return base + "." + patch + tag + "-g" + hexs(r, 4);   // -g + 8 hex = a git-ish suffix
+    }
+
     /** 15-digit Luhn-valid IMEI; if a valid 8-digit TAC is given, use it as the first 8 digits. */
     public static String imei(Rng r, String tac) {
         String body;
