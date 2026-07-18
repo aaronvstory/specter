@@ -84,7 +84,7 @@ _SOC_BY_DEVICE = {
     "flame": "msmnile", "coral": "msmnile", "redfin": "lito", "bramble": "lito",
     "sunfish": "sm6150", "barbet": "lito", "oriole": "gs101", "raven": "gs101",
     "blueline": "sdm845", "crosshatch": "sdm845", "walleye": "msm8998",
-    "h1": "msm8996", "RS988": "msm8996",
+    "h1": "msm8996", "rs988": "msm8996",
 }
 _SOC_POOL = ["msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
              "sm8350", "sm6150", "kona", "lahaina", "trinket", "bengal"]
@@ -92,7 +92,7 @@ _SOC_POOL = ["msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
 def soc_platform(r, device):
     """ro.board.platform (SoC codename) — device-coherent where known, else a real-SoC-pool pick
     (mirrors Java socPlatform). Never a made-up string, never more-wrong than the real leak."""
-    known = _SOC_BY_DEVICE.get(device or "")
+    known = _SOC_BY_DEVICE.get((device or "").lower())
     if known is not None:
         return known
     return _SOC_POOL[r(len(_SOC_POOL))]

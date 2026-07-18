@@ -163,15 +163,16 @@ public final class Generators {
         SOC_BY_DEVICE.put("crosshatch", "sdm845"); // Pixel 3 XL
         SOC_BY_DEVICE.put("walleye", "msm8998"); // Pixel 2  = SD835
         SOC_BY_DEVICE.put("h1", "msm8996");      // LG G5    = SD820
-        SOC_BY_DEVICE.put("RS988", "msm8996");   // LG G5 (US)
+        SOC_BY_DEVICE.put("rs988", "msm8996");   // LG G5 (US) — keys are lowercase (case-insensitive lookup)
     }
     // Real Qualcomm platform names (a plausible pool for unmapped devices — all shipped on US phones).
     static final String[] SOC_POOL = {"msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
             "sm8350", "sm6150", "kona", "lahaina", "trinket", "bengal"};
 
-    /** ro.board.platform (SoC codename). Device-coherent where known, else a real-SoC-pool pick. */
+    /** ro.board.platform (SoC codename). Device-coherent where known, else a real-SoC-pool pick.
+     *  Lookup is case-insensitive (device codenames vary in casing across the device DB). */
     public static String socPlatform(Rng r, String device) {
-        String known = SOC_BY_DEVICE.get(device == null ? "" : device);
+        String known = SOC_BY_DEVICE.get(device == null ? "" : device.toLowerCase());
         if (known != null) return known;
         return SOC_POOL[r.next(SOC_POOL.length)];
     }
