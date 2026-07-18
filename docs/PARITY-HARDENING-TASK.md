@@ -136,6 +136,10 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   spoofed media_drm_id (1f777fd2..), not the real Widevine ID. Probe extended to read it. No module change
   needed — the existing hook was correct; now proven via the deterministic probe.
 
+- 2026-07-18: SystemProperties.get hook CONSOLIDATED 3->1 (gemini hot-path finding). One dispatcher
+  callback for kernel/baseband/SoC instead of three separate hooks on Android's hottest property-read
+  path. Same behavior (20/20 spoofed on-device), -42 lines, less per-read overhead.
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
