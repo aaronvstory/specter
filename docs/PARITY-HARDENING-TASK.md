@@ -170,6 +170,13 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   Probe compiles clean. Telephony fields (IMEI/IMSI/ICCID/carrier) stay probe-unverifiable (READ_PHONE_STATE
   gated) — proven instead by the JVM SpoofLogic + coherence tests. Device still disconnected (5th cycle).
 
+- 2026-07-18: HOLD. Phase 2 code work is complete + coherence-guarded; PR #5 green (CodeRabbit pass,
+  Python 84 / JVM 53,563). Blocked 6 cycles on the USB-disconnected Pixel — the on-device replay (now a
+  25-field probe check) and the merge both need the device back. Not manufacturing further marginal
+  changes; heartbeat only until the device returns, then: run the 25-field on-device proof, mark #21/#22
+  done, and (per auto-merge authority) squash-merge PR #5. The 2 "fresh" gemini re-flags on the SoC
+  lookup are already-satisfied (input+keys lowercased, Locale.ROOT) — no action.
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
