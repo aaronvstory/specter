@@ -101,29 +101,27 @@ public final class Generators {
         return tacs[r.next(tacs.length)];
     }
 
-    /** Real bootloader-string prefixes by brand — Build.BOOTLOADER shape is OEM-specific, so a
-     *  brand-coherent prefix survives checks that correlate bootloader against manufacturer. */
-    static final Map<String, String[]> BOOTLOADER_BY_BRAND = new LinkedHashMap<>();
-    static {
-        BOOTLOADER_BY_BRAND.put("google",   new String[]{"slider", "redfin", "barbet", "raven", "oriole"});
-        BOOTLOADER_BY_BRAND.put("samsung",  new String[]{"G991USQU", "G998USQU", "N986USQU", "A515USQU"});
-        BOOTLOADER_BY_BRAND.put("motorola", new String[]{"MBM", "MOTO"});
-        BOOTLOADER_BY_BRAND.put("oneplus",  new String[]{"ONEPLUS"});
-        BOOTLOADER_BY_BRAND.put("lge",      new String[]{"LGE"});
-        BOOTLOADER_BY_BRAND.put("xiaomi",   new String[]{"uefi"});
-    }
-
-    /** Build.BOOTLOADER — brand-coherent prefix + seeded suffix (e.g. "slider-1.2-7683913"). */
-    public static String bootloader(Rng r, String brand) {
-        String[] pre = BOOTLOADER_BY_BRAND.get(brand == null ? "" : brand.toLowerCase());
-        if (pre == null) pre = new String[]{"unknown"};
-        String p = pre[r.next(pre.length)];
-        // Pixel-family reads like "slider-1.2-7683913"; OEM codes read like "G991USQU5AUDA".
-        if (p.equals(p.toLowerCase())) {
-            return p + "-" + (1 + r.next(3)) + "." + r.next(9) + "-" + digits(r, 7);
+    /** Build.BOOTLOADER — DEVICE-coherent, generic-shaped bootloader string. Derived from the device
+     *  codename (not a fixed table of real model-specific firmware prefixes, which would mismatch the
+     *  picked device — e.g. a Galaxy A01 must never report a Galaxy S21 bootloader). The shape follows
+     *  each OEM's real style but the identifying part comes from THIS device, so it can't contradict it. */
+    public static String bootloader(Rng r, String brand, String device) {
+        String b = brand == null ? "" : brand.toLowerCase();
+        String dev = device == null ? "device" : device;
+        if (b.equals("google")) {
+            // Pixel-family: "<codename>-1.2-7683913" — codename IS the device, always coherent.
+            return dev.toLowerCase() + "-" + (1 + r.next(3)) + "." + r.next(9) + "-" + digits(r, 7);
         }
-        return p + (1 + r.next(9)) + (char) ('A' + r.next(26)) + (char) ('A' + r.next(26))
-                + (char) ('A' + r.next(26));
+        if (b.equals("samsung")) {
+            // Samsung firmware code is derived from the actual model (e.g. SM-A013G -> "A013GXXU..").
+            String code = dev.replace("SM-", "").toUpperCase();
+            return code + "XXU" + (1 + r.next(9)) + (char) ('A' + r.next(26))
+                    + (char) ('A' + r.next(26)) + (char) ('A' + r.next(26));
+        }
+        if (b.equals("motorola")) return "MBM-" + digits(r, 2) + "." + digits(r, 2) + "-" + digits(r, 3);
+        if (b.equals("lge"))      return "LGE-" + dev.toUpperCase() + "-" + digits(r, 4);
+        // generic OEM: a plausible alnum bootloader that names no specific model.
+        return "BL" + (char) ('A' + r.next(26)) + digits(r, 2) + "." + digits(r, 4) + "-" + digits(r, 4);
     }
 
     // Real Android kernel major.minor lines actually shipped on phones (Linux LTS branches used by
@@ -148,6 +146,29 @@ public final class Generators {
         // e.g. "g8150-00088-210507-B-7345963"
         return pre + "-" + digits(r, 5) + "-" + digits(r, 6) + "-"
                 + (char) ('A' + r.next(6)) + "-" + digits(r, 7);
+    }
+
+    // Realistic Android RAM tiers (nominal GB). Reported totalMem is ~3-8% below nominal (kernel/
+    // reserved), so we model that so the value looks like a real ActivityManager reading.
+    static final int[] RAM_GB = {3, 4, 6, 8, 12};
+    static final int[] STORAGE_GB = {32, 64, 128, 256};
+
+    /** total RAM in BYTES (as ActivityManager.MemoryInfo.totalMem reports it), device-plausible. */
+    public static String totalRamBytes(Rng r) {
+        long gb = RAM_GB[r.next(RAM_GB.length)];
+        long nominal = gb * 1024L * 1024L * 1024L;
+        // reported totalMem is a bit under nominal — shave 3-8%, then round to a MB boundary.
+        long reported = nominal - (nominal * (3 + r.next(6)) / 100);
+        return String.valueOf((reported / (1024L * 1024L)) * 1024L * 1024L);
+    }
+
+    /** total internal storage in BYTES, device-plausible (StatFs-style). */
+    public static String totalStorageBytes(Rng r) {
+        long gb = STORAGE_GB[r.next(STORAGE_GB.length)];
+        // usable storage is ~90-94% of nominal after formatting/system.
+        long nominal = gb * 1000L * 1000L * 1000L;   // storage is marketed in decimal GB
+        long reported = nominal * (90 + r.next(5)) / 100;
+        return String.valueOf(reported);
     }
 
     /** 15-digit Luhn-valid IMEI; if a valid 8-digit TAC is given, use it as the first 8 digits. */

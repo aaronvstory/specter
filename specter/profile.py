@@ -113,11 +113,13 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "build_incremental": incremental,
         "build_fingerprint": fingerprint,
         "build_security_patch": patch,
-        "build_bootloader": G.bootloader(r, brand),
+        "build_bootloader": G.bootloader(r, brand, device),
         "build_hardware": device,
         "build_board": device,
         "build_kernel_version": G.kernel_version(r),
         "build_radio": G.radio_version(r),
+        "total_ram": G.total_ram_bytes(r),
+        "total_storage": G.total_storage_bytes(r),
     }
 
 

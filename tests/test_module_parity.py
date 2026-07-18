@@ -40,8 +40,10 @@ def test_module_spoofs_bootloader():
     from specter import generators as G
     c = [0]
     r = lambda n: (c.__setitem__(0, c[0] + 1) or (c[0] * 2654435761) % n)
-    bl = G.bootloader(r, "google")
+    bl = G.bootloader(r, "google", "flame")
     assert bl and " " not in bl, f"bootloader must be non-empty, no spaces: {bl!r}"
+    # device-coherent: Google bootloader embeds the device codename (no cross-model mismatch)
+    assert bl.startswith("flame-"), f"bootloader must embed the device codename: {bl!r}"
 
 
 def test_module_hooks_gservices_getlong():

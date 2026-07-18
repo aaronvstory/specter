@@ -47,6 +47,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookAdvertisingId(lpparam, p);
         hookGsf(lpparam, p);
         hookMediaDrm(lpparam, p);
+        hookHardwareInfo(lpparam, p);
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -166,6 +167,24 @@ public class HookEntry implements IXposedHookLoadPackage {
             };
             // get(String) and get(String, String) overloads
             XposedBridge.hookAllMethods(sp, "get", h);
+        } catch (Throwable ignored) {}
+    }
+
+    // ---- RAM (ActivityManager.MemoryInfo.totalMem) — a FingerprintJS hardware signal ----
+    private void hookHardwareInfo(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String ramStr = p.get("total_ram");
+        if (ramStr == null) return;
+        final long ram;
+        try { ram = Long.parseLong(ramStr); } catch (Throwable t) { return; }
+        try {
+            Class<?> am = XposedHelpers.findClass("android.app.ActivityManager", lp.classLoader);
+            XposedBridge.hookAllMethods(am, "getMemoryInfo", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && mp.args[0] != null) {
+                        try { XposedHelpers.setLongField(mp.args[0], "totalMem", ram); } catch (Throwable ignored) {}
+                    }
+                }
+            });
         } catch (Throwable ignored) {}
     }
 

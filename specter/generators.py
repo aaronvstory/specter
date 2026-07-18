@@ -65,15 +65,6 @@ def _tac_for_brand(r, brand):
     tacs = _TAC_BY_BRAND.get((brand or "").lower(), ["35000000"])
     return tacs[r(len(tacs))]
 
-_BOOTLOADER_BY_BRAND = {
-    "google":   ["slider", "redfin", "barbet", "raven", "oriole"],
-    "samsung":  ["G991USQU", "G998USQU", "N986USQU", "A515USQU"],
-    "motorola": ["MBM", "MOTO"],
-    "oneplus":  ["ONEPLUS"],
-    "lge":      ["LGE"],
-    "xiaomi":   ["uefi"],
-}
-
 _KERNEL_BASES = ["4.9", "4.14", "4.19", "5.4", "5.10", "5.15"]
 
 def kernel_version(r):
@@ -90,13 +81,37 @@ def radio_version(r):
     pre = _RADIO_PREFIXES[r(len(_RADIO_PREFIXES))]
     return f"{pre}-{digits(r,5)}-{digits(r,6)}-" + chr(ord('A')+r(6)) + f"-{digits(r,7)}"
 
-def bootloader(r, brand):
-    """Build.BOOTLOADER: brand-coherent prefix + seeded suffix (mirrors Java Generators.bootloader)."""
-    pre = _BOOTLOADER_BY_BRAND.get((brand or "").lower(), ["unknown"])
-    p = pre[r(len(pre))]
-    if p == p.lower():
-        return f"{p}-{1 + r(3)}.{r(9)}-{digits(r, 7)}"
-    return p + str(1 + r(9)) + chr(ord("A") + r(26)) + chr(ord("A") + r(26)) + chr(ord("A") + r(26))
+def bootloader(r, brand, device):
+    """Build.BOOTLOADER — DEVICE-coherent, generic-shaped (mirrors Java bootloader). Derived from the
+    picked device codename so it can never imply a different model than the one being spoofed."""
+    b = (brand or "").lower()
+    dev = device or "device"
+    if b == "google":
+        return f"{dev.lower()}-{1 + r(3)}.{r(9)}-{digits(r, 7)}"
+    if b == "samsung":
+        code = dev.replace("SM-", "").upper()
+        return code + "XXU" + str(1 + r(9)) + chr(ord('A')+r(26)) + chr(ord('A')+r(26)) + chr(ord('A')+r(26))
+    if b == "motorola":
+        return f"MBM-{digits(r, 2)}.{digits(r, 2)}-{digits(r, 3)}"
+    if b == "lge":
+        return f"LGE-{dev.upper()}-{digits(r, 4)}"
+    return "BL" + chr(ord('A')+r(26)) + f"{digits(r, 2)}.{digits(r, 4)}-{digits(r, 4)}"
+
+_RAM_GB = [3, 4, 6, 8, 12]
+_STORAGE_GB = [32, 64, 128, 256]
+
+def total_ram_bytes(r):
+    """total RAM in bytes as ActivityManager.MemoryInfo.totalMem reports (mirrors Java totalRamBytes)."""
+    gb = _RAM_GB[r(len(_RAM_GB))]
+    nominal = gb * 1024 * 1024 * 1024
+    reported = nominal - (nominal * (3 + r(6)) // 100)
+    return str((reported // (1024 * 1024)) * 1024 * 1024)
+
+def total_storage_bytes(r):
+    """total internal storage in bytes (mirrors Java totalStorageBytes)."""
+    gb = _STORAGE_GB[r(len(_STORAGE_GB))]
+    nominal = gb * 1000 * 1000 * 1000
+    return str(nominal * (90 + r(5)) // 100)
 
 def imei(r, tac=None):
     """15-digit Luhn-valid IMEI. If a TAC is given, use it as the first 8 digits (brand-coherent)."""

@@ -57,17 +57,23 @@ public class ProfileTest {
             check(p.size() == Profile.KEYS.length, "all keys s=" + s);
             // coherence spot-checks
             check(p.get("build_fingerprint").contains(p.get("build_brand")), "brand in fp s=" + s);
-            // BOOTLOADER present, non-empty, and brand-COHERENT (the prefix matches the brand's OEM
-            // family — Google=lowercase codename, Samsung=G/N/A model code, Motorola=MBM/MOTO, LG=LGE).
+            // BOOTLOADER present, non-empty, and DEVICE-coherent — it must be derived from the picked
+            // device codename so it can never imply a different model (a Galaxy A01 must not report a
+            // Galaxy S21 bootloader). Google embeds the codename; LG embeds the device; Samsung embeds
+            // the model code (SM- stripped, uppercased).
             String bl = p.get("build_bootloader");
             String brand = p.get("build_brand").toLowerCase();
+            String device = p.get("build_device");
             check(bl != null && !bl.isEmpty() && !bl.contains(" "), "bootloader shape s=" + s + " " + bl);
             boolean coherent =
-                brand.equals("google")   ? bl.matches("(slider|redfin|barbet|raven|oriole)-.*") :
-                brand.equals("samsung")  ? bl.startsWith("G") || bl.startsWith("N") || bl.startsWith("A") :
-                brand.equals("motorola") ? bl.startsWith("MBM") || bl.startsWith("MOTO") :
-                brand.equals("lge")      ? bl.startsWith("LGE") : true;
-            check(coherent, "bootloader brand-coherent s=" + s + " brand=" + brand + " bl=" + bl);
+                brand.equals("google")   ? bl.startsWith(device.toLowerCase() + "-") :
+                brand.equals("samsung")  ? bl.startsWith(device.replace("SM-", "").toUpperCase() + "XXU") :
+                brand.equals("lge")      ? bl.startsWith("LGE-" + device.toUpperCase() + "-") :
+                brand.equals("motorola") ? bl.startsWith("MBM-") : bl.startsWith("BL");
+            check(coherent, "bootloader device-coherent s=" + s + " dev=" + device + " bl=" + bl);
+            // RAM/storage present as plausible byte counts (fingerprint-hash hardware signals).
+            check(p.get("total_ram").matches("\\d{9,11}"), "ram bytes s=" + s + " " + p.get("total_ram"));
+            check(p.get("total_storage").matches("\\d{10,12}"), "storage bytes s=" + s + " " + p.get("total_storage"));
             // Fingerprint-hash hardware signals: kernel plausible; HARDWARE/BOARD coherent with device.
             check(p.get("build_kernel_version").matches("\\d+\\.\\d+\\.\\d+-.*-g[0-9a-f]{8}"), "kernel shape s=" + s + " " + p.get("build_kernel_version"));
             check(p.get("build_hardware").equals(p.get("build_device")), "hardware==device s=" + s);
