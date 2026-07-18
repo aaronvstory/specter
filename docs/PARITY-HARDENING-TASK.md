@@ -110,6 +110,13 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   identifier repeats across signups or apps. This is a core anti-fingerprint strength over GeerGit 2.9.6.
   Code-reviewer pass on HOST/DISPLAY + RAM/storage: CLEAN (parity + coherence + no crash risk confirmed).
 
+- 2026-07-18: PR #4 MERGED to main (901ac07). New branch feat/deep-congruency for the deeper work
+  (user confirmed GeerGit 2.7 fails-spoof sometimes -> deeper coverage + congruency needed).
+- 2026-07-18: SoC platform (ro.board.platform) SPOOFED — device-coherent (Pixel/LG map to real SoC,
+  else real Qualcomm pool). Was leaking the real chip on every signup (stable fingerprint-hash signal).
+  Cores left real (unspoofable/breaks thread pools); ABI left real (near-constant, already coherent).
+  On-device: 20/20 spoofed, 0 leaks. Next: /proc/cpuinfo file-hook (the raw CPU text FingerprintJS hashes).
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
