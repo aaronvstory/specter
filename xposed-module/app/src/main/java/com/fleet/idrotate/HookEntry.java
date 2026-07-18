@@ -94,10 +94,13 @@ public class HookEntry implements IXposedHookLoadPackage {
         setStatic("RADIO",        p.get("build_radio"));
         hookKernelVersion(p.get("build_kernel_version"));
         hookRadioVersion(p.get("build_radio"));
-        // getSerial() (API 26+) is a method, not just the field
+        // getSerial() (API 26+) is a method, not just the field. Zero-arg -> hookAllMethods
+        // (findAndHookMethod's varargs overload NoSuchMethodErrors against obfuscated XposedHelpers).
         try {
-            XposedHelpers.findAndHookMethod(Build.class, "getSerial",
-                XC_MethodReplacement.returnConstant(p.get("serial")));
+            final String ser = p.get("serial");
+            if (ser != null) XposedBridge.hookAllMethods(Build.class, "getSerial", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(ser); }
+            });
         } catch (Throwable ignored) {}
         // Build.VERSION.* must match the spoofed fingerprint's Android version, or an app that
         // reads VERSION.RELEASE/INCREMENTAL/SECURITY_PATCH sees a mismatch vs the fingerprint.
@@ -116,13 +119,22 @@ public class HookEntry implements IXposedHookLoadPackage {
     // ---- kernel version (os.version) — a high-entropy FingerprintJS signal ----
     private void hookKernelVersion(final String kernel) {
         if (kernel == null) return;
+        // hookAllMethods over findAndHookMethod (the varargs overload NoSuchMethodErrors against
+        // LSPosed's obfuscated XposedHelpers). Cover System.getProperty AND the raw SystemProperties.
         try {
-            XposedHelpers.findAndHookMethod(System.class, "getProperty", String.class,
-                new XC_MethodHook() {
-                    @Override protected void afterHookedMethod(MethodHookParam mp) {
-                        if ("os.version".equals(mp.args[0])) mp.setResult(kernel);
-                    }
-                });
+            XposedBridge.hookAllMethods(System.class, "getProperty", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && "os.version".equals(mp.args[0])) mp.setResult(kernel);
+                }
+            });
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
+            XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && "os.version".equals(mp.args[0])) mp.setResult(kernel);
+                }
+            });
         } catch (Throwable ignored) {}
     }
 
@@ -132,9 +144,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     private void hookRadioVersion(final String radio) {
         if (radio == null) return;
         try {
-            XposedHelpers.findAndHookMethod(Build.class, "getRadioVersion", new XC_MethodHook() {
+            // hookAllMethods is robust for the zero-arg getRadioVersion (findAndHookMethod's varargs
+            // overload isn't reliably resolvable against LSPosed's obfuscated XposedHelpers).
+            XposedBridge.hookAllMethods(Build.class, "getRadioVersion", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    XposedBridge.log("[specter] getRadioVersion() called -> spoofing to " + radio);
                     mp.setResult(radio);
                 }
             });
