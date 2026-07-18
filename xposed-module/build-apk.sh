@@ -19,6 +19,9 @@ export PATH="$JAVA_HOME/bin:$PATH"
 VERSION="$(cat ../VERSION 2>/dev/null || echo 0.0.0)"
 
 echo "[build] $(date '+%Y-%m-%d %H:%M:%S')  JDK=$JDK  version=$VERSION"
+# Force a fresh Java compile so a NEW compile error can't be masked by stale incremental .class files
+# (that once shipped a broken APK — a full 'BUILD SUCCESSFUL' on code that didn't actually compile).
+"$GRADLE" :app:clean --no-daemon
 "$GRADLE" :app:assembleDebug --no-daemon "$@"
 APK="app/build/outputs/apk/debug/app-debug.apk"
 echo "[build] APK: $APK"
