@@ -37,7 +37,7 @@ public final class Profile {
             "sim_operator_mccmnc", "sim_operator_name", "sim_subscriber_imsi", "sim_serial_iccid",
             "gmail", "build_manufacturer", "build_brand", "build_device", "build_product",
             "build_model", "build_release", "build_id", "build_incremental", "build_fingerprint",
-            "build_security_patch",
+            "build_security_patch", "build_bootloader",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -73,7 +73,7 @@ public final class Profile {
         return build(r, devices, usBias, Country.US);
     }
 
-    /** Build a full 27-field identity. Device rows are [name, manufacturer, brand, device, product, "model:release", build_id, incremental, patch]. */
+    /** Build a full 28-field identity. Device rows are [name, manufacturer, brand, device, product, "model:release", build_id, incremental, patch]. */
     public static Map<String, String> build(Generators.Rng r, List<List<String>> devices, boolean usBias, Country country) {
         List<String> dev = pickDevice(r, devices, usBias, country);
         String manufacturer = dev.get(1), brand = dev.get(2), device = dev.get(3), product = dev.get(4);
@@ -121,6 +121,7 @@ public final class Profile {
         p.put("build_incremental", incremental);
         p.put("build_fingerprint", fingerprint);
         p.put("build_security_patch", patch);
+        p.put("build_bootloader", Generators.bootloader(r, brand));
         return p;
     }
 

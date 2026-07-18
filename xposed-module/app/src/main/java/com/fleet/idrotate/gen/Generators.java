@@ -101,6 +101,31 @@ public final class Generators {
         return tacs[r.next(tacs.length)];
     }
 
+    /** Real bootloader-string prefixes by brand — Build.BOOTLOADER shape is OEM-specific, so a
+     *  brand-coherent prefix survives checks that correlate bootloader against manufacturer. */
+    static final Map<String, String[]> BOOTLOADER_BY_BRAND = new LinkedHashMap<>();
+    static {
+        BOOTLOADER_BY_BRAND.put("google",   new String[]{"slider", "redfin", "barbet", "raven", "oriole"});
+        BOOTLOADER_BY_BRAND.put("samsung",  new String[]{"G991USQU", "G998USQU", "N986USQU", "A515USQU"});
+        BOOTLOADER_BY_BRAND.put("motorola", new String[]{"MBM", "MOTO"});
+        BOOTLOADER_BY_BRAND.put("oneplus",  new String[]{"ONEPLUS"});
+        BOOTLOADER_BY_BRAND.put("lge",      new String[]{"LGE"});
+        BOOTLOADER_BY_BRAND.put("xiaomi",   new String[]{"uefi"});
+    }
+
+    /** Build.BOOTLOADER — brand-coherent prefix + seeded suffix (e.g. "slider-1.2-7683913"). */
+    public static String bootloader(Rng r, String brand) {
+        String[] pre = BOOTLOADER_BY_BRAND.get(brand == null ? "" : brand.toLowerCase());
+        if (pre == null) pre = new String[]{"unknown"};
+        String p = pre[r.next(pre.length)];
+        // Pixel-family reads like "slider-1.2-7683913"; OEM codes read like "G991USQU5AUDA".
+        if (p.equals(p.toLowerCase())) {
+            return p + "-" + (1 + r.next(3)) + "." + r.next(9) + "-" + digits(r, 7);
+        }
+        return p + (1 + r.next(9)) + (char) ('A' + r.next(26)) + (char) ('A' + r.next(26))
+                + (char) ('A' + r.next(26));
+    }
+
     /** 15-digit Luhn-valid IMEI; if a valid 8-digit TAC is given, use it as the first 8 digits. */
     public static String imei(Rng r, String tac) {
         String body;

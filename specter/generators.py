@@ -65,6 +65,23 @@ def _tac_for_brand(r, brand):
     tacs = _TAC_BY_BRAND.get((brand or "").lower(), ["35000000"])
     return tacs[r(len(tacs))]
 
+_BOOTLOADER_BY_BRAND = {
+    "google":   ["slider", "redfin", "barbet", "raven", "oriole"],
+    "samsung":  ["G991USQU", "G998USQU", "N986USQU", "A515USQU"],
+    "motorola": ["MBM", "MOTO"],
+    "oneplus":  ["ONEPLUS"],
+    "lge":      ["LGE"],
+    "xiaomi":   ["uefi"],
+}
+
+def bootloader(r, brand):
+    """Build.BOOTLOADER: brand-coherent prefix + seeded suffix (mirrors Java Generators.bootloader)."""
+    pre = _BOOTLOADER_BY_BRAND.get((brand or "").lower(), ["unknown"])
+    p = pre[r(len(pre))]
+    if p == p.lower():
+        return f"{p}-{1 + r(3)}.{r(9)}-{digits(r, 7)}"
+    return p + str(1 + r(9)) + chr(ord("A") + r(26)) + chr(ord("A") + r(26)) + chr(ord("A") + r(26))
+
 def imei(r, tac=None):
     """15-digit Luhn-valid IMEI. If a TAC is given, use it as the first 8 digits (brand-coherent)."""
     if tac and len(tac) == 8 and tac.isdigit():

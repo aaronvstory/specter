@@ -87,6 +87,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         setStatic("FINGERPRINT",  p.get("build_fingerprint"));
         setStatic("SERIAL",       p.get("serial"));
         setStatic("ID",           p.get("build_id"));
+        setStatic("BOOTLOADER",   p.get("build_bootloader"));
         // getSerial() (API 26+) is a method, not just the field
         try {
             XposedHelpers.findAndHookMethod(Build.class, "getSerial",

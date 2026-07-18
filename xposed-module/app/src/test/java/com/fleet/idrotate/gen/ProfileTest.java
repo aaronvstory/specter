@@ -53,10 +53,13 @@ public class ProfileTest {
             Map<String, String> p = Profile.build(seeded(s), devs, true);
             List<String> errs = Profile.validate(p);
             check(errs.isEmpty(), "profile valid s=" + s + " " + errs);
-            // all 27 keys present
-            check(p.size() == Profile.KEYS.length, "27 keys s=" + s);
+            // all keys present
+            check(p.size() == Profile.KEYS.length, "all keys s=" + s);
             // coherence spot-checks
             check(p.get("build_fingerprint").contains(p.get("build_brand")), "brand in fp s=" + s);
+            // BOOTLOADER present, non-empty, brand-coherent (no whitespace, plausible OEM shape)
+            String bl = p.get("build_bootloader");
+            check(bl != null && !bl.isEmpty() && !bl.contains(" "), "bootloader shape s=" + s + " " + bl);
             check(p.get("sim_subscriber_imsi").startsWith(p.get("sim_operator_mccmnc")), "imsi carrier s=" + s);
             // dual-SIM: imei1 != imei2 but share the TAC (first 8 digits)
             check(!p.get("imei1").equals(p.get("imei2")), "imei1 != imei2 s=" + s);

@@ -118,6 +118,7 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "build_incremental": incremental,
         "build_fingerprint": fingerprint,
         "build_security_patch": patch,
+        "build_bootloader": G.bootloader(r, brand),
     }
 
 
