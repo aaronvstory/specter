@@ -168,14 +168,8 @@ public final class Generators {
         return "1" + area + exch + digits(r, 4);
     }
 
-    /** UK mobile: 44 + 7 + [4-9] + 8 digits (E.164, no leading +, e.g. 447700900123). */
-    public static String phoneUk(Rng r) {
-        return "447" + (4 + r.next(6)) + digits(r, 8);
-    }
-
-    /** Country-aware phone by kind ("nanp" | "uk"). */
+    /** Phone by country kind. USA-only build: always NANP. (kept for the Profile call signature) */
     public static String phoneForCountry(Rng r, String kind) {
-        if ("uk".equals(kind)) return phoneUk(r);
         return phoneUs(r);
     }
 
@@ -194,13 +188,11 @@ public final class Generators {
         ICCID_IIN.put("310120", "89011201"); // Sprint
         ICCID_IIN.put("311580", "89011580"); // US Cellular
         ICCID_IIN.put("311870", "89011870"); // Boost
-        // UK (country code 44): 89 = telecom, 44 = UK.
-        ICCID_IIN.put("23430", "894430");     // EE
-        ICCID_IIN.put("23410", "894410");     // O2
-        ICCID_IIN.put("23415", "894415");     // Vodafone
-        ICCID_IIN.put("23420", "894420");     // Three
-        ICCID_IIN.put("23433", "894430");     // EE
-        ICCID_IIN.put("23402", "894410");     // O2 (Cornwall)
+        ICCID_IIN.put("310004", "89148000"); // Verizon
+        ICCID_IIN.put("310090", "89014104"); // AT&T
+        ICCID_IIN.put("312530", "89011201"); // Sprint
+        ICCID_IIN.put("311882", "89014103"); // Mint Mobile (T-Mobile MVNO)
+        ICCID_IIN.put("310240", "89014103"); // T-Mobile
     }
 
     /** 20-digit Luhn-valid ICCID with a carrier-consistent issuer prefix when known. */
@@ -273,8 +265,8 @@ public final class Generators {
     private static final Pattern P_ADV        = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
     private static final Pattern P_MAC_UP     = Pattern.compile("([0-9A-F]{2}:){5}[0-9A-F]{2}");
     private static final Pattern P_MAC_LOW    = Pattern.compile("([0-9a-f]{2}:){5}[0-9a-f]{2}");
-    // US NANP (1 + 10) or UK mobile (447 + [4-9] + 8). E.164 digits, no leading +.
-    private static final Pattern P_PHONE      = Pattern.compile("1[2-9]\\d{2}[2-9]\\d{6}|447[4-9]\\d{8}");
+    // US NANP only: 1 + area[2-9]XX + exchange[2-9]XX + 4 digits. E.164 digits, no leading +.
+    private static final Pattern P_PHONE      = Pattern.compile("1[2-9]\\d{2}[2-9]\\d{6}");
     // Realistic email: local part (letters/digits/./_/-) + one of the supported providers.
     private static final Pattern P_EMAIL      = Pattern.compile(
             "[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?@(gmail\\.com|outlook\\.com|yahoo\\.com|hotmail\\.com|proton\\.me|icloud\\.com)");

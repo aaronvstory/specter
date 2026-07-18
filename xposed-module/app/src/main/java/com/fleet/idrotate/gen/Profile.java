@@ -20,8 +20,9 @@ import java.util.Arrays;
 public final class Profile {
     private Profile() {}
 
+    // Dominant US-market Android makers only — so device brand reads as a genuine US phone.
     static final Set<String> US_COMMON_BRANDS = new HashSet<>(Arrays.asList(
-            "samsung", "google", "motorola", "oneplus", "lge"));
+            "samsung", "google", "motorola", "lge"));
 
     /** {mccmnc, name} US carriers (MCC 310/311), same order as Python US_CARRIERS. */
     static final String[][] US_CARRIERS = {

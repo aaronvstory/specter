@@ -20,35 +20,28 @@ public final class Country {
         this.phoneKind = phoneKind; this.commonBrands = commonBrands;
     }
 
+    // USA only. Carriers span the real MNOs + top MVNOs; brands are the dominant US-market Android
+    // makers (Samsung/Google/Motorola/LG) so the device, carrier, and phone all read as one US device.
     public static final Country US = new Country("US", "United States",
             new String[][]{
                     {"310260", "T-Mobile"}, {"311480", "Verizon"}, {"310410", "AT&T"},
                     {"310120", "Sprint"}, {"311580", "US Cellular"}, {"310030", "AT&T"},
                     {"310160", "T-Mobile"}, {"311870", "Boost Mobile"},
+                    {"310004", "Verizon"}, {"310090", "AT&T"}, {"312530", "Sprint"},
+                    {"311882", "Mint Mobile"}, {"310240", "T-Mobile"},
             },
             "nanp",
-            new String[]{"samsung", "google", "motorola", "oneplus", "lge"});
-
-    public static final Country UK = new Country("UK", "United Kingdom",
-            new String[][]{
-                    {"23430", "EE"}, {"23410", "O2"}, {"23415", "Vodafone"},
-                    {"23420", "Three"}, {"23433", "EE"}, {"23402", "O2"},
-            },
-            "uk",
-            new String[]{"samsung", "google", "oneplus", "xiaomi", "sony"});
+            new String[]{"samsung", "google", "motorola", "lge"});
 
     private static final Map<String, Country> BY_CODE = new LinkedHashMap<>();
     static {
         BY_CODE.put(US.code, US);
-        BY_CODE.put(UK.code, UK);
     }
 
-    /** Look up by code (case-insensitive); defaults to US for null/unknown. */
+    /** Look up by code (case-insensitive); always US (USA-only build). */
     public static Country of(String code) {
-        if (code == null) return US;
-        Country c = BY_CODE.get(code.toUpperCase());
-        return c != null ? c : US;
+        return US;
     }
 
-    public static Country[] all() { return new Country[]{US, UK}; }
+    public static Country[] all() { return new Country[]{US}; }
 }

@@ -74,18 +74,21 @@ public class ProfileTest {
         check(Profile.validate(truncated).stream().anyMatch(s -> s.contains("missing key: android_id")),
                 "missing key reported by name");
 
-        // Country: UK profiles are valid + coherent (UK carrier, +44 phone, matching IMSI/ICCID).
+        // USA-only: every profile is a coherent US identity — US carrier (MCC 310–316), NANP phone,
+        // IMSI matching the carrier, and a US-market device brand.
+        java.util.Set<String> usBrands = new HashSet<>(Arrays.asList("samsung", "google", "motorola", "lge"));
         for (int s = 0; s < 500; s++) {
-            Map<String, String> uk = Profile.build(seeded(s), devs, true, Country.UK);
-            check(Profile.isValid(uk), "UK profile valid s=" + s + " " + Profile.validate(uk));
-            String mcc = uk.get("sim_operator_mccmnc");
-            check(mcc.startsWith("234") || mcc.startsWith("235"), "UK carrier MCC 234/235 s=" + s);
-            check(uk.get("mobile_number").startsWith("447"), "UK phone +44 7 s=" + s);
-            check(uk.get("sim_subscriber_imsi").startsWith(mcc), "UK IMSI carrier-coherent s=" + s);
+            Map<String, String> us = Profile.build(seeded(s), devs, true, Country.US);
+            check(Profile.isValid(us), "US profile valid s=" + s + " " + Profile.validate(us));
+            String mcc = us.get("sim_operator_mccmnc");
+            check(mcc.matches("31[0-6]\\d{3}"), "US carrier MCC 310-316 s=" + s + " " + mcc);
+            check(us.get("mobile_number").matches("1[2-9]\\d{2}[2-9]\\d{6}"), "US NANP phone s=" + s);
+            check(us.get("sim_subscriber_imsi").startsWith(mcc), "US IMSI carrier-coherent s=" + s);
+            check(usBrands.contains(us.get("build_brand").toLowerCase()), "US-market brand s=" + s + " " + us.get("build_brand"));
         }
-        // US profile stays US (back-compat overload == US).
+        // Back-compat overload == US.
         Map<String, String> usProf = Profile.build(seeded(1), devs, true);
-        check(usProf.get("sim_operator_mccmnc").matches("31[01]\\d{3}"), "US carrier MCC 310/311");
+        check(usProf.get("sim_operator_mccmnc").matches("31[0-6]\\d{3}"), "US carrier MCC 310-316");
         check(usProf.get("mobile_number").startsWith("1"), "US phone NANP");
 
         // Determinism: same seed -> same profile.

@@ -359,25 +359,8 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(this, AppPickerActivity.class))));
         content.addView(selRow);
 
-        // Country
-        content.addView(sectionLabel("SIM country"));
-        LinearLayout ccard = cardBox();
-        ccard.addView(label("Carrier + phone number country"));
-        LinearLayout crow = new LinearLayout(this);
-        crow.setOrientation(LinearLayout.HORIZONTAL);
-        String cur = prefs.getString("country", "US");
-        for (Country c : Country.all()) {
-            boolean active = c.code.equals(cur);
-            Button cb = button(c.name, active, v -> {
-                prefs.edit().putString("country", c.code).apply();
-                svc.setCountry(c);
-                status.setText("Country: " + c.name + " — RANDOMIZE ALL to apply.");
-                render();
-            });
-            crow.addView(cb);
-        }
-        ccard.addView(crow);
-        content.addView(ccard);
+        // USA-only build: carrier + phone are always randomized within the US (T-Mobile/Verizon/
+        // AT&T/Sprint/US Cellular/MVNOs, NANP numbers). No country picker — one coherent US market.
 
         // GeerGit-parity toggles (behavioral; wired where a hook exists, else marked)
         content.addView(sectionLabel("Options"));

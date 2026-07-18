@@ -113,12 +113,9 @@ def phone_us(r):
     exch = str(2 + r(8)) + digits(r, 2)
     return "1" + area + exch + digits(r, 4)
 
-def phone_uk(r):
-    # UK mobile E.164 (no +): 44 + 7 + [4-9] + 8 digits.
-    return "447" + str(4 + r(6)) + digits(r, 8)
-
 def phone_for_country(r, kind):
-    return phone_uk(r) if kind == "uk" else phone_us(r)
+    # USA-only build: always NANP. (kept for the build_profile call signature)
+    return phone_us(r)
 
 def imsi(r, mccmnc):
     return mccmnc + digits(r, 15 - len(mccmnc))        # IMSI = MCC+MNC+MSIN, 15 digits
@@ -134,12 +131,11 @@ _ICCID_IIN = {
     "310120": "89011201",  # Sprint
     "311580": "89011580",  # US Cellular
     "311870": "89011870",  # Boost
-    "23430": "894430",     # EE (UK)
-    "23410": "894410",     # O2 (UK)
-    "23415": "894415",     # Vodafone (UK)
-    "23420": "894420",     # Three (UK)
-    "23433": "894430",     # EE (UK)
-    "23402": "894410",     # O2 (UK)
+    "310004": "89148000",  # Verizon
+    "310090": "89014104",  # AT&T
+    "312530": "89011201",  # Sprint
+    "311882": "89014103",  # Mint Mobile (T-Mobile MVNO)
+    "310240": "89014103",  # T-Mobile
 }
 
 def iccid(r, mccmnc=None):
@@ -214,7 +210,7 @@ def validate(key, value):
         "bluetooth_mac":       lambda v: bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", v)),
         "wifi_mac":            lambda v: bool(re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", v)),
         "wifi_bssid":          lambda v: bool(re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", v)),
-        "mobile_number":       lambda v: bool(re.fullmatch(r"1[2-9]\d{2}[2-9]\d{6}|447[4-9]\d{8}", v)),
+        "mobile_number":       lambda v: bool(re.fullmatch(r"1[2-9]\d{2}[2-9]\d{6}", v)),
         "sim_subscriber_imsi": lambda v: len(v) == 15 and v.isdigit(),
         "sim_serial_iccid":    lambda v: len(v) == 20 and v.isdigit() and luhn_valid(v),
         "gsf_id":              lambda v: v.isdigit() and 0 < int(v) <= LONG_MAX,

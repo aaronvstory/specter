@@ -63,7 +63,6 @@ public class GeneratorsTest {
             check(Generators.validate("bluetooth_mac", Generators.macUpper(g)), "mac_upper valid s=" + s);
             check(Generators.validate("wifi_bssid", Generators.macLower(g)), "mac_lower valid s=" + s);
             check(Generators.validate("mobile_number", Generators.phoneUs(g)), "phone valid s=" + s);
-            check(Generators.validate("mobile_number", Generators.phoneUk(g)), "uk phone valid s=" + s);
             check(Generators.validate("gmail", Generators.gmail(g)), "email valid s=" + s);
 
             // Email realism: contains a real name from the list, no random-consonant-soup, a known provider.
@@ -74,14 +73,14 @@ public class GeneratorsTest {
             check(hasKnownName, "email uses a real first name s=" + s + " (" + em + ")");
             check(em.matches(".*@(gmail|outlook|yahoo|hotmail|proton|icloud)\\..*"), "email known provider s=" + s);
 
-            // UK phone shape: E.164 447 + [4-9] + 8 digits.
-            String uk = Generators.phoneUk(g);
-            check(uk.startsWith("447") && uk.length() == 12, "uk phone 447+9 digits s=" + s);
+            // US NANP phone shape: 1 + 10 digits, area/exchange start [2-9].
+            String us = Generators.phoneUs(g);
+            check(us.length() == 11 && us.startsWith("1"), "us phone 1+10 digits s=" + s);
 
-            // IMEI: 15-digit, Luhn-valid, brand TAC prefix respected.
-            String imei = Generators.imei(g, "86293403"); // oneplus TAC
+            // IMEI: 15-digit, Luhn-valid, brand TAC prefix respected (Samsung — a US-market brand).
+            String imei = Generators.imei(g, "35207609"); // samsung TAC
             check(Generators.validate("imei1", imei), "imei valid s=" + s);
-            check(imei.startsWith("86293403"), "imei TAC prefix s=" + s);
+            check(imei.startsWith("35207609"), "imei TAC prefix s=" + s);
 
             // IMSI/ICCID carrier-coherent (T-Mobile 310260).
             String imsi = Generators.imsi(g, "310260");
