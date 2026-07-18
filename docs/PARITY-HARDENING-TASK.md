@@ -130,6 +130,21 @@ radio(baseband), kernel(os.version), serial x2, security_patch, android_id, gsm.
 REMAINING leaks the probe surfaced (next hardening): RAM (5.34GB real), CPU/SoC (Snapdragon 855 real),
 cores/freq, internal storage, sensors, cameras, codecs — the FingerprintJS hardware signals still real.
 
+### VERIFIED anti-fingerprint wins (probe-confirmed on-device, 2026-07-18)
+17/17 spoofable fields confirmed via com.specter.probe (deterministic, no UI scraping):
+manufacturer, brand, device, model, id, fingerprint, bootloader, hardware, board, radio(baseband),
+kernel(os.version), serial x2, security_patch, android_id, gsm.version.baseband, total_ram.
+Each is DEVICE-COHERENT — a spoofed Moto G6 Play reports MBM-09.94-731 (Moto bootloader format),
+8.2GB RAM, a Qualcomm-style radio, and a real kernel line, all matching ONE device.
+
+Beyond GeerGit 2.7.0 (which spoofs ~4 Build fields + the deviceId trio), Specter now also spoofs the
+fingerprint-HASH signals GeerGit leaves real: bootloader, radio/baseband, kernel version, HARDWARE,
+BOARD, and total RAM. This shrinks the stable-fingerprint correlation channel behind "sometimes detected."
+
+Fixed 4 real bugs the probe caught that DevInfo-scraping would have missed:
+getSerial/getRadioVersion/os.version silently un-hooked (findAndHookMethod varargs NoSuchMethodError),
+and a device-INCOHERENT bootloader (Galaxy A01 reporting a Galaxy S21 firmware prefix).
+
 ### The core anti-detection win vs GeerGit
 Specter now spoofs fingerprint-hash HARDWARE signals (bootloader, kernel, HARDWARE, BOARD) that GeerGit
 2.7.0 leaves real — shrinking the stable-fingerprint correlation channel that causes "sometimes detected."
