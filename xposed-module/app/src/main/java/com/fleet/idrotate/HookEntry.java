@@ -181,7 +181,11 @@ public class HookEntry implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(am, "getMemoryInfo", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
                     if (mp.args.length > 0 && mp.args[0] != null) {
-                        try { XposedHelpers.setLongField(mp.args[0], "totalMem", ram); } catch (Throwable ignored) {}
+                        // totalMem is a public field on ActivityManager.MemoryInfo — set it directly.
+                        try {
+                            Field f = mp.args[0].getClass().getField("totalMem");
+                            f.setLong(mp.args[0], ram);
+                        } catch (Throwable ignored) {}
                     }
                 }
             });

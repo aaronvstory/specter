@@ -69,6 +69,14 @@ public class ProbeActivity extends Activity {
                 put(o, "android_id", Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID));
             } catch (Throwable t) { put(o, "android_id", "ERR:" + t); }
 
+            // RAM (ActivityManager.MemoryInfo.totalMem) — a FingerprintJS hardware signal
+            try {
+                android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                put(o, "total_ram", String.valueOf(mi.totalMem));
+            } catch (Throwable t) { put(o, "total_ram", "ERR:" + t); }
+
             // Telephony (needs READ_PHONE_STATE; may throw on newer APIs w/o it — record the attempt)
             probeTelephony(o);
         } catch (Throwable t) {
