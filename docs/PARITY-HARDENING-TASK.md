@@ -150,6 +150,12 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   oriole->gs101, h1_lra_us->msm8996 identical). DEVICE DISCONNECTED mid-build — on-device proof DEFERRED
   to next cycle (code+tests green: JVM 53,563 / Python 78).
 
+- 2026-07-18: Locale-safe case conversions (gemini finding). All device/brand toLowerCase/toUpperCase
+  in Generators.java now use Locale.ROOT — the default-locale versions could diverge from Python's
+  locale-independent .lower()/.upper() on a Turkish-locale device (dotless-i), breaking byte-parity.
+  US-locale output unchanged; now robust everywhere. DEVICE STILL DISCONNECTED — on-device proof of
+  this + last cycle's codename-coherence fix remains DEFERRED. Code+tests green (JVM 53,563 / Python 78).
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)

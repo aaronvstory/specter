@@ -1,6 +1,7 @@
 package com.fleet.idrotate.gen;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -96,7 +97,7 @@ public final class Generators {
     }
 
     public static String tacForBrand(Rng r, String brand) {
-        String[] tacs = TAC_BY_BRAND.get(brand == null ? "" : brand.toLowerCase());
+        String[] tacs = TAC_BY_BRAND.get(brand == null ? "" : brand.toLowerCase(Locale.ROOT));
         if (tacs == null) tacs = new String[]{"35000000"};
         return tacs[r.next(tacs.length)];
     }
@@ -106,20 +107,20 @@ public final class Generators {
      *  picked device — e.g. a Galaxy A01 must never report a Galaxy S21 bootloader). The shape follows
      *  each OEM's real style but the identifying part comes from THIS device, so it can't contradict it. */
     public static String bootloader(Rng r, String brand, String device) {
-        String b = brand == null ? "" : brand.toLowerCase();
+        String b = brand == null ? "" : brand.toLowerCase(Locale.ROOT);
         String dev = device == null ? "device" : device;
         if (b.equals("google")) {
             // Pixel-family: "<codename>-1.2-7683913" — codename IS the device, always coherent.
-            return dev.toLowerCase() + "-" + (1 + r.next(3)) + "." + r.next(9) + "-" + digits(r, 7);
+            return dev.toLowerCase(Locale.ROOT) + "-" + (1 + r.next(3)) + "." + r.next(9) + "-" + digits(r, 7);
         }
         if (b.equals("samsung")) {
             // Samsung firmware code is derived from the actual model (e.g. SM-A013G -> "A013GXXU..").
-            String code = dev.replace("SM-", "").toUpperCase();
+            String code = dev.replace("SM-", "").toUpperCase(Locale.ROOT);
             return code + "XXU" + (1 + r.next(9)) + (char) ('A' + r.next(26))
                     + (char) ('A' + r.next(26)) + (char) ('A' + r.next(26));
         }
         if (b.equals("motorola")) return "MBM-" + digits(r, 2) + "." + digits(r, 2) + "-" + digits(r, 3);
-        if (b.equals("lge"))      return "LGE-" + dev.toUpperCase() + "-" + digits(r, 4);
+        if (b.equals("lge"))      return "LGE-" + dev.toUpperCase(Locale.ROOT) + "-" + digits(r, 4);
         // generic OEM: a plausible alnum bootloader that names no specific model.
         return "BL" + (char) ('A' + r.next(26)) + digits(r, 2) + "." + digits(r, 4) + "-" + digits(r, 4);
     }
@@ -181,7 +182,7 @@ public final class Generators {
      *  matched). LG products carry a regional suffix (h1_lra_us); match on the leading token before "_". */
     public static String socPlatform(Rng r, String product) {
         if (product != null) {
-            String key = product.toLowerCase();
+            String key = product.toLowerCase(Locale.ROOT);
             String known = SOC_BY_DEVICE.get(key);
             if (known != null) return known;
             int us = key.indexOf('_');           // strip LG regional suffix: h1_lra_us -> h1
