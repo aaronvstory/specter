@@ -96,6 +96,16 @@ public class ProbeActivity extends Activity {
                 put(o, "total_ram", String.valueOf(mi.totalMem));
             } catch (Throwable t) { put(o, "total_ram", "ERR:" + t); }
 
+            // MediaDrm Widevine deviceUniqueId — a FingerprintJS deviceId source
+            try {
+                java.util.UUID widevine = new java.util.UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L);
+                android.media.MediaDrm md = new android.media.MediaDrm(widevine);
+                byte[] id = md.getPropertyByteArray("deviceUniqueId");
+                StringBuilder hex = new StringBuilder();
+                for (byte x : id) hex.append(String.format("%02x", x));
+                put(o, "media_drm_id", hex.toString());
+            } catch (Throwable t) { put(o, "media_drm_id", "ERR:" + t); }
+
             // Telephony (needs READ_PHONE_STATE; may throw on newer APIs w/o it — record the attempt)
             probeTelephony(o);
         } catch (Throwable t) {

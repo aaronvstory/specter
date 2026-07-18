@@ -131,6 +131,11 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   dev_settings=0 (real=1). Also case-insensitive SoC lookup (gemini finding) + bluetooth_address leak
   closed this session. animation-scales/http_proxy left real (normal defaults, no signal).
 
+- 2026-07-18: MediaDrm depth VERIFIED end-to-end. MediaDrm.getPropertyByteArray("deviceUniqueId")
+  (the Widevine ID — a FingerprintJS deviceId SOURCE, in the GSF->mediaDrm->androidId chain) returns the
+  spoofed media_drm_id (1f777fd2..), not the real Widevine ID. Probe extended to read it. No module change
+  needed — the existing hook was correct; now proven via the deterministic probe.
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
