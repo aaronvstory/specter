@@ -117,6 +117,7 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "build_hardware": device,
         "build_board": device,
         "build_kernel_version": G.kernel_version(r),
+        "build_radio": G.radio_version(r),
     }
 
 

@@ -64,6 +64,9 @@ public class ProfileTest {
             check(p.get("build_kernel_version").matches("\\d+\\.\\d+\\.\\d+-.*-g[0-9a-f]{8}"), "kernel shape s=" + s + " " + p.get("build_kernel_version"));
             check(p.get("build_hardware").equals(p.get("build_device")), "hardware==device s=" + s);
             check(p.get("build_board").equals(p.get("build_device")), "board==device s=" + s);
+            // Radio/baseband present, non-empty, plausible (no whitespace, has a vendor prefix + digits)
+            String radio = p.get("build_radio");
+            check(radio != null && !radio.isEmpty() && !radio.contains(" ") && radio.contains("-"), "radio shape s=" + s + " " + radio);
             check(p.get("sim_subscriber_imsi").startsWith(p.get("sim_operator_mccmnc")), "imsi carrier s=" + s);
             // dual-SIM: imei1 != imei2 but share the TAC (first 8 digits)
             check(!p.get("imei1").equals(p.get("imei2")), "imei1 != imei2 s=" + s);

@@ -396,28 +396,22 @@ public class MainActivity extends Activity {
         // USA-only build: carrier + phone are always randomized within the US (T-Mobile/Verizon/
         // AT&T/Sprint/US Cellular/MVNOs, NANP numbers). No country picker — one coherent US market.
 
-        // GeerGit-parity toggles (behavioral; wired where a hook exists, else marked)
-        content.addView(sectionLabel("Options"));
-        for (String opt : new String[]{"Anti Fingerprinting", "Hide Mock Location",
-                "Location Spoofing", "Backup App Data", "Force Stop Only", "Clear Data Only"}) {
-            content.addView(togglePlaceholder(opt));
-        }
-    }
-
-    private View togglePlaceholder(final String name) {
-        LinearLayout card = cardBox();
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView t = label(name);
-        t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        final Switch sw = new Switch(this);
-        sw.setChecked(prefs.getBoolean("opt_" + name, false));
-        sw.setOnCheckedChangeListener((v, checked) -> prefs.edit().putBoolean("opt_" + name, checked).apply());
-        row.addView(t);
-        row.addView(sw);
-        card.addView(row);
-        return card;
+        // Anti-fingerprinting is ALWAYS ON — it's the whole point. Every identity is generated
+        // coherently (device ⇄ carrier ⇄ radio ⇄ kernel all match one real US phone) and every
+        // fingerprint-hash signal we can reach is spoofed. There's no toggle because turning it off
+        // would just be "leak the real device" — never useful. (The dev's experimental
+        // "device spoofing / anti-fingerprinting / make device legit" options are deliberately NOT
+        // mirrored — he advised against them.)
+        content.addView(sectionLabel("Anti-fingerprinting"));
+        LinearLayout info = cardBox();
+        info.addView(label("Always on"));
+        TextView desc = value("Coherent identity + deep signal spoofing (Build, bootloader, radio, "
+                + "kernel, HARDWARE/BOARD) are applied automatically on every identity.");
+        desc.setTextColor(Theme.DIM);
+        info.addView(desc);
+        content.addView(info);
+        // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
+        // as a dead toggle until it actually works.
     }
 
     private void renderLocation() {

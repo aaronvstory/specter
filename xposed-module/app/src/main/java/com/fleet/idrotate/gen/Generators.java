@@ -138,6 +138,18 @@ public final class Generators {
         return base + "." + patch + tag + "-g" + hexs(r, 4);   // -g + 8 hex = a git-ish suffix
     }
 
+    // Baseband/radio version prefixes by SoC vendor — real basebands look like "g8150-00088-210507-B..."
+    // (Qualcomm) or "M8998-2010..." Keeping a realistic vendor prefix avoids a synthetic-looking radio.
+    static final String[] RADIO_PREFIXES = {"g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"};
+
+    /** Build.getRadioVersion() / Build.RADIO — SoC-plausible baseband string. Confirmed FP leak. */
+    public static String radioVersion(Rng r) {
+        String pre = RADIO_PREFIXES[r.next(RADIO_PREFIXES.length)];
+        // e.g. "g8150-00088-210507-B-7345963"
+        return pre + "-" + digits(r, 5) + "-" + digits(r, 6) + "-"
+                + (char) ('A' + r.next(6)) + "-" + digits(r, 7);
+    }
+
     /** 15-digit Luhn-valid IMEI; if a valid 8-digit TAC is given, use it as the first 8 digits. */
     public static String imei(Rng r, String tac) {
         String body;

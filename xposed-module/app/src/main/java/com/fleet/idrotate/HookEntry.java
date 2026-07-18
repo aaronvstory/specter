@@ -91,7 +91,9 @@ public class HookEntry implements IXposedHookLoadPackage {
         // Fingerprint-hash hardware signals (FingerprintJS reads HARDWARE/BOARD; kernel via os.version).
         setStatic("HARDWARE",     p.get("build_hardware"));
         setStatic("BOARD",        p.get("build_board"));
+        setStatic("RADIO",        p.get("build_radio"));
         hookKernelVersion(p.get("build_kernel_version"));
+        hookRadioVersion(p.get("build_radio"));
         // getSerial() (API 26+) is a method, not just the field
         try {
             XposedHelpers.findAndHookMethod(Build.class, "getSerial",
@@ -121,6 +123,15 @@ public class HookEntry implements IXposedHookLoadPackage {
                         if ("os.version".equals(mp.args[0])) mp.setResult(kernel);
                     }
                 });
+        } catch (Throwable ignored) {}
+    }
+
+    // ---- baseband/radio (Build.getRadioVersion) — a confirmed FingerprintJS leak ----
+    private void hookRadioVersion(final String radio) {
+        if (radio == null) return;
+        try {
+            XposedHelpers.findAndHookMethod(Build.class, "getRadioVersion",
+                XC_MethodReplacement.returnConstant(radio));
         } catch (Throwable ignored) {}
     }
 

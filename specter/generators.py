@@ -83,6 +83,13 @@ def kernel_version(r):
     tag = "-perf" if r(2) == 0 else "-android" + str(10 + r(4))
     return f"{base}.{patch}{tag}-g" + hexs(r, 4)
 
+_RADIO_PREFIXES = ["g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"]
+
+def radio_version(r):
+    """Build.getRadioVersion() baseband string (mirrors Java radioVersion). Confirmed FP leak."""
+    pre = _RADIO_PREFIXES[r(len(_RADIO_PREFIXES))]
+    return f"{pre}-{digits(r,5)}-{digits(r,6)}-" + chr(ord('A')+r(6)) + f"-{digits(r,7)}"
+
 def bootloader(r, brand):
     """Build.BOOTLOADER: brand-coherent prefix + seeded suffix (mirrors Java Generators.bootloader)."""
     pre = _BOOTLOADER_BY_BRAND.get((brand or "").lower(), ["unknown"])

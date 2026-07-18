@@ -99,4 +99,23 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   Python 76 green. PR #4 opened. Autonomous cron `specter-parity` (a1f2d8fc) scheduled :18/:43 hourly.
 
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
-_(cron fills this in as it ships hardening)_
+
+### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
+SPOOFED OK (hook confirmed on-device):
+- Boot Loader = LGE5SIL (our value) ✅ — the new build_bootloader hook works on the device.
+- Build number / Build ID / Security patch / Manufacturer(LGE) / Model — all our values ✅.
+- Kernel version (os.version) hooked; HARDWARE/BOARD coherent with device.
+
+LEAKS FOUND (real device values still showing → next hardening targets):
+- **Baseband/radio = g8150-00088-210507-B-7345963** (the REAL Pixel 4 radio!) — getRadioVersion() NOT
+  hooked. HIGH priority: a fingerprinter reads this. FIX: generate build_radio, hook Build.getRadioVersion.
+- **Root access = Yes** (Magisk visible) — a detection signal. Hiding root is Zygisk/DenyList territory
+  (out of Specter's hook scope; note for the user — GeerGit relies on LSPosed/Shamiko for this too).
+- **/proc/version** kernel read not intercepted (our hook covers os.version only) — a thorough
+  fingerprinter reading /proc/version directly bypasses it. Note as a known limitation.
+- Language / Time zone / uptime — real; low fraud value, deferred.
+
+### The core anti-detection win vs GeerGit
+Specter now spoofs fingerprint-hash HARDWARE signals (bootloader, kernel, HARDWARE, BOARD) that GeerGit
+2.7.0 leaves real — shrinking the stable-fingerprint correlation channel that causes "sometimes detected."
+build_radio (baseband) is the next confirmed leak to close.

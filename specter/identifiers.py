@@ -51,7 +51,7 @@ BUILD_FIELDS = [
     "build_manufacturer", "build_brand", "build_device", "build_product",
     "build_model", "build_release", "build_id", "build_incremental",
     "build_fingerprint", "build_security_patch", "build_bootloader",
-    "build_hardware", "build_board", "build_kernel_version",
+    "build_hardware", "build_board", "build_kernel_version", "build_radio",
 ]
 
 UNIQUE_KEYS = [s.key for s in SPECS if s.unique]
