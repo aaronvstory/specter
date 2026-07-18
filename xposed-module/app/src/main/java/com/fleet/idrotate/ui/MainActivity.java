@@ -257,10 +257,44 @@ public class MainActivity extends Activity {
     }
 
     private void renderIdentity() {
+        // GeerGit-style flow: (1) pick the target app, (2) see what will be randomized (all on by
+        // default), (3) hit RANDOMIZE ALL. The target header sits at the top so the app you're
+        // spoofing is always in view alongside its identifiers.
+        content.addView(targetHeader());
         content.addView(sectionLabel("Device simulation"));
         for (IdentityFields.Field f : IdentityFields.DEVICE) content.addView(deviceRow(f));
         content.addView(sectionLabel("Identifiers"));
         for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
+    }
+
+    /** Target-app card at the top of the Identity tab: shows the selected app(s) + a Change button. */
+    private View targetHeader() {
+        LinearLayout card = cardBox();
+        Set<String> targets = Targets.get(prefs);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout txt = new LinearLayout(this);
+        txt.setOrientation(LinearLayout.VERTICAL);
+        txt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        txt.addView(label("Target app"));
+        if (targets.isEmpty()) {
+            TextView none = value("None selected — tap Change");
+            none.setTextColor(Theme.DIM);
+            txt.addView(none);
+        } else {
+            for (String pkg : targets) {
+                TextView t = value(pkg);
+                if (Targets.isRisky(pkg)) { t.setTextColor(Theme.RED); t.setText(pkg + "  ⚠ fleet/system"); }
+                txt.addView(t);
+            }
+        }
+        row.addView(txt);
+        row.addView(button("Change", false, v ->
+                startActivity(new Intent(this, AppPickerActivity.class))));
+        card.addView(row);
+        return card;
     }
 
     private View sectionLabel(String s) {
