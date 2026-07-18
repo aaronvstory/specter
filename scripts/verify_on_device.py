@@ -1,104 +1,90 @@
 #!/usr/bin/env python3
-"""On-device spoof verifier for Specter — DevInfo ONLY (never Dasher/GeerGit/system).
+"""Autonomous, deterministic on-device spoof verifier for Specter — via the probe app.
 
-Applies the current identity to com.liuzh.deviceinfo, then walks every DevInfo tab, scrapes all
-displayed text, and checks that each SPOOFED value from the profile actually appears on screen and
-that known-real device values (the Pixel's true baseband/model) do NOT. Read back EVERYTHING, not a
-sample — the 2.9.6 GSF-staleness lesson.
+No UI scraping. Uses com.specter.probe (a tiny app scoped to Specter) that reads EVERY spoofable
+Android API through the hooks and dumps the actual returned values to JSON. This script:
+  1. copies the current DevInfo profile to the probe package (so the probe gets a live identity),
+  2. relaunches the probe (fresh fork -> Specter re-hooks it),
+  3. reads probe_result.json and diffs it against the applied profile,
+  4. prints a per-field pass/fail table and exits nonzero if any real-device value leaked.
 
+Safe: touches ONLY com.specter.probe + com.liuzh.deviceinfo. Never Dasher/GeerGit/system.
+
+Setup (one-time): the probe must be in Specter's LSPosed scope. scripts/scope_probe.py does that.
 Usage: python scripts/verify_on_device.py [serial]
-Exit 0 = all spoofed values confirmed on device; nonzero = leaks found.
 """
-import json, re, subprocess, sys, time
+import json, subprocess, sys, time
 
+PROBE = "com.specter.probe"
 DEVINFO = "com.liuzh.deviceinfo"
-SPECTER = "com.fleet.idrotate"
-PROFILE = f"/data/local/tmp/specter/{DEVINFO}.json"
+SPECTER_DIR = "/data/local/tmp/specter"
 SERIAL = sys.argv[1] if len(sys.argv) > 1 else None
 
-# Fields whose spoofed value should be visibly displayed by DevInfo (string-matchable on its screens).
-DISPLAYED = [
-    "build_manufacturer", "build_model", "build_device", "build_bootloader", "build_radio",
-    "build_id", "build_security_patch", "serial",
-]
+# probe_key -> profile_key. Both getSerial and the SERIAL field map to 'serial'.
+CHECKS = {
+    "build_manufacturer": "build_manufacturer", "build_brand": "build_brand",
+    "build_device": "build_device", "build_model": "build_model", "build_id": "build_id",
+    "build_fingerprint": "build_fingerprint", "build_bootloader": "build_bootloader",
+    "build_hardware": "build_hardware", "build_board": "build_board", "build_radio": "build_radio",
+    "os_version": "build_kernel_version", "serial_getSerial": "serial", "serial_field": "serial",
+    "build_security_patch": "build_security_patch", "android_id": "android_id",
+    "prop_gsm_baseband": "build_radio",
+}
+# Known real Pixel-4 markers — if any appears in a probe value, that's a hard leak.
+REAL_MARKERS = ["flame", "Pixel 4", "g8150-00088-210507", "4.14.212", "google/flame"]
 
 
 def adb(*args):
-    cmd = ["adb"]
-    if SERIAL:
-        cmd += ["-s", SERIAL]
-    cmd += list(args)
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout
+    cmd = ["adb"] + (["-s", SERIAL] if SERIAL else []) + list(args)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=40).stdout
 
 
-def dump_screen():
-    adb("shell", "uiautomator", "dump", "/sdcard/u.xml")
-    xml = adb("shell", "cat", "/sdcard/u.xml")
-    return set(re.findall(r'text="([^"]{1,90})"', xml))
-
-
-def tap_text(label):
-    xml = adb("shell", "cat", "/sdcard/u.xml")
-    m = re.search(r'text="%s".*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"' % re.escape(label), xml)
-    if m:
-        a, b, c, d = map(int, m.groups())
-        adb("shell", "input", "tap", str((a + c) // 2), str((b + d) // 2))
-        time.sleep(1.5)
-        return True
-    return False
+def su(cmd):
+    return adb("shell", "su", "-c", cmd)
 
 
 def main():
-    prof = json.loads(adb("shell", "cat", PROFILE) or "{}")  # profile is 0644, world-readable
-    if not prof:
-        print("FAIL: no profile applied to DevInfo — run RANDOMIZE ALL + APPLY first")
+    # 1. seed the probe with the live DevInfo identity (or its own if already applied)
+    su(f"cp {SPECTER_DIR}/{DEVINFO}.json {SPECTER_DIR}/{PROBE}.json 2>/dev/null; "
+       f"chmod 644 {SPECTER_DIR}/{PROBE}.json")
+    applied_raw = adb("shell", "cat", f"{SPECTER_DIR}/{PROBE}.json")
+    if not applied_raw.strip():
+        print("FAIL: no profile for the probe — apply an identity in Specter first.")
         return 2
-    print(f"profile: {len(prof)} keys, device={prof.get('build_model')} radio={prof.get('build_radio')}")
+    applied = json.loads(applied_raw)
 
-    # relaunch DevInfo fresh, dismiss ad, sweep tabs
-    adb("shell", "am", "force-stop", DEVINFO)
+    # 2. relaunch the probe fresh so Specter re-hooks it
+    adb("shell", "am", "force-stop", PROBE)
     time.sleep(1)
-    adb("shell", "monkey", "-p", DEVINFO, "-c", "android.intent.category.LAUNCHER", "1")
-    time.sleep(5)
-    seen = set()
-    seen |= dump_screen()
-    tap_text("CLOSE")  # dismiss ad if present
-    seen |= dump_screen()  # capture the default Dashboard before navigating away
-    for tab in ("Device", "System", "CPU", "Dashboard"):
-        dump_screen()
-        tap_text(tab)
-        for _ in range(4):  # scroll the tab to capture everything
-            seen |= dump_screen()
-            adb("shell", "input", "swipe", "540", "1600", "540", "500")
-            time.sleep(0.8)
-    blob = (" \n".join(seen)).lower()  # DevInfo uppercases some fields (SAMSUNG) — match case-insensitively
+    adb("shell", "monkey", "-p", PROBE, "-c", "android.intent.category.LAUNCHER", "1")
+    time.sleep(4)
 
-    # check each displayed spoofed value appears
-    ok, leaks = [], []
-    for key in DISPLAYED:
-        val = prof.get(key)
-        if not val:
-            continue
-        if val.lower() in blob:
-            ok.append((key, val))
+    # 3. read the probe's actual readings
+    su(f"cp /data/data/{PROBE}/files/probe_result.json /data/local/tmp/probe.json 2>/dev/null; "
+       f"chmod 644 /data/local/tmp/probe.json")
+    probe_raw = adb("shell", "cat", "/data/local/tmp/probe.json")
+    if not probe_raw.strip():
+        print("FAIL: probe wrote no result — is com.specter.probe in Specter's LSPosed scope? "
+              "Run scripts/scope_probe.py and reboot.")
+        return 2
+    probe = json.loads(probe_raw)
+
+    # 4. diff
+    ok = leak = other = 0
+    print(f"probe read {len(probe)} values; applied profile has {len(applied)} keys\n")
+    print(f"{'FIELD':22} {'PROBE READ':36} STATUS")
+    for pk, prof_k in CHECKS.items():
+        got = str(probe.get(pk, "<none>"))
+        want = str(applied.get(prof_k, "<none>"))
+        if got == want and got not in ("<none>", "unknown"):
+            print(f"{pk:22} {got[:36]:36} ✅ spoofed"); ok += 1
+        elif any(r in got for r in REAL_MARKERS):
+            print(f"{pk:22} {got[:36]:36} ❌ REAL LEAK (want {want[:16]})"); leak += 1
         else:
-            leaks.append((key, val))
+            print(f"{pk:22} {got[:36]:36} ⚠ (want {want[:16]})"); other += 1
 
-    print(f"\n=== CONFIRMED spoofed on-device ({len(ok)}) ===")
-    for k, v in ok:
-        print(f"  ✅ {k:22} = {v}")
-    if leaks:
-        print(f"\n=== NOT FOUND on-device ({len(leaks)}) — may be leaks OR just not displayed by DevInfo ===")
-        for k, v in leaks:
-            print(f"  ❓ {k:22} = {v}")
-    # hard leak check: the real Pixel baseband must NOT appear
-    REAL_MARKERS = ["g8150-00088-210507", "flame", "Pixel 4"]
-    hard = [m for m in REAL_MARKERS if m in blob]
-    if hard:
-        print(f"\n=== HARD LEAK: real device value on screen: {hard} ===")
-        return 1
-    print(f"\nresult: {len(ok)}/{len(ok)+len(leaks)} displayed values confirmed spoofed; no real-device leak.")
-    return 0
+    print(f"\n>>> {ok} spoofed, {leak} hard leaks, {other} other <<<")
+    return 1 if leak else 0
 
 
 if __name__ == "__main__":
