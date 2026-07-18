@@ -156,6 +156,13 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   US-locale output unchanged; now robust everywhere. DEVICE STILL DISCONNECTED — on-device proof of
   this + last cycle's codename-coherence fix remains DEFERRED. Code+tests green (JVM 53,563 / Python 78).
 
+- 2026-07-18: CROSS-FIELD COHERENCE regression guard added (tests/test_coherence.py, 6 tests over 400
+  profiles each). Codifies every invariant a fingerprinter could cross-check: fingerprint structure +
+  release-keys tail, one-US-carrier SIM identity (MCC 310-316 <-> IMSI <-> NANP phone <-> ICCID),
+  HARDWARE/BOARD == codename, no-space bootloader, DISPLAY==build_id, dual-SIM IMEI distinct+shared-TAC,
+  real SoC platform token. Prevents a silent recurrence of the SoC-map-dead-code bug. All hold; full
+  Python suite now 84 tests. Device still disconnected (4th cycle) — on-device proof deferred.
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
