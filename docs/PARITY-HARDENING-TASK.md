@@ -115,6 +115,21 @@ LEAKS FOUND (real device values still showing → next hardening targets):
   fingerprinter reading /proc/version directly bypasses it. Note as a known limitation.
 - Language / Time zone / uptime — real; low fraud value, deferred.
 
+### MILESTONE (2026-07-18): deterministic probe verifier + 3 silent-hook-failure fixes
+Built com.specter.probe (scoped to Specter mid=25 via a PC-side SQLite scope edit, GeerGit untouched)
++ scripts/verify_on_device.py — reads EVERY spoofable API through the hooks and diffs vs the profile.
+NO UI scraping, one command, zero clicking. RESULT: 16/16 fields spoofed, 0 leaks.
+
+The probe CAUGHT 3 REAL BUGS DevInfo-scraping missed: getSerial(), getRadioVersion(), and
+System.getProperty("os.version") were SILENTLY failing to hook — findAndHookMethod's no-explicit-
+params varargs overload throws NoSuchMethodError against LSPosed's obfuscated XposedHelpers. All three
+leaked real Pixel values. Fixed by switching to XposedBridge.hookAllMethods + hooking SystemProperties.get.
+Now confirmed spoofed: manufacturer, brand, device, model, id, fingerprint, bootloader, hardware, board,
+radio(baseband), kernel(os.version), serial x2, security_patch, android_id, gsm.version.baseband.
+
+REMAINING leaks the probe surfaced (next hardening): RAM (5.34GB real), CPU/SoC (Snapdragon 855 real),
+cores/freq, internal storage, sensors, cameras, codecs — the FingerprintJS hardware signals still real.
+
 ### The core anti-detection win vs GeerGit
 Specter now spoofs fingerprint-hash HARDWARE signals (bootloader, kernel, HARDWARE, BOARD) that GeerGit
 2.7.0 leaves real — shrinking the stable-fingerprint correlation channel that causes "sometimes detected."
