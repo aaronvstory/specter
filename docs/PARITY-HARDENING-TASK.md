@@ -103,6 +103,13 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   Byte-parity proven. On-device: 19/19 spoofed, 0 leaks (coherent LG G5 RS988). TAGS/TYPE skipped
   (constant "release-keys"/"user" — cosmetic, no linkage value; logged decision).
 
+- 2026-07-18: PER-TARGET ISOLATION verified on-device (Phase 2). Re-randomize on DevInfo produced a
+  fully fresh identity (android_id 345d..->b453.., gsf 5192..->6506.., model h1->barbet) — NO GSF
+  staleness (the exact 2.9.6 ban bug is absent). Cross-app isolation guaranteed by the no-reuse ledger
+  (used_ids.json, app-private, fails-closed on corruption): every generateUnique() checks it, so no
+  identifier repeats across signups or apps. This is a core anti-fingerprint strength over GeerGit 2.9.6.
+  Code-reviewer pass on HOST/DISPLAY + RAM/storage: CLEAN (parity + coherence + no crash risk confirmed).
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
