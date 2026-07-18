@@ -145,6 +145,37 @@ public final class Generators {
         return p + "-" + digits(r, 5);
     }
 
+    // ro.board.platform (the SoC codename DevInfo/FingerprintJS map to a chip name). Real Pixel
+    // codenames map to a known SoC; for everything else we pick from a pool of REAL Qualcomm platform
+    // names — never a made-up string, so it's always a plausible SoC and never MORE wrong than the
+    // real leaked one. Keyed by the picked device where we're confident, else a brand-era-plausible pool.
+    static final Map<String, String> SOC_BY_DEVICE = new LinkedHashMap<>();
+    static {
+        SOC_BY_DEVICE.put("flame", "msmnile");   // Pixel 4  = SD855
+        SOC_BY_DEVICE.put("coral", "msmnile");   // Pixel 4 XL
+        SOC_BY_DEVICE.put("redfin", "lito");     // Pixel 5  = SD765G
+        SOC_BY_DEVICE.put("bramble", "lito");    // Pixel 4a 5G
+        SOC_BY_DEVICE.put("sunfish", "sm6150");  // Pixel 4a = SD730G
+        SOC_BY_DEVICE.put("barbet", "lito");     // Pixel 5a
+        SOC_BY_DEVICE.put("oriole", "gs101");    // Pixel 6  = Tensor
+        SOC_BY_DEVICE.put("raven", "gs101");     // Pixel 6 Pro
+        SOC_BY_DEVICE.put("blueline", "sdm845"); // Pixel 3  = SD845
+        SOC_BY_DEVICE.put("crosshatch", "sdm845"); // Pixel 3 XL
+        SOC_BY_DEVICE.put("walleye", "msm8998"); // Pixel 2  = SD835
+        SOC_BY_DEVICE.put("h1", "msm8996");      // LG G5    = SD820
+        SOC_BY_DEVICE.put("RS988", "msm8996");   // LG G5 (US)
+    }
+    // Real Qualcomm platform names (a plausible pool for unmapped devices — all shipped on US phones).
+    static final String[] SOC_POOL = {"msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
+            "sm8350", "sm6150", "kona", "lahaina", "trinket", "bengal"};
+
+    /** ro.board.platform (SoC codename). Device-coherent where known, else a real-SoC-pool pick. */
+    public static String socPlatform(Rng r, String device) {
+        String known = SOC_BY_DEVICE.get(device == null ? "" : device);
+        if (known != null) return known;
+        return SOC_POOL[r.next(SOC_POOL.length)];
+    }
+
     // Baseband/radio version prefixes by SoC vendor — real basebands look like "g8150-00088-210507-B..."
     // (Qualcomm) or "M8998-2010..." Keeping a realistic vendor prefix avoids a synthetic-looking radio.
     static final String[] RADIO_PREFIXES = {"g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"};

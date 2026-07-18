@@ -122,6 +122,7 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "total_storage": G.total_storage_bytes(r),
         "build_host": G.build_host(r),
         "build_display": build_id,
+        "soc_platform": G.soc_platform(r, device),
     }
 
 

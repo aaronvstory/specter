@@ -28,7 +28,7 @@ CHECKS = {
     "build_hardware": "build_hardware", "build_board": "build_board", "build_radio": "build_radio",
     "os_version": "build_kernel_version", "serial_getSerial": "serial", "serial_field": "serial",
     "build_security_patch": "build_security_patch", "android_id": "android_id",
-    "prop_gsm_baseband": "build_radio", "total_ram": "total_ram", "build_host": "build_host", "build_display": "build_display",
+    "prop_gsm_baseband": "build_radio", "total_ram": "total_ram", "build_host": "build_host", "build_display": "build_display", "soc_platform": "soc_platform",
 }
 # Known real Pixel-4 markers — if any appears in a probe value, that's a hard leak.
 REAL_MARKERS = ["flame", "Pixel 4", "g8150-00088-210507", "4.14.212", "google/flame"]

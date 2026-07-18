@@ -172,8 +172,27 @@ public class HookEntry implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
-    // ---- RAM (ActivityManager.MemoryInfo.totalMem) — a FingerprintJS hardware signal ----
+    // ---- RAM (ActivityManager.MemoryInfo.totalMem) + SoC platform — FingerprintJS hardware signals ----
     private void hookHardwareInfo(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        // ro.board.platform (SoC codename) — spoof it so the fingerprint's CPU/SoC portion rotates
+        // per identity instead of leaking the real phone's SoC on every signup. Read via SystemProperties.
+        final String soc = p.get("soc_platform");
+        if (soc != null) {
+            try {
+                Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
+                XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        if (mp.args.length > 0 && mp.args[0] instanceof String) {
+                            String k = (String) mp.args[0];
+                            if ("ro.board.platform".equals(k) || "ro.hardware.chipname".equals(k)
+                                    || "ro.soc.model".equals(k)) {
+                                mp.setResult(soc);
+                            }
+                        }
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
         final String ramStr = p.get("total_ram");
         if (ramStr == null) return;
         final long ram;

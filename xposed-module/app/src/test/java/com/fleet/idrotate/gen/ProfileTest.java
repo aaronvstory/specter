@@ -77,6 +77,11 @@ public class ProfileTest {
             // HOST is a farm-style hostname (generated, not the device's real build host); DISPLAY==build_id.
             check(p.get("build_host").matches("[A-Za-z-]+-\\d{5}"), "host shape s=" + s + " " + p.get("build_host"));
             check(p.get("build_display").equals(p.get("build_id")), "display==build_id s=" + s);
+            // SoC platform is a real Qualcomm/Google platform codename (never a made-up string).
+            check(p.get("soc_platform").matches("[a-z0-9]{4,10}"), "soc shape s=" + s + " " + p.get("soc_platform"));
+            // Known-device coherence: an LG G5 (RS988/h1) must report msm8996 (SD820), never e.g. msmnile.
+            if ("RS988".equals(p.get("build_device")) || "h1".equals(p.get("build_device")))
+                check(p.get("soc_platform").equals("msm8996"), "LG G5 SoC coherent s=" + s + " " + p.get("soc_platform"));
             // Fingerprint-hash hardware signals: kernel plausible; HARDWARE/BOARD coherent with device.
             check(p.get("build_kernel_version").matches("\\d+\\.\\d+\\.\\d+-.*-g[0-9a-f]{8}"), "kernel shape s=" + s + " " + p.get("build_kernel_version"));
             check(p.get("build_hardware").equals(p.get("build_device")), "hardware==device s=" + s);

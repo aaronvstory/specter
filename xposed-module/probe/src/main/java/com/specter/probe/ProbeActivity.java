@@ -65,6 +65,13 @@ public class ProbeActivity extends Activity {
                 put(o, "prop_gsm_baseband", (String) get.invoke(null, "gsm.version.baseband"));
             } catch (Throwable t) { put(o, "prop_gsm_baseband", "ERR:" + t); }
 
+            // ro.board.platform (SoC codename) — a FingerprintJS CPU-signal source
+            try {
+                Class<?> sp = Class.forName("android.os.SystemProperties");
+                Method get = sp.getMethod("get", String.class);
+                put(o, "soc_platform", (String) get.invoke(null, "ro.board.platform"));
+            } catch (Throwable t) { put(o, "soc_platform", "ERR:" + t); }
+
             // Settings.Secure android_id
             try {
                 put(o, "android_id", Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID));

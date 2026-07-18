@@ -40,7 +40,7 @@ public final class Profile {
             "build_model", "build_release", "build_id", "build_incremental", "build_fingerprint",
             "build_security_patch", "build_bootloader",
             "build_hardware", "build_board", "build_kernel_version", "build_radio",
-            "total_ram", "total_storage", "build_host", "build_display",
+            "total_ram", "total_storage", "build_host", "build_display", "soc_platform",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -137,6 +137,9 @@ public final class Profile {
         // on a spoofed Samsung/Moto). Build.DISPLAY is the build display id, ==build_id on real devices.
         p.put("build_host", Generators.buildHost(r));
         p.put("build_display", buildId);
+        // ro.board.platform (SoC codename) — device-coherent, so the fingerprint's CPU/SoC portion
+        // rotates per identity instead of leaking the real phone's SoC on every signup.
+        p.put("soc_platform", Generators.socPlatform(r, device));
         return p;
     }
 
