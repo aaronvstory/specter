@@ -2,6 +2,22 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-25 · byedentity adoption: probe the Widevine coherence hole FIRST, don't build the fix blind** —
+  byedentity's decompile (docs/BYEDENTITY-ANALYSIS.md) surfaced a real Specter gap: we value-spoof
+  MediaDrm `deviceUniqueId` but leave `getPropertyString("securityLevel")` real (L1) — a *changing* id at a
+  real L1 is incoherent. Rather than immediately add the fix, we added `securityLevel` to the probe +
+  a coherence line to verify_on_device.py to MEASURE whether the mismatch is even present/exploitable on
+  our device. Epistemic discipline: the fix is a HYPOTHESIS-driven change until the probe reading confirms
+  the incoherence exists. Cheap fix (pin securityLevel in the hook) beats the root liboemcrypto bind-mount.
+- **2026-07-25 · Do NOT adopt byedentity's server/anti-tamper stack** — its HMAC attestation, remote
+  kill-switch (403→wipe local auth), public-IP telemetry, and native Frida gate serve byedentity's OWN
+  licensing/control, not the user's anti-detection goal. Specter is deliberately stateless with no server
+  leash. Adopt only the identity-coherence ideas (mask-preserving generators, DRM coherence, StatFs).
+- **2026-07-25 · Port the mask-preserving-generator IDEA, not byedentity's native code** — its serial
+  generators (buildMask/generateFromMask/generateLikePreservingBlocks) live in un-disassembled native
+  (JNI names only = HYPOTHESIS on internals). Reimplement the concept (per-model format masks + prefixes)
+  in generators.py with Java byte-parity + US-device templates; don't guess at their arithmetic.
+
 - **2026-07-25 · Intermittent-detection finding is a HYPOTHESIS, not proven** — GeerGit HAS an
   IMEI-increment mode + manual-uniqueness burden (plausible cause of intermittent bans), but we have NOT
   confirmed it flags the fleet. Documented as hypothesis with a confirm-path; don't present as fact.

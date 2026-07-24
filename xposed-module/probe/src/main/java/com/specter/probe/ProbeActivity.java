@@ -116,7 +116,13 @@ public class ProbeActivity extends Activity {
                 put(o, "total_ram", String.valueOf(mi.totalMem));
             } catch (Throwable t) { put(o, "total_ram", "ERR:" + t); }
 
-            // MediaDrm Widevine deviceUniqueId — a FingerprintJS deviceId source
+            // MediaDrm Widevine deviceUniqueId — a FingerprintJS deviceId source.
+            // Also read securityLevel: it is the COHERENCE cross-check. Specter value-spoofs
+            // deviceUniqueId but (as of this probe) leaves securityLevel real — a *changing* id at a
+            // real L1 is itself incoherent (a genuine L1 device has a fixed hardware id). byedentity
+            // avoids this by dropping to L3 via a liboemcrypto bind-mount. If media_drm_id looks
+            // spoofed but media_drm_security_level still reads L1, that mismatch is the leak.
+            // See docs/BYEDENTITY-ANALYSIS.md "Widevine coherence hole".
             try {
                 java.util.UUID widevine = new java.util.UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L);
                 android.media.MediaDrm md = new android.media.MediaDrm(widevine);
@@ -124,7 +130,12 @@ public class ProbeActivity extends Activity {
                 StringBuilder hex = new StringBuilder();
                 for (byte x : id) hex.append(String.format("%02x", x));
                 put(o, "media_drm_id", hex.toString());
-            } catch (Throwable t) { put(o, "media_drm_id", "ERR:" + t); }
+                try { put(o, "media_drm_security_level", md.getPropertyString("securityLevel")); }
+                catch (Throwable t) { put(o, "media_drm_security_level", "ERR:" + t); }
+            } catch (Throwable t) {
+                put(o, "media_drm_id", "ERR:" + t);
+                put(o, "media_drm_security_level", "ERR:" + t);
+            }
 
             // Telephony (needs READ_PHONE_STATE; may throw on newer APIs w/o it — record the attempt)
             probeTelephony(o);

@@ -97,6 +97,27 @@ def main():
             print(f"{pk:22} {got[:36]:36} ⚠ (want {want[:16]})"); other += 1
 
     print(f"\n>>> {ok} spoofed, {leak} hard leaks, {benign} OS-placeholder/perm, {other} other <<<")
+
+    # Widevine DRM coherence observation (NOT a pass/fail spoof check — securityLevel has no profile
+    # value). Specter value-spoofs media_drm_id but does NOT hook getPropertyString("securityLevel").
+    # A *changing* deviceUniqueId at a real L1 is itself incoherent (genuine L1 = fixed hardware id).
+    # This measures the "Widevine coherence hole" from docs/BYEDENTITY-ANALYSIS.md — the native-read
+    # blind spot byedentity closes via a liboemcrypto L1->L3 bind-mount. If id looks spoofed but level
+    # reads L1, that mismatch is the leak to fix (add securityLevel to the hook, or drop to L3).
+    drm_id = str(probe.get("media_drm_id", "<none>"))
+    drm_lvl = str(probe.get("media_drm_security_level", "<none>"))
+    want_id = str(applied.get("media_drm_id", "<none>"))
+    id_spoofed = drm_id == want_id and drm_id not in ("<none>", "unknown") and not drm_id.startswith("ERR:")
+    print(f"\n--- Widevine coherence ---")
+    print(f"{'media_drm_id':22} {drm_id[:36]:36} {'✅ spoofed' if id_spoofed else '(see table)'}")
+    print(f"{'  securityLevel':22} {drm_lvl[:36]:36}", end="")
+    if id_spoofed and drm_lvl == "L1":
+        print("  ⚠ INCOHERENT: spoofed id @ real L1 (a changing id at L1 is a red flag)")
+    elif drm_lvl.startswith("ERR:"):
+        print("  (unreadable)")
+    else:
+        print("  ○ coherent / n/a")
+
     return 1 if leak else 0
 
 

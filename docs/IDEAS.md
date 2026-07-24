@@ -10,6 +10,34 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   it, map what it spoofs/hides, and compare GeerGit vs Specter vs byedentity. Pull any features worth
   adopting into Specter. (Planned as a fresh session via /handoff — this conversation is full.)
 
+- **2026-07-25 · "Best of both worlds": add an optional root/bind-mount layer under Specter's hooks** — status: `researching`.
+  From the byedentity decompile (see docs/BYEDENTITY-ANALYSIS.md). The strategic finding is a MECHANISM gap,
+  not a signal gap: Specter and byedentity spoof the SAME signals (serial, android_id, GSF id, Widevine
+  `deviceUniqueId`), but Specter changes them at the **Java API boundary inside the target app** while
+  byedentity changes them in the **native vendor lib / system props** before any app reads.
+    - **The blind spot (HYPOTHESIS, plausible, unproven):** a Java hook on `MediaDrm.getPropertyByteArray`
+      / `Build.SERIAL` is invisible to a fingerprinting SDK that reads the SAME value via the **native**
+      path — Widevine's C++ OEMCrypto API, or `__system_property_get("ro.serialno")` — bypassing our hook
+      entirely. byedentity's `mount -o bind …/liboemcrypto.so /vendor/lib{,64}/liboemcrypto.so` (PROVEN from
+      literal script strings) + `resetprop` close exactly that native path. This *could* be a source of the
+      fleet's intermittent flags (SDK sometimes takes the native path) — but there is NO evidence the DoorDash
+      SDK reads Widevine/serial natively. Do NOT present as the fleet fix. It closes a known theoretical
+      coverage hole; confirming it matters needs the same evidence as the other intermittent hypotheses.
+    - **The hybrid design:** keep Specter's per-app Xposed hooks (device-coherent, no-reuse ledger, USA-only,
+      byte-parity — all things byedentity lacks) as the primary layer, and add an OPTIONAL Magisk-module
+      "deep layer" that resetprops `ro.serialno`/boot props + bind-mounts a per-identity `liboemcrypto.so`,
+      driven by the SAME generated profile so the two layers stay coherent. Only engages where root+Magisk
+      is present (our test devices are rooted); degrades to hook-only elsewhere. Coherence is the hard part:
+      the mounted Widevine ID and the hooked Java value MUST derive from one profile or it's a *worse* signal.
+    - **Difficulty:** hard (root, per-identity native blob generation for Widevine, reboot/mount lifecycle).
+      Verify on the probe (native-read path) before trusting. Likely its own PR after the mask-generator +
+      MediaDrm-completeness quick wins below.
+  - **Quick win pulled from byedentity — mask-preserving ID generators** — status: `idea`. byedentity's
+    `generateLikePreservingBlocks` / `generateFromMask` / `generateAndroidIdLike` generate a NEW id that keeps
+    the *format/block structure* of a real one (right length, segment layout, charset). Cheap to port to
+    generators.py (+ Java byte-parity) and it makes our random ids look native-shaped rather than obviously
+    synthetic. Reasonably easy, no root. Good first adoption.
+
 - **2026-07-25 · App-list spoofing (HideMyAppList-style)** — status: `idea (deprioritized)`.
   Hook `PackageManager.getInstalledApplications/getInstalledPackages` to return a coherent subset per
   identity. Real linking signal, BUT it's a STABLE signal → cannot explain the fleet's *intermittent*

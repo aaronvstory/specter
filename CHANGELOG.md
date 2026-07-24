@@ -3,6 +3,19 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **byedentity 3-way analysis** (`docs/BYEDENTITY-ANALYSIS.md`): decompiled `com.byedentity` v3.0.1 and
+  compared GeerGit vs Specter vs byedentity. byedentity is a root/Magisk + native-JNI, server-validated
+  changer that spoofs system-wide via `resetprop` + `pm clear` + a Widevine `liboemcrypto.so` bind-mount
+  (L1→L3). Findings carry PROVEN/HYPOTHESIS labels (adversarially verified). Adoption candidates in
+  `docs/IDEAS.md`; do-not-adopt calls (server/kill-switch/anti-tamper) in `docs/DECISIONS.md`.
+- **Probe: Widevine `securityLevel`** — the probe now reads `MediaDrm.getPropertyString("securityLevel")`
+  alongside `deviceUniqueId`, and `verify_on_device.py` prints a Widevine-coherence line. This measures the
+  gap byedentity closes: Specter spoofs the DRM id but leaves `securityLevel` real (L1), so a changing id
+  at L1 is incoherent. Measurement first — the hook fix is deferred pending the on-device reading.
+
 ## [0.3.0] — 2026-07-08
 
 UI/UX polish + real multi-app targeting, per-country SIM, and realistic emails. The app now
