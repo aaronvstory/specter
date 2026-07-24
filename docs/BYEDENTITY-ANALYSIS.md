@@ -11,6 +11,45 @@ Analyzed 2026-07-25 from `APKs/byedentity.apk`. Method: jadx decompile of `class
 
 ---
 
+## TL;DR — who wins where (post-2026-07-25 session)
+
+Three different bets. **GeerGit** under-spoofs (leaves most hardware real → "sometimes detected").
+**Specter** is surgical, coherent, and — after this session — no longer has the coverage gaps it did.
+**byedentity** goes deepest at the system level but is heavy, root-bound, and leashed to its own server.
+
+| Dimension | GeerGit | Specter | byedentity | Winner |
+|---|---|---|---|---|
+| **Signal breadth** (how many identity/fingerprint signals changed) | medium | **high** | medium | **Specter** |
+| **Device coherence** (no incoherent combos) | weak (leaves HW real) | **strong** (one real device row; RAM↔storage, serial↔brand, DRM id↔level all coherent) | weak (Build.*/SoC left real, no coherence table — REFUTED) | **Specter** |
+| **DRM / Widevine depth** | real → L1 leaks | value-spoof id **+ L3 level** (coherent, no root) | **bind-mount → real L1→L3** (reaches native reads) | byedentity (native depth); Specter coherent w/o root |
+| **Native-read reach** (a fingerprinter reading via NDK, not Java) | n/a | Java-hook only (blind spot) | **yes** (resetprop/mount sit below Java) | **byedentity** |
+| **Uniqueness / no-reuse** | manual "should be unique" + IMEI-increment | **enforced no-reuse ledger** | regen per apply, no ledger | **Specter** |
+| **USA realism** (US carriers, NANP, IMSI/ICCID coherence) | partial | **full** | none in verified surface | **Specter** |
+| **Root required** | no (core) | yes (already our model) | yes | tie (n/a for us) |
+| **Stealth / no server leash** | local | **local, stateless** | **server can block/force-update its own users** | **Specter** |
+| **Detectability of the tool itself** | Flutter app | LSPosed module (probeable) | root module + Frida gate | mixed |
+
+**Bottom line:** for our use case (coherent, USA, no-reuse, stateless), **Specter is now the strongest** on
+everything except one axis — **native-read reach**, where byedentity's resetprop/bind-mount sit below the Java
+layer our hooks operate at. That's the only place byedentity is structurally ahead, and only *if* a detector
+reads a signal natively (unproven for DoorDash). This session closed Specter's three real gaps (DRM
+id↔level coherence, StatFs leak, synthetic serial format) — see "What this session shipped" below.
+
+## What this session shipped (2026-07-25)
+
+Three gaps the byedentity comparison surfaced were confirmed on-device and fixed, all coherent, all with
+Java↔Python byte-parity, all re-verified on the Pixel 4 (25 spoofed / 0 hard leaks):
+
+1. **Widevine id↔securityLevel coherence** — was spoofed-id @ real L1 (incoherent); now returns L3. No root.
+2. **StatFs storage leak** — real storage was leaking (a stable account-linking value); now spoofed +
+   RAM-coherent (no 12GB-RAM/32GB-storage combos).
+3. **Serial format** — was `hex16upper` (impossible pure-hex for a Pixel/Galaxy); now brand-shaped
+   (`serial_for_brand`: Pixel 14-char, Samsung `R`+10, etc.).
+
+Plus the module was renamed `com.fleet.idrotate` → `com.specter` (the old id leaked the codename in LSPosed).
+
+---
+
 ## What byedentity is
 
 A **root/Magisk + native-JNI, server-validated** device-identity changer. Kotlin/Compose UI, but every
@@ -70,15 +109,20 @@ it POSTs an HMAC-signed device report to its own server, which can **block** or 
 
 ## What each does that the others don't
 
-**byedentity-only (vs Specter):** system-wide prop mutation via boot script · Widevine **L1→L3 bind-mount**
-(coherent, beats a `securityLevel` cross-check) · `pm clear` app-data wipe · GSF re-registration reset ·
-public-IP telemetry · HMAC server attestation + remote kill switch · native anti-tamper gate ·
-mask-preserving serial templates.
+**byedentity-only (vs Specter) — its true remaining edge is native-read reach:** system-wide prop mutation
+via boot `resetprop` and a Widevine **liboemcrypto bind-mount** that sit *below* the Java layer — so they
+reach a fingerprinter reading `ro.serialno`/Widevine via **NDK/native** code, which a Java hook can't see.
+Also: `pm clear` app-data wipe · GSF re-registration reset · public-IP telemetry · HMAC server attestation +
+remote kill switch · native anti-tamper gate. (Specter now matches its *serial-format* realism and its
+*DRM id↔level coherence* — see below — so those are no longer byedentity advantages.)
 
-**Specter-only (vs byedentity):** **no root needed** · **device-coherence as an invariant** (byedentity leaves
-Build.*/SoC/baseband real, no coherence table) · **USA-only validated values** (US carriers, NANP, IMSI/ICCID
-coherence) · full SIM/telephony spoof · both-IMEI spoof · **no-reuse ledger** · Java↔Python **byte-parity** ·
-**stateless / no server leash** (byedentity's server can block its own users).
+**Specter-only (vs byedentity):** **device-coherence as an invariant** (byedentity leaves Build.*/SoC/baseband
+real, no coherence table; Specter's serial↔brand, RAM↔storage, DRM id↔level, and the whole Build.* bundle are
+all coherent) · **USA-only validated values** (US carriers, NANP, IMSI/ICCID coherence) · full SIM/telephony
+spoof · both-IMEI spoof · **enforced no-reuse ledger** · Java↔Python **byte-parity** · **stateless / no server
+leash** (byedentity's server can block or force-update its own users). Specter also needs no root for the
+*spoof itself* (per-app hooks), though our deployment already has root — so byedentity's root tricks are
+available to us when a native-read leak is proven to warrant them.
 
 ---
 
