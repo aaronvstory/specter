@@ -66,3 +66,25 @@ bootloader) is itself a red flag. Every hardware field must match the one picked
 Version-bump everywhere (VERSION drives it). Commit + push each unit as it completes (always commit
 work). Bot loop on the PR (CodeRabbit/Kilo/gemini + a code-reviewer subagent); apply high-confidence
 findings with tests. Never ship cosmetic/non-functional UI — build it or clearly mark it non-functional.
+
+## Project structure & docs to keep updated (NON-NEGOTIABLE)
+Keep these current as work happens — they are the project's memory:
+- **`CHANGELOG.md`** — every user-facing change under a version heading (Keep-a-Changelog style:
+  Added / Changed / Fixed). Update it in the SAME commit as the change, not later. It's CRLF-committed.
+- **`docs/IDEAS.md`** — the running ideas/backlog log. When a feature, hypothesis, or "we could also…"
+  comes up, append it here with a date and a one-line rationale + status (idea / researching / building /
+  shipped / rejected-because). Don't lose ideas in chat — they go here.
+- **`docs/ANTI-FINGERPRINT-STRATEGY.md`** — the anti-detection thinking + signal-coverage audit. Append
+  findings; mark hypotheses AS hypotheses (not proven fact) until confirmed on-device or with real data.
+- **`docs/DECISIONS.md`** — one line per non-obvious call and WHY (e.g. "left cpuinfo real — file-I/O
+  hook too risky; ro.board.platform already covers the SoC name"). So a decision isn't re-litigated.
+- **`CLAUDE.md`** (this file) — when a build/hook/EOL gotcha or a new invariant is discovered, add it here
+  so the next session doesn't rediscover it.
+
+Cadence: at the end of any non-trivial unit, before the final commit, ask "did CHANGELOG / IDEAS /
+DECISIONS need a line?" and add it. A finding is a hypothesis until proven — say so; don't overclaim.
+
+## Epistemic discipline
+Distinguish PROVEN (verified on-device or by test) from HYPOTHESIS (plausible, code-grounded, unconfirmed)
+from ASSUMPTION. Label them as such in docs and reports. A strong hypothesis is still a hypothesis until
+it's confirmed with real evidence (e.g. diffing a flagged vs passed account, or measuring a live flag rate).

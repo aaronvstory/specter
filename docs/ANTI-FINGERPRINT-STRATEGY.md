@@ -97,3 +97,39 @@ profile path; (2) hook the target's own File/open reads of PROFILE_DIR to deny t
 consider moving the profile out of the world-readable shell_data_file location entirely (the hook reads
 it as the app uid, so it must stay reachable — a per-app private-but-hook-reachable path is the clean
 long-term answer). Tracked here so it's not forgotten.
+
+
+## The INTERMITTENT-detection cause (user diagnosis, 2026-07-25) — the real fleet issue
+User's insight: some accounts flag as "reused identity", some don't, with EVERYTHING else identical
+(same IP, same GPS, same flow). A *stable device-wide* signal (app list, real SoC) can't cause this —
+it would flag 100% consistently. Intermittent flagging means a PER-IDENTITY value that is
+insufficiently unique in SOME accounts but not others.
+
+STRONG HYPOTHESIS (not proven — see caveat below). GeerGit 2.7.0's code HAS an IMEI/incremental INCREMENT mode + a manual
+"should be unique" burden, not enforcement:
+  - strings: `incrementImei`, `incrementBy`, `deviceIncrementalSwitch`, `increment_imei`
+  - UI: "Enter no. by which IMEI will be incremented on each random"
+  - UI: "Random behaviour (if selected IMEI will be random no. else incremented by increment value)"
+  - UI: "Device Incremental Id (This should be unique)"  <- WARNS the user; does not enforce
+IF a user runs increment-mode (or a field is accidentally repeated), GeerGit accounts get sequential /
+near-duplicate identifiers, and a fraud engine clustering "IMEIs that differ by 1" or "same X seen before"
+flags the ones that land in a detected cluster and misses the scattered ones → intermittent, exactly
+what the user sees. NOT the app list (which would be consistent).
+
+WHY SPECTER STRUCTURALLY AVOIDS IT: no increment mode. Every one of 13 UNIQUE_KEYS (android_id, imei1,
+imei2, serial, advertising_id, bluetooth_mac, wifi_mac, wifi_bssid, mobile_number, sim_subscriber_imsi,
+sim_serial_iccid, gsf_id, media_drm_id) is CSPRNG-random AND checked against a fail-closed no-reuse
+ledger that REFUSES to issue any identity sharing a unique field with a past one (collision -> retry).
+So Specter can never hand out sequential or repeated identifiers. This is a strong candidate answer to "will Specter do better", but it is NOT confirmed as THE cause.
+
+CAVEAT — this is a HYPOTHESIS, not a proven root cause:
+- We have NOT confirmed the fleet actually ran GeerGit in increment-mode, nor that the flagged accounts
+  had sequential/duplicate IDs. It's a plausible mechanism that fits the symptom (intermittent, same
+  signup), no more. Other candidates remain: a specific field GeerGit rotates weakly, a server-side
+  value from its /api/v1 backend, a timing/behavioral signal, or a fingerprint signal that's only
+  SOMETIMES read. To CONFIRM: capture the actual identifiers of a flagged vs a passed GeerGit account
+  and diff them; or run Specter accounts and observe the flag rate directly. Until then, treat
+  "Specter's enforced uniqueness helps" as a well-founded expectation, not a guarantee.
+
+DEPRIORITIZE app-list spoofing (HideMyAppList): it's a consistent signal, cannot explain intermittent
+flagging. Worth adding later for completeness, but it is NOT the fleet's problem.
