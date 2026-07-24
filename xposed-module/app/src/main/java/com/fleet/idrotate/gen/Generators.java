@@ -73,8 +73,37 @@ public final class Generators {
 
     // ---------- generators ----------
     public static String hex16(Rng r)      { return hexs(r, 8); }               // android_id
-    public static String hex16upper(Rng r) { return hexs(r, 8).toUpperCase(); } // serial
+    public static String hex16upper(Rng r) { return hexs(r, 8).toUpperCase(); } // serial (legacy, pure-hex)
     public static String hex32(Rng r)      { return hexs(r, 16); }              // media_drm (16 bytes)
+
+    // Real device serials are NOT pure hex — they use a broader uppercase-alphanumeric alphabet, a
+    // brand-specific length, and a fixed leading prefix (e.g. every Samsung phone serial starts "R",
+    // 11 chars total; a real Pixel serial is 14 alnum chars incl letters like Z/P absent from hex).
+    // hex16upper (16 pure-hex chars) is detectably synthetic for a device claiming to be a Pixel/Galaxy.
+    // We replicate the FORMAT (prefix + length + alphabet), not the decodable factory/date fields — we
+    // don't need decodable serials, only format-plausible ones. Grounded in Samsung/Google/Motorola docs.
+    // Base34: 0-9 + A-Z minus I and O (confusables Samsung/Google avoid). Fixed order = Java/Python parity.
+    static final String SERIAL_ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // 34 chars (no I, no O)
+
+    /** brand -> {fixed prefix, total length}. Prefix chars are literal; the rest are drawn from SERIAL_ALPHABET. */
+    static String[] serialSpecForBrand(String brand) {
+        String b = brand == null ? "" : brand.toLowerCase();
+        if (b.contains("samsung"))  return new String[]{"R", "11"};   // Samsung: always "R" + 10, 11 total
+        if (b.contains("google"))   return new String[]{"",  "14"};   // Pixel: 14 alnum (e.g. 9B151FFAZ00FPF)
+        if (b.contains("motorola") || b.equals("moto")) return new String[]{"ZY", "12"}; // modern Moto "ZY..."
+        if (b.contains("lg"))       return new String[]{"", "15"};    // LG: longer, numeric-heavy alnum
+        return new String[]{"", "12"};                                 // generic fallback
+    }
+
+    /** Brand-plausible serial: fixed prefix + alphanumeric body, correct per-brand length. Uppercase. */
+    public static String serialForBrand(Rng r, String brand) {
+        String[] spec = serialSpecForBrand(brand);
+        String prefix = spec[0];
+        int len = Integer.parseInt(spec[1]);
+        StringBuilder sb = new StringBuilder(prefix);
+        while (sb.length() < len) sb.append(SERIAL_ALPHABET.charAt(r.next(SERIAL_ALPHABET.length())));
+        return sb.toString();
+    }
 
     /**
      * Real 8-digit TAC prefixes by manufacturer — an IMEI's first 8 digits identify make/model,
@@ -378,7 +407,7 @@ public final class Generators {
 
     // ---------- validators ----------
     private static final Pattern P_ANDROID_ID = Pattern.compile("[0-9a-f]{16}");
-    private static final Pattern P_SERIAL     = Pattern.compile("[0-9A-F]{16}");
+    private static final Pattern P_SERIAL     = Pattern.compile("[0-9A-HJ-NP-Z]{11,15}"); // Base34, brand-plausible
     private static final Pattern P_MEDIA_DRM  = Pattern.compile("[0-9a-f]{32}");
     private static final Pattern P_ADV        = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
     private static final Pattern P_MAC_UP     = Pattern.compile("([0-9A-F]{2}:){5}[0-9A-F]{2}");

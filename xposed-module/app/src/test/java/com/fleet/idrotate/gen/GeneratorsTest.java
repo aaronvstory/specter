@@ -57,7 +57,9 @@ public class GeneratorsTest {
         for (int s = 0; s < 2000; s++) {
             Generators.Rng g = seeded(s);
             check(Generators.validate("android_id", Generators.hex16(g)), "android_id valid s=" + s);
-            check(Generators.validate("serial", Generators.hex16upper(g)), "serial valid s=" + s);
+            check(Generators.validate("serial", Generators.serialForBrand(g, "Samsung")), "serial(Samsung) valid s=" + s);
+            check(Generators.validate("serial", Generators.serialForBrand(g, "Google")), "serial(Google) valid s=" + s);
+            check(!Generators.validate("serial", Generators.hex16upper(g)), "old hex16 serial rejected s=" + s);
             check(Generators.validate("media_drm_id", Generators.hex32(g)), "media_drm valid s=" + s);
             check(Generators.validate("advertising_id", Generators.uuid(g)), "adv uuid v4 valid s=" + s);
             check(Generators.validate("bluetooth_mac", Generators.macUpper(g)), "mac_upper valid s=" + s);

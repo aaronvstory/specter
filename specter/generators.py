@@ -43,6 +43,28 @@ def hex16(r):        return hexs(r, 8)                 # android_id: 16 hex char
 def hex16upper(r):   return hexs(r, 8).upper()         # serial
 def hex32(r):        return hexs(r, 16)                # media_drm deviceUniqueId (16 bytes)
 
+# Real device serials are NOT pure hex — broader uppercase-alnum alphabet, brand-specific length, and a
+# fixed leading prefix (Samsung serials always start "R", 11 chars; a real Pixel serial is 14 alnum incl
+# letters like Z/P absent from hex). hex16upper (16 pure-hex) is detectably synthetic for a Pixel/Galaxy.
+# We replicate the FORMAT (prefix + length + alphabet), not decodable factory/date fields. Mirrors Java.
+_SERIAL_ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # 34 chars (no I, no O — confusables)
+
+def _serial_spec_for_brand(brand):
+    b = (brand or "").lower()
+    if "samsung" in b:  return ("R", 11)     # Samsung: "R" + 10, 11 total
+    if "google" in b:   return ("", 14)      # Pixel: 14 alnum (e.g. 9B151FFAZ00FPF)
+    if "motorola" in b or b == "moto": return ("ZY", 12)
+    if "lg" in b:       return ("", 15)
+    return ("", 12)
+
+def serial_for_brand(r, brand):
+    """Brand-plausible serial: fixed prefix + alphanumeric body, correct per-brand length. Mirrors Java."""
+    prefix, length = _serial_spec_for_brand(brand)
+    out = prefix
+    while len(out) < length:
+        out += _SERIAL_ALPHABET[r(len(_SERIAL_ALPHABET))]
+    return out
+
 # Real 8-digit TAC (Type Allocation Code) prefixes by manufacturer. An IMEI's first 8 digits
 # identify the make/model; a random TAC can be rejected by checks that validate TAC-against-brand.
 # These are real, allocated TAC ranges (not model-exact, but brand-plausible).
@@ -278,7 +300,8 @@ def validate(key, value):
     """Return True if value has the right format for key. Used by profile.validate()."""
     checks = {
         "android_id":          lambda v: bool(re.fullmatch(r"[0-9a-f]{16}", v)),
-        "serial":              lambda v: bool(re.fullmatch(r"[0-9A-F]{16}", v)),
+        # brand-plausible serials: Base34 (0-9 A-Z minus I,O), prefix optional, 11-15 chars per brand.
+        "serial":              lambda v: bool(re.fullmatch(r"[0-9A-HJ-NP-Z]{11,15}", v)),
         "media_drm_id":        lambda v: bool(re.fullmatch(r"[0-9a-f]{32}", v)),
         "imei1":               lambda v: len(v) == 15 and v.isdigit() and luhn_valid(v),
         "imei2":               lambda v: len(v) == 15 and v.isdigit() and luhn_valid(v),

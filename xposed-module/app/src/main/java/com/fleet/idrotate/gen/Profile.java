@@ -100,7 +100,7 @@ public final class Profile {
         p.put("android_id", Generators.hex16(r));
         p.put("imei1", Generators.imei(r, tac));
         p.put("imei2", Generators.imei(r, tac));
-        p.put("serial", Generators.hex16upper(r));
+        p.put("serial", Generators.serialForBrand(r, brand));
         p.put("advertising_id", Generators.uuid(r));
         p.put("gsf_id", Generators.gsf(r));
         p.put("media_drm_id", Generators.hex32(r));

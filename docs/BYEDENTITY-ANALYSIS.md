@@ -49,7 +49,7 @@ it POSTs an HMAC-signed device report to its own server, which can **block** or 
 
 | Signal | GeerGit (Flutter, per-account) | Specter (Xposed per-app hook) | byedentity (root Magisk + native) |
 |---|---|---|---|
-| serial | spoofed, per-account | hook `Build.SERIAL`+`getSerial()`, `G.hex16upper` | boot `resetprop` in `service.d` (write cmd `(hyp)`); alias-enum PROVEN |
+| serial | spoofed, per-account | hook `Build.SERIAL`+`getSerial()`, **brand-shaped** `serial_for_brand` (fixed 2026-07-25) | boot `resetprop` in `service.d` (write cmd `(hyp)`); alias-enum PROVEN |
 | IMEI (both slots) | spoofed, has increment mode | hook, both slots share TAC, slot-aware | **real / not shown** |
 | SIM (IMSI/ICCID/line1/MCC-MNC/op) | partial | spoofed + **coherent** (IMSI==MCCMNC, ICCID IIN==carrier, US) | **real / not shown** |
 | android_id / SSAID | spoofed | hook `Settings.Secure/System.getString`, `G.hex16` | `commandSetAndroidId` write `(hyp)`, in boot+apply |
@@ -63,7 +63,7 @@ it POSTs an HMAC-signed device report to its own server, which can **block** or 
 | kernel (os.version) | real (leaks) | spoofed at property path (`/proc/version` file read NOT hooked) | real / not shown |
 | SoC / board platform | real (leaks) | spoofed (`ro.board.platform` etc.); `/proc/cpuinfo` left real | **real** — no SoC table (coherence REFUTED) |
 | total RAM | real (likely) | spoofed (`getMemoryInfo`→`totalMem`) | real / not shown |
-| **total storage (StatFs)** | unknown | **real / LEAKS** — generated but no hook | real / not shown |
+| **total storage (StatFs)** | unknown | **spoofed + coherent** (StatFs hook, blocks×size==total, RAM-coherent; fixed 2026-07-25) | real / not shown |
 | public IP | not identity | not collected (no server) | fetched + POSTed (PROVEN) |
 
 ---
@@ -108,9 +108,11 @@ is now closed. The heavier root bind-mount (candidate #4) is unnecessary for thi
 
 See `docs/IDEAS.md` for the running backlog entries. Summary, cheapest-first:
 
-1. **Mask-preserving serial/IMEI/ICCID generators** — EASY, no root. Port the *idea* (per-model format masks +
-   valid prefixes) into `generators.py` with Java byte-parity + US-device templates. Don't port byedentity's
-   native code (it's HYP). Highest ROI: coherence-improving, cheap, no root.
+1. **Mask-preserving serial generators** — ✅ **SHIPPED 2026-07-25.** Specter's serial was `hex16upper`
+   (16 pure-hex chars) — detectably synthetic: a real Pixel serial is 14 alnum incl non-hex letters
+   (`9B151FFAZ00FPF`), a Samsung is `R`+10 (11 chars). Added `serial_for_brand` (Base34, brand prefix +
+   correct length per Samsung/Google/Motorola/LGE), Java byte-parity proven, verified on-device
+   (google profile -> `A6X71GDYHX9WC3`). IMEI already brand-coherent (TAC); ICCID already carrier-coherent.
 2. **Hook the leaking `StatFs` storage signal** — ✅ **SHIPPED 2026-07-25.** Specter generated `total_storage`
    but never injected it → real storage leaked (a stable value that links accounts). Added a coherent StatFs
    hook (getTotalBytes + blockCount×blockSize multiply to the same spoofed total). Also made RAM+storage a

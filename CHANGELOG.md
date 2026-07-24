@@ -28,6 +28,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   spoofed total; available/free ~35-55%). Also replaced the independent RAM and storage draws with a single
   coherent pair (`ram_storage_bytes`): storage is derived from the chosen RAM tier, so an incoherent combo
   (e.g. 12GB RAM + 32GB storage) can no longer occur. Java↔Python byte-parity re-proven; verified on-device.
+- **Brand-plausible serial format (was detectably synthetic).** `serial` was `hex16upper` — 16 pure-hex
+  chars, but a real Pixel serial is 14 alphanumeric incl non-hex letters (`9B151FFAZ00FPF`) and a Samsung
+  is `R`+10 (11 chars). Added `serial_for_brand` (Base34 alphabet, brand prefix + correct length for
+  Samsung/Google/Motorola/LGE). Java↔Python byte-parity proven; verified on-device (Pixel profile →
+  `A6X71GDYHX9WC3`). A device claiming to be a Pixel no longer reports an impossible pure-hex serial.
 
 ## [0.3.0] — 2026-07-08
 

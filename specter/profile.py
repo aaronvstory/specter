@@ -95,7 +95,7 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "android_id": G.hex16(r),
         "imei1": G.imei(r, tac),
         "imei2": G.imei(r, tac),
-        "serial": G.hex16upper(r),
+        "serial": G.serial_for_brand(r, brand),
         "advertising_id": G.uuid(r),
         "gsf_id": G.gsf(r),
         "media_drm_id": G.hex32(r),

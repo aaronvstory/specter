@@ -37,9 +37,20 @@ def test_android_id_16_hex():
         assert G.validate("android_id", v)
 
 
-def test_serial_16_hex_upper():
-    for _ in range(300):
-        assert G.validate("serial", G.hex16upper(r))
+def test_serial_brand_plausible():
+    # brand-shaped serials: Samsung "R"+10 (11), Pixel 14, Moto "ZY"+.. (12), generic — all Base34.
+    for brand, prefix, length in [("Samsung", "R", 11), ("Google", "", 14),
+                                  ("Motorola", "ZY", 12), ("LGE", "", 15), ("Sony", "", 12)]:
+        for _ in range(100):
+            s = G.serial_for_brand(r, brand)
+            assert G.validate("serial", s), f"{brand} serial {s} failed validation"
+            assert len(s) == length, f"{brand} serial {s} wrong length"
+            assert s.startswith(prefix), f"{brand} serial {s} missing prefix {prefix}"
+            assert s == s.upper() and "I" not in s and "O" not in s
+
+def test_old_hex16_serial_now_rejected():
+    # regression guard: pure-hex 16-char serials are detectably synthetic and must NOT validate.
+    assert not G.validate("serial", G.hex16upper(r))
 
 
 def test_media_drm_32_hex():
