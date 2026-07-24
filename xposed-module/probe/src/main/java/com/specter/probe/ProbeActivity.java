@@ -116,6 +116,15 @@ public class ProbeActivity extends Activity {
                 put(o, "total_ram", String.valueOf(mi.totalMem));
             } catch (Throwable t) { put(o, "total_ram", "ERR:" + t); }
 
+            // StatFs total storage — was LEAKING (generated but never hooked). Read total + the
+            // blockCount*blockSize path so verify can confirm they're coherent (multiply to the same total).
+            try {
+                android.os.StatFs sf = new android.os.StatFs(android.os.Environment.getDataDirectory().getPath());
+                put(o, "storage_total_bytes", String.valueOf(sf.getTotalBytes()));
+                put(o, "storage_blocks_x_size", String.valueOf(sf.getBlockCountLong() * sf.getBlockSizeLong()));
+                put(o, "storage_available_bytes", String.valueOf(sf.getAvailableBytes()));
+            } catch (Throwable t) { put(o, "storage_total_bytes", "ERR:" + t); }
+
             // MediaDrm Widevine deviceUniqueId — a FingerprintJS deviceId source.
             // Also read securityLevel: it is the COHERENCE cross-check. Specter value-spoofs
             // deviceUniqueId but (as of this probe) leaves securityLevel real — a *changing* id at a

@@ -128,8 +128,9 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "build_board": codename,
         "build_kernel_version": G.kernel_version(r),
         "build_radio": G.radio_version(r),
-        "total_ram": G.total_ram_bytes(r),
-        "total_storage": G.total_storage_bytes(r),
+        # walrus keeps the RNG draw AT this position (between radio and host) to preserve Java parity
+        "total_ram": (_ram_storage := G.ram_storage_bytes(r))[0],
+        "total_storage": _ram_storage[1],
         "build_host": G.build_host(r),
         "build_display": build_id,
         "soc_platform": G.soc_platform(r, product),

@@ -35,6 +35,8 @@ CHECKS = {
     "build_incremental": "build_incremental",
     # Bluetooth MAC via BOTH paths (adapter + Settings) must equal the spoofed value; GSF deviceId source.
     "bt_addr_adapter": "bluetooth_mac", "bt_addr_settings": "bluetooth_mac", "gsf_id": "gsf_id",
+    # StatFs storage — was leaking (generated but never hooked). Must equal the spoofed total_storage.
+    "storage_total_bytes": "total_storage",
 }
 # Known real Pixel-4 markers — if any appears in a probe value, that's a hard leak.
 REAL_MARKERS = ["flame", "Pixel 4", "g8150-00088-210507", "4.14.212", "google/flame"]
@@ -117,6 +119,17 @@ def main():
         print("  (unreadable)")
     else:
         print("  ○ coherent / n/a")
+
+    # Storage coherence: getTotalBytes must equal blockCount*blockSize, else an app computing total
+    # from blocks gets a different (real) value than getTotalBytes — a worse tell than a plain leak.
+    st_total = str(probe.get("storage_total_bytes", "<none>"))
+    st_bxs = str(probe.get("storage_blocks_x_size", "<none>"))
+    if st_total not in ("<none>",) and not st_total.startswith("ERR:"):
+        print(f"\n--- Storage coherence ---")
+        coherent = st_total == st_bxs
+        print(f"{'getTotalBytes':22} {st_total[:36]:36}")
+        print(f"{'blockCount*blockSize':22} {st_bxs[:36]:36} "
+              f"{'○ coherent' if coherent else '⚠ INCOHERENT (total != blocks*size)'}")
 
     return 1 if leak else 0
 

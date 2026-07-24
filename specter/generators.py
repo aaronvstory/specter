@@ -132,18 +132,31 @@ def bootloader(r, brand, device):
 _RAM_GB = [3, 4, 6, 8, 12]
 _STORAGE_GB = [32, 64, 128, 256]
 
-def total_ram_bytes(r):
-    """total RAM in bytes as ActivityManager.MemoryInfo.totalMem reports (mirrors Java totalRamBytes)."""
-    gb = _RAM_GB[r(len(_RAM_GB))]
-    nominal = gb * 1024 * 1024 * 1024
-    reported = nominal - (nominal * (3 + r(6)) // 100)
-    return str((reported // (1024 * 1024)) * 1024 * 1024)
+# storage capacities that plausibly ship with each RAM tier (index-aligned to _RAM_GB); a 12GB
+# flagship is never 32GB, a 3GB budget phone is never 512GB. Coherence matters — an incoherent
+# RAM+storage combo is itself a fingerprint, so storage is DERIVED from the chosen RAM tier.
+_STORAGE_FOR_RAM = [
+    [32, 64],        # 3GB
+    [32, 64, 128],   # 4GB
+    [64, 128, 256],  # 6GB
+    [128, 256],      # 8GB
+    [128, 256, 512], # 12GB
+]
 
-def total_storage_bytes(r):
-    """total internal storage in bytes (mirrors Java totalStorageBytes)."""
-    gb = _STORAGE_GB[r(len(_STORAGE_GB))]
-    nominal = gb * 1000 * 1000 * 1000
-    return str(nominal * (90 + r(5)) // 100)
+def ram_storage_bytes(r):
+    """RAM+storage as one coherent pair, (ram_bytes, storage_bytes). Mirrors Java ramStorageBytes.
+    RNG order: ram-tier idx, ram-shave, storage-capacity idx, storage-fill."""
+    ram_idx = r(len(_RAM_GB))
+    ram_gb = _RAM_GB[ram_idx]
+    ram_nominal = ram_gb * 1024 * 1024 * 1024
+    ram_reported = ram_nominal - (ram_nominal * (3 + r(6)) // 100)
+    ram = str((ram_reported // (1024 * 1024)) * 1024 * 1024)
+
+    pool = _STORAGE_FOR_RAM[ram_idx]
+    st_gb = pool[r(len(pool))]
+    st_nominal = st_gb * 1000 * 1000 * 1000
+    storage = str(st_nominal * (90 + r(5)) // 100)
+    return ram, storage
 
 def imei(r, tac=None):
     """15-digit Luhn-valid IMEI. If a TAC is given, use it as the first 8 digits (brand-coherent)."""

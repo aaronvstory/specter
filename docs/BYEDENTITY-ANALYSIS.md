@@ -111,8 +111,11 @@ See `docs/IDEAS.md` for the running backlog entries. Summary, cheapest-first:
 1. **Mask-preserving serial/IMEI/ICCID generators** — EASY, no root. Port the *idea* (per-model format masks +
    valid prefixes) into `generators.py` with Java byte-parity + US-device templates. Don't port byedentity's
    native code (it's HYP). Highest ROI: coherence-improving, cheap, no root.
-2. **Hook the leaking `StatFs` storage signal** — EASY, no root. Specter already generates `total_storage` but
-   never injects it (confirmed leak). Do regardless of byedentity.
+2. **Hook the leaking `StatFs` storage signal** — ✅ **SHIPPED 2026-07-25.** Specter generated `total_storage`
+   but never injected it → real storage leaked (a stable value that links accounts). Added a coherent StatFs
+   hook (getTotalBytes + blockCount×blockSize multiply to the same spoofed total). Also made RAM+storage a
+   **coherent pair** (`ram_storage_bytes`): storage now derived from the RAM tier, so no 12GB-RAM+32GB-storage
+   incoherence. Verified on-device: spoofed 128GB, blocks×size coherent. Byte-parity re-proven Java↔Python.
 3. **Add `securityLevel` to the Widevine hook (coherence fix)** — ✅ **SHIPPED 2026-07-25.** EASY, no root.
    `profile.py`→`media_drm_security_level:"L3"` + `HookEntry` hooks `getPropertyString("securityLevel")`.
    Confirmed incoherent (spoofed id @ real L1) then re-verified coherent (@ L3) on the Pixel 4.

@@ -211,22 +211,37 @@ public final class Generators {
     static final int[] RAM_GB = {3, 4, 6, 8, 12};
     static final int[] STORAGE_GB = {32, 64, 128, 256};
 
-    /** total RAM in BYTES (as ActivityManager.MemoryInfo.totalMem reports it), device-plausible. */
-    public static String totalRamBytes(Rng r) {
-        long gb = RAM_GB[r.next(RAM_GB.length)];
-        long nominal = gb * 1024L * 1024L * 1024L;
-        // reported totalMem is a bit under nominal — shave 3-8%, then round to a MB boundary.
-        long reported = nominal - (nominal * (3 + r.next(6)) / 100);
-        return String.valueOf((reported / (1024L * 1024L)) * 1024L * 1024L);
-    }
+    // Storage capacities that plausibly ship with each RAM tier — a 12GB flagship is never 32GB, a
+    // 3GB budget phone is never 512GB. Index-aligned to RAM_GB. Coherence matters: an incoherent
+    // RAM+storage combo is itself a fingerprint, so storage is derived from the chosen RAM tier, not
+    // drawn independently. (Fixes the old independent draw that could pair 12GB RAM with 32GB storage.)
+    static final int[][] STORAGE_FOR_RAM = {
+        {32, 64},        // 3GB
+        {32, 64, 128},   // 4GB
+        {64, 128, 256},  // 6GB
+        {128, 256},      // 8GB
+        {128, 256, 512}, // 12GB
+    };
 
-    /** total internal storage in BYTES, device-plausible (StatFs-style). */
-    public static String totalStorageBytes(Rng r) {
-        long gb = STORAGE_GB[r.next(STORAGE_GB.length)];
+    /**
+     * RAM+storage as one coherent pair (both in BYTES), returned as {ramBytes, storageBytes}.
+     * Draws the RAM tier ONCE and picks a storage capacity that ships with it. RNG order:
+     * ram-tier idx, ram-shave, storage-capacity idx, storage-fill — same total draws on both sides.
+     */
+    public static String[] ramStorageBytes(Rng r) {
+        int ramIdx = r.next(RAM_GB.length);
+        long ramGb = RAM_GB[ramIdx];
+        long ramNominal = ramGb * 1024L * 1024L * 1024L;
+        // reported totalMem is a bit under nominal — shave 3-8%, then round to a MB boundary.
+        long ramReported = ramNominal - (ramNominal * (3 + r.next(6)) / 100);
+        String ram = String.valueOf((ramReported / (1024L * 1024L)) * 1024L * 1024L);
+
+        int[] pool = STORAGE_FOR_RAM[ramIdx];
+        long stGb = pool[r.next(pool.length)];
         // usable storage is ~90-94% of nominal after formatting/system.
-        long nominal = gb * 1000L * 1000L * 1000L;   // storage is marketed in decimal GB
-        long reported = nominal * (90 + r.next(5)) / 100;
-        return String.valueOf(reported);
+        long stNominal = stGb * 1000L * 1000L * 1000L;   // storage is marketed in decimal GB
+        String storage = String.valueOf(stNominal * (90 + r.next(5)) / 100);
+        return new String[]{ram, storage};
     }
 
     /** 15-digit Luhn-valid IMEI; if a valid 8-digit TAC is given, use it as the first 8 digits. */

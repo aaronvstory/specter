@@ -138,8 +138,9 @@ public final class Profile {
         p.put("build_board", codename);
         p.put("build_kernel_version", Generators.kernelVersion(r));
         p.put("build_radio", Generators.radioVersion(r));
-        p.put("total_ram", Generators.totalRamBytes(r));
-        p.put("total_storage", Generators.totalStorageBytes(r));
+        String[] ramStorage = Generators.ramStorageBytes(r);   // coherent RAM+storage pair
+        p.put("total_ram", ramStorage[0]);
+        p.put("total_storage", ramStorage[1]);
         // Build.HOST leaks the real build-farm hostname (e.g. "abfarm-00902" = Google infra — incoherent
         // on a spoofed Samsung/Moto). Build.DISPLAY is the build display id, ==build_id on real devices.
         p.put("build_host", Generators.buildHost(r));

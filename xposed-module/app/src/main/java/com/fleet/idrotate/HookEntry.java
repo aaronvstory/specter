@@ -50,6 +50,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookMediaDrm(lpparam, p);
         hookSystemProperties(p);
         hookHardwareInfo(lpparam, p);
+        hookStorage(lpparam, p);
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -171,6 +172,45 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
+    }
+
+    // ---- StatFs total/available storage — a FingerprintJS hardware signal that was LEAKING ----
+    // profile.py generates total_storage but nothing injected it, so real storage leaked (a STABLE
+    // real value that links accounts). Hook the whole StatFs family COHERENTLY: getTotalBytes and the
+    // blockCount*blockSize path must multiply out to the SAME spoofed total, else an app computing
+    // total from blocks sees the real value and the two disagree (a worse tell than leaving it real).
+    // available/free = a realistic ~35-55% of total (kept deterministic per-identity via the id hash).
+    private void hookStorage(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String stStr = p.get("total_storage");
+        if (stStr == null) return;
+        final long total;
+        try { total = Long.parseLong(stStr); } catch (Throwable t) { return; }
+        final long BS = 4096L;                          // standard f2fs/ext4 block size
+        final long blockCount = total / BS;             // blockCount*blockSize == total (coherent)
+        // free fraction: derive a stable 35-55% from the value itself so it doesn't jitter per call.
+        final long freeBytes = total * (35 + (int)(Math.abs(total % 21))) / 100;
+        final long freeBlocks = freeBytes / BS;
+        try {
+            Class<?> sf = XposedHelpers.findClass("android.os.StatFs", lp.classLoader);
+            XposedBridge.hookAllMethods(sf, "getTotalBytes",     constLong(total));
+            XposedBridge.hookAllMethods(sf, "getBlockCountLong", constLong(blockCount));
+            XposedBridge.hookAllMethods(sf, "getBlockSizeLong",  constLong(BS));
+            XposedBridge.hookAllMethods(sf, "getBlockCount",     constInt((int) Math.min(blockCount, Integer.MAX_VALUE)));
+            XposedBridge.hookAllMethods(sf, "getBlockSize",      constInt((int) BS));
+            XposedBridge.hookAllMethods(sf, "getAvailableBytes", constLong(freeBytes));
+            XposedBridge.hookAllMethods(sf, "getFreeBytes",      constLong(freeBytes));
+            XposedBridge.hookAllMethods(sf, "getAvailableBlocksLong", constLong(freeBlocks));
+            XposedBridge.hookAllMethods(sf, "getFreeBlocksLong",      constLong(freeBlocks));
+            XposedBridge.hookAllMethods(sf, "getAvailableBlocks", constInt((int) Math.min(freeBlocks, Integer.MAX_VALUE)));
+            XposedBridge.hookAllMethods(sf, "getFreeBlocks",      constInt((int) Math.min(freeBlocks, Integer.MAX_VALUE)));
+        } catch (Throwable ignored) {}
+    }
+
+    private static XC_MethodHook constLong(final long v) {
+        return new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(v); } };
+    }
+    private static XC_MethodHook constInt(final int v) {
+        return new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(v); } };
     }
 
     // ---- ONE SystemProperties.get hook for ALL spoofed props ----

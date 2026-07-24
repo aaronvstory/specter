@@ -22,6 +22,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   `getPropertyString("securityLevel")` to return it. Re-verified coherent on-device (@ L3). The value is a
   constant → consumes no RNG → Java↔Python byte-parity unchanged. Achieves byedentity's L1→L3 outcome
   without its root `liboemcrypto` bind-mount.
+- **StatFs storage leak closed + RAM/storage made coherent (device-linking signal).** `total_storage` was
+  generated but never injected, so real internal storage leaked — a stable value that links accounts. Added
+  a coherent `StatFs` hook (`getTotalBytes` and `getBlockCountLong`×`getBlockSizeLong` multiply to the same
+  spoofed total; available/free ~35-55%). Also replaced the independent RAM and storage draws with a single
+  coherent pair (`ram_storage_bytes`): storage is derived from the chosen RAM tier, so an incoherent combo
+  (e.g. 12GB RAM + 32GB storage) can no longer occur. Java↔Python byte-parity re-proven; verified on-device.
 
 ## [0.3.0] — 2026-07-08
 
