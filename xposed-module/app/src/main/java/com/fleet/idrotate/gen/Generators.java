@@ -1,6 +1,7 @@
 package com.fleet.idrotate.gen;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -96,7 +97,7 @@ public final class Generators {
     }
 
     public static String tacForBrand(Rng r, String brand) {
-        String[] tacs = TAC_BY_BRAND.get(brand == null ? "" : brand.toLowerCase());
+        String[] tacs = TAC_BY_BRAND.get(brand == null ? "" : brand.toLowerCase(Locale.ROOT));
         if (tacs == null) tacs = new String[]{"35000000"};
         return tacs[r.next(tacs.length)];
     }
@@ -106,20 +107,20 @@ public final class Generators {
      *  picked device — e.g. a Galaxy A01 must never report a Galaxy S21 bootloader). The shape follows
      *  each OEM's real style but the identifying part comes from THIS device, so it can't contradict it. */
     public static String bootloader(Rng r, String brand, String device) {
-        String b = brand == null ? "" : brand.toLowerCase();
+        String b = brand == null ? "" : brand.toLowerCase(Locale.ROOT);
         String dev = device == null ? "device" : device;
         if (b.equals("google")) {
             // Pixel-family: "<codename>-1.2-7683913" — codename IS the device, always coherent.
-            return dev.toLowerCase() + "-" + (1 + r.next(3)) + "." + r.next(9) + "-" + digits(r, 7);
+            return dev.toLowerCase(Locale.ROOT) + "-" + (1 + r.next(3)) + "." + r.next(9) + "-" + digits(r, 7);
         }
         if (b.equals("samsung")) {
             // Samsung firmware code is derived from the actual model (e.g. SM-A013G -> "A013GXXU..").
-            String code = dev.replace("SM-", "").toUpperCase();
+            String code = dev.replace("SM-", "").toUpperCase(Locale.ROOT);
             return code + "XXU" + (1 + r.next(9)) + (char) ('A' + r.next(26))
                     + (char) ('A' + r.next(26)) + (char) ('A' + r.next(26));
         }
         if (b.equals("motorola")) return "MBM-" + digits(r, 2) + "." + digits(r, 2) + "-" + digits(r, 3);
-        if (b.equals("lge"))      return "LGE-" + dev.toUpperCase() + "-" + digits(r, 4);
+        if (b.equals("lge"))      return "LGE-" + dev.toUpperCase(Locale.ROOT) + "-" + digits(r, 4);
         // generic OEM: a plausible alnum bootloader that names no specific model.
         return "BL" + (char) ('A' + r.next(26)) + digits(r, 2) + "." + digits(r, 4) + "-" + digits(r, 4);
     }
@@ -143,6 +144,54 @@ public final class Generators {
         String[] pre = {"abfarm", "wprd", "SWDG", "vf-build", "r-build", "prod"};
         String p = pre[r.next(pre.length)];
         return p + "-" + digits(r, 5);
+    }
+
+    // ro.board.platform (the SoC codename DevInfo/FingerprintJS map to a chip name). Real Pixel
+    // codenames map to a known SoC; for everything else we pick from a pool of REAL Qualcomm platform
+    // names — never a made-up string, so it's always a plausible SoC and never MORE wrong than the
+    // real leaked one. Keyed by the picked device where we're confident, else a brand-era-plausible pool.
+    static final Map<String, String> SOC_BY_DEVICE = new LinkedHashMap<>();
+    static {
+        SOC_BY_DEVICE.put("flame", "msmnile");   // Pixel 4  = SD855
+        SOC_BY_DEVICE.put("coral", "msmnile");   // Pixel 4 XL
+        SOC_BY_DEVICE.put("redfin", "lito");     // Pixel 5  = SD765G
+        SOC_BY_DEVICE.put("bramble", "lito");    // Pixel 4a 5G
+        SOC_BY_DEVICE.put("sunfish", "sm6150");  // Pixel 4a = SD730G
+        SOC_BY_DEVICE.put("barbet", "lito");     // Pixel 5a
+        SOC_BY_DEVICE.put("oriole", "gs101");    // Pixel 6  = Tensor
+        SOC_BY_DEVICE.put("raven", "gs101");     // Pixel 6 Pro
+        SOC_BY_DEVICE.put("blueline", "sdm845"); // Pixel 3  = SD845
+        SOC_BY_DEVICE.put("crosshatch", "sdm845"); // Pixel 3 XL
+        SOC_BY_DEVICE.put("walleye", "msm8998"); // Pixel 2  = SD835
+        SOC_BY_DEVICE.put("sailfish", "msm8996");  // Pixel   = SD821
+        SOC_BY_DEVICE.put("marlin", "msm8996");    // Pixel XL
+        SOC_BY_DEVICE.put("taimen", "msm8998");    // Pixel 2 XL
+        SOC_BY_DEVICE.put("h1", "msm8996");        // LG G5 (product is h1_<region>; matched by prefix) = SD820
+        SOC_BY_DEVICE.put("elsa", "msm8996");      // LG V20 (elsa_<region>) = SD820
+        SOC_BY_DEVICE.put("joan", "msm8998");      // LG V30 (joan_<region>) = SD835
+        // Keys are the Build.PRODUCT codename (lowercase). LG products carry a region suffix
+        // (h1_lra_us) matched by the leading token in socPlatform. Marketing names (RS988) are NOT keys.
+    }
+    // Real Qualcomm platform names (a plausible pool for unmapped devices — all shipped on US phones).
+    static final String[] SOC_POOL = {"msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
+            "sm8350", "sm6150", "kona", "lahaina", "trinket", "bengal"};
+
+    /** ro.board.platform (SoC codename). Device-coherent where known, else a real-SoC-pool pick.
+     *  Takes the PRODUCT codename (Build.PRODUCT, e.g. "flame", "h1_lra_us") — NOT the marketing device
+     *  name (devices.json stores "Pixel 4" in the device slot for Google/LG, so keying on device never
+     *  matched). LG products carry a regional suffix (h1_lra_us); match on the leading token before "_". */
+    public static String socPlatform(Rng r, String product) {
+        if (product != null) {
+            String key = product.toLowerCase(Locale.ROOT);
+            String known = SOC_BY_DEVICE.get(key);
+            if (known != null) return known;
+            int us = key.indexOf('_');           // strip LG regional suffix: h1_lra_us -> h1
+            if (us > 0) {
+                known = SOC_BY_DEVICE.get(key.substring(0, us));
+                if (known != null) return known;
+            }
+        }
+        return SOC_POOL[r.next(SOC_POOL.length)];
     }
 
     // Baseband/radio version prefixes by SoC vendor — real basebands look like "g8150-00088-210507-B..."

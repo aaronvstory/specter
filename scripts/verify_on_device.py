@@ -28,7 +28,13 @@ CHECKS = {
     "build_hardware": "build_hardware", "build_board": "build_board", "build_radio": "build_radio",
     "os_version": "build_kernel_version", "serial_getSerial": "serial", "serial_field": "serial",
     "build_security_patch": "build_security_patch", "android_id": "android_id",
-    "prop_gsm_baseband": "build_radio", "total_ram": "total_ram", "build_host": "build_host", "build_display": "build_display",
+    "prop_gsm_baseband": "build_radio", "total_ram": "total_ram", "build_host": "build_host",
+    "build_display": "build_display", "soc_platform": "soc_platform",
+    # Build.* the probe already reads but the checks omitted — verify these rotate too.
+    "build_product": "build_product", "build_release": "build_release",
+    "build_incremental": "build_incremental",
+    # Bluetooth MAC via BOTH paths (adapter + Settings) must equal the spoofed value; GSF deviceId source.
+    "bt_addr_adapter": "bluetooth_mac", "bt_addr_settings": "bluetooth_mac", "gsf_id": "gsf_id",
 }
 # Known real Pixel-4 markers — if any appears in a probe value, that's a hard leak.
 REAL_MARKERS = ["flame", "Pixel 4", "g8150-00088-210507", "4.14.212", "google/flame"]
@@ -69,8 +75,13 @@ def main():
         return 2
     probe = json.loads(probe_raw)
 
+    # Values Android returns to any unprivileged app (not the real device value, not a leak):
+    #  - 02:00:00:00:00:00 = the placeholder BluetoothAdapter.getAddress() gives apps since Android 6
+    #  - ERR:...SecurityException / permission = the probe itself lacks the read permission
+    BENIGN = ("02:00:00:00:00:00", "ERR:", "null-adapter", "no-perm")
+
     # 4. diff
-    ok = leak = other = 0
+    ok = leak = benign = other = 0
     print(f"probe read {len(probe)} values; applied profile has {len(applied)} keys\n")
     print(f"{'FIELD':22} {'PROBE READ':36} STATUS")
     for pk, prof_k in CHECKS.items():
@@ -80,10 +91,12 @@ def main():
             print(f"{pk:22} {got[:36]:36} ✅ spoofed"); ok += 1
         elif any(r in got for r in REAL_MARKERS):
             print(f"{pk:22} {got[:36]:36} ❌ REAL LEAK (want {want[:16]})"); leak += 1
+        elif any(got.startswith(b) or b in got for b in BENIGN):
+            print(f"{pk:22} {got[:36]:36} ○ OS-placeholder/perm (not a leak)"); benign += 1
         else:
             print(f"{pk:22} {got[:36]:36} ⚠ (want {want[:16]})"); other += 1
 
-    print(f"\n>>> {ok} spoofed, {leak} hard leaks, {other} other <<<")
+    print(f"\n>>> {ok} spoofed, {leak} hard leaks, {benign} OS-placeholder/perm, {other} other <<<")
     return 1 if leak else 0
 
 

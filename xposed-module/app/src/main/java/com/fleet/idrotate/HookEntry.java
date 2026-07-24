@@ -41,12 +41,14 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         hookBuildFields(p);
         hookSettingsSecure(p);
+        hookSettingsGlobal(p);
         hookTelephony(lpparam, p);
         hookWifi(lpparam, p);
         hookBluetooth(lpparam, p);
         hookAdvertisingId(lpparam, p);
         hookGsf(lpparam, p);
         hookMediaDrm(lpparam, p);
+        hookSystemProperties(p);
         hookHardwareInfo(lpparam, p);
     }
 
@@ -131,14 +133,6 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
-        try {
-            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
-            XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    if (mp.args.length > 0 && "os.version".equals(mp.args[0])) mp.setResult(kernel);
-                }
-            });
-        } catch (Throwable ignored) {}
     }
 
     // ---- baseband/radio — a confirmed FingerprintJS leak. DevInfo (and getRadioVersion itself)
@@ -155,24 +149,9 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
-        try {
-            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
-            XC_MethodHook h = new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    if (mp.args.length > 0 && mp.args[0] instanceof String) {
-                        String key = (String) mp.args[0];
-                        if ("gsm.version.baseband".equals(key) || "ril.baseband".equals(key)) {
-                            mp.setResult(radio);
-                        }
-                    }
-                }
-            };
-            // get(String) and get(String, String) overloads
-            XposedBridge.hookAllMethods(sp, "get", h);
-        } catch (Throwable ignored) {}
     }
 
-    // ---- RAM (ActivityManager.MemoryInfo.totalMem) — a FingerprintJS hardware signal ----
+    // ---- RAM (ActivityManager.MemoryInfo.totalMem) + SoC platform — FingerprintJS hardware signals ----
     private void hookHardwareInfo(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
         final String ramStr = p.get("total_ram");
         if (ramStr == null) return;
@@ -194,22 +173,84 @@ public class HookEntry implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
+    // ---- ONE SystemProperties.get hook for ALL spoofed props ----
+    // SystemProperties.get is an extremely HOT path — hook it exactly once and dispatch every spoofed
+    // key inside a single callback (kernel os.version, baseband, SoC platform) instead of registering
+    // three separate hooks that each add overhead on every property read.
+    private void hookSystemProperties(final Map<String, String> p) {
+        final String kernel = p.get("build_kernel_version");
+        final String radio = p.get("build_radio");
+        final String soc = p.get("soc_platform");
+        if (kernel == null && radio == null && soc == null) return;
+        try {
+            Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
+            XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
+                    String k = (String) mp.args[0];
+                    switch (k) {
+                        case "os.version":
+                            if (kernel != null) mp.setResult(kernel); break;
+                        case "gsm.version.baseband": case "ril.baseband":
+                            if (radio != null) mp.setResult(radio); break;
+                        case "ro.board.platform": case "ro.hardware.chipname": case "ro.soc.model":
+                            if (soc != null) mp.setResult(soc); break;
+                        default: // not a spoofed key — leave the real value
+                    }
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
     // ---- Settings.Secure.getString(..., "android_id") ----
     // Hook ALL getString overloads (getString(cr,name), getStringForUser(cr,name,userId), etc.).
     // A single-overload hook missed DevInfo's read (GSF/serial spoofed in the same process but
     // android_id leaked the real value) — the key can be at any arg position, so scan all args.
     private void hookSettingsSecure(final Map<String, String> p) {
         final String aid = p.get("android_id");
+        final String btMac = p.get("bluetooth_mac");
         if (aid == null) return;
         XC_MethodHook h = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (SpoofLogic.argsContainKey(param.args, "android_id")) param.setResult(aid);
+                if (SpoofLogic.argsContainKey(param.args, "android_id")) { param.setResult(aid); return; }
+                // Settings.Secure.getString(cr, "bluetooth_address") is a SECOND path to the BT MAC that
+                // BluetoothAdapter.getAddress() doesn't cover — spoof it here too, or it leaks the real MAC.
+                if (btMac != null && SpoofLogic.argsContainKey(param.args, "bluetooth_address")) {
+                    param.setResult(btMac);
+                }
             }
         };
         // Settings.Secure and Settings.System both expose getString/getStringForUser; cover both.
         try { XposedBridge.hookAllMethods(Settings.Secure.class, "getString", h); } catch (Throwable ignored) {}
         try { XposedBridge.hookAllMethods(Settings.Secure.class, "getStringForUser", h); } catch (Throwable ignored) {}
         try { XposedBridge.hookAllMethods(Settings.System.class, "getString", h); } catch (Throwable ignored) {}
+    }
+
+    // ---- Settings.Global device-state tells — hide the "developer/rooted device" fingerprint ----
+    // FingerprintJS reads adb_enabled + development_settings_enabled. On this fleet phone both are 1
+    // (a strong "not a normal user" signal, stable across every signup). Return 0 so the device looks
+    // like an ordinary consumer phone. These are read via getInt AND getString — cover both.
+    private void hookSettingsGlobal(final Map<String, String> p) {
+        final java.util.Set<String> devTells = new java.util.HashSet<>(java.util.Arrays.asList(
+                "adb_enabled", "development_settings_enabled"));
+        XC_MethodHook getInt = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (argsContainAny(param.args, devTells)) param.setResult(0);
+            }
+        };
+        XC_MethodHook getStr = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (argsContainAny(param.args, devTells)) param.setResult("0");
+            }
+        };
+        try { XposedBridge.hookAllMethods(Settings.Global.class, "getInt", getInt); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(Settings.Global.class, "getString", getStr); } catch (Throwable ignored) {}
+    }
+
+    private static boolean argsContainAny(Object[] args, java.util.Set<String> keys) {
+        if (args == null) return false;
+        for (Object a : args) if (a instanceof String && keys.contains(a)) return true;
+        return false;
     }
 
     // ---- TelephonyManager: imei/deviceid/subscriber/simserial/line1/operator ----

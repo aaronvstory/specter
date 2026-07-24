@@ -76,3 +76,24 @@ FingerprintJS Pro demo (`com.fingerprintjs.android.fpjs_pro_demo`) is installed 
 detector. After each hardware-signal hook: scope Specter to the FPJS demo (it's a safe non-fleet test
 app, like DevInfo), read its reported fingerprint before/after, and confirm the fingerprint CHANGES on
 re-randomize and STAYS coherent. This is the measurable proof "hide better" is real.
+
+
+## Hook-artifact hygiene (investigated 2026-07-18)
+KNOWN VECTOR (documented, not yet fixed — low priority): the per-app profile at
+`/data/local/tmp/specter/<pkg>.json` is world-readable (0644, SELinux `shell_data_file`), and the
+target app's own uid (untrusted_app domain) CAN read it — proven: the hook reads it successfully every
+launch, and `run-as <pkg> cat` returns the full profile JSON. So a *targeted anti-Specter* tamper check
+inside the app could `stat`/read its own profile path, detect it's being spoofed, and read the exact
+fake values.
+
+WHY NOT FIXED YET (risk/reward): the fingerprinting stacks we care about (FingerprintJS, DoorDash's
+fraud SDK) do NOT check for this path — it would be a Specter-specific check that doesn't exist. The fix
+(hooking File.exists()/open on PROFILE_DIR to hide it from the target) reintroduces the risky file-I/O
+constructor-hook surface we deliberately avoided for /proc/cpuinfo. Poor risk/reward against a
+hypothetical future check.
+
+FIX OPTIONS (when a real check appears): (1) obscure the filename/dir so the target can't guess its own
+profile path; (2) hook the target's own File/open reads of PROFILE_DIR to deny them; (3) both. Also
+consider moving the profile out of the world-readable shell_data_file location entirely (the hook reads
+it as the app uid, so it must stay reachable — a per-app private-but-hook-reachable path is the clean
+long-term answer). Tracked here so it's not forgotten.

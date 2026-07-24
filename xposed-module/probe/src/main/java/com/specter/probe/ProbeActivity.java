@@ -65,10 +65,48 @@ public class ProbeActivity extends Activity {
                 put(o, "prop_gsm_baseband", (String) get.invoke(null, "gsm.version.baseband"));
             } catch (Throwable t) { put(o, "prop_gsm_baseband", "ERR:" + t); }
 
+            // ro.board.platform (SoC codename) — a FingerprintJS CPU-signal source
+            try {
+                Class<?> sp = Class.forName("android.os.SystemProperties");
+                Method get = sp.getMethod("get", String.class);
+                put(o, "soc_platform", (String) get.invoke(null, "ro.board.platform"));
+            } catch (Throwable t) { put(o, "soc_platform", "ERR:" + t); }
+
             // Settings.Secure android_id
             try {
                 put(o, "android_id", Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID));
             } catch (Throwable t) { put(o, "android_id", "ERR:" + t); }
+
+            // Settings.Secure bluetooth_address — a second BT-MAC path a fingerprinter can read
+            try {
+                put(o, "bt_addr_settings", Settings.Secure.getString(getContentResolver(), "bluetooth_address"));
+            } catch (Throwable t) { put(o, "bt_addr_settings", "ERR:" + t); }
+
+            // BluetoothAdapter.getAddress() — the adapter path to the BT MAC (vs the Settings path above)
+            try {
+                android.bluetooth.BluetoothAdapter ba = android.bluetooth.BluetoothAdapter.getDefaultAdapter();
+                put(o, "bt_addr_adapter", ba == null ? "null-adapter" : ba.getAddress());
+            } catch (Throwable t) { put(o, "bt_addr_adapter", "ERR:" + t); }
+
+            // GSF id via the Gservices content provider (a FingerprintJS deviceId source)
+            try {
+                android.database.Cursor cur = getContentResolver().query(
+                        android.net.Uri.parse("content://com.google.android.gsf.gservices"),
+                        null, null, new String[]{"android_id"}, null);
+                if (cur != null) {
+                    if (cur.moveToFirst() && cur.getColumnCount() >= 2) {
+                        long id = Long.parseLong(cur.getString(1));
+                        put(o, "gsf_id", String.valueOf(id));
+                    }
+                    cur.close();
+                }
+            } catch (Throwable t) { put(o, "gsf_id", "ERR:" + t); }
+
+            // Settings.Global dev-mode tells — should read 0 (hide the developer/rooted-device signal)
+            try {
+                put(o, "adb_enabled", String.valueOf(Settings.Global.getInt(getContentResolver(), "adb_enabled", -1)));
+                put(o, "dev_settings", String.valueOf(Settings.Global.getInt(getContentResolver(), "development_settings_enabled", -1)));
+            } catch (Throwable t) { put(o, "adb_enabled", "ERR:" + t); }
 
             // RAM (ActivityManager.MemoryInfo.totalMem) — a FingerprintJS hardware signal
             try {
@@ -77,6 +115,16 @@ public class ProbeActivity extends Activity {
                 am.getMemoryInfo(mi);
                 put(o, "total_ram", String.valueOf(mi.totalMem));
             } catch (Throwable t) { put(o, "total_ram", "ERR:" + t); }
+
+            // MediaDrm Widevine deviceUniqueId — a FingerprintJS deviceId source
+            try {
+                java.util.UUID widevine = new java.util.UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L);
+                android.media.MediaDrm md = new android.media.MediaDrm(widevine);
+                byte[] id = md.getPropertyByteArray("deviceUniqueId");
+                StringBuilder hex = new StringBuilder();
+                for (byte x : id) hex.append(String.format("%02x", x));
+                put(o, "media_drm_id", hex.toString());
+            } catch (Throwable t) { put(o, "media_drm_id", "ERR:" + t); }
 
             // Telephony (needs READ_PHONE_STATE; may throw on newer APIs w/o it — record the attempt)
             probeTelephony(o);

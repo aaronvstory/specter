@@ -64,23 +64,39 @@ public class ProfileTest {
             String bl = p.get("build_bootloader");
             String brand = p.get("build_brand").toLowerCase();
             String device = p.get("build_device");
+            // Samsung's bootloader derives from the SM- model (device slot); Google/LG from the codename
+            // (product with the LG region suffix stripped) — the device slot holds the marketing name.
+            String cn2 = p.get("build_product");
+            int u2 = cn2.indexOf('_'); if (u2 > 0) cn2 = cn2.substring(0, u2);
             check(bl != null && !bl.isEmpty() && !bl.contains(" "), "bootloader shape s=" + s + " " + bl);
             boolean coherent =
-                brand.equals("google")   ? bl.startsWith(device.toLowerCase() + "-") :
+                brand.equals("google")   ? bl.startsWith(cn2.toLowerCase() + "-") :
                 brand.equals("samsung")  ? bl.startsWith(device.replace("SM-", "").toUpperCase() + "XXU") :
-                brand.equals("lge")      ? bl.startsWith("LGE-" + device.toUpperCase() + "-") :
+                brand.equals("lge")      ? bl.startsWith("LGE-" + cn2.toUpperCase() + "-") :
                 brand.equals("motorola") ? bl.startsWith("MBM-") : bl.startsWith("BL");
-            check(coherent, "bootloader device-coherent s=" + s + " dev=" + device + " bl=" + bl);
+            check(coherent, "bootloader coherent s=" + s + " brand=" + brand + " bl=" + bl);
             // RAM/storage present as plausible byte counts (fingerprint-hash hardware signals).
             check(p.get("total_ram").matches("\\d{9,11}"), "ram bytes s=" + s + " " + p.get("total_ram"));
             check(p.get("total_storage").matches("\\d{10,12}"), "storage bytes s=" + s + " " + p.get("total_storage"));
             // HOST is a farm-style hostname (generated, not the device's real build host); DISPLAY==build_id.
             check(p.get("build_host").matches("[A-Za-z-]+-\\d{5}"), "host shape s=" + s + " " + p.get("build_host"));
             check(p.get("build_display").equals(p.get("build_id")), "display==build_id s=" + s);
+            // SoC platform is a real Qualcomm/Google platform codename (never a made-up string).
+            check(p.get("soc_platform").matches("[a-z0-9]{4,10}"), "soc shape s=" + s + " " + p.get("soc_platform"));
+            // Known-PRODUCT coherence: SoC keys on Build.PRODUCT (the codename), not the marketing name.
+            // Pixel 4 (product flame) -> msmnile (SD855); LG G5 (product h1_lra_us) -> msm8996 (SD820).
+            String prod = p.get("build_product");
+            if ("flame".equals(prod))  check(p.get("soc_platform").equals("msmnile"), "Pixel4 SoC s=" + s + " " + p.get("soc_platform"));
+            if (prod != null && prod.startsWith("h1_"))
+                check(p.get("soc_platform").equals("msm8996"), "LG G5 SoC s=" + s + " " + p.get("soc_platform"));
             // Fingerprint-hash hardware signals: kernel plausible; HARDWARE/BOARD coherent with device.
             check(p.get("build_kernel_version").matches("\\d+\\.\\d+\\.\\d+-.*-g[0-9a-f]{8}"), "kernel shape s=" + s + " " + p.get("build_kernel_version"));
-            check(p.get("build_hardware").equals(p.get("build_device")), "hardware==device s=" + s);
-            check(p.get("build_board").equals(p.get("build_device")), "board==device s=" + s);
+            // HARDWARE/BOARD are the board CODENAME (product with any LG region suffix stripped),
+            // NOT the marketing device name — real devices report the codename here.
+            String cn = p.get("build_product");
+            int u = cn.indexOf('_'); if (u > 0) cn = cn.substring(0, u);
+            check(p.get("build_hardware").equals(cn), "hardware==codename s=" + s + " " + p.get("build_hardware") + " vs " + cn);
+            check(p.get("build_board").equals(cn), "board==codename s=" + s);
             // Radio/baseband present, non-empty, plausible (no whitespace, has a vendor prefix + digits)
             String radio = p.get("build_radio");
             check(radio != null && !radio.isEmpty() && !radio.contains(" ") && radio.contains("-"), "radio shape s=" + s + " " + radio);

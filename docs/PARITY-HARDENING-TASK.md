@@ -110,6 +110,80 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   identifier repeats across signups or apps. This is a core anti-fingerprint strength over GeerGit 2.9.6.
   Code-reviewer pass on HOST/DISPLAY + RAM/storage: CLEAN (parity + coherence + no crash risk confirmed).
 
+- 2026-07-18: PR #4 MERGED to main (901ac07). New branch feat/deep-congruency for the deeper work
+  (user confirmed GeerGit 2.7 fails-spoof sometimes -> deeper coverage + congruency needed).
+- 2026-07-18: SoC platform (ro.board.platform) SPOOFED — device-coherent (Pixel/LG map to real SoC,
+  else real Qualcomm pool). Was leaking the real chip on every signup (stable fingerprint-hash signal).
+  Cores left real (unspoofable/breaks thread pools); ABI left real (near-constant, already coherent).
+  On-device: 20/20 spoofed, 0 leaks. Next: /proc/cpuinfo file-hook (the raw CPU text FingerprintJS hashes).
+
+- 2026-07-18: Settings.Secure.bluetooth_address LEAK closed. It's a SECOND path to the BT MAC that
+  BluetoothAdapter.getAddress() doesn't cover — was leaking the real MAC (88:54:1F:05:26:50). Now the
+  Settings.Secure hook also returns the profile's bluetooth_mac (coherent with the adapter). On-device:
+  bt_addr_settings = spoofed FA:BD:EE:95:2D:87. Also decided NOT to hook /proc/cpuinfo file reads:
+  high-risk (intercepts all file I/O), stub lacks hookAllConstructors, and ro.board.platform already
+  spoofs the SoC name most tools derive — bad risk/reward, reverted. Cores/ABI stay real (see prior note).
+
+- 2026-07-18: Settings.Global DEV-MODE TELLS hidden. FingerprintJS reads adb_enabled +
+  development_settings_enabled — both were 1 on this rooted fleet phone (a strong "not a normal user /
+  developer device" signal, stable across every signup). Now spoofed to 0 via a Settings.Global getInt/
+  getString hook, so the device reads as an ordinary consumer phone. On-device: adb_enabled=0,
+  dev_settings=0 (real=1). Also case-insensitive SoC lookup (gemini finding) + bluetooth_address leak
+  closed this session. animation-scales/http_proxy left real (normal defaults, no signal).
+
+- 2026-07-18: MediaDrm depth VERIFIED end-to-end. MediaDrm.getPropertyByteArray("deviceUniqueId")
+  (the Widevine ID — a FingerprintJS deviceId SOURCE, in the GSF->mediaDrm->androidId chain) returns the
+  spoofed media_drm_id (1f777fd2..), not the real Widevine ID. Probe extended to read it. No module change
+  needed — the existing hook was correct; now proven via the deterministic probe.
+
+- 2026-07-18: SystemProperties.get hook CONSOLIDATED 3->1 (gemini hot-path finding). One dispatcher
+  callback for kernel/baseband/SoC instead of three separate hooks on Android's hottest property-read
+  path. Same behavior (20/20 spoofed on-device), -42 lines, less per-read overhead.
+
+- 2026-07-18: CRITICAL coherence bug FIXED (code-reviewer finding, confidence 90). The SoC map keyed
+  on device CODENAMES (flame, oriole, h1) but devices.json stores the MARKETING name ("Pixel 4", "RS988")
+  in the device slot for Google/LG — so 12/13 map entries never matched and every spoofed Pixel/LG got a
+  RANDOM incoherent SoC (a "Pixel 6" could report a 2016 Snapdragon 820). Fixed: socPlatform now keys on
+  Build.PRODUCT (the real codename, with LG region-suffix stripping h1_lra_us->h1). Same root cause also
+  broke build_hardware/build_board (reported "Pixel 4" instead of "flame") and Google bootloader (space
+  bug "pixel 4-..."). All now use the codename. Java<->Python byte-parity re-proven (flame->msmnile,
+  oriole->gs101, h1_lra_us->msm8996 identical). DEVICE DISCONNECTED mid-build — on-device proof DEFERRED
+  to next cycle (code+tests green: JVM 53,563 / Python 78).
+
+- 2026-07-18: Locale-safe case conversions (gemini finding). All device/brand toLowerCase/toUpperCase
+  in Generators.java now use Locale.ROOT — the default-locale versions could diverge from Python's
+  locale-independent .lower()/.upper() on a Turkish-locale device (dotless-i), breaking byte-parity.
+  US-locale output unchanged; now robust everywhere. DEVICE STILL DISCONNECTED — on-device proof of
+  this + last cycle's codename-coherence fix remains DEFERRED. Code+tests green (JVM 53,563 / Python 78).
+
+- 2026-07-18: CROSS-FIELD COHERENCE regression guard added (tests/test_coherence.py, 6 tests over 400
+  profiles each). Codifies every invariant a fingerprinter could cross-check: fingerprint structure +
+  release-keys tail, one-US-carrier SIM identity (MCC 310-316 <-> IMSI <-> NANP phone <-> ICCID),
+  HARDWARE/BOARD == codename, no-space bootloader, DISPLAY==build_id, dual-SIM IMEI distinct+shared-TAC,
+  real SoC platform token. Prevents a silent recurrence of the SoC-map-dead-code bug. All hold; full
+  Python suite now 84 tests. Device still disconnected (4th cycle) — on-device proof deferred.
+
+- 2026-07-18: Verifier COVERAGE audit + expansion. Audited probe/verifier vs all 37 generated fields —
+  found the verifier only checked 20. Added the readable ones: build_product/release/incremental (probe
+  already read them), plus new probe reads for BluetoothAdapter.getAddress (adapter path vs Settings path),
+  and GSF id via the gservices provider. Verifier now covers 25 fields (both BT-MAC paths + GSF deviceId).
+  Probe compiles clean. Telephony fields (IMEI/IMSI/ICCID/carrier) stay probe-unverifiable (READ_PHONE_STATE
+  gated) — proven instead by the JVM SpoofLogic + coherence tests. Device still disconnected (5th cycle).
+
+- 2026-07-18: HOLD. Phase 2 code work is complete + coherence-guarded; PR #5 green (CodeRabbit pass,
+  Python 84 / JVM 53,563). Blocked 6 cycles on the USB-disconnected Pixel — the on-device replay (now a
+  25-field probe check) and the merge both need the device back. Not manufacturing further marginal
+  changes; heartbeat only until the device returns, then: run the 25-field on-device proof, mark #21/#22
+  done, and (per auto-merge authority) squash-merge PR #5. The 2 "fresh" gemini re-flags on the SoC
+  lookup are already-satisfied (input+keys lowercased, Locale.ROOT) — no action.
+
+- 2026-07-19: DEVICE RECONNECTED — ON-DEVICE PROOF COMPLETE. Applied a fresh Google Pixel 3a XL identity;
+  the codename-coherence fix is PROVEN: build_hardware/board=bonito (real codename, was leaking marketing
+  "Pixel 3a XL" before the fix), bootloader=bonito-1.4-7295864 (no space bug), soc=trinket (real platform).
+  Full 25-field verifier: 24 SPOOFED, 0 hard leaks, 2 OS-placeholder/perm (BluetoothAdapter.getAddress
+  returns Android's 02:00:00:00:00:00 to unprivileged apps — the Settings path shows the spoofed MAC; GSF
+  read needs a perm the probe lacks — spoofed separately). Phase 1 + 2 on-device-proven. PR #5 ready to merge.
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)
