@@ -12,9 +12,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   (L1→L3). Findings carry PROVEN/HYPOTHESIS labels (adversarially verified). Adoption candidates in
   `docs/IDEAS.md`; do-not-adopt calls (server/kill-switch/anti-tamper) in `docs/DECISIONS.md`.
 - **Probe: Widevine `securityLevel`** — the probe now reads `MediaDrm.getPropertyString("securityLevel")`
-  alongside `deviceUniqueId`, and `verify_on_device.py` prints a Widevine-coherence line. This measures the
-  gap byedentity closes: Specter spoofs the DRM id but leaves `securityLevel` real (L1), so a changing id
-  at L1 is incoherent. Measurement first — the hook fix is deferred pending the on-device reading.
+  alongside `deviceUniqueId`, and `verify_on_device.py` prints a Widevine-coherence line.
+
+### Fixed
+- **Widevine DRM coherence (no root).** Specter value-spoofed `deviceUniqueId` but left `securityLevel`
+  reporting the real **L1** — a *changing* device id at hardware-L1 is itself a fingerprint. Confirmed
+  on-device (Pixel 4: spoofed id @ L1), then fixed: `profile.py` emits `media_drm_security_level: "L3"`
+  (software Widevine, where a changing id is coherent) and `HookEntry` hooks
+  `getPropertyString("securityLevel")` to return it. Re-verified coherent on-device (@ L3). The value is a
+  constant → consumes no RNG → Java↔Python byte-parity unchanged. Achieves byedentity's L1→L3 outcome
+  without its root `liboemcrypto` bind-mount.
 
 ## [0.3.0] — 2026-07-08
 

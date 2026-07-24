@@ -15,6 +15,12 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   not a signal gap: Specter and byedentity spoof the SAME signals (serial, android_id, GSF id, Widevine
   `deviceUniqueId`), but Specter changes them at the **Java API boundary inside the target app** while
   byedentity changes them in the **native vendor lib / system props** before any app reads.
+    - **UPDATE 2026-07-25 · Widevine coherence sub-hole CONFIRMED + FIXED (no root):** probing the Pixel 4
+      proved Specter spoofed `deviceUniqueId` while `securityLevel` still read real **L1** (incoherent — a
+      changing id at hardware-L1). Fixed by hooking `getPropertyString("securityLevel")`→**L3** +
+      `profile.py` `media_drm_security_level:"L3"` (constant, byte-parity-safe). Re-verified coherent @ L3.
+      So the *native-read* blind spot below is now narrower: for Widevine specifically, the Java hook suffices
+      unless a stack reads OEMCrypto via the native C++ path (untested). See docs/BYEDENTITY-ANALYSIS.md.
     - **The blind spot (HYPOTHESIS, plausible, unproven):** a Java hook on `MediaDrm.getPropertyByteArray`
       / `Build.SERIAL` is invisible to a fingerprinting SDK that reads the SAME value via the **native**
       path — Widevine's C++ OEMCrypto API, or `__system_property_get("ro.serialno")` — bypassing our hook

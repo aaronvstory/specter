@@ -99,6 +99,10 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "advertising_id": G.uuid(r),
         "gsf_id": G.gsf(r),
         "media_drm_id": G.hex32(r),
+        # L3 (software Widevine): coherent with a spoofed/changing deviceUniqueId. A genuine L1
+        # device has a FIXED hardware id, so a changing id at L1 is a red flag (confirmed on-device).
+        # Constant -> consumes no RNG -> Java byte-parity order is unchanged. See docs/BYEDENTITY-ANALYSIS.md.
+        "media_drm_security_level": "L3",
         "bluetooth_mac": G.mac_upper(r),
         "wifi_mac": G.mac_upper(r),
         "wifi_bssid": G.mac_lower(r),

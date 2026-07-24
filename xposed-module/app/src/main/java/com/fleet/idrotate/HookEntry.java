@@ -443,6 +443,21 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
+        // securityLevel MUST be coherent with the spoofed deviceUniqueId: a changing id at a real L1
+        // (fixed-hardware-id) is itself a fingerprint. Return L3 (software Widevine) so id+level agree.
+        // Confirmed on-device: without this, probe read spoofed id @ real L1. See docs/BYEDENTITY-ANALYSIS.md.
+        final String drmLevel = p.get("media_drm_security_level");
+        if (drmLevel != null) {
+            try {
+                XposedBridge.hookAllMethods(md, "getPropertyString", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if (param.args.length > 0 && "securityLevel".equals(String.valueOf(param.args[0]))) {
+                            param.setResult(drmLevel);
+                        }
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
     }
 
     // ---- helpers ----

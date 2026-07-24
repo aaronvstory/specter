@@ -2,13 +2,16 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
-- **2026-07-25 · byedentity adoption: probe the Widevine coherence hole FIRST, don't build the fix blind** —
-  byedentity's decompile (docs/BYEDENTITY-ANALYSIS.md) surfaced a real Specter gap: we value-spoof
-  MediaDrm `deviceUniqueId` but leave `getPropertyString("securityLevel")` real (L1) — a *changing* id at a
-  real L1 is incoherent. Rather than immediately add the fix, we added `securityLevel` to the probe +
-  a coherence line to verify_on_device.py to MEASURE whether the mismatch is even present/exploitable on
-  our device. Epistemic discipline: the fix is a HYPOTHESIS-driven change until the probe reading confirms
-  the incoherence exists. Cheap fix (pin securityLevel in the hook) beats the root liboemcrypto bind-mount.
+- **2026-07-25 · Widevine coherence: return L3 (not a faked L1) alongside the spoofed deviceUniqueId** —
+  probing PROVED the incoherence (spoofed id @ real L1 on the Pixel 4). Chose L3 because L3 = *software*
+  Widevine, where a changing/derived device id is normal and expected; faking L1 while emitting a changing id
+  would keep the contradiction (real L1 = fixed hardware id). Implemented as a Java getter hook on
+  `getPropertyString("securityLevel")` — NO root, unlike byedentity's liboemcrypto bind-mount. Re-verified
+  coherent on-device. The `media_drm_security_level` profile value is a CONSTANT ("L3") so it consumes no RNG
+  → Java↔Python byte-parity is preserved automatically (no generator, no reorder).
+- **2026-07-25 · byedentity adoption: probed the Widevine coherence hole FIRST, then fixed it (not blind)** —
+  measured the mismatch on-device before committing the fix; HYPOTHESIS → PROVEN → fixed → proven-fixed, all
+  on real hardware. The heavier root bind-mount (candidate #4) is unnecessary for this signal.
 - **2026-07-25 · Do NOT adopt byedentity's server/anti-tamper stack** — its HMAC attestation, remote
   kill-switch (403→wipe local auth), public-IP telemetry, and native Frida gate serve byedentity's OWN
   licensing/control, not the user's anti-detection goal. Specter is deliberately stateless with no server

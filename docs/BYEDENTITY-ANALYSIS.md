@@ -55,7 +55,7 @@ it POSTs an HMAC-signed device report to its own server, which can **block** or 
 | android_id / SSAID | spoofed | hook `Settings.Secure/System.getString`, `G.hex16` | `commandSetAndroidId` write `(hyp)`, in boot+apply |
 | GSF id | unknown | hook `Gservices`; broad cursor path gated to DevInfo only | **reset** via force-stop+`pm clear`+reboot (PROVEN) |
 | per-app SSAID | unknown | via android_id hook (per-app profile) | **reset** via `pm clear <pkg>` (PROVEN); read-only field |
-| **MediaDrm/Widevine deviceUniqueId** | real → L1 leaks | **value-spoof** `getPropertyByteArray`, `G.hex32` — **but `securityLevel` left real L1** | **bind-mount empty `liboemcrypto.so` → L3** (id + securityLevel coherent) — PROVEN |
+| **MediaDrm/Widevine deviceUniqueId** | real → L1 leaks | **value-spoof** `getPropertyByteArray`, `G.hex32` **+ `securityLevel`→L3** (coherent, fixed 2026-07-25, no root) | **bind-mount empty `liboemcrypto.so` → L3** (id + securityLevel coherent) — PROVEN |
 | BT / WiFi MAC, SSID, BSSID | unknown | spoofed (BT addr + `bluetooth_address`; wifi mac/ssid/bssid) | real / not shown |
 | Advertising ID (GAID) | spoofed (likely) | spoofed, preserves real limitAdTracking | real / not shown |
 | Build.* fingerprint | partial, leaves most real | **spoofed + coherent** (one real `devices.json` row) | **read-only, sent not spoofed** |
@@ -82,15 +82,25 @@ coherence) · full SIM/telephony spoof · both-IMEI spoof · **no-reuse ledger**
 
 ---
 
-## The one finding that matters most (a real Specter gap)
+## The one finding that matters most — a real Specter gap, now CONFIRMED and FIXED
 
-**Widevine coherence hole (HYPOTHESIS — needs on-probe confirmation).** Specter value-spoofs
-`deviceUniqueId` but leaves `MediaDrm.getPropertyString("securityLevel")` reporting the real **L1**. A detector
-that reads *both* sees `spoofed-random-id @ L1` — but a genuine L1 device's `deviceUniqueId` is a fixed
-hardware value, so a *changing* id at L1 is itself incoherent. byedentity sidesteps this entirely by dropping
-to L3 (where a changing id is normal). **This is a concrete, checkable native-read cross-check** — and the
-reason to extend the probe (see below). Whether the DoorDash SDK actually reads `securityLevel` is unproven;
-this closes a *known* coherence hole regardless.
+**Widevine coherence hole — PROVEN on-device 2026-07-25, then fixed.** Specter value-spoofed
+`deviceUniqueId` but left `MediaDrm.getPropertyString("securityLevel")` reporting the real **L1**. A detector
+reading *both* saw `spoofed-random-id @ L1` — but a genuine L1 device's `deviceUniqueId` is a *fixed* hardware
+value, so a *changing* id at L1 is itself incoherent.
+
+- **Confirmed:** probe on the Pixel 4 read `media_drm_id = f8530c…` (spoofed) with `securityLevel = L1` (real,
+  unhooked) → the exact mismatch. **HYPOTHESIS → PROVEN.**
+- **Fixed (this PR):** `profile.py` now emits `media_drm_security_level: "L3"` (constant — consumes no RNG, so
+  Java byte-parity is untouched) and `HookEntry.hookMediaDrm` hooks `getPropertyString("securityLevel")` to
+  return it. L3 is *software* Widevine, where a changing/derived device id is normal — so the id+level pair is
+  coherent. This is byedentity's L1→L3 bet achieved **without root** (a getter hook, not a `liboemcrypto`
+  bind-mount).
+- **Re-verified:** after the fix the probe reads `media_drm_id = d57366…` (matches applied profile) with
+  `securityLevel = L3` → coherent. Full verifier: 24 spoofed, 0 hard leaks.
+
+Whether the DoorDash SDK actually reads `securityLevel` is still unproven — but the incoherence was real and
+is now closed. The heavier root bind-mount (candidate #4) is unnecessary for this signal.
 
 ---
 
@@ -103,12 +113,12 @@ See `docs/IDEAS.md` for the running backlog entries. Summary, cheapest-first:
    native code (it's HYP). Highest ROI: coherence-improving, cheap, no root.
 2. **Hook the leaking `StatFs` storage signal** — EASY, no root. Specter already generates `total_storage` but
    never injects it (confirmed leak). Do regardless of byedentity.
-3. **Add `securityLevel` to the Widevine hook (coherence fix)** — EASY, no root. If Specter spoofs
-   `deviceUniqueId`, it should also pin `securityLevel` to a *coherent* value so the id/level pair isn't
-   self-contradictory. Cheaper than the bind-mount and stays in the Xposed model. **Probe this first.**
-4. **Widevine L1→L3 `liboemcrypto.so` bind-mount** — HARD, **root-only**. Genuinely deeper (reaches native DRM
-   reads a Java hook can't). Optional root-mode add-on, not core. Only build if the probe proves a native-read
-   leak that the hook + `securityLevel` fix can't close.
+3. **Add `securityLevel` to the Widevine hook (coherence fix)** — ✅ **SHIPPED 2026-07-25.** EASY, no root.
+   `profile.py`→`media_drm_security_level:"L3"` + `HookEntry` hooks `getPropertyString("securityLevel")`.
+   Confirmed incoherent (spoofed id @ real L1) then re-verified coherent (@ L3) on the Pixel 4.
+4. **Widevine L1→L3 `liboemcrypto.so` bind-mount** — HARD, **root-only**. *No longer needed for this signal* —
+   candidate #3 closes the `deviceUniqueId`/`securityLevel` coherence at the Java layer without root. Only
+   revisit if a probe proves a Widevine read that bypasses the Java hook entirely (native OEMCrypto path).
 5. **`pm clear <target>` before apply** — MEDIUM, needs `su` (Specter already has the Magisk su channel). Helps
    only if intermittent flags come from an app caching a real id before the hook attaches. Opt-in, gated.
 
