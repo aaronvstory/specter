@@ -1,4 +1,4 @@
-package com.fleet.idrotate;
+package com.specter.module;
 
 /**
  * Plain-JVM tests for the pure hook logic (no Android, no Robolectric). Run via run-jvm-tests.sh.

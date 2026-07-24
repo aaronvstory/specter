@@ -1,4 +1,4 @@
-package com.fleet.idrotate.gen;
+package com.specter.module.gen;
 
 import android.content.Context;
 

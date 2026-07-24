@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Changed
+- **Module renamed `com.fleet.idrotate` → `com.specter`** (Java package `com.specter.module`, LSPosed entry
+  `com.specter.module.HookEntry`). The old id leaked the internal codename in LSPosed's UI and update
+  notifications. On-device this is a migration (LSPosed sees a new module id), so scope is re-established;
+  GeerGit's LSPosed module is never touched. `scope_probe.py` updated to the new package.
+
 ### Added
 - **byedentity 3-way analysis** (`docs/BYEDENTITY-ANALYSIS.md`): decompiled `com.byedentity` v3.0.1 and
   compared GeerGit vs Specter vs byedentity. byedentity is a root/Magisk + native-JNI, server-validated

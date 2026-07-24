@@ -2,6 +2,14 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-25 · Renamed module com.fleet.idrotate -> com.specter (namespace com.specter.module)** —
+  the old applicationId leaked the internal codename in LSPosed's UI + notifications. applicationId is now
+  `com.specter`; Java package `com.specter.module` (so generated R resolves); LSPosed entry
+  `com.specter.module.HookEntry`. Removed the manifest `package=` attr (AGP takes namespace from gradle).
+  ON-DEVICE this is a migration, not a rebrand: LSPosed registered it as a NEW module (mid 154), so scope
+  had to be re-established (DevInfo + probe + fpjs). Old mid 25 stays until the new one is verified, then
+  the old app is uninstalled. GeerGit (mid 101) never touched. scope_probe.py SPECTER_PKG updated to match.
+
 - **2026-07-25 · Widevine coherence: return L3 (not a faked L1) alongside the spoofed deviceUniqueId** —
   probing PROVED the incoherence (spoofed id @ real L1 on the Pixel 4). Chose L3 because L3 = *software*
   Widevine, where a changing/derived device id is normal and expected; faking L1 while emitting a changing id

@@ -1,4 +1,4 @@
-package com.fleet.idrotate;
+package com.specter.module;
 
 import android.os.Build;
 import android.provider.Settings;

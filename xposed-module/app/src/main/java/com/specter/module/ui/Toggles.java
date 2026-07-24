@@ -1,4 +1,4 @@
-package com.fleet.idrotate.ui;
+package com.specter.module.ui;
 
 import android.content.SharedPreferences;
 

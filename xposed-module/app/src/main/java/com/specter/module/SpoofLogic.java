@@ -1,4 +1,4 @@
-package com.fleet.idrotate;
+package com.specter.module;
 
 /**
  * Pure, Android-free decision logic for the hooks — extracted so it can be unit-tested on a plain

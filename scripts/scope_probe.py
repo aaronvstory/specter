@@ -12,7 +12,7 @@ import sqlite3, subprocess, sys, tempfile, os
 
 SERIAL = sys.argv[1] if len(sys.argv) > 1 else None
 DB_ON_DEVICE = "/data/adb/lspd/config/modules_config.db"
-SPECTER_PKG = "com.fleet.idrotate"
+SPECTER_PKG = "com.specter"
 PROBE_PKG = "com.specter.probe"
 
 

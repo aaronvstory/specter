@@ -13,17 +13,17 @@ JAVAC="$JDK/bin/javac"; JAVA="$JDK/bin/java"
 [ -x "$JAVAC" ] || { echo "no JDK (set JAVA_HOME); tried $JDK"; exit 1; }
 OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
 "$JAVAC" -d "$OUT" \
-    app/src/main/java/com/fleet/idrotate/SpoofLogic.java \
-    app/src/main/java/com/fleet/idrotate/gen/Generators.java \
-    app/src/main/java/com/fleet/idrotate/gen/Country.java \
-    app/src/main/java/com/fleet/idrotate/gen/Profile.java \
-    app/src/main/java/com/fleet/idrotate/gen/UsedStore.java \
-    app/src/main/java/com/fleet/idrotate/gen/RootWriter.java \
-    app/src/test/java/com/fleet/idrotate/SpoofLogicTest.java \
-    app/src/test/java/com/fleet/idrotate/gen/GeneratorsTest.java \
-    app/src/test/java/com/fleet/idrotate/gen/ProfileTest.java \
-    app/src/test/java/com/fleet/idrotate/gen/RootWriterTest.java
-"$JAVA" -cp "$OUT" com.fleet.idrotate.SpoofLogicTest
-"$JAVA" -cp "$OUT" com.fleet.idrotate.gen.GeneratorsTest
-"$JAVA" -cp "$OUT" com.fleet.idrotate.gen.ProfileTest
-"$JAVA" -cp "$OUT" com.fleet.idrotate.gen.RootWriterTest
+    app/src/main/java/com/specter/module/SpoofLogic.java \
+    app/src/main/java/com/specter/module/gen/Generators.java \
+    app/src/main/java/com/specter/module/gen/Country.java \
+    app/src/main/java/com/specter/module/gen/Profile.java \
+    app/src/main/java/com/specter/module/gen/UsedStore.java \
+    app/src/main/java/com/specter/module/gen/RootWriter.java \
+    app/src/test/java/com/specter/module/SpoofLogicTest.java \
+    app/src/test/java/com/specter/module/gen/GeneratorsTest.java \
+    app/src/test/java/com/specter/module/gen/ProfileTest.java \
+    app/src/test/java/com/specter/module/gen/RootWriterTest.java
+"$JAVA" -cp "$OUT" com.specter.module.SpoofLogicTest
+"$JAVA" -cp "$OUT" com.specter.module.gen.GeneratorsTest
+"$JAVA" -cp "$OUT" com.specter.module.gen.ProfileTest
+"$JAVA" -cp "$OUT" com.specter.module.gen.RootWriterTest

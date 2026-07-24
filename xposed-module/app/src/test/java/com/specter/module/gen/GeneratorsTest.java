@@ -1,4 +1,4 @@
-package com.fleet.idrotate.gen;
+package com.specter.module.gen;
 
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
