@@ -177,6 +177,13 @@ states? the app-picker smooth? Keep parity, don't regress the charcoal UI.
   done, and (per auto-merge authority) squash-merge PR #5. The 2 "fresh" gemini re-flags on the SoC
   lookup are already-satisfied (input+keys lowercased, Locale.ROOT) — no action.
 
+- 2026-07-19: DEVICE RECONNECTED — ON-DEVICE PROOF COMPLETE. Applied a fresh Google Pixel 3a XL identity;
+  the codename-coherence fix is PROVEN: build_hardware/board=bonito (real codename, was leaking marketing
+  "Pixel 3a XL" before the fix), bootloader=bonito-1.4-7295864 (no space bug), soc=trinket (real platform).
+  Full 25-field verifier: 24 SPOOFED, 0 hard leaks, 2 OS-placeholder/perm (BluetoothAdapter.getAddress
+  returns Android's 02:00:00:00:00:00 to unprivileged apps — the Settings path shows the spoofed MAC; GSF
+  read needs a perm the probe lacks — spoofed separately). Phase 1 + 2 on-device-proven. PR #5 ready to merge.
+
 ## "What made Specter better" (Phase-2 findings — for the user's final breakdown)
 
 ### Verified on-device (DevInfo System tab, LGE RS988 spoof, 2026-07-18)

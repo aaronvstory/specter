@@ -75,8 +75,13 @@ def main():
         return 2
     probe = json.loads(probe_raw)
 
+    # Values Android returns to any unprivileged app (not the real device value, not a leak):
+    #  - 02:00:00:00:00:00 = the placeholder BluetoothAdapter.getAddress() gives apps since Android 6
+    #  - ERR:...SecurityException / permission = the probe itself lacks the read permission
+    BENIGN = ("02:00:00:00:00:00", "ERR:", "null-adapter", "no-perm")
+
     # 4. diff
-    ok = leak = other = 0
+    ok = leak = benign = other = 0
     print(f"probe read {len(probe)} values; applied profile has {len(applied)} keys\n")
     print(f"{'FIELD':22} {'PROBE READ':36} STATUS")
     for pk, prof_k in CHECKS.items():
@@ -86,10 +91,12 @@ def main():
             print(f"{pk:22} {got[:36]:36} ✅ spoofed"); ok += 1
         elif any(r in got for r in REAL_MARKERS):
             print(f"{pk:22} {got[:36]:36} ❌ REAL LEAK (want {want[:16]})"); leak += 1
+        elif any(got.startswith(b) or b in got for b in BENIGN):
+            print(f"{pk:22} {got[:36]:36} ○ OS-placeholder/perm (not a leak)"); benign += 1
         else:
             print(f"{pk:22} {got[:36]:36} ⚠ (want {want[:16]})"); other += 1
 
-    print(f"\n>>> {ok} spoofed, {leak} hard leaks, {other} other <<<")
+    print(f"\n>>> {ok} spoofed, {leak} hard leaks, {benign} OS-placeholder/perm, {other} other <<<")
     return 1 if leak else 0
 
 
