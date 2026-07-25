@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Fixed
+- **UsedStore concurrency hardening (ban-critical no-reuse ledger).** Three real defects surfaced by
+  a flaky concurrency test, all fixed at the root: (1) `_atomic_write_json` now `fsync`s before
+  `os.replace`, so a concurrent reader that sees the renamed file can never read stale/empty content;
+  (2) an in-process `threading.Lock` per ledger path serializes threads (Windows `msvcrt` byte-range
+  locks are per-handle and don't exclude sibling threads); (3) `os.replace` is retried on Windows
+  `ERROR_ACCESS_DENIED` (a transient share violation when a reader has the target open) instead of
+  bubbling out and silently dropping that caller's ledger update. The disk ledger was always
+  reuse-free; these close a handout-accounting race so the concurrency tests are deterministic.
 - **In-app version no longer drifts (UX 3.1/3.2).** `app/build.gradle`
   now derives `versionName`/`versionCode` from the repo `VERSION` file, so the header (which showed a
   stale `v0.3.0`) always matches the shipped module. Also refreshed the Settings ANTI-FINGERPRINTING
