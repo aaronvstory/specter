@@ -71,7 +71,7 @@ Java_com_specter_probe_ProbeActivity_nativeSensors(JNIEnv *env, jobject) {
         if (!s) continue;
         const char *name = ASensor_getName(s);
         const char *vendor = ASensor_getVendor(s);
-        if (i > 0) out += ";";
+        if (!out.empty()) out += ";";   // separator on APPENDED rows, not index — skips stay clean
         out += (name ? name : "?");
         out += "|";
         out += (vendor ? vendor : "?");
