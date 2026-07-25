@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Real US area codes for generated phone numbers (Phase 2.2 coherence).** `phone_us` now draws the
+  area code from a table of real, currently-assigned US area codes (broad metro/state spread) instead
+  of a random structurally-valid `[2-9]XX` (many of which are unassigned — a tell), and never emits an
+  N11 service code (211/411/911) as the exchange. Byte-parity proven Java↔Python over 500 seeds
+  (`scripts/prove_phone_parity.py`, now checked in) plus a 300-seed full-profile check.
 - **Per-model hardware-descriptor layer — the profile now carries a coherent hardware bundle
   (GOAL 1.3, data + generation).** A new `data/hardware.json` (built by
   `scripts/build_hardware_dataset.py`) maps each selectable device codename to real, coherent

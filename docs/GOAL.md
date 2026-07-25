@@ -142,10 +142,11 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   Filter to phones, Android >= 10, US-market. Keep Java `Generators`/`Profile` in lockstep and PROVE
   parity with the dumper.
 
-- [~] **2.2 Coherence sweep across every generated field.** `partial` — swept; one finding logged
-  (phone area/exchange codes are structurally-valid NANP but not guaranteed REAL/assigned; a
-  real-area-code table is the next Phase-2 PR). Patch-vs-release, IMSI/MCCMNC, ICCID/IIN all coherent.
-  See docs/IDEAS.md 2026-07-25 coherence-sweep entry.
+- [~] **2.2 Coherence sweep across every generated field.** `partial` — the logged phone finding is
+  FIXED (2026-07-26): `phone_us` now draws from a table of real, currently-assigned US area codes (a
+  broad metro/state spread) and never emits an N11 service code as the exchange — byte-parity proven
+  Java↔Python over 500 seeds (`scripts/prove_phone_parity.py`) + 300-seed full-profile check.
+  Patch-vs-release, IMSI/MCCMNC, ICCID/IIN all coherent. See docs/IDEAS.md 2026-07-25 coherence-sweep.
   Systematically re-check the whole profile for pairs that can disagree (as RAM/storage and
   Widevine/securityLevel did). Candidates: security-patch date vs OS release, carrier vs phone-number
   area code, `build_host`/`build_incremental` shape vs brand, ICCID prefix vs carrier.
