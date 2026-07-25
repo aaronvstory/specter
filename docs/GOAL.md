@@ -47,7 +47,7 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 
 ### Phase 1 — Beat the fingerprinters (the thing that makes it a product)
 
-- [x] **1.1 `factoryReset` leak — Java layer DONE; did NOT win alone.** `done (java) / superseded by 1.2`
+- [x] **1.1 `factoryReset` leak — Java layer DONE + MERGED (PR #8); did NOT win alone.** `done`
   Shipped `factory_reset_epoch` (coherent: derived from the build's own security patch; byte-parity proven
   over 200 seeds) + hooks on `File.lastModified` AND `android.system.Os.stat/lstat`. Verified on-device:
   all 6 reset-marker dirs return the spoofed time via both Java paths.
