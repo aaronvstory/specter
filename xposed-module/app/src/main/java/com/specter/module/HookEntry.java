@@ -176,59 +176,119 @@ public class HookEntry implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
-    // ---- Hardware-characteristic signals (GOAL 1.3 threshold probe) ----
+    // ---- Hardware-characteristic signals (GOAL 1.3) — real per-model values from the profile ----
     // FPJS Pro's visitorId is a server-side fuzzy match over ~50 signals; a big, STABLE, real subset
-    // (GPU/GLES, sensor list, input devices, core count) was leaking unchanged every rotation. Spoof
-    // them so they vary per identity. Threshold-probe values (from the identity hash), not yet a
-    // per-model coherent dataset — that is the follow-up once this is proven to move the id.
+    // (GPU/GLES renderer, sensor list, camera list, input devices, core count) leaked unchanged every
+    // rotation. Now spoofed to the COHERENT per-model bundle carried in the profile (hw_* fields,
+    // from data/hardware.json), so every reading app sees the hardware of the device this identity
+    // claims to be. The native (Zygisk) layer covers the direct-JNI reads libfp uses; these Java
+    // hooks close the framework-API paths other SDKs read (SensorManager, CameraManager, GLES20, etc).
     private void hookHardwareSignals(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
-        final String seedSrc = p.get("android_id");
-        final int seed = (seedSrc != null) ? seedSrc.hashCode() : 0;
-        // GLES version
-        try {
-            Class<?> ci = XposedHelpers.findClass("android.content.pm.ConfigurationInfo", lp.classLoader);
-            final String gles = ((seed & 1) == 0) ? "3.2" : "3.1";
-            XposedBridge.hookAllMethods(ci, "getGlEsVersion", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(gles); }
-            });
-        } catch (Throwable ignored) {}
-        // Sensor list: keep ~half (deterministic by seed) so the set hashes differently.
-        try {
-            Class<?> sm = XposedHelpers.findClass("android.hardware.SensorManager", lp.classLoader);
-            XposedBridge.hookAllMethods(sm, "getSensorList", new XC_MethodHook() {
+        // GL_ES version reported by ConfigurationInfo (e.g. "3.2").
+        final String gles = p.get("hw_gles_version");
+        if (gles != null && !gles.isEmpty()) {
+            try {
+                Class<?> ci = XposedHelpers.findClass("android.content.pm.ConfigurationInfo", lp.classLoader);
+                XposedBridge.hookAllMethods(ci, "getGlEsVersion", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(gles); }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // glGetString(GL_RENDERER/GL_VENDOR/GL_VERSION) — the GPU renderer string is a strong hardware
+        // signal. Dispatch by the GL enum arg so RENDERER/VENDOR/VERSION each return the profile value.
+        final String renderer = p.get("hw_gpu_renderer");
+        final String vendor = p.get("hw_gpu_vendor");
+        if ((renderer != null && !renderer.isEmpty()) || (vendor != null && !vendor.isEmpty())) {
+            final int GL_VENDOR = 0x1F00, GL_RENDERER = 0x1F01, GL_VERSION = 0x1F02;
+            XC_MethodHook glHook = new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    Object res = mp.getResult();
-                    if (!(res instanceof java.util.List)) return;
-                    java.util.List<?> in = (java.util.List<?>) res;
-                    if (in.isEmpty()) return;
-                    java.util.List<Object> out = new java.util.ArrayList<>();
-                    int i = 0;
-                    for (Object s : in) { if (((i + seed) & 1) == 0) out.add(s); i++; }
-                    if (out.isEmpty()) out.add(in.get(0));
-                    mp.setResult(out);
+                    if (mp.args.length == 0 || !(mp.args[0] instanceof Integer)) return;
+                    int name = (Integer) mp.args[0];
+                    if (name == GL_RENDERER && renderer != null && !renderer.isEmpty()) mp.setResult(renderer);
+                    else if (name == GL_VENDOR && vendor != null && !vendor.isEmpty()) mp.setResult(vendor);
+                    else if (name == GL_VERSION && gles != null && !gles.isEmpty()) mp.setResult("OpenGL ES " + gles + " V@0.0");
                 }
-            });
-        } catch (Throwable ignored) {}
-        // Input devices: drop the last id so the set differs.
-        try {
-            Class<?> im = XposedHelpers.findClass("android.hardware.input.InputManager", lp.classLoader);
-            XposedBridge.hookAllMethods(im, "getInputDeviceIds", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    Object res = mp.getResult();
-                    if (!(res instanceof int[])) return;
-                    int[] ids = (int[]) res;
-                    if (ids.length <= 1) return;
-                    mp.setResult(java.util.Arrays.copyOf(ids, ids.length - 1));
-                }
-            });
-        } catch (Throwable ignored) {}
-        // Core count
-        try {
-            final int cores = ((seed & 2) == 0) ? 8 : 6;
-            XposedBridge.hookAllMethods(Runtime.class, "availableProcessors", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(cores); }
-            });
-        } catch (Throwable ignored) {}
+            };
+            for (String cls : new String[]{"android.opengl.GLES20", "android.opengl.GLES30"}) {
+                try {
+                    Class<?> gl = XposedHelpers.findClass(cls, lp.classLoader);
+                    XposedBridge.hookAllMethods(gl, "glGetString", glHook);
+                } catch (Throwable ignored) {}
+            }
+        }
+        // Core count — Runtime.availableProcessors is the common Java path. Report the profile's count.
+        final String coresStr = p.get("hw_cores");
+        if (coresStr != null && !coresStr.isEmpty()) {
+            try {
+                final int cores = Integer.parseInt(coresStr);
+                XposedBridge.hookAllMethods(Runtime.class, "availableProcessors", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(cores); }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // Camera id list — return exactly the profile's camera ids (a hardware-count signal).
+        final String cams = p.get("hw_cameras");
+        if (cams != null && !cams.isEmpty()) {
+            final String[] camIds = cams.split(",");
+            try {
+                Class<?> cm = XposedHelpers.findClass("android.hardware.camera2.CameraManager", lp.classLoader);
+                XposedBridge.hookAllMethods(cm, "getCameraIdList", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(camIds); }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // Input devices — the COUNT is the signal; size an int[] from the profile's input-device list.
+        final String inputs = p.get("hw_input_devices");
+        if (inputs != null && !inputs.isEmpty()) {
+            final int n = inputs.split(",").length;
+            try {
+                Class<?> im = XposedHelpers.findClass("android.hardware.input.InputManager", lp.classLoader);
+                XposedBridge.hookAllMethods(im, "getInputDeviceIds", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        int[] ids = new int[n];
+                        for (int k = 0; k < n; k++) ids[k] = k;   // stable 0..n-1
+                        mp.setResult(ids);
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // Sensor list — Sensor objects can't be constructed from an app hook, so relabel the REAL list
+        // in place to the profile's sensor names/vendors (reflection on private mName/mVendor) and
+        // truncate to the profile's sensor count. This changes the sensor-set hash without fabricating
+        // Sensor instances. The native layer covers the ASensorManager NDK reads.
+        final String sensors = p.get("hw_sensors");
+        if (sensors != null && !sensors.isEmpty()) {
+            final String[] rows = sensors.split(";");
+            try {
+                Class<?> sm = XposedHelpers.findClass("android.hardware.SensorManager", lp.classLoader);
+                XposedBridge.hookAllMethods(sm, "getSensorList", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        Object res = mp.getResult();
+                        if (!(res instanceof java.util.List)) return;
+                        java.util.List<?> in = (java.util.List<?>) res;
+                        if (in.isEmpty()) return;
+                        java.util.List<Object> out = new java.util.ArrayList<>();
+                        int idx = 0;
+                        for (Object sensor : in) {
+                            if (idx >= rows.length) break;
+                            String[] parts = rows[idx].split("\\|");
+                            if (parts.length >= 2) {
+                                try {
+                                    Field nm = sensor.getClass().getDeclaredField("mName");
+                                    nm.setAccessible(true); nm.set(sensor, parts[0]);
+                                    Field vn = sensor.getClass().getDeclaredField("mVendor");
+                                    vn.setAccessible(true); vn.set(sensor, parts[1]);
+                                } catch (Throwable ignored) {}
+                            }
+                            out.add(sensor);
+                            idx++;
+                        }
+                        if (out.isEmpty()) out.add(in.get(0));
+                        mp.setResult(out);
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
     }
 
     // ---- StatFs total/available storage — a FingerprintJS hardware signal that was LEAKING ----
