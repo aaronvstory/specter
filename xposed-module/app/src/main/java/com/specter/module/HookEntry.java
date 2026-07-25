@@ -577,9 +577,15 @@ public class HookEntry implements IXposedHookLoadPackage {
                 if (argsContainAny(param.args, devTells)) param.setResult(0);
             }
         };
+        final boolean trace = "1".equals(p.get("trace"));
         XC_MethodHook getStr = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (argsContainAny(param.args, devTells)) param.setResult("0");
+                boolean hit = argsContainAny(param.args, devTells);
+                if (hit) param.setResult("0");
+                if (trace && param.args != null && param.args.length > 1 && param.args[1] instanceof String
+                        && ((String) param.args[1]).matches(".*(adb|develop|settings).*"))
+                    XposedBridge.log("[specter][global] getString " + param.args[1] + " hit=" + hit
+                            + " final=" + param.getResult());
             }
         };
         try { XposedBridge.hookAllMethods(Settings.Global.class, "getInt", getInt); } catch (Throwable ignored) {}

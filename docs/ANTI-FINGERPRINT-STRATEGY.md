@@ -176,3 +176,19 @@ not `pm clear`. (2) `rootApps=True` / `developerTools=True` still leak: `develop
 server still flags it, so confirm the read path the SDK uses. (3) Installed-app entropy
 (`InstalledAppsSignalGroupProvider` lists user+system apps) — a stable per-device set; hide-my-apps /
 the module's own presence contributes.
+
+## 2026-07-26 (cont.) — developerTools/rootApps are SERVER-SIDE Smart Signals, not client reads
+
+Traced the demo's `Settings.Global.getString` reads on-device: the SDK reads
+`development_settings_enabled` and `adb_enabled`, and Specter's hook is confirmed WORKING
+(`hit=true final=0` — the SDK receives "0" for both). Yet the Server API still reports
+`developerTools=True`. Conclusion (PROVEN by elimination): `developerTools` and `rootApps` are FPJS
+**Pro Smart Signals computed SERVER-SIDE** from the full signal payload + the device's history — a
+client cannot flip them by spoofing the two individual Settings.Global reads. The open-source SDK's
+AdbEnabled/DevelopmentSettings signals FEED the server's decision but do not solely determine it.
+
+Implication: these are a DIFFERENT class of problem from the client-readable UA leak. Beating them means
+either (a) denying the server the corroborating evidence it correlates (installed-app set, root-path
+probes the native layer still misses, mount/selinux state), or (b) accepting them as flags and competing
+on the visitorId itself. The dev-settings hook stays (it's correct and necessary), but it is not
+sufficient alone. `[specter][global]` trace (gated on "trace":"1") is left in place to re-check.
