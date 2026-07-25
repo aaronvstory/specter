@@ -65,6 +65,15 @@ for testing: `getprop` via exec is a FALSE proxy (separate unhooked process, alw
 dual-read probe (`probe/src/main/cpp/native-probe.cpp`, NDK 27) is the correct instrument.
 
 ## Verify on-device (autonomous, no clicking)
+- **`adb push` of a LARGE file silently no-ops on this rooted device** — it reports success but the file is
+  ABSENT from a normal `adb shell` afterwards (adbd is in a Magisk/zygisk mount namespace; its sync target
+  is a different overlay). Small files sometimes survive; a ~800KB `.so` vanishes. WORKAROUND: stream the
+  bytes through a shell, not the sync protocol: `base64 -w0 file | adb -s <ser> shell "base64 -d > /path"`
+  then `su -M -c cp` into place (md5-verify). This is why `zygisk/dev-scripts/reinstall.sh`'s push step
+  silently fails to update the `.so` — install it via the base64 route instead. (Confirmed 2026-07-26.)
+- **CLI `push` reuses the ACTIVE/cached profile; use `rotate` to GENERATE a fresh one** — `python -m
+  specter.cli rotate --pkg <pkg>` = `new` + `push`. `push` alone re-pushes whatever was last active (so it
+  can push a stale profile missing newly-added fields). Confirmed 2026-07-26.
 - `python scripts/scope_probe.py [serial]` — one-time: adds the probe to Specter's LSPosed scope
   (PC-side SQLite edit, then reboot). Never touches GeerGit's scope.
 - Apply an identity in Specter (RANDOMIZE ALL — wait ~5s for off-thread gen — then APPLY).

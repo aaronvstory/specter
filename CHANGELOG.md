@@ -16,8 +16,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   They are CONSTANTS (a lookup, no seeded RNG), so byte-parity is preserved by construction; the
   Java `Profile.KEYS` order still matches the Python dict (guarded by the parity test), and a new
   asset-sync test asserts `data/*.json` == the bundled APK assets so the PC and on-device paths can
-  never read different data. So far this is the DATA + GENERATION half; the hooks that inject these
-  values into a reading app (Java + native) land next.
+  never read different data. The Java hooks (`hookHardwareSignals`) return these per-model values
+  (GLES version, GPU renderer via GLES20.glGetString, core count, camera ids, sensor relabel); the
+  native Zygisk layer inline-hooks `glGetString` for the direct-JNI GPU read; and the existing
+  /proc/cpuinfo redirect is now fed by the generated `proc_cpuinfo` key. The verification probe reads
+  every descriptor both ways (framework API + a native EGL/GLES read). PROVEN on-device (Pixel 4, two
+  identities): a Galaxy Note 9 reports Mali-G72 / Exynos 9810 and a Moto G7 reports Adreno 512 /
+  SDM660 — two coherent, DIFFERENT bundles read back on the probe, NOT the real Pixel 4's Adreno 640 /
+  SM8150, with 0 hard leaks. Native sensor/camera NDK inline hooks and the FPJS-demo end-to-end
+  readout (confounded by the demo's fixed-key server record) remain follow-ups; see docs/IDEAS.md.
 - **Zygisk native layer — closes the native read paths (GOAL 1.2).** A new self-contained Zygisk
   companion module (`xposed-module/zygisk/`) that INLINE-hooks libc per-app, from the SAME
   `/data/local/tmp/specter/<pkg>.json` the Xposed module reads (one source of truth). It spoofs:

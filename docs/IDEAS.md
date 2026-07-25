@@ -5,6 +5,37 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-26 · SHIPPED + PROBE-VERIFIED: per-model hardware-descriptor layer (GOAL 1.3).** — status: `shipped`.
+  Built `data/hardware.json` (keyed by device codename, coherent SoC-derived bundles: GPU/GLES renderer,
+  /proc/cpuinfo, sensors, cameras, codecs, cores, input) via `scripts/build_hardware_dataset.py`. Plumbed
+  the 9 flat fields through the profile (Python + Java, byte-parity held — constants, no RNG), the Java
+  hooks (`hookHardwareSignals` rewritten to real per-model values), the native Zygisk glGetString inline
+  hook, and the existing /proc/cpuinfo redirect (now fed by the generated `proc_cpuinfo` key). Extended the
+  probe to read all descriptors both ways (framework API + a native EGL/GLES glGetString read). PROVEN on
+  Pixel 4 with two identities: Note 9 -> `ARM|Mali-G72` / Exynos 9810; Moto G7 -> `Qualcomm|Adreno 512` /
+  SDM660. Two coherent DIFFERENT bundles, 0 hard leaks, native hook returns per-model value not the real
+  Adreno 640. The probe gate (RESUME def-of-done) is MET.
+- **2026-07-26 · FOLLOW-UP: native NDK sensor/camera inline hooks.** — status: `idea`.
+  glGetString + cpuinfo are hooked natively; `ASensorManager_getSensorList` and `ACameraManager_*` are NOT
+  (their return structs are crash-risky to fabricate from a companion hook). The Java hooks cover the
+  framework SensorManager/CameraManager path today. Add the NDK hooks only if a native reader is shown to
+  bypass the framework sensor/camera APIs (as libfp does for GL) — measure first.
+- **2026-07-26 · BLOCKED on user: FPJS-demo end-to-end readout for the hardware layer.** — status: `blocked (needs fresh trial key)`.
+  The hardware layer is verified on the probe. Running the FPJS demo per-identity to see the smart-signal
+  response move is still confounded by the demo's fixed-key server record (firstSeenAt frozen from before
+  our work), which re-matches through everything. A fresh fingerprint.com trial key (demo Settings > API
+  Keys accepts custom keys) would give a clean measurement space — that needs the user's signup. The demo
+  now has a fresh 48-key hardware-carrying profile pushed and is ready for a manual run when a key exists.
+  Do NOT gate this run on it (per RESUME) — the probe is the gate.
+- **2026-07-26 · GOTCHA (on-device): `adb push` writes into a namespace the shell can't see on this box.**
+  — status: `confirmed`. On the rooted Pixel 4, `adb push <largefile>` reports success ("825032 bytes,
+  119 MB/s") but the file is ABSENT from a normal `adb shell ls` afterwards — even under `/sdcard`. A file
+  written ON-DEVICE (`echo`/`dd`) persists fine, and a tiny pushed file sometimes persists, but a big
+  binary vanishes. Root cause: adbd is in a Magisk/zygisk-affected mount namespace, so its sync target is
+  a different overlay. WORKAROUND that works: stream the bytes through a shell instead of the sync
+  protocol — `base64 -w0 file | adb shell "base64 -d > /path"` (md5-verified identical). Use this to push
+  the zygisk .so; `reinstall.sh`'s `adb push` step silently no-ops because of this.
+
 - **2026-07-26 · RE-CONFIRMED (deviceId side): all three identifier read paths FIRE and are correctly spoofed for the FPJS demo, visitorId still frozen.** — status: `confirmed`.
   Instrumented every deviceId read path with `[specter][idtrace]` and ran one full identification (Pixel 4,
   full `pm clear` + location pre-grant). All three fired AND substituted the spoofed value:

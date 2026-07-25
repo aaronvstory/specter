@@ -96,7 +96,19 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   same `visitorId` (`confidenceScore 1.0`). Kept anyway: closing the native prop/reset path is real and
   necessary (other SDKs read natively), it just isn't sufficient on its own.
 
-- [ ] **1.3 Spoof the HARDWARE-CHARACTERISTIC signals — the actual reason FPJS still wins.** `todo` · **highest value**
+- [~] **1.3 Spoof the HARDWARE-CHARACTERISTIC signals — hardware layer BUILT + PROBE-VERIFIED.** `partial` · **highest value**
+  DONE + PROVEN on-device (2026-07-26): a per-model hardware dataset (`data/hardware.json`, keyed by
+  device codename, coherent SoC-derived bundles) now flows through the profile (Python + Java, byte-parity
+  held) into the Java hooks AND the native Zygisk glGetString hook + the /proc/cpuinfo redirect. Verified
+  on the probe with TWO applied identities: Galaxy Note 9 -> native GPU `ARM|Mali-G72`, cpuinfo Exynos
+  9810; Moto G7 -> native GPU `Qualcomm|Adreno (TM) 512`, cpuinfo SDM660 — two coherent, DIFFERENT bundles,
+  0 hard leaks, NOT the real Pixel 4's Adreno 640 / SM8150. GLES version, core count, camera ids, sensor
+  relabel all report the per-model value per identity. This is the completable, measurable gate — MET.
+  REMAINING (follow-ups, do not block the gate): (a) native inline hooks for the NDK sensor/camera APIs
+  (`ASensorManager_getSensorList`, `ACameraManager_*`) — their structs are crash-risky to fabricate, and
+  the Java hooks already cover the framework sensor/camera path; (b) the FPJS-demo end-to-end readout,
+  still confounded by the fixed-key server record — needs a fresh trial key (user signup). See IDEAS.md.
+  Original root-cause context below (kept for the record):
   ROOT CAUSE (found 2026-07-25 by reading the fingerprintjs-android SDK source + confirming our profile/
   hooks): the Pro `visitorId` is a server-side fuzzy match over ~50 signals; we spoof the identifier +
   build + RAM/storage subset but NONE of the stable hardware signals, and generate no data for them:
