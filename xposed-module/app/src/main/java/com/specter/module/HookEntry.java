@@ -551,7 +551,12 @@ public class HookEntry implements IXposedHookLoadPackage {
         // reads GSF via this cursor path (confirmed by dexdump), so it's how we keep GSF fully
         // verifiable on our test target. Real targets use the narrow Gservices.getString/getLong hooks
         // above only (GeerGit's approach — smaller surface, less fragile). See docs/PAIRIP-CONSTRAINT.md.
-        if (!"com.liuzh.deviceinfo".equals(lp.packageName)) return;
+        // The FPJS SDK reads GSF ID via the ContentResolver gservices CURSOR path (it holds
+        // READ_GSERVICES). The narrow Gservices.getString/getLong hooks above may not cover that
+        // read, so enable the cursor wrapper for the FPJS demo too — else the real GSF leaks and
+        // becomes a stable cross-wipe device identifier.
+        if (!"com.liuzh.deviceinfo".equals(lp.packageName)
+                && !"com.fingerprintjs.android.fpjs_pro_demo".equals(lp.packageName)) return;
         final XC_MethodHook wrapCursor = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 try {
@@ -560,6 +565,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                         return;
                     final android.database.Cursor real = (android.database.Cursor) param.getResult();
                     if (real == null) return;
+                    XposedBridge.log("[specter] GSF cursor wrapped for " + lp.packageName + " uri=" + uri);
                     param.setResult(new GsfCursorWrapper(real, gsf));
                 } catch (Throwable ignored) {}
             }
