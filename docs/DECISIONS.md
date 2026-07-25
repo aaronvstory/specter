@@ -98,3 +98,9 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   (test_factory_reset_is_after_the_build_and_in_the_past) that goes red — loudly — if a too-new patch
   enters the pool, instead of being silently patched over at runtime. A loud test failure is the right
   place for this invariant, not a clock read inside a parity-critical generator.
+- **2026-07-25 · Android floor set to 9, not 10 (GOAL 2.1)** — an A10+ filter left only 51 US phones,
+  too thin for uniqueness across many identities; A9 (2018) is still plausibly in-use and yields 68.
+  The device DB tops out ~A12, so the floor can't go higher without starving the pool — revisit when
+  devices.json gains newer phones. The plausibility predicate is a NAMED, mirrored function on both
+  sides precisely because it changes the seeded pool: any drift between Python and Java silently breaks
+  byte-parity, so it must be one logic expressed identically, proven by the 300-seed dumper.
