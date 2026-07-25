@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <cstdlib>
+#include <cstdarg>
 #include <string>
 #include <map>
 #include <fcntl.h>
@@ -142,6 +143,39 @@ static int my_statx(int dirfd, const char *path, int flags, unsigned int mask, s
     return r;
 }
 
+// ================= /proc/cpuinfo redirect (hardware-signal spoof, GOAL 1.3) =================
+// FPJS reads /proc/cpuinfo (proven: the string is in its APK) as a stable hardware signal. We can't
+// rewrite the kernel's procfs, but we CAN redirect the open: when a target opens "/proc/cpuinfo", hand
+// back an fd to our own spoofed file instead. The spoofed content is written once per process to the
+// app's private files dir (always readable by the app's own uid) from the profile's `proc_cpuinfo`.
+static std::string g_cpuinfo_path;   // path to our spoofed cpuinfo file, empty = not active
+
+using openat_t = int (*)(int, const char *, int, ...);
+using open_t   = int (*)(const char *, int, ...);
+static openat_t orig_openat = nullptr;
+static open_t   orig_open   = nullptr;
+
+static bool is_cpuinfo(const char *path) {
+    return path && strcmp(path, "/proc/cpuinfo") == 0;
+}
+static int my_openat(int dirfd, const char *path, int flags, ...) {
+    // O_CREAT/O_TMPFILE take a mode arg; cpuinfo is opened read-only so we never forward a mode here.
+    if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) {
+        LOGD("REDIRECT openat(/proc/cpuinfo) -> spoofed");
+        return orig_openat(AT_FDCWD, g_cpuinfo_path.c_str(), O_RDONLY | O_CLOEXEC);
+    }
+    va_list ap; va_start(ap, flags); mode_t mode = va_arg(ap, int); va_end(ap);
+    return orig_openat(dirfd, path, flags, mode);
+}
+static int my_open(const char *path, int flags, ...) {
+    if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) {
+        LOGD("REDIRECT open(/proc/cpuinfo) -> spoofed");
+        return orig_open(g_cpuinfo_path.c_str(), O_RDONLY | O_CLOEXEC);
+    }
+    va_list ap; va_start(ap, flags); mode_t mode = va_arg(ap, int); va_end(ap);
+    return orig_open(path, flags, mode);
+}
+
 // Why inline hooks, not PLT: bionic's __system_property_get calls __system_property_read_callback via
 // an INTERNAL direct call, not through libc's PLT. PLT hooking only rewrites a *caller library's* GOT
 // import, so it can never intercept that internal path (proven on-device: the PLT attempt reported a
@@ -207,7 +241,32 @@ public:
         auto ep = profile.find("factory_reset_epoch");
         if (ep != profile.end()) g_reset_epoch = strtol(ep->second.c_str(), nullptr, 10);
 
-        if (g_prop_spoof.empty() && g_reset_epoch == 0) return;
+        // /proc/cpuinfo spoof (GOAL 1.3): profile carries `proc_cpuinfo` with \n and \t escaped (the flat
+        // JSON is single-line). Decode it, write it to the app's own files dir (readable by the app uid),
+        // and point the open/openat redirect at it.
+        auto ci = profile.find("proc_cpuinfo");
+        if (ci != profile.end() && !ci->second.empty() && !pkg.empty()) {
+            std::string decoded;
+            const std::string &e = ci->second;
+            for (size_t i = 0; i < e.size(); i++) {
+                if (e[i] == '\\' && i + 1 < e.size()) {
+                    char n = e[++i];
+                    decoded += (n == 'n') ? '\n' : (n == 't') ? '\t' : n;
+                } else decoded += e[i];
+            }
+            std::string path = "/data/data/" + pkg + "/files/.specter_ci";
+            // Best-effort: files/ may not exist yet; create it, then the file.
+            std::string dir = "/data/data/" + pkg + "/files";
+            mkdir(dir.c_str(), 0700);
+            int f = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+            if (f >= 0) {
+                if (write(f, decoded.data(), decoded.size()) == (ssize_t) decoded.size())
+                    g_cpuinfo_path = path;
+                close(f);
+            }
+        }
+
+        if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty()) return;
         installHooks();
     }
 
@@ -241,6 +300,10 @@ private:
             applied += hookSym("fstatat",   (void *) my_fstatat, (void **) &orig_fstatat);
             applied += hookSym("fstatat64", (void *) my_fstatat, (void **) &orig_fstatat);
             applied += hookSym("statx",     (void *) my_statx,   (void **) &orig_statx);
+        }
+        if (!g_cpuinfo_path.empty()) {
+            applied += hookSym("openat", (void *) my_openat, (void **) &orig_openat);
+            applied += hookSym("open",   (void *) my_open,   (void **) &orig_open);
         }
         if (applied == 0) { LOGE("no hooks applied for %s", pkg.c_str()); return; }
         LOGD("hooks installed for %s (%d syms, props=%zu reset=%ld)",

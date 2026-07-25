@@ -19,8 +19,25 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
     `/proc/cpuinfo` needs a file-read hook (the Zygisk layer can hook `open`/`read` on that path), GLES
     needs `glGetString`/`eglGetProcAddress`.
   - HARD part = COHERENCE: every faked hardware value must match the ONE chosen device or it's a WORSE
-    fingerprint. Needs a per-model hardware dataset (sensors/cameras/GPU/cpuinfo per device row). Start
-    with the cheap high-value ones (`/proc/cpuinfo`, GLES renderer, core count) and re-measure visitorId.
+    fingerprint. Needs a per-model hardware dataset (sensors/cameras/GPU/cpuinfo per device row).
+  - **MEASURED 2026-07-25 — the Pro SDK collects hardware signals in obfuscated NATIVE code, so Java
+    hooks miss them entirely. This is the real root cause.** Decompiled the FPJS demo APK: the arm64
+    split ships `libfp.so` (427 KB, obfuscated — only ~1109 strings, signal list hidden) + `libd310.so`
+    (a packer). `readelf` on `libfp.so` proves it imports **`fopen`, `getauxval`, `__system_property_get`
+    directly and links `libandroid.so`** (the NDK sensor/config API). So FPJS Pro reads /proc files,
+    hwcaps, props, and sensors/GLES/cameras through NATIVE NDK/libc calls — bypassing every Java API.
+    Evidence chain, all measured not assumed:
+      1. `/proc/cpuinfo` open/openat redirect PROVEN to reach FPJS (`REDIRECT` log fired; served a
+         different SoC 0x41/0xd05 vs real 0x51/0x805) → visitorId did NOT move.
+      2. Full Java hardware spoof (GLES via ConfigurationInfo, getSensorList, getInputDeviceIds,
+         availableProcessors — HookEntry.hookHardwareSignals) → visitorId did NOT move. Because the Pro
+         SDK never calls those Java APIs; it reads via libfp.so natively.
+    → The real GOAL 1.3 is NATIVE hooks (in the Zygisk layer) on what `libfp.so` actually calls:
+    `ASensorManager_getSensorList` & friends in libandroid.so, `getauxval`, `fopen` on /proc/meminfo &
+    /sys hardware nodes, EGL/GLES if present. cpuinfo redirect + native prop spoof already cover part of
+    it. Still per-model COHERENCE needed. The Java hooks stay (other SDKs use the Java path) but do
+    nothing for FPJS Pro. NOTE: libfp.so is anti-instrumentation (reads /proc/self/maps, checks
+    selinux) — spoofing must not itself trip its tamper checks.
   - CORRECTION: an earlier note here blamed the constant datacenter IP (`datacenter_result:true`,
     `highActivity:true`). That is a fraud SMART-SIGNAL, not the identity anchor — a shared datacenter IP
     can't collapse distinct devices to one visitorId (FPJS would be useless to its customers). The user

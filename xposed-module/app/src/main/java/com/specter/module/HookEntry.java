@@ -50,6 +50,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookMediaDrm(lpparam, p);
         hookSystemProperties(p);
         hookHardwareInfo(lpparam, p);
+        hookHardwareSignals(lpparam, p);
         hookStorage(lpparam, p);
         hookFactoryResetTime(p);
     }
@@ -171,6 +172,61 @@ public class HookEntry implements IXposedHookLoadPackage {
                         } catch (Throwable ignored) {}
                     }
                 }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    // ---- Hardware-characteristic signals (GOAL 1.3 threshold probe) ----
+    // FPJS Pro's visitorId is a server-side fuzzy match over ~50 signals; a big, STABLE, real subset
+    // (GPU/GLES, sensor list, input devices, core count) was leaking unchanged every rotation. Spoof
+    // them so they vary per identity. Threshold-probe values (from the identity hash), not yet a
+    // per-model coherent dataset — that is the follow-up once this is proven to move the id.
+    private void hookHardwareSignals(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String seedSrc = p.get("android_id");
+        final int seed = (seedSrc != null) ? seedSrc.hashCode() : 0;
+        // GLES version
+        try {
+            Class<?> ci = XposedHelpers.findClass("android.content.pm.ConfigurationInfo", lp.classLoader);
+            final String gles = ((seed & 1) == 0) ? "3.2" : "3.1";
+            XposedBridge.hookAllMethods(ci, "getGlEsVersion", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(gles); }
+            });
+        } catch (Throwable ignored) {}
+        // Sensor list: keep ~half (deterministic by seed) so the set hashes differently.
+        try {
+            Class<?> sm = XposedHelpers.findClass("android.hardware.SensorManager", lp.classLoader);
+            XposedBridge.hookAllMethods(sm, "getSensorList", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    Object res = mp.getResult();
+                    if (!(res instanceof java.util.List)) return;
+                    java.util.List<?> in = (java.util.List<?>) res;
+                    if (in.isEmpty()) return;
+                    java.util.List<Object> out = new java.util.ArrayList<>();
+                    int i = 0;
+                    for (Object s : in) { if (((i + seed) & 1) == 0) out.add(s); i++; }
+                    if (out.isEmpty()) out.add(in.get(0));
+                    mp.setResult(out);
+                }
+            });
+        } catch (Throwable ignored) {}
+        // Input devices: drop the last id so the set differs.
+        try {
+            Class<?> im = XposedHelpers.findClass("android.hardware.input.InputManager", lp.classLoader);
+            XposedBridge.hookAllMethods(im, "getInputDeviceIds", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    Object res = mp.getResult();
+                    if (!(res instanceof int[])) return;
+                    int[] ids = (int[]) res;
+                    if (ids.length <= 1) return;
+                    mp.setResult(java.util.Arrays.copyOf(ids, ids.length - 1));
+                }
+            });
+        } catch (Throwable ignored) {}
+        // Core count
+        try {
+            final int cores = ((seed & 2) == 0) ? 8 : 6;
+            XposedBridge.hookAllMethods(Runtime.class, "availableProcessors", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(cores); }
             });
         } catch (Throwable ignored) {}
     }
