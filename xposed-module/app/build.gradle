@@ -2,6 +2,12 @@ plugins {
     id 'com.android.application'
 }
 
+// Single source of truth: the repo-root VERSION file drives the app's versionName (and a derived
+// versionCode), so the in-app version can never drift from the module/zip the build scripts stamp.
+def specterVersion = file("${rootDir}/../VERSION").text.trim()
+def specterVersionCode = specterVersion.tokenize('.').collect { it.toInteger() }
+        .inject(0) { acc, part -> acc * 100 + part }   // 0.5.0 -> 500, 1.2.3 -> 10203
+
 android {
     namespace 'com.specter.module'   // == Java package, so generated R is com.specter.module.R
     compileSdk 36
@@ -9,8 +15,8 @@ android {
         applicationId "com.specter"  // installed package id (LSPosed module id); may differ from namespace
         minSdk 24
         targetSdk 36
-        versionCode 3
-        versionName "0.3.0"
+        versionCode specterVersionCode
+        versionName specterVersion
     }
     lint { checkReleaseBuilds false; abortOnError false }
     buildTypes { release { minifyEnabled false } }

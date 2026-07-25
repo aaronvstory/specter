@@ -406,7 +406,8 @@ public class MainActivity extends Activity {
         LinearLayout info = cardBox();
         info.addView(label("Always on"));
         TextView desc = value("Coherent identity + deep signal spoofing (Build, bootloader, radio, "
-                + "kernel, HARDWARE/BOARD) are applied automatically on every identity.");
+                + "kernel, HARDWARE/BOARD, SoC, GPU/GLES, /proc/cpuinfo, sensors) are applied "
+                + "automatically on every identity.");
         desc.setTextColor(Theme.DIM);
         info.addView(desc);
         content.addView(info);

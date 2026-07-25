@@ -160,11 +160,17 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 
 ### Phase 3 — UX (the part that makes it feel like a product)
 
-- [ ] **3.1 Audit the app UI as it stands.** `todo`
-  Walk the real app on-device, screenshot every screen, and write an honest list: what's confusing, slow,
-  dead, or leaks internals to the user. No fake/cosmetic controls — build it or mark it non-functional.
+- [x] **3.1 Audit the app UI as it stands.** `done` (2026-07-26)
+  Walked every screen on-device (Identity / Settings / Location), screenshotted, wrote `docs/UX-AUDIT.md`.
+  Verdict: the app is in good shape — no fake controls, no crashes, non-functional areas honestly labeled.
+  Findings: (1) header showed a stale `v0.3.0` [FIXED in 3.2], (2) Location is a dead-but-honest
+  placeholder tab, (3) Settings copy was out of date [FIXED], (4) phone number unformatted (cosmetic).
 
-- [ ] **3.2 Fix what 3.1 finds.** `todo` (depends on 3.1)
+- [~] **3.2 Fix what 3.1 finds.** `partial` (2026-07-26)
+  FIXED: the version bug (build.gradle now derives versionName/Code from the VERSION file — verified
+  on-device showing v0.5.0) and the stale ANTI-FINGERPRINTING copy (now lists the hardware layer).
+  DECIDED to KEEP the Location tab (honestly labeled "planned"; location IS a roadmap item, so hiding it
+  would hide the roadmap — non-destructive call). LEFT: phone-number formatting (cosmetic, optional).
 
 ### Phase 4 — Product / monetization
 
@@ -196,3 +202,14 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   match locks onto that. Promoted 1.3 = spoof the hardware signals (needs a per-model dataset; the big
   lift). Mechanism lessons logged: PLT hook can't reach bionic's internal prop path (need INLINE hook);
   ZygiskNext's builtin linker requires a self-contained module .so.
+- **2026-07-26** — Big autonomous session: shipped + merged 4 PRs. **1.3 hardware layer** (#12): per-model
+  `data/hardware.json`, plumbed through profile (byte-parity held) + Java hooks + native glGetString +
+  cpuinfo redirect + probe; PROVEN on-device (two identities → two coherent DIFFERENT hardware bundles,
+  0 leaks). **Native ASensor relabel** (#15): sensors spoofed on the direct-JNI path too (relabel the
+  accessors, don't fabricate structs). **2.2 coherence**: real US area codes + no N11 exchanges (#13),
+  and `soc_platform` now derives the real per-model SoC instead of a random pick (#14) — the SoC finally
+  agrees with the GPU/cpuinfo. Along the way: added the checked-in byte-parity dumper the docs referenced
+  but lacked (`scripts/prove_phone_parity.py`); fixed a thread-safety gap in the hardware cache; learned
+  the on-device `adb push`-namespace gotcha (stream via base64). VERSION → 0.5.0. Remaining 1.3 pieces are
+  the native CAMERA list (struct, deferred) and the FPJS end-to-end readout (blocked on a fresh trial key
+  = user signup). Next unblocked queue item: 3.1 UX audit.
