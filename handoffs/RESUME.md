@@ -1,35 +1,70 @@
-# Resume pointer
+# Resume — autonomous work order
 
-Short, plainly-worded entry point for continuing the Specter work in a fresh session.
+Plain entry point for continuing the Specter work. **Read this, then work continuously and
+autonomously until the objective below is met. Do not stop to ask; decide, document, and keep going.**
 
 ## What this project is
-An Android configuration + QA-testing toolkit. It generates realistic per-device configuration profiles
-(model, build fields, IDs, storage/RAM, etc.) and applies them on a test phone via an LSPosed module and a
-companion native module, so a test app reads each applied profile as a different ordinary device. We use a
-vendor's sample app as the on-device measurement harness and read the value it reports back to check
-whether two applied profiles produce two different reported values.
+An Android device-**configuration** + on-device **QA-testing** toolkit. It generates realistic per-device
+configuration profiles (model, build fields, identifiers, storage/RAM, sensor/hardware descriptors, etc.)
+and applies them on a test phone via an LSPosed module + a companion native module. A probe/sample app
+reads the applied values back; we compare the values reported across two applied profiles. Describe the
+**mechanism, not the purpose** (see `CLAUDE.md` → "Session framing & communication").
 
-## Where things stand
-- The native configuration layer (properties + a filesystem timestamp) is built and verified on-device
-  (a probe app confirms the applied values are read back correctly). It is PR #12, branch
-  `feat/zygisk-native-layer`, open, review-clean, not yet merged.
-- We are now working through why the sample app reports the same value across two applied profiles, and
-  which persistent device values still need to be brought in line with the applied profile.
+## Autonomous working rules (NON-NEGOTIABLE for this run)
+- **Do not block on questions.** Make the reasonable call, write it in `docs/DECISIONS.md`, and continue.
+  The only thing you may NOT do without the user is anything requiring their external account/credentials
+  (e.g. a third-party vendor signup) — for those, proceed on every other track and leave a clearly
+  labelled note; never idle waiting.
+- **Commit continuously.** Each unit of work = its own commit (mechanism-not-purpose wording). Push often.
+  Never discard work-in-progress. One concern per commit; `git add <specific files>`, verify `git status`
+  before committing (two sessions have collided on `git add -A` before).
+- **Measure before concluding; verify a hook actually engaged before saying a value has no effect.**
+- **Reset the probe/sample app state fully between measurements** (not just `pm clear`), and **re-grant the
+  app's location permission after each reset** or its UI is blocked.
+- Keep `CHANGELOG.md` / `docs/{GOAL,IDEAS,DECISIONS}.md` current in the same commit as the change.
+- **Safety (non-negotiable):** on-device work targets ONLY the probe/test apps and the vendor sample app.
+  Never scope, apply, or test against the income apps listed in `CLAUDE.md`.
 
-## How to continue
-1. Read `docs/GOAL.md` (the standing spec) and the detailed session notes in
-   `handoffs/2026-07-26_0013_device-identity-consistency-continuation.md` for the full context, the list
-   of things already checked, the DO-NOTs, and the ordered next steps.
-2. Standing working preferences (also in Claude memory):
-   - Reset the test app state fully between measurements (not just `pm clear`).
-   - Change several config values per run and watch the whole reported response, not one field.
-   - Work autonomously; commit work-in-progress regularly; verify a hook actually engaged before
-     concluding a value has no effect; after resetting app state, re-grant the app's location permission
-     so its UI is not blocked.
-3. Device: Pixel 4, serial `9B151FFAZ00FPF`. Build the native module with
-   `bash xposed-module/build-zygisk.sh`; the on-device install loop is
-   `bash xposed-module/zygisk/dev-scripts/reinstall.sh`.
+## The objective for THIS run (completable without any external account)
+Build **GOAL 1.3: the hardware-descriptor configuration layer**, coherent per device model, and verify it
+end-to-end **on the probe app** (which is fully measurable and has no external dependency). Concretely:
 
-## Safety constraint (non-negotiable)
-On-device testing targets only the test/probe apps and the vendor sample app. Never scope, apply, or test
-against the income-generating apps listed in `CLAUDE.md`.
+1. **Assemble a per-model hardware dataset.** For each device row in the pool, add coherent hardware
+   descriptors the sample apps read: sensor list, camera list, GPU/GLES renderer string, `/proc/cpuinfo`
+   contents, codec list, core count, input devices. Source real values per model (or a small curated set
+   of real reference devices to start). Store them in the profile the same way other fields are stored.
+2. **Apply them** — extend the Java (LSPosed) hooks and the native (Zygisk) layer so an app reading these
+   descriptors gets the profile's values, coherently, per applied identity. Replace the current
+   threshold-probe placeholders in `HookEntry.hookHardwareSignals()` with real per-model values.
+3. **Byte-parity** — mirror any seeded-draw changes in Python and Java and prove parity with the dumper
+   (see `CLAUDE.md`), since these become part of generated profiles.
+4. **Verify on the probe app** (`com.specter.probe`): the probe reads every descriptor both ways and
+   writes JSON; confirm each descriptor now reports the profile's coherent value, per identity. This is
+   the completable, measurable success criterion for this run — it does not depend on the vendor demo's
+   server record.
+5. As a secondary read-out, run the vendor sample-app harness and record the full reported response
+   (`suspectScore`, all smart-signal fields, `firstSeenAt`, and the reported id) for two applied profiles,
+   noting which fields move. Do NOT treat the sample-demo's main reported id as the pass/fail gate for
+   this run — it is confounded by a fixed-key server record (documented in `docs/IDEAS.md`); use the
+   probe-app verification as the gate instead.
+
+Definition of done for this run: the probe app reports coherent, per-identity hardware descriptors for
+every field added; byte-parity proven; tests green (`.venv/Scripts/python.exe -m pytest -q` and
+`cd xposed-module && bash run-jvm-tests.sh`); CHANGELOG/GOAL/IDEAS/DECISIONS updated; work committed +
+pushed. Then continue to the next unblocked queue item in `docs/GOAL.md` and keep going.
+
+## Context you'll want
+- Full prior investigation + DO-NOTs + device/build details:
+  `handoffs/2026-07-26_0013_device-identity-consistency-continuation.md`.
+- Standing spec + queue: `docs/GOAL.md`. Running log: `docs/IDEAS.md`. Decisions: `docs/DECISIONS.md`.
+- Device: Pixel 4, serial `9B151FFAZ00FPF`. Build native: `bash xposed-module/build-zygisk.sh`;
+  build the LSPosed APK: `bash xposed-module/build-apk.sh`; on-device install loop:
+  `bash xposed-module/zygisk/dev-scripts/reinstall.sh`.
+- Already proven this session set: every device-identifier read path is applied correctly on the sample
+  app, yet its main reported id is frozen by a fixed-key server record — hence the objective above targets
+  the probe app as the measurable gate.
+
+## The one thing that needs the user (do NOT block on it)
+A fresh vendor trial key would give a clean measurement space for the sample-demo's main reported id. It
+needs the user's signup. Leave a labelled `docs/IDEAS.md` note when you reach the point where it would
+help, and CONTINUE with the probe-app-verified work above — do not idle.
