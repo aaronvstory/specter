@@ -5,6 +5,28 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-25 · Spoof the HARDWARE-CHARACTERISTIC signals — the REAL reason FPJS still wins (ROOT CAUSE)** — status: `researching`.
+  After the Zygisk native layer closed the prop + factory-reset blind spot (probe-proven 19/19), FPJS Pro
+  STILL returned the same `visitorId` for two totally different identities. Root cause found by reading the
+  fingerprintjs-android SDK source (the Pro visitorId is a server-side FUZZY MATCH over ~50 signals): we
+  spoof the identifier + build + RAM/storage subset but NONE of the stable hardware signals, and our
+  generated profile has no data for them. Unspoofed & constant across every rotation:
+  `/proc/cpuinfo` (SoC/cores/BogoMIPS/part IDs), sensor list (SensorManager), camera list (CameraManager),
+  GLES/GPU version+renderer (glGetString → real Adreno 640), codec list (MediaCodecList), input devices,
+  core count, battery capacity. FPJS reads them off the real Pixel 4 → fuzzy match locks on. This is the
+  actual GOAL 1.3 and the path to "beats FPJS".
+  - Hooks: SensorManager/CameraManager/MediaCodecList are Java hooks (same pattern we already use);
+    `/proc/cpuinfo` needs a file-read hook (the Zygisk layer can hook `open`/`read` on that path), GLES
+    needs `glGetString`/`eglGetProcAddress`.
+  - HARD part = COHERENCE: every faked hardware value must match the ONE chosen device or it's a WORSE
+    fingerprint. Needs a per-model hardware dataset (sensors/cameras/GPU/cpuinfo per device row). Start
+    with the cheap high-value ones (`/proc/cpuinfo`, GLES renderer, core count) and re-measure visitorId.
+  - CORRECTION: an earlier note here blamed the constant datacenter IP (`datacenter_result:true`,
+    `highActivity:true`). That is a fraud SMART-SIGNAL, not the identity anchor — a shared datacenter IP
+    can't collapse distinct devices to one visitorId (FPJS would be useless to its customers). The user
+    correctly rejected the IP explanation; the hardware signals are the real leak. IP handling is a
+    separate, lower-priority fraud-flag concern.
+
 - **2026-07-25 · Decompile `byedentity.apk` (a.k.a. deidentify) & 3-way compare** — status: `idea`.
   A new anti-identity APK (7 MB, ~8× smaller than GeerGit → likely native/Xposed, not Flutter). Decompile
   it, map what it spoofs/hides, and compare GeerGit vs Specter vs byedentity. Pull any features worth
@@ -175,7 +197,15 @@ cost nothing — but on their own they cannot beat an NDK fingerprinter.
    That argues for a **Zygisk/native-hook module** over `resetprop`+`touch`, which is a change of
    approach from the byedentity-imitating plan and should be evaluated as such before building.
 
-## 2026-07-25 · Native layer — RESEARCHED, approach chosen (Zygisk PLT hook)
+## 2026-07-25 · Native layer — SHIPPED (Zygisk INLINE hook, not PLT)
+`shipped`. Built as `xposed-module/zygisk/` and verified on-device (probe: native==Java 19/19). NOTE the
+approach below said "PLT hook" — that was the plan and it FAILED in practice: PLT hooking can't reach
+bionic's internal `__system_property_get`->`__system_property_read_callback` call, so the shipped module
+uses an INLINE hook (vendored And64InlineHook, compiled into one self-contained .so because ZygiskNext's
+builtin linker won't load a module with an external DT_NEEDED). Fleet-safe via a companion denylist. It
+closed the device-side blind spot but did NOT change the FPJS visitorId — the anchor moved to the egress
+IP (see the residential-IP entry at the top of Active). Original research notes kept below for the record.
+
 `researching -> ready to build`. The device already runs **ZygiskNext (`zygisksu`)** with Zygisk
 modules loaded (`zygisk_vector`, `playintegrityfix`, `tricky_store`), and `resetprop` is present
 (`/system_ext/bin/resetprop`). So no new root infra is needed.

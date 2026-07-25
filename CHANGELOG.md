@@ -5,6 +5,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Added
+- **Zygisk native layer — closes the native read paths (GOAL 1.2).** A new self-contained Zygisk
+  companion module (`xposed-module/zygisk/`) that INLINE-hooks libc per-app, from the SAME
+  `/data/local/tmp/specter/<pkg>.json` the Xposed module reads (one source of truth). It spoofs:
+  (a) system properties via `__system_property_read_callback` AND `__system_property_get`, and
+  (b) the factory-reset mtime via `stat`/`lstat`/`fstatat`/`statx`. PROVEN on-device: the dual-read
+  probe now shows native == Java (19/19 props spoofed) where before 10/19 leaked the real device.
+  This closes the libc blind spot the property probe (PR #7) and the FPJS factoryReset test (PR #8)
+  proved Xposed's Java-only hooks could not reach.
+  - **Mechanism:** PLT hooking was tried first and does NOT work — bionic's internal
+    `__system_property_get`->`__system_property_read_callback` call never goes through libc's PLT, so
+    a PLT hook reports a backup yet intercepts nothing (proven on-device). Switched to an INLINE hook
+    (vendored And64InlineHook, single-file MIT) — the same class of hook PlayIntegrityFork uses. Must
+    be self-contained: ZygiskNext's builtin linker refuses a module with an unresolved external
+    `DT_NEEDED` (`open module with builtin linker failed: not preloaded`), so the hooker is compiled in.
+  - **Fleet safety (NON-NEGOTIABLE):** a hard denylist in the root companion refuses to serve a profile
+    for `com.doordash.driverapp` / `com.dd.doordash` / `com.pyshivam.geergit` / `android` / `system`
+    even if a stray profile file exists, so the native hooks can NEVER touch a GeerGit fleet app.
+    Verified on-device: only `com.specter.probe` was hooked; no fleet app ever was.
+  - Build: `bash build-zygisk.sh` -> `dist/specter-zygisk-v<VERSION>.zip` (flashable module). Logic
+    unit-tested via `run-zygisk-tests.sh` (cross-compiled for arm64, run on-device).
+
+### Known limitation
+- **Native spoofing did NOT change the FPJS Pro `visitorId` — root cause is unspoofed HARDWARE
+  signals, not the native layer or the IP (GOAL 1.2 device-side done; end-to-end not).** With props +
+  factory-reset spoofed natively AND via Java, two fully different identities (Motorola kiev ->
+  Samsung o1s) STILL returned the same `visitorId` (`confidenceScore 1.0`). Reading the
+  fingerprintjs-android SDK source shows why: the Pro visitorId is a server-side FUZZY MATCH over ~50
+  signals, and we spoof none of the stable HARDWARE-characteristic ones — `/proc/cpuinfo`, sensor list,
+  camera list, GLES/GPU version, codec list, input devices, core count — nor generate any data for them.
+  FPJS reads them off the real Pixel 4 unchanged every rotation, so the match locks on. (The IP
+  `datacenter_result:true` flag is a separate fraud smart-signal, NOT the identity anchor.) Spoofing the
+  hardware signals coherently is the real next step — see GOAL 1.3 / IDEAS.md.
+
 ### Changed
 - **Device pool filtered to plausible phones (GOAL 2.1).** Generation now excludes tablets/TV boxes
   (Galaxy Tab, Nexus 7/9/10, Nexus Player, Shield, Pixel C) and any device below Android 9 — a fresh

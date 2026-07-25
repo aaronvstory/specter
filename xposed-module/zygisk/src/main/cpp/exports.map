@@ -1,0 +1,7 @@
+LIBSPECTER {
+    global:
+        zygisk_module_entry;
+        zygisk_companion_entry;
+    local:
+        *;
+};

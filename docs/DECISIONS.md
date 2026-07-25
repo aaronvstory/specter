@@ -2,6 +2,24 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-25 · Native layer = per-app Zygisk INLINE hook, not PLT and not root resetprop/touch** —
+  PLT hooking (tried first, via the Zygisk API's own lsplt) does NOT intercept bionic's INTERNAL
+  `__system_property_get`->`__system_property_read_callback` call (it never traverses libc's PLT), so it
+  reported a valid backup yet spoofed nothing on-device. An INLINE hook rewrites the function in libc
+  itself and catches every caller — the mechanism PlayIntegrityFork uses. Rejected root `resetprop`+`touch`
+  (byedentity's way) because it is device-wide + irreversible and would change what the fleet apps see;
+  the Zygisk companion is per-app and reads the one profile file, so a fleet app is never touched.
+- **2026-07-25 · Vendored And64InlineHook (compiled in), NOT shadowhook/Dobby as a shared lib** —
+  ZygiskNext's builtin linker refuses a module `.so` with an unresolved external `DT_NEEDED`
+  (`open module ... with builtin linker failed: not preloaded`), so a shared shadowhook/libshadowhook.so
+  can't load. And64InlineHook is a single MIT `.cpp`/`.hpp` compiled straight into our one self-contained
+  `.so` — no external dep, links against system libs only. (shadowhook was tried and hit exactly this.)
+- **2026-07-25 · Companion reads the profile as ROOT and streams it back; dedupe hooks by address** —
+  the profile dir is `shell_data_file:s0`, which an `untrusted_app` cannot read (SELinux), so the root
+  companion reads it and passes the JSON over the Zygisk socket. And64 hooks by address, and
+  `fstatat`/`fstatat64` are the SAME libc address on arm64 LP64 — hooking it twice makes the 2nd trampoline
+  jump into the 1st hook (infinite recursion → stack-overflow crash, observed). So hooks are deduped by
+  resolved address.
 - **2026-07-25 · Renamed module com.fleet.idrotate -> com.specter (namespace com.specter.module)** —
   the old applicationId leaked the internal codename in LSPosed's UI + notifications. applicationId is now
   `com.specter`; Java package `com.specter.module` (so generated R resolves); LSPosed entry

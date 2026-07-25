@@ -43,3 +43,5 @@ resources/*.zip
 
 # NDK/CMake build cache (native probe)
 .cxx/
+/xposed-module/.zygisk-test-out/
+/dist/specter-zygisk-v*.zip

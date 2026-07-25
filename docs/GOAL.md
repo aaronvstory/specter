@@ -37,7 +37,15 @@ Specter is a product someone would pay for:
 The FPJS Pro demo, run twice with two different applied identities and a `pm clear` between, returns
 **two different `visitorId`s**, and ideally `visitorFound: false` on a fresh one. Record the whole
 `identification` block (`eventId` proves the call was fresh, `firstSeenAt` proves link age) — not just
-the id string. Current status: **FAILS** — same visitorId across three rotations (2026-07-25).
+the id string. Current status: **STILL FAILS — real root cause found: we don't spoof the HARDWARE-
+CHARACTERISTIC signals at all (2026-07-25).** After the native layer (GOAL 1.2) closed the prop +
+factory-reset blind spot, two different identities STILL returned the same visitorId. Reading the FPJS
+Android SDK source (the Pro visitorId is a server-side fuzzy match over its signal set) shows why: our
+generated profile has ZERO data for, and we hook NONE of, `/proc/cpuinfo`, the sensor list, the camera
+list, GLES/GPU version, codec list, input devices, or core count. FPJS reads all of those straight off
+the real Pixel 4 — identical every rotation — so its fuzzy match locks onto that stable real-hardware
+cluster. The IP `datacenter_result` flag is a separate fraud smart-signal, NOT the identity anchor
+(a datacenter IP alone can't collapse distinct devices to one visitorId). → the real GOAL 1.3.
 
 ---
 
@@ -56,26 +64,42 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   now leak exclusively through the native path, so **1.2 is a prerequisite, not an option.**
   Kept anyway: the Java hooks close the paths other SDKs do use, and they cost nothing.
 
-- [ ] **1.2 The native read path — now the critical path, not an optional extra.** `todo` · **highest value**
-  PROVEN twice over: (a) libc `__system_property_get` returns the REAL device for 10 of 19 props while the
-  Java path returns spoofed; (b) FPJS Pro reads the factory-reset mtime natively, straight through two
-  verified-working Java hooks. **Every signal we have failed to hide leaks exclusively via native code.**
-  Two candidate mechanisms — evaluate before building, the choice is not obvious:
-    - **Zygisk / native in-process hook** of `__system_property_get` + `stat`/`fstatat`/`statx`. Per-app,
-      reversible, no collateral damage to GeerGit's fleet apps, and it can serve per-identity values from
-      the same profile. Strictly better on blast radius than the byedentity-style approach.
-    - **Root `resetprop` + `touch`** (what byedentity does). Simpler to write, but device-wide,
-      irreversible for the real mtimes, and it changes what the fleet apps see. Needs a revert path.
-  Either way: values come from the ONE generated profile (never a second source of truth), and it is
-  re-verified with the dual-read probe + the FPJS test, not assumed.
-  Done when: the probe shows native == Java for every dual-read field, AND the FPJS demo yields two
-  different `visitorId`s across two identities.
+- [~] **1.2 The native read path — DEVICE-SIDE DONE + VERIFIED; did NOT move the visitorId.** `partial`
+  Built the Zygisk native layer (`xposed-module/zygisk/`): a self-contained, per-app companion module
+  that INLINE-hooks libc (`__system_property_read_callback` + `__system_property_get`, and
+  `stat`/`lstat`/`fstatat`/`statx`) from the SAME profile the Xposed module reads. **PROVEN on-device:**
+  the dual-read probe now shows native == Java for every property (19/19 spoofed; was 10/19 leaking), and
+  the FPJS process is confirmed hooked. Fleet-safe by a hard companion denylist (verified: only the
+  probe was ever hooked, never a fleet app).
+  Mechanism notes (learned the hard way, see IDEAS/DECISIONS): PLT hooking does NOT intercept bionic's
+  internal prop path; an INLINE hook (And64InlineHook, compiled in) does. ZygiskNext's builtin linker
+  requires a self-contained `.so` (no external `DT_NEEDED`).
+  **BUT the definition-of-done is NOT met, and the reason is NOT the native layer** — it's that we never
+  spoofed the hardware-characteristic signals (see 1.3). Two fully different identities STILL returned the
+  same `visitorId` (`confidenceScore 1.0`). Kept anyway: closing the native prop/reset path is real and
+  necessary (other SDKs read natively), it just isn't sufficient on its own.
 
-- [ ] **1.3 Re-audit for the NEXT leak after 1.2 lands.** `todo`
-  When the visitorId rotates, don't declare victory — re-run the FPJS test on a third and fourth identity
-  and read the whole smartSignals block for the next anchor. The pattern this session: each fix reveals
-  the next signal. Also still untested: the Widevine/OEMCrypto **native** path (different API, not covered
-  by the property probe).
+- [ ] **1.3 Spoof the HARDWARE-CHARACTERISTIC signals — the actual reason FPJS still wins.** `todo` · **highest value**
+  ROOT CAUSE (found 2026-07-25 by reading the fingerprintjs-android SDK source + confirming our profile/
+  hooks): the Pro `visitorId` is a server-side fuzzy match over ~50 signals; we spoof the identifier +
+  build + RAM/storage subset but NONE of the stable hardware signals, and generate no data for them:
+    - `/proc/cpuinfo` (procCpuInfo / procCpuInfoV2) — real SoC, cores, BogoMIPS, CPU part IDs
+    - sensor list (SensorManager) — real Pixel 4 sensors (name/vendor/resolution)
+    - camera list (CameraManager) — real camera characteristics
+    - GLES/GPU version + renderer (glGetString) — real Adreno 640
+    - codec list (MediaCodecList), input devices, core count, battery capacity
+  All are read straight off the real device, identical every rotation → the fuzzy match locks on. Two hard
+  parts: (1) hooking these (SensorManager/CameraManager/MediaCodecList are Java hooks like the ones we
+  have; `/proc/cpuinfo` + GLES need native/file-read handling — the Zygisk layer can hook `open`/`read`
+  on `/proc/cpuinfo`, GLES needs an `eglGetProcAddress`/`glGetString` hook); (2) COHERENCE — every faked
+  hardware value must match the ONE chosen device, or an incoherent combo is itself a worse fingerprint.
+  This needs a per-model hardware dataset (sensors/cameras/GPU/cpuinfo per device row) — the big lift, but
+  it is the path to actually beating FPJS. Start with the cheapest high-value ones (`/proc/cpuinfo`, GLES
+  renderer, core count) and measure the visitorId after each.
+  NOTE the IP smart-signal (`datacenter_result:true`, `highActivity:true`) is a fraud FLAG, not the
+  identity anchor — deprioritized; a shared datacenter IP cannot by itself collapse distinct devices to
+  one visitorId (that would make FPJS useless for its own customers). Also still untested: Widevine/
+  OEMCrypto native path.
 
 ### Phase 2 — Plausibility (a coherent identity nobody has to squint at)
 
@@ -122,3 +146,13 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   now leak exclusively through native code. Also caught a real pre-existing bug on the way: Java's
   `Profile.KEYS` was missing `media_drm_security_level`, so last session's Widevine coherence fix never
   applied on the Java path. A parity test now guards the key list against drift.
+- **2026-07-25** — 1.2 native layer BUILT + verified device-side (probe: 19/19 native==Java), but it did
+  NOT move the visitorId. FIRST diagnosis blamed the constant datacenter IP — CORRECTED after the user
+  pushed back (a shared datacenter IP can't collapse distinct devices to one visitorId, else FPJS is
+  useless to its customers). REAL root cause, found by reading the fingerprintjs-android SDK source: we
+  spoof identifiers + build + RAM/storage but NONE of the stable hardware-characteristic signals
+  (`/proc/cpuinfo`, sensors, cameras, GLES/GPU, codecs, input devices, core count) and generate no data
+  for them — FPJS reads them off the real Pixel 4 unchanged every rotation, and its server-side fuzzy
+  match locks onto that. Promoted 1.3 = spoof the hardware signals (needs a per-model dataset; the big
+  lift). Mechanism lessons logged: PLT hook can't reach bionic's internal prop path (need INLINE hook);
+  ZygiskNext's builtin linker requires a self-contained module .so.

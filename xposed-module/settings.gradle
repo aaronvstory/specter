@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 rootProject.name = "specter-module"
 include ':app'
 include ':probe'
+include ':zygisk'

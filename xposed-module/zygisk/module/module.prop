@@ -1,0 +1,6 @@
+id=specter_zygisk
+name=Specter Zygisk
+version=v0.3.0
+versionCode=300
+author=Specter
+description=Per-app native layer: spoofs libc system properties and factory-reset mtime from the same generated profile the Specter Xposed module uses. Closes the native read paths FingerprintJS reads through.
