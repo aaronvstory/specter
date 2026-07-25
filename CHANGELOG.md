@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Investigation (2026-07-26) — root cause of "FPJS still wins" PROVEN
+- Wired up the Fingerprint **Server API** (user's Public key in the demo -> events in the user's own
+  clean workspace; Secret key + AP/Mumbai region -> read raw signals back via curl). Ran the clean
+  two-rotation test: two totally different device profiles BOTH returned the same visitorId
+  (`SJoG6...`, confidence 1.0) even with no stale record. The raw API response proves WHY: the server
+  saw the **real Pixel 4** both times — `device="Pixel 4"`, `osVersion="11"`,
+  `userAgent="Dalvik/2.1.0 (...; Android 11; Pixel 4 Build/RQ3A.211001.001)"`, `rootApps=True`.
+  The **User-Agent** (framework-built from Build.*, read by the SDK from a system/WebView path our
+  in-app Build.* hooks don't cover) is the visitorId anchor — NOT the hardware bundle. Fix in progress:
+  hook `WebSettings.getDefaultUserAgent()` + `System.getProperty("http.agent")` + close `rootApps`
+  detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
+
 ### Fixed
 - **UsedStore concurrency hardening (ban-critical no-reuse ledger).** Three real defects surfaced by
   a flaky concurrency test, all fixed at the root: (1) `_atomic_write_json` now `fsync`s before

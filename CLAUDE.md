@@ -64,6 +64,24 @@ spoofed one. Closing that needs a root `resetprop` layer (not built yet — see 
 for testing: `getprop` via exec is a FALSE proxy (separate unhooked process, always shows real). The
 dual-read probe (`probe/src/main/cpp/native-probe.cpp`, NDK 27) is the correct instrument.
 
+## FPJS measurement — Server API (the ground-truth tool, set up 2026-07-26)
+The FPJS *demo* app's on-screen visitorId is a weak proxy; the **Server API** gives the raw server-side
+signals (what FPJS actually saw), which is how the UA-leak root cause was found. Setup already done:
+- The demo's Settings → "Use your API keys" is ON with the USER's Public key, so identifications land in
+  the USER's own workspace (clean — no stale record). `pm clear` WIPES these keys (encrypted prefs);
+  `am force-stop` preserves them. **So apply new profiles with `push --no-clear`, NEVER `rotate`, on the
+  demo.** After a `pm clear` the user must re-enter the keys in the app UI (can't be scripted — encrypted).
+- Read any event's full raw signals with the user's Secret key (AP/Mumbai region):
+  `curl -s -H "Auth-API-Key: <SECRET>" https://ap.api.fpjs.io/events/<eventId>` → JSON with
+  `products.identification.data` (visitorId, visitorFound, confidence, browserDetails.{device,userAgent,
+  osVersion}), `products.rootApps`, `products.factoryReset`, `products.vpn/ipInfo`, etc. `404
+  RequestNotFound` = auth OK but that event was made with the demo's built-in key (not the user's key).
+  `403 TokenNotFound` = wrong/public key; `403 WrongRegion` = not AP.
+- An MCP server `fingerprint-server-api` is in `~/.claude.json` (region ap) — live after a Claude restart.
+- **The test that matters:** apply identity A (`push --no-clear`), `am force-stop` + relaunch the demo,
+  tap the fingerprint icon, read the eventId; repeat for identity B; pull both events; if visitorId is the
+  SAME across two different profiles, Specter isn't winning — diff the raw signals to find what's constant.
+
 ## Verify on-device (autonomous, no clicking)
 - **`adb push` of a LARGE file silently no-ops on this rooted device** — it reports success but the file is
   ABSENT from a normal `adb shell` afterwards (adbd is in a Magisk/zygisk mount namespace; its sync target

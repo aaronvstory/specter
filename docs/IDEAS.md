@@ -5,6 +5,30 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-26 · PROVEN ROOT CAUSE (via FPJS Server API): the User-Agent leaks the REAL Pixel 4 — the visitorId anchor.** — status: `proven, fix in progress`.
+  Set up the Fingerprint Server API (Secret key, AP region) + the user's own Public key in the demo, so
+  identifications land in the USER's workspace (no stale record) and we can read the full raw signals back.
+  Ran the clean two-rotation test the whole project needed:
+    - identity 2 (Moto G6 profile) -> visitorId `SJoG6j4i4vS9DoH6EM90`, visitorFound false (fresh)
+    - identity 4 (Galaxy Tab profile, TOTALLY different device) -> **SAME `SJoG6...`**, visitorFound true, confidence 1.0
+  So Specter does NOT beat FPJS — two different profiles collapse to one visitorId even in a clean workspace
+  (no server-memory / IP excuse — both confirmed via the raw API response). **The server saw the SAME REAL
+  DEVICE both times:** `browserDetails.device = "Pixel 4"`, `osVersion = "11"`, and
+  `userAgent = "Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)"` — the real device,
+  UNSPOOFED, on both rotations. Also `rootApps = True` (Magisk detected).
+  MECHANISM: the FPJS Android SDK reads device identity from the USER-AGENT (built by the framework from
+  Build.MODEL/VERSION.RELEASE/ID, assembled in a system/WebView process — NOT the in-app Build.* field
+  reads our Xposed hooks cover). Our probe shows Build.MODEL spoofed IN-PROCESS, but the SDK reads the real
+  UA from a path we never hooked. That single software-readable string is the dominant visitorId anchor.
+  GOOD NEWS: it's a software-readable leak, not an unspoofable hardware-attestation wall — it's hookable.
+  FIX (building now): (1) hook `WebSettings.getDefaultUserAgent()` + `System.getProperty("http.agent")`
+  (+ the `http.agent` system property) to rebuild the UA from the spoofed Build fields; (2) close the
+  `rootApps` detection FPJS uses. Then re-run the two-rotation test — the visitorId should finally split.
+  TOOLING NOW IN PLACE (reusable, no per-test keys): Server API via curl with the user's Secret key
+  (`zTZsBALjWuvpfyMI3Kvm`, AP/Mumbai), and an MCP server `fingerprint-server-api` added to ~/.claude.json
+  (live after a Claude restart). The demo's "Use your API keys" is ON (survives force-stop; only `pm clear`
+  wipes it — so use `push --no-clear`, NOT `rotate`, to keep the keys).
+
 - **2026-07-26 · SHIPPED + PROBE-VERIFIED: per-model hardware-descriptor layer (GOAL 1.3).** — status: `shipped`.
   Built `data/hardware.json` (keyed by device codename, coherent SoC-derived bundles: GPU/GLES renderer,
   /proc/cpuinfo, sensors, cameras, codecs, cores, input) via `scripts/build_hardware_dataset.py`. Plumbed
