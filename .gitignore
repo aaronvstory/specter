@@ -40,3 +40,6 @@ nul
 /resources/decompiles/geergit-*-dex-java/
 /resources/device-backups/*.tgz
 resources/*.zip
+
+# NDK/CMake build cache (native probe)
+.cxx/

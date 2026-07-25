@@ -12,6 +12,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   GeerGit's LSPosed module is never touched. `scope_probe.py` updated to the new package.
 
 ### Added
+- **Native-read blind-spot probe** (`probe/src/main/cpp/native-probe.cpp`, NDK 27 + CMake). A JNI function
+  calls libc `__system_property_get` **in-process**, so the probe reads 19 system properties BOTH ways —
+  Java `SystemProperties.get` (which Specter hooks) and native libc (which it does not) — and
+  `verify_on_device.py`-style comparison shows exactly where the two disagree. `getprop` via exec is a
+  false proxy for this (separate, unhooked process); the read must be in-process JNI.
+  **Result (PROVEN on-device, Pixel 4):** the Java side returns the spoofed value for all 19 props while
+  the native side returns the REAL device value for 10 of them (`ro.product.model` → `Pixel 4`,
+  `ro.board.platform` → `msmnile`, `ro.hardware`/`ro.product.board`/`ro.product.device`/`ro.product.name`
+  → `flame`, `ro.build.fingerprint` → `google/flame/flame:11/RQ…`, `ro.bootloader`/`ro.boot.bootloader`,
+  `gsm.version.baseband`). An NDK-based fingerprinter reading props natively sees the real hardware.
+  This is the one axis byedentity's root `resetprop` layer beats us on — see `docs/IDEAS.md`.
+
 - **byedentity 3-way analysis** (`docs/BYEDENTITY-ANALYSIS.md`): decompiled `com.byedentity` v3.0.1 and
   compared GeerGit vs Specter vs byedentity. byedentity is a root/Magisk + native-JNI, server-validated
   changer that spoofs system-wide via `resetprop` + `pm clear` + a Widevine `liboemcrypto.so` bind-mount
@@ -21,6 +33,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   alongside `deviceUniqueId`, and `verify_on_device.py` prints a Widevine-coherence line.
 
 ### Fixed
+- **`ro.*` property aliases leaked the real device (PROVEN, found by the new dual-read probe).** Specter
+  spoofed each `Build.*` field but only 6 property keys (`os.version`, baseband, SoC). Every other Build
+  field has a `ro.*` property alias that a fingerprinter can read directly, and those returned the real
+  hardware: `SystemProperties.get("ro.product.model")` → `"Pixel 4"` and `("ro.boot.bootloader")` →
+  the real bootloader, while `Build.MODEL`/`Build.BOOTLOADER` were correctly spoofed. `HookEntry` now
+  dispatches a `PROP_ALIASES` table covering 30 keys (model/brand/manufacturer/device/name/board/hardware/
+  bootloader/serialno/fingerprint/id/display/release/incremental/security_patch/host, plus the `vendor.`
+  variants) from the SAME profile values as the fields — coherent by construction, consumes no RNG, so
+  Java↔Python byte-parity is unaffected. Verified on-device: **19/19 props spoofed, 0 Java-layer leaks**
+  (was 2). Note this closes the *Java* path only; native `__system_property_get` still reads real (above).
 - **Widevine DRM coherence (no root).** Specter value-spoofed `deviceUniqueId` but left `securityLevel`
   reporting the real **L1** — a *changing* device id at hardware-L1 is itself a fingerprint. Confirmed
   on-device (Pixel 4: spoofed id @ L1), then fixed: `profile.py` emits `media_drm_security_level: "L3"`

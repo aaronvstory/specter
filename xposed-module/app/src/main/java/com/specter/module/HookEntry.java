@@ -217,26 +217,48 @@ public class HookEntry implements IXposedHookLoadPackage {
     // SystemProperties.get is an extremely HOT path — hook it exactly once and dispatch every spoofed
     // key inside a single callback (kernel os.version, baseband, SoC platform) instead of registering
     // three separate hooks that each add overhead on every property read.
+    // prop key -> profile key. Every Build.* field we spoof has a ro.* property alias; spoofing only
+    // the field leaves the alias reading the REAL device (proven on-device: SystemProperties.get(
+    // "ro.product.model") returned "Pixel 4" while Build.MODEL was correctly "sailfish"). Same values
+    // as the fields, so this is coherent by construction and consumes no RNG (byte-parity safe).
+    private static final String[][] PROP_ALIASES = {
+        {"os.version", "build_kernel_version"},
+        {"gsm.version.baseband", "build_radio"}, {"ril.baseband", "build_radio"},
+        {"ro.board.platform", "soc_platform"}, {"ro.hardware.chipname", "soc_platform"},
+        {"ro.soc.model", "soc_platform"},
+        {"ro.product.model", "build_model"}, {"ro.product.vendor.model", "build_model"},
+        {"ro.product.brand", "build_brand"}, {"ro.product.vendor.brand", "build_brand"},
+        {"ro.product.manufacturer", "build_manufacturer"},
+        {"ro.product.vendor.manufacturer", "build_manufacturer"},
+        {"ro.product.device", "build_device"}, {"ro.product.vendor.device", "build_device"},
+        {"ro.product.name", "build_product"}, {"ro.product.vendor.name", "build_product"},
+        {"ro.build.id", "build_id"}, {"ro.build.display.id", "build_display"},
+        {"ro.build.fingerprint", "build_fingerprint"},
+        {"ro.vendor.build.fingerprint", "build_fingerprint"},
+        {"ro.build.version.incremental", "build_incremental"},
+        {"ro.build.version.release", "build_release"},
+        {"ro.build.version.security_patch", "build_security_patch"},
+        {"ro.build.host", "build_host"},
+        {"ro.bootloader", "build_bootloader"}, {"ro.boot.bootloader", "build_bootloader"},
+        {"ro.hardware", "build_hardware"},
+        {"ro.product.board", "build_board"},
+        {"ro.serialno", "serial"}, {"ro.boot.serialno", "serial"},
+    };
+
     private void hookSystemProperties(final Map<String, String> p) {
-        final String kernel = p.get("build_kernel_version");
-        final String radio = p.get("build_radio");
-        final String soc = p.get("soc_platform");
-        if (kernel == null && radio == null && soc == null) return;
+        final Map<String, String> byProp = new HashMap<>();
+        for (String[] a : PROP_ALIASES) {
+            String v = p.get(a[1]);
+            if (v != null) byProp.put(a[0], v);
+        }
+        if (byProp.isEmpty()) return;
         try {
             Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
             XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
                     if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
-                    String k = (String) mp.args[0];
-                    switch (k) {
-                        case "os.version":
-                            if (kernel != null) mp.setResult(kernel); break;
-                        case "gsm.version.baseband": case "ril.baseband":
-                            if (radio != null) mp.setResult(radio); break;
-                        case "ro.board.platform": case "ro.hardware.chipname": case "ro.soc.model":
-                            if (soc != null) mp.setResult(soc); break;
-                        default: // not a spoofed key — leave the real value
-                    }
+                    String v = byProp.get((String) mp.args[0]);
+                    if (v != null) mp.setResult(v);
                 }
             });
         } catch (Throwable ignored) {}

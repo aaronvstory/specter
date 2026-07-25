@@ -51,3 +51,16 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 - **2026-07-18 · Narrow hooks / DevInfo-only scope justified by fragility + system-scope side effects**,
   NOT a "pairip kills broad hooks" law (that claim was disproved by device evidence — a broken base-only
   Dasher install, not a hook, caused the crash).
+- **2026-07-25 · Spoof `ro.*` property aliases in the SAME hook, from the same profile values** — the
+  dual-read probe proved `SystemProperties.get("ro.product.model")` returned the real `"Pixel 4"` while
+  `Build.MODEL` was spoofed. Rather than a second hook, `hookSystemProperties` now builds a prop→value map
+  (`PROP_ALIASES`) once per process and dispatches on lookup. Same one hot-path hook, no extra overhead,
+  values identical to the fields (so coherent by construction) and no RNG draws (so byte-parity safe).
+- **2026-07-25 · The native-read test MUST be in-process JNI, not `getprop`** — `getprop` execs a separate
+  process that Specter never hooks, so it always shows real values regardless of whether our hooks work.
+  It would "prove" a blind spot that might not exist. The probe calls libc `__system_property_get` inside
+  the hooked process, which is what an NDK fingerprinting SDK actually does.
+- **2026-07-25 · Native prop leak: documented, NOT yet fixed** — closing it needs a root layer that changes
+  props at the source (`resetprop`), which mutates the whole device, not just the scoped app. That is a
+  materially larger blast radius than a per-app Xposed hook and needs its own PR + coherence review.
+  Logged as the top adoption candidate in `docs/IDEAS.md` instead of rushed in here.

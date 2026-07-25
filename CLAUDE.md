@@ -19,6 +19,11 @@ look like distinct devices. Replaces the closed-source GeerGit. Repo: `aaronvsto
 - Build the module: `cd xposed-module && JAVA_HOME=... GRADLE_BIN=... ANDROID_HOME=... bash build-apk.sh`
   → `dist/specter-module-v<VERSION>.apk`. build-apk.sh now clean-compiles.
 - Build the probe: `gradle :probe:assembleDebug` → `probe/build/outputs/apk/debug/probe-debug.apk`.
+  The probe now has a native component, so it needs **NDK 27.0.12077973 + cmake 3.22.1** (installed
+  2026-07-25 under `$LOCALAPPDATA/Android/Sdk/{ndk,cmake}`; cmdline-tools live at
+  `Sdk/cmdline-tools/cmdline-tools/bin/sdkmanager.bat` — note the doubled dir). Verify the lib shipped:
+  `lib/arm64-v8a/libprobe.so` must be in the APK. `extractNativeLibs` defaults false, so on-device
+  `.../lib/arm64/` being EMPTY is normal — it loads from inside the APK.
 - **CLEAN-build before trusting on-device behavior** — incremental Gradle can mask a compile error with
   stale `.class` files (once shipped a broken APK). Verify a new symbol is in the APK dex (multidex —
   check classes2/3/4.dex, not just classes.dex). Xposed stub only has `setStaticObjectField`; set
@@ -30,6 +35,17 @@ look like distinct devices. Replaces the closed-source GeerGit. Repo: `aaronvsto
 For zero-arg / overload-agnostic methods use `XposedBridge.hookAllMethods(cls, "name", callback)`.
 This silently broke getSerial/getRadioVersion/os.version hooks until the probe caught it.
 
+**Spoofing a `Build.*` field is only half the job — spoof its `ro.*` property alias too.** `Build.MODEL`
+and `SystemProperties.get("ro.product.model")` are independent read paths; hooking only the field left the
+prop returning the real `"Pixel 4"`. `HookEntry.PROP_ALIASES` now maps 30 prop keys to the same profile
+values. Any NEW spoofed Build field must be added there as well, or it leaks.
+
+**Xposed hooks are Java-only — native `__system_property_get` reads straight through them (PROVEN).**
+An in-process JNI read returns the REAL device value for ~10 `ro.*` props while the Java path returns the
+spoofed one. Closing that needs a root `resetprop` layer (not built yet — see `docs/IDEAS.md`). Corollary
+for testing: `getprop` via exec is a FALSE proxy (separate unhooked process, always shows real). The
+dual-read probe (`probe/src/main/cpp/native-probe.cpp`, NDK 27) is the correct instrument.
+
 ## Verify on-device (autonomous, no clicking)
 - `python scripts/scope_probe.py [serial]` — one-time: adds the probe to Specter's LSPosed scope
   (PC-side SQLite edit, then reboot). Never touches GeerGit's scope.
@@ -38,6 +54,16 @@ This silently broke getSerial/getRadioVersion/os.version hooks until the probe c
   it, reads what the hooks actually returned, prints a per-field ✅/❌ table. Exit 0 = all spoofed.
 - The probe (`xposed-module/probe/`) reads every spoofable API → world-readable JSON. Deterministic,
   covers everything, enables GeerGit-vs-Specter side-by-side. Use this, NOT DevInfo UI screenshots.
+- **After a reboot, the probe cannot launch until the screen is UNLOCKED** — `monkey` prints
+  `** No activities found to run, monkey aborted.` and `am start` reports `Error type 3 / Activity class
+  does not exist`, both of which look like a broken/disabled package and send you chasing PackageManager
+  ghosts. It's just the keyguard. Check `dumpsys window | grep isKeyguardShowing`, and
+  `input keyevent KEYCODE_WAKEUP` first. Also: **delete the old `probe_result.json` before re-running** or
+  you will happily verify a STALE result (`enabled=0` in `dumpsys package` is *DEFAULT*, not disabled —
+  DevInfo shows it too; not a symptom).
+- The probe writes `/data/local/tmp/specter/probe_result.json` if it can, else falls back to
+  `/data/data/com.specter.probe/files/probe_result.json`. That dir is root-owned, so in practice the
+  **fallback path is the live one** — `verify_on_device.py` already reads it.
 
 ## Tests (TDD, both must be green before commit)
 - Python: `.venv/Scripts/python.exe -m pytest -q`

@@ -21,7 +21,19 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
       `profile.py` `media_drm_security_level:"L3"` (constant, byte-parity-safe). Re-verified coherent @ L3.
       So the *native-read* blind spot below is now narrower: for Widevine specifically, the Java hook suffices
       unless a stack reads OEMCrypto via the native C++ path (untested). See docs/BYEDENTITY-ANALYSIS.md.
-    - **The blind spot (HYPOTHESIS, plausible, unproven):** a Java hook on `MediaDrm.getPropertyByteArray`
+    - **UPDATE 2026-07-25 · NATIVE-READ BLIND SPOT NOW *PROVEN* (for system properties).** Built a JNI probe
+      (`probe/src/main/cpp/native-probe.cpp`) that calls libc `__system_property_get` **in-process** and read
+      19 props BOTH ways in the same hooked process. Result on the Pixel 4: **Java 19/19 spoofed, native 10/19
+      returning the REAL device** — `ro.product.model`→`Pixel 4`, `ro.board.platform`→`msmnile`,
+      `ro.hardware`/`ro.product.board`/`ro.product.device`/`ro.product.name`→`flame`,
+      `ro.build.fingerprint`→`google/flame/flame:11/RQ…`, `ro.bootloader`+`ro.boot.bootloader`,
+      `gsm.version.baseband`. So: **an NDK/native fingerprinting SDK reading props sees straight through every
+      Xposed hook we have.** This is no longer theoretical for the *property* path. STILL UNPROVEN: (a) that the
+      DoorDash stack actually reads props natively, and (b) the Widevine/OEMCrypto native path (untested —
+      different API, not covered by this probe). So this justifies building the root layer, but it is NOT yet
+      "the fleet fix". Also note `ro.serialno`/`ro.boot.serialno` read **empty** natively (SELinux denies
+      `serialno_prop` to `untrusted_app` — logged `avc: denied` in logcat), so the serial does not leak this way.
+    - **The Widevine blind spot (HYPOTHESIS, still unproven):** a Java hook on `MediaDrm.getPropertyByteArray`
       / `Build.SERIAL` is invisible to a fingerprinting SDK that reads the SAME value via the **native**
       path — Widevine's C++ OEMCrypto API, or `__system_property_get("ro.serialno")` — bypassing our hook
       entirely. byedentity's `mount -o bind …/liboemcrypto.so /vendor/lib{,64}/liboemcrypto.so` (PROVEN from
@@ -71,3 +83,17 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 - Deep fingerprint-signal spoofing: SoC/radio/kernel/HARDWARE/BOARD/HOST/DISPLAY/RAM, device-coherent (PR #5).
 - Dev-mode-tell hiding (adb_enabled/dev-settings → 0); Settings.Secure bluetooth_address leak closed.
 - USA-only (US carriers, NANP phones, US-market brands); realistic emails. Autonomous probe verifier.
+
+## 2026-07-25 · Lab-test results (this session)
+- **Native-read blind-spot probe — DONE, result: leak PROVEN.** status: `shipped` (the probe) /
+  `researching` (the fix). See the UPDATE under the byedentity native-path entry above for the full table.
+  **Next action (top adoption candidate, its own PR):** a root `resetprop` layer that sets the same
+  `ro.*` values Specter already generates, so Java AND native reads agree. Blast radius is device-wide, not
+  per-app — so it needs: coherence with the one generated profile, a revert path, and re-verification with
+  this same dual-read probe (which now exists and makes the fix measurable).
+- **`ro.*` alias leak — FOUND + FIXED this session.** status: `shipped`. A side-finding of building the probe:
+  Specter spoofed `Build.*` fields but only 6 prop keys, so `SystemProperties.get("ro.product.model")` leaked
+  `"Pixel 4"` at the *Java* layer. Now 30 aliases dispatched from the same values. This one was pure win —
+  no root needed, no coherence risk, no RNG.
+- **FPJS Pro demo fingerprint-rotation test — NOT RUN YET.** status: `idea`. Deferred behind the two findings
+  above; the app is installed and already in `com.specter`'s LSPosed scope (mid 154), so it is ready to run.

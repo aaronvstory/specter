@@ -25,6 +25,43 @@ import java.lang.reflect.Method;
  */
 public class ProbeActivity extends Activity {
 
+    /** libc __system_property_get, in-process — the path an NDK-based fingerprinter uses. */
+    private static native String nativeGetprop(String key);
+
+    private static final String NATIVE_LIB_ERR;
+    static {
+        String err = null;
+        try { System.loadLibrary("probe"); } catch (Throwable t) { err = "ERR:" + t; }
+        NATIVE_LIB_ERR = err;
+    }
+
+    /** Props Specter spoofs via the Java SystemProperties hook — read each BOTH ways and compare. */
+    private static final String[] DUAL_READ_PROPS = {
+        "ro.board.platform", "ro.hardware.chipname", "gsm.version.baseband",
+        "ro.product.model", "ro.product.brand", "ro.product.manufacturer",
+        "ro.product.device", "ro.product.name", "ro.build.id", "ro.build.fingerprint",
+        "ro.build.version.release", "ro.build.version.incremental", "ro.build.host",
+        "ro.bootloader", "ro.boot.bootloader", "ro.hardware", "ro.product.board",
+        "ro.serialno", "ro.boot.serialno",
+    };
+
+    private void nativeVsJavaProps(JSONObject o) {
+        Method get = null;
+        try {
+            get = Class.forName("android.os.SystemProperties").getMethod("get", String.class);
+        } catch (Throwable t) { put(o, "dual_read_java_err", "ERR:" + t); }
+        for (String k : DUAL_READ_PROPS) {
+            String base = "prop_" + k.replace('.', '_');
+            if (get != null) {
+                try { put(o, base + "_java", (String) get.invoke(null, k)); }
+                catch (Throwable t) { put(o, base + "_java", "ERR:" + t); }
+            }
+            if (NATIVE_LIB_ERR != null) { put(o, base + "_native", NATIVE_LIB_ERR); continue; }
+            try { put(o, base + "_native", nativeGetprop(k)); }
+            catch (Throwable t) { put(o, base + "_native", "ERR:" + t); }
+        }
+    }
+
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -71,6 +108,12 @@ public class ProbeActivity extends Activity {
                 Method get = sp.getMethod("get", String.class);
                 put(o, "soc_platform", (String) get.invoke(null, "ro.board.platform"));
             } catch (Throwable t) { put(o, "soc_platform", "ERR:" + t); }
+
+            // ---- Java-vs-native read of the SAME prop (native-read blind-spot test) ----
+            // Xposed hooks android.os.SystemProperties.get (Java). libc __system_property_get is a
+            // different code path in the SAME process — an NDK fingerprinter uses it. If the two
+            // disagree, native reads see the real device and our Java-only hooks have a blind spot.
+            nativeVsJavaProps(o);
 
             // Settings.Secure android_id
             try {
