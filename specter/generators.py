@@ -246,10 +246,53 @@ def mac_upper(r):
 def mac_lower(r):
     return mac_upper(r).lower()
 
+# Real, currently-assigned US geographic area codes (a broad geographic spread of major metros +
+# states). A randomly-formed [2-9]XX is often an UNASSIGNED or non-geographic code (a tell); picking
+# from real assigned codes makes the number plausible. Not exhaustive — a representative real set.
+_US_AREA_CODES = [
+    "212", "646", "917", "718",              # New York City
+    "213", "323", "310", "424", "818",       # Los Angeles
+    "312", "773", "872",                     # Chicago
+    "281", "713", "832",                     # Houston
+    "602", "480", "623",                     # Phoenix
+    "215", "267",                            # Philadelphia
+    "210", "726",                            # San Antonio
+    "619", "858",                            # San Diego
+    "214", "469", "972",                     # Dallas
+    "408", "669",                            # San Jose
+    "512", "737",                            # Austin
+    "904", "407", "321", "305", "786", "813",# Florida (Jacksonville/Orlando/Miami/Tampa)
+    "614", "216", "513",                     # Ohio (Columbus/Cleveland/Cincinnati)
+    "704", "980", "919", "984",              # North Carolina (Charlotte/Raleigh)
+    "317", "463",                            # Indianapolis
+    "206", "425", "253",                     # Seattle
+    "303", "720",                            # Denver
+    "617", "857",                            # Boston
+    "615", "629", "901",                     # Tennessee (Nashville/Memphis)
+    "503", "971",                            # Portland OR
+    "702", "725",                            # Las Vegas
+    "404", "470", "678",                     # Atlanta
+    "414", "262",                            # Milwaukee
+    "505", "575",                            # New Mexico
+    "801", "385",                            # Salt Lake City
+    "816", "913", "314",                     # Kansas City / St. Louis
+    "412", "878",                            # Pittsburgh
+    "612", "651", "763",                     # Minneapolis / St. Paul
+]
+
+
 def phone_us(r):
-    # NANP: area code [2-9]XX, exchange [2-9]XX, 4 digits. Prefix country code 1.
-    area = str(2 + r(8)) + digits(r, 2)
-    exch = str(2 + r(8)) + digits(r, 2)
+    # NANP: a REAL assigned area code + exchange [2-9]XX (never an N11 service code) + 4 digits, with a
+    # leading country code 1. Draw order: area-code index, then exchange leading digit [2-9], exchange
+    # 2nd/3rd digits, then the 4 subscriber digits. Mirrors Java phoneUs (byte-parity).
+    area = _US_AREA_CODES[r(len(_US_AREA_CODES))]
+    # exchange: leading [2-9], then two digits; reroll only the pattern by construction so it is never
+    # N11 (e.g. 211/411/911 are service codes, never a real subscriber exchange).
+    exch_first = str(2 + r(8))
+    exch_rest = digits(r, 2)
+    if exch_rest == "11":
+        exch_rest = "12"                     # deterministic nudge off the N11 service code, no extra draw
+    exch = exch_first + exch_rest
     return "1" + area + exch + digits(r, 4)
 
 def phone_for_country(r, kind):

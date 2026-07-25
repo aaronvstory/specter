@@ -79,6 +79,19 @@ def test_phone_us_nanp_rules():
         # area & exchange first digit must be 2-9
         assert p[1] in "23456789"
         assert p[4] in "23456789"
+        # area code must be a REAL assigned US code (not a random structurally-valid one)
+        assert p[1:4] in G._US_AREA_CODES, f"area code {p[1:4]} not in real-area-code table"
+        # exchange is never an N11 service code (211/411/911 etc.)
+        assert p[5:7] != "11", f"N11 service code as exchange: {p}"
+
+
+def test_us_area_codes_are_well_formed_and_unique():
+    # every entry is a valid NANP area code ([2-9] then 2 digits) and the list has no duplicates
+    import re as _re
+    assert len(G._US_AREA_CODES) == len(set(G._US_AREA_CODES)), "duplicate area codes"
+    for ac in G._US_AREA_CODES:
+        assert _re.fullmatch(r"[2-9]\d\d", ac), f"malformed area code {ac}"
+        assert ac[1:] != "11", f"N11 is not a valid area code: {ac}"
 
 
 def test_imsi_starts_with_mccmnc_and_15_long():

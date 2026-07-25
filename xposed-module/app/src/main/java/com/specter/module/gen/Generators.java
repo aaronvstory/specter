@@ -344,10 +344,48 @@ public final class Generators {
     public static String macLower(Rng r) { return macUpper(r).toLowerCase(); }
 
     /** NANP US phone: 1 + area [2-9]XX + exchange [2-9]XX + 4 digits. */
+    // Real, currently-assigned US geographic area codes — MUST be byte-identical to
+    // specter/generators.py _US_AREA_CODES (same values, same order) or the seeded phone diverges.
+    static final String[] US_AREA_CODES = {
+            "212", "646", "917", "718",
+            "213", "323", "310", "424", "818",
+            "312", "773", "872",
+            "281", "713", "832",
+            "602", "480", "623",
+            "215", "267",
+            "210", "726",
+            "619", "858",
+            "214", "469", "972",
+            "408", "669",
+            "512", "737",
+            "904", "407", "321", "305", "786", "813",
+            "614", "216", "513",
+            "704", "980", "919", "984",
+            "317", "463",
+            "206", "425", "253",
+            "303", "720",
+            "617", "857",
+            "615", "629", "901",
+            "503", "971",
+            "702", "725",
+            "404", "470", "678",
+            "414", "262",
+            "505", "575",
+            "801", "385",
+            "816", "913", "314",
+            "412", "878",
+            "612", "651", "763",
+    };
+
     public static String phoneUs(Rng r) {
-        String area = String.valueOf(2 + r.next(8)) + digits(r, 2);
-        String exch = String.valueOf(2 + r.next(8)) + digits(r, 2);
-        return "1" + area + exch + digits(r, 4);
+        // A REAL assigned area code + exchange [2-9]XX (never an N11 service code) + 4 digits, leading
+        // country code 1. Draw order mirrors phone_us in specter/generators.py exactly (byte-parity):
+        // area-code index, exchange leading digit, exchange 2nd/3rd digits, 4 subscriber digits.
+        String area = US_AREA_CODES[r.next(US_AREA_CODES.length)];
+        String exchFirst = String.valueOf(2 + r.next(8));
+        String exchRest = digits(r, 2);
+        if (exchRest.equals("11")) exchRest = "12";   // deterministic nudge off N11, no extra draw
+        return "1" + area + exchFirst + exchRest + digits(r, 4);
     }
 
     /** Phone by country kind. USA-only build: always NANP. (kept for the Profile call signature) */

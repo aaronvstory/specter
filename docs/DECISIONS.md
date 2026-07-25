@@ -2,6 +2,15 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-26 · Phone area codes come from a real-assigned table; N11 exchanges avoided (Phase 2.2)** —
+  a random `[2-9]XX` area code is often UNASSIGNED (a fingerprint tell), and `X11` exchanges are service
+  codes never used for subscriber lines. `phone_us` now picks the area code from a curated list of real
+  assigned US codes and nudges an `11` exchange tail to `12` deterministically (no extra RNG draw). The
+  draw COUNT changed (area is now 1 pick, not 3 digit-draws), which shifts the seeded order — so it is
+  mirrored byte-for-byte in Java and proven with `scripts/prove_phone_parity.py` (500 seeds) + a 300-seed
+  full-profile check. Area-code ↔ carrier region was deliberately NOT enforced: US numbers port across
+  carriers and regions freely, so a mismatch there is normal, not a tell.
+
 - **2026-07-25 · Native layer = per-app Zygisk INLINE hook, not PLT and not root resetprop/touch** —
   PLT hooking (tried first, via the Zygisk API's own lsplt) does NOT intercept bionic's INTERNAL
   `__system_property_get`->`__system_property_read_callback` call (it never traverses libc's PLT), so it
