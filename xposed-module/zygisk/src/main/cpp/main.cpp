@@ -19,6 +19,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdarg>
+#include <cstdio>
 #include <string>
 #include <map>
 #include <fcntl.h>
@@ -45,6 +46,20 @@ using zygisk::ServerSpecializeArgs;
 // -------- per-process spoof state (populated once in postAppSpecialize) --------
 static std::map<std::string, std::string> g_prop_spoof;  // prop name -> spoofed value
 static long g_reset_epoch = 0;                            // factory_reset_epoch (seconds), 0 = unset
+
+// -------- passive tracer (GOAL 1.3) --------
+// When the profile carries "trace":"1", log every file open / prop / getauxval the target makes, so we
+// can enumerate exactly what an OBFUSCATED native fingerprinter (FPJS's libfp.so) reads — from INSIDE
+// libc, invisible to its /proc/self/maps anti-Frida check. Off by default (hot path, log spam).
+static bool g_trace = false;
+static void trace_path(const char *tag, const char *path) {
+    // Only device-signal-relevant paths, to keep the log readable.
+    if (!path) return;
+    if (strncmp(path, "/proc", 5) == 0 || strncmp(path, "/sys", 4) == 0 ||
+        strncmp(path, "/dev", 4) == 0 || strncmp(path, "/vendor", 7) == 0 ||
+        strncmp(path, "/system", 7) == 0)
+        __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "%s %s", tag, path);
+}
 
 // ================= system-property hook =================
 // __system_property_read_callback(pi, callback, cookie) invokes callback(cookie, name, value, serial).
@@ -84,6 +99,8 @@ using prop_get_t = int (*)(const char *name, char *value);
 static prop_get_t orig_prop_get = nullptr;
 
 static int my_prop_get(const char *name, char *value) {
+    if (g_trace && name)
+        __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "prop %s", name);
     if (name && value) {
         auto it = g_prop_spoof.find(name);
         if (it != g_prop_spoof.end()) {
@@ -158,22 +175,64 @@ static open_t   orig_open   = nullptr;
 static bool is_cpuinfo(const char *path) {
     return path && strcmp(path, "/proc/cpuinfo") == 0;
 }
+
+// /proc/sys/kernel/random/boot_id — a per-boot UUID FPJS reads (proven via tracer). Redirect it to a
+// per-identity spoofed UUID so it varies with the identity (and stays stable within a boot, like real).
+static std::string g_bootid_path;   // path to our spoofed boot_id file, empty = not active
+static bool is_bootid(const char *path) {
+    return path && strcmp(path, "/proc/sys/kernel/random/boot_id") == 0;
+}
+// Map a spoof-target path to our replacement file, or return the original path unchanged.
+static const char *redirect_path(const char *path) {
+    if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) return g_cpuinfo_path.c_str();
+    if (!g_bootid_path.empty()  && is_bootid(path))  return g_bootid_path.c_str();
+    return path;
+}
 static int my_openat(int dirfd, const char *path, int flags, ...) {
-    // O_CREAT/O_TMPFILE take a mode arg; cpuinfo is opened read-only so we never forward a mode here.
-    if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) {
-        LOGD("REDIRECT openat(/proc/cpuinfo) -> spoofed");
-        return orig_openat(AT_FDCWD, g_cpuinfo_path.c_str(), O_RDONLY | O_CLOEXEC);
-    }
+    if (g_trace) trace_path("openat", path);
+    const char *rp = redirect_path(path);
+    if (rp != path) return orig_openat(AT_FDCWD, rp, O_RDONLY | O_CLOEXEC);
     va_list ap; va_start(ap, flags); mode_t mode = va_arg(ap, int); va_end(ap);
     return orig_openat(dirfd, path, flags, mode);
 }
 static int my_open(const char *path, int flags, ...) {
-    if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) {
-        LOGD("REDIRECT open(/proc/cpuinfo) -> spoofed");
-        return orig_open(g_cpuinfo_path.c_str(), O_RDONLY | O_CLOEXEC);
-    }
+    if (g_trace) trace_path("open", path);
+    const char *rp = redirect_path(path);
+    if (rp != path) return orig_open(rp, O_RDONLY | O_CLOEXEC);
     va_list ap; va_start(ap, flags); mode_t mode = va_arg(ap, int); va_end(ap);
     return orig_open(path, flags, mode);
+}
+
+// fopen is what libfp.so explicitly imports (readelf) to read /proc & /sys nodes; trace + redirect it.
+using fopen_t = FILE *(*)(const char *, const char *);
+static fopen_t orig_fopen = nullptr;
+static FILE *my_fopen(const char *path, const char *mode) {
+    if (g_trace) trace_path("fopen", path);
+    const char *rp = redirect_path(path);
+    if (rp != path) return orig_fopen(rp, mode);
+    return orig_fopen(path, mode);
+}
+
+// getauxval is imported by libfp.so — likely reads AT_HWCAP/AT_HWCAP2 (CPU feature bits, a hardware
+// signal). Trace which keys it asks for; we don't spoof yet (would need coherent hwcaps per SoC).
+#ifndef AT_HWCAP
+#define AT_HWCAP 16
+#endif
+#ifndef AT_HWCAP2
+#define AT_HWCAP2 26
+#endif
+using getauxval_t = unsigned long (*)(unsigned long);
+static getauxval_t orig_getauxval = nullptr;
+static bool g_spoof_hwcap = false;
+static unsigned long my_getauxval(unsigned long type) {
+    if (g_trace) __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "getauxval %lu", type);
+    unsigned long v = orig_getauxval(type);
+    // AT_HWCAP/AT_HWCAP2 are CPU feature bitmasks — a stable hardware signal. Clear a couple of
+    // optional feature bits so the mask differs per identity but the CPU still looks valid (we only
+    // ever REMOVE features, never invent ones the CPU can't have — that would be incoherent).
+    if (g_spoof_hwcap && type == AT_HWCAP)  v &= ~((1UL << 21) | (1UL << 25));  // drop ASIMDDP, SVE-ish bits
+    if (g_spoof_hwcap && type == AT_HWCAP2) v &= ~(1UL << 3);
+    return v;
 }
 
 // Why inline hooks, not PLT: bionic's __system_property_get calls __system_property_read_callback via
@@ -241,6 +300,31 @@ public:
         auto ep = profile.find("factory_reset_epoch");
         if (ep != profile.end()) g_reset_epoch = strtol(ep->second.c_str(), nullptr, 10);
 
+        auto tr = profile.find("trace");
+        if (tr != profile.end() && tr->second == "1") g_trace = true;
+
+        // boot_id: a per-boot UUID FPJS reads (tracer-proven). Derive a stable per-identity UUID from
+        // android_id and redirect the file. hwcap: drop-only feature-bit tweak so the CPU mask varies.
+        auto aid = profile.find("android_id");
+        if (aid != profile.end() && aid->second.size() >= 16 && !pkg.empty()) {
+            const std::string &a = aid->second;
+            char uuid[37];
+            // Format the 16 hex chars of android_id (+ a fixed tail) into a UUID shape. Deterministic.
+            snprintf(uuid, sizeof(uuid), "%.8s-%.4s-%.4s-%.4s-%.4s%.8s",
+                     a.c_str(), a.c_str()+8, a.c_str()+12, a.c_str(), a.c_str()+4, a.c_str()+8);
+            std::string dir = "/data/data/" + pkg + "/files";
+            mkdir(dir.c_str(), 0700);
+            std::string bpath = dir + "/.specter_bid";
+            int bf = open(bpath.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+            if (bf >= 0) {
+                std::string content = std::string(uuid) + "\n";
+                if (write(bf, content.data(), content.size()) == (ssize_t) content.size())
+                    g_bootid_path = bpath;
+                close(bf);
+            }
+            g_spoof_hwcap = true;
+        }
+
         // /proc/cpuinfo spoof (GOAL 1.3): profile carries `proc_cpuinfo` with \n and \t escaped (the flat
         // JSON is single-line). Decode it, write it to the app's own files dir (readable by the app uid),
         // and point the open/openat redirect at it.
@@ -266,7 +350,8 @@ public:
             }
         }
 
-        if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty()) return;
+        if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&
+            g_bootid_path.empty() && !g_spoof_hwcap && !g_trace) return;
         installHooks();
     }
 
@@ -301,13 +386,23 @@ private:
             applied += hookSym("fstatat64", (void *) my_fstatat, (void **) &orig_fstatat);
             applied += hookSym("statx",     (void *) my_statx,   (void **) &orig_statx);
         }
-        if (!g_cpuinfo_path.empty()) {
+        // File hooks: needed for the cpuinfo/boot_id redirects AND for the passive tracer.
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace) {
             applied += hookSym("openat", (void *) my_openat, (void **) &orig_openat);
             applied += hookSym("open",   (void *) my_open,   (void **) &orig_open);
+            applied += hookSym("fopen",  (void *) my_fopen,  (void **) &orig_fopen);
+        }
+        if (g_spoof_hwcap || g_trace) {
+            applied += hookSym("getauxval", (void *) my_getauxval, (void **) &orig_getauxval);
+        }
+        // In pure-trace mode prop_get may not be hooked yet (no props spoofed) — ensure it for the trace.
+        if (g_trace && g_prop_spoof.empty()) {
+            applied += hookSym("__system_property_get", (void *) my_prop_get, (void **) &orig_prop_get);
         }
         if (applied == 0) { LOGE("no hooks applied for %s", pkg.c_str()); return; }
-        LOGD("hooks installed for %s (%d syms, props=%zu reset=%ld)",
-             pkg.c_str(), applied, g_prop_spoof.size(), g_reset_epoch);
+        LOGD("hooks installed for %s (%d syms, props=%zu reset=%ld bootid=%d hwcap=%d trace=%d)",
+             pkg.c_str(), applied, g_prop_spoof.size(), g_reset_epoch,
+             !g_bootid_path.empty(), g_spoof_hwcap, g_trace);
     }
 };
 
