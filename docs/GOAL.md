@@ -104,10 +104,12 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   9810; Moto G7 -> native GPU `Qualcomm|Adreno (TM) 512`, cpuinfo SDM660 — two coherent, DIFFERENT bundles,
   0 hard leaks, NOT the real Pixel 4's Adreno 640 / SM8150. GLES version, core count, camera ids, sensor
   relabel all report the per-model value per identity. This is the completable, measurable gate — MET.
-  REMAINING (follow-ups, do not block the gate): (a) native inline hooks for the NDK sensor/camera APIs
-  (`ASensorManager_getSensorList`, `ACameraManager_*`) — their structs are crash-risky to fabricate, and
-  the Java hooks already cover the framework sensor/camera path; (b) the FPJS-demo end-to-end readout,
-  still confounded by the fixed-key server record — needs a fresh trial key (user signup). See IDEAS.md.
+  REMAINING (follow-ups, do not block the gate): (a) SENSORS DONE 2026-07-26 — the native ASensor read is
+  now spoofed by relabeling `ASensor_getName`/`ASensor_getVendor` (proven on-device: Galaxy A70 native
+  read returns the profile's Samsung sensors, not the real Bosch); only the native CAMERA list remains
+  (`ACameraManager_getCameraIdList` allocates a struct = higher risk; Java CameraManager hook covers it
+  today). (b) the FPJS-demo end-to-end readout, still confounded by the fixed-key server record — needs a
+  fresh trial key (user signup). See IDEAS.md.
   Original root-cause context below (kept for the record):
   ROOT CAUSE (found 2026-07-25 by reading the fingerprintjs-android SDK source + confirming our profile/
   hooks): the Pro `visitorId` is a server-side fuzzy match over ~50 signals; we spoof the identifier +
