@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Fixed
+- **In-app version no longer drifts (UX 3.1/3.2).** `app/build.gradle`
+  now derives `versionName`/`versionCode` from the repo `VERSION` file, so the header (which showed a
+  stale `v0.3.0`) always matches the shipped module. Also refreshed the Settings ANTI-FINGERPRINTING
+  copy to list the hardware layer (SoC, GPU/GLES, /proc/cpuinfo, sensors), and added a UX audit
+  (`docs/UX-AUDIT.md`).
+
 ### Added
 - **Native sensor relabel (ASensor NDK hooks).** The tracer proved a native fingerprinter reads the
   sensor list via libandroid's `ASensor_getName`/`ASensor_getVendor` (direct JNI, unreachable by the

@@ -160,11 +160,17 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 
 ### Phase 3 — UX (the part that makes it feel like a product)
 
-- [ ] **3.1 Audit the app UI as it stands.** `todo`
-  Walk the real app on-device, screenshot every screen, and write an honest list: what's confusing, slow,
-  dead, or leaks internals to the user. No fake/cosmetic controls — build it or mark it non-functional.
+- [x] **3.1 Audit the app UI as it stands.** `done` (2026-07-26)
+  Walked every screen on-device (Identity / Settings / Location), screenshotted, wrote `docs/UX-AUDIT.md`.
+  Verdict: the app is in good shape — no fake controls, no crashes, non-functional areas honestly labeled.
+  Findings: (1) header showed a stale `v0.3.0` [FIXED in 3.2], (2) Location is a dead-but-honest
+  placeholder tab, (3) Settings copy was out of date [FIXED], (4) phone number unformatted (cosmetic).
 
-- [ ] **3.2 Fix what 3.1 finds.** `todo` (depends on 3.1)
+- [~] **3.2 Fix what 3.1 finds.** `partial` (2026-07-26)
+  FIXED: the version bug (build.gradle now derives versionName/Code from the VERSION file — verified
+  on-device showing v0.5.0) and the stale ANTI-FINGERPRINTING copy (now lists the hardware layer).
+  DECIDED to KEEP the Location tab (honestly labeled "planned"; location IS a roadmap item, so hiding it
+  would hide the roadmap — non-destructive call). LEFT: phone-number formatting (cosmetic, optional).
 
 ### Phase 4 — Product / monetization
 

@@ -2,6 +2,13 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-26 · App versionName derives from the VERSION file; kept the honest Location placeholder (UX 3.1/3.2)** —
+  `app/build.gradle` hardcoded `versionName "0.3.0"` while the repo VERSION was 0.5.0, so the in-app
+  header under-reported the version and would drift every release. Wired it to read `../VERSION` (single
+  source of truth) — verified on-device (header now v0.5.0). Chose to KEEP the Location tab rather than
+  hide it: it's honestly labeled "UI only — no location hook yet (planned)", and location is a real
+  roadmap item, so hiding it would hide the roadmap. Not fake UI (it claims nothing it doesn't do), so
+  the "no fake controls" rule is satisfied; revisit if a paying user finds the empty tab jarring.
 - **2026-07-26 · Native sensor spoof RELABELS the accessors, does NOT fabricate the sensor list** —
   libfp reads sensors via libandroid's ASensor NDK (direct JNI). The obvious hook is
   `ASensorManager_getSensorList`, but returning a fabricated `ASensor**` array means allocating and
