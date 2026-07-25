@@ -12,6 +12,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   GeerGit's LSPosed module is never touched. `scope_probe.py` updated to the new package.
 
 ### Added
+- **FPJS Pro lab test run (Test B) — result: the fingerprint does NOT rotate, root cause identified.**
+  Applied three fully distinct coherent identities (Google Pixel → Samsung Note 20 Ultra → Nexus 7) to the
+  FingerprintJS Pro demo, `pm clear`ing between runs. All three returned the SAME `visitorId` with a fresh
+  `eventId` per call, `visitorFound: true`, `confidenceScore: 1.0`, and `firstSeenAt` 17 days earlier.
+  Root cause: the `factoryReset` smart signal — a timestamp Specter does not spoof, readable from
+  directory mtimes (`/data/misc/profiles`, `/data/bootchart` are readable WITHOUT root; verified the
+  reported `1773120233` matches them exactly). Ruled out local persistence (`pm clear`), Keystore-backed
+  encrypted prefs (deleted `10302_USRPKEY__androidx_security_master_key_`, ID unchanged), and any
+  file dated near `firstSeenAt`. Documented in `docs/IDEAS.md`; the fix is deliberately a separate PR
+  (see `docs/DECISIONS.md` for why hooking `File.lastModified` vs root `touch` both need their own review).
+
 - **Native-read blind-spot probe** (`probe/src/main/cpp/native-probe.cpp`, NDK 27 + CMake). A JNI function
   calls libc `__system_property_get` **in-process**, so the probe reads 19 system properties BOTH ways —
   Java `SystemProperties.get` (which Specter hooks) and native libc (which it does not) — and

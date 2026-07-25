@@ -64,3 +64,15 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   props at the source (`resetprop`), which mutates the whole device, not just the scoped app. That is a
   materially larger blast radius than a per-app Xposed hook and needs its own PR + coherence review.
   Logged as the top adoption candidate in `docs/IDEAS.md` instead of rushed in here.
+- **2026-07-25 · The FPJS `factoryReset` leak is documented, NOT fixed in this PR** — proven that FPJS Pro
+  re-identifies the device across three full identity rotations via a factory-reset timestamp read from
+  directory mtimes (`/data/misc/profiles`, `/data/bootchart`, `/data/vendor`, `/data/dalvik-cache` — the
+  first two readable without root). Two possible fixes, both needing their own review: (a) hook
+  `java.io.File.lastModified()` for those paths only — our usual per-app mechanism, but `lastModified` is a
+  very hot, very generic call and a too-broad match would break target apps; (b) root `touch` the dirs —
+  device-wide, so it would also alter what GeerGit's fleet apps see, and it destroys the real value with no
+  undo. Neither is a safe drive-by change, so the finding ships as evidence and the fix gets a dedicated PR.
+- **2026-07-25 · `visitorFound:true` at `confidenceScore:1.0` is the metric that matters, not the visitorId
+  string alone** — a rotating visitorId would be the pass signal; an unchanged one with `firstSeenAt` weeks
+  in the past is proof of re-linking. Record the whole `identification` block (eventId to prove the call was
+  fresh, firstSeenAt to prove the age of the link) when re-running this test, not just the id.

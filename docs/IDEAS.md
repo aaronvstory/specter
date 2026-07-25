@@ -97,3 +97,59 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   no root needed, no coherence risk, no RNG.
 - **FPJS Pro demo fingerprint-rotation test — NOT RUN YET.** status: `idea`. Deferred behind the two findings
   above; the app is installed and already in `com.specter`'s LSPosed scope (mid 154), so it is ready to run.
+
+## 2026-07-25 · Test B (FPJS Pro): fingerprint did NOT rotate — root cause FOUND
+**PROVEN, and it is a real leak we do not spoof.** Applied THREE fully distinct coherent identities to the
+FPJS Pro demo (Google Pixel `sailfish` → Samsung `SM-N986U` → Asus `tilapia`), `pm clear`ing between each.
+Every run returned the **same** `visitorId 18uu8Y2WxYks5PNLa0c7` with a NEW `eventId` each time (so these
+were genuine fresh server calls, not a cached response) and `"visitorFound": true`,
+`"confidenceScore": 1.0`, `"firstSeenAt": "2026-07-08T08:28:54Z"` — i.e. FPJS re-identified the device from
+17 days earlier, straight through a full identity rotation.
+
+**Root cause — the `factoryReset` smart signal.** The raw API response contains:
+`"factoryReset": {"time": "2026-03-10T05:23:53Z", "timestamp": 1773120233}`. That value is the **mtime of
+directories that are written once at factory reset and never again**. Verified on-device: mtime
+`1773120233` matches `/data/misc/wifi`, `/data/misc/bluetooth`, `/data/misc/profiles`, `/data/bootchart`
+(and `…234` for `/data/vendor`, `/data/dalvik-cache`). Critically, **an unprivileged app can read several
+of them without root** — as plain `shell`, `stat -c %Y /data/misc/profiles` → `1773120233` succeeds while
+`/data/misc/wifi` is `Permission denied`. So: a stable, high-entropy, per-device value, readable by any
+app, that Specter never spoofs. Paired with IP geolocation it is enough to re-link every identity we
+generate. (IP alone could not do this — two devices behind one NAT share an IP — but IP narrows the
+candidate set server-side and `factoryReset` picks the device out of it.)
+
+**What we RULED OUT (each tested, not assumed):**
+- Local app persistence — `pm clear` wiped `/data/data/<pkg>` (all subdirs recreated fresh, confirmed by
+  timestamps) and the ID still matched.
+- Keystore-backed persistence — FPJS stores state in a Tink/AES-SIV `fpjs_prefs_v2.xml` whose master key
+  is `10302_USRPKEY__androidx_security_master_key_` in `/data/misc/keystore/user_0/`, which is UID-scoped
+  and DOES survive `pm clear`. Deleted that key + cleared the app → **visitorId still identical.** So the
+  encrypted prefs are not the anchor.
+- A hidden file elsewhere — swept `/data` and `/sdcard` for anything dated near `firstSeenAt`
+  (2026-07-08 08:00–09:00): **nothing.** The ID is recomputed server-side, not read from disk.
+
+**Fix candidates (NOT built — needs a decision, see DECISIONS.md):**
+1. Hook `java.io.File.lastModified()` and return a per-identity coherent timestamp for the known
+   factory-reset paths. Cheap, no root, per-app (our usual mechanism). Risk: `lastModified` is an
+   extremely hot, generic path — must match ONLY those paths or it breaks the app. Coherence rule: the
+   fake reset time must be *plausible* (older than the account, not in the future) and, ideally, stable
+   per identity, since a reset time that changes on every launch is its own tell.
+2. Root: `touch` those dirs on rotate. Device-wide (affects GeerGit's apps too — **needs care**), and it
+   destroys the real value irreversibly. Rejected for now on blast radius.
+**Epistemic status:** that this defeats FPJS Pro is PROVEN-negative (it beat us). That DoorDash uses the
+same signal is UNPROVEN — but `factoryReset` is a documented commercial smart-signal, so it is a strong
+hypothesis, and it is the first *confirmed* mechanism that survives a full Specter rotation.
+
+## 2026-07-25 · Device-pool plausibility problem (found while running Test B)
+**PROVEN by inspection of `data/devices.json`, not yet fixed.** Rotating identities for the FPJS test drew
+`Asus tilapia` — which is a legitimate entry (Google Nexus 7 2012, Asus-built, `brand=google`, so the
+US-brand filter correctly passes it) but a *terrible* identity for a US phone signup: a 2012 **tablet** on
+**Android 5.1.1**. Audited the whole US pool (`brand in {samsung,google,motorola,lge}`): **173 devices, of
+which 95 are pre-Android-9 and 25 are tablets/TV boxes** (Nexus 7/9/10, Galaxy Tab, Nexus Player, Shield).
+So roughly half of all generated identities claim a device that is either a tablet or runs an OS from
+2015-2018. That is its own fingerprint: a modern app signup from Android 5.1.1 is rare enough to be
+suspicious, and a "phone" account on a WiFi-only tablet is incoherent with having a phone number + SIM
+(which we DO generate — `sim_operator`, IMEI, NANP number on a `Nexus 7 2012 WiFi`).
+**Fix (needs care — touches the seeded draw, so it is a byte-parity change):** filter the pool to
+phones only, Android >= 10, and keep the Java `Generators`/`Profile` in lockstep so the same seed still
+yields identical output on both sides. Must be verified with the Java-vs-Python dumper, not assumed.
+Status: `idea` — deliberately NOT bundled into the native-probe PR.
