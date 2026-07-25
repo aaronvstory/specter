@@ -88,18 +88,21 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
     - camera list (CameraManager) — real camera characteristics
     - GLES/GPU version + renderer (glGetString) — real Adreno 640
     - codec list (MediaCodecList), input devices, core count, battery capacity
-  All are read straight off the real device, identical every rotation → the fuzzy match locks on. Two hard
-  parts: (1) hooking these (SensorManager/CameraManager/MediaCodecList are Java hooks like the ones we
-  have; `/proc/cpuinfo` + GLES need native/file-read handling — the Zygisk layer can hook `open`/`read`
-  on `/proc/cpuinfo`, GLES needs an `eglGetProcAddress`/`glGetString` hook); (2) COHERENCE — every faked
-  hardware value must match the ONE chosen device, or an incoherent combo is itself a worse fingerprint.
-  This needs a per-model hardware dataset (sensors/cameras/GPU/cpuinfo per device row) — the big lift, but
-  it is the path to actually beating FPJS. Start with the cheapest high-value ones (`/proc/cpuinfo`, GLES
-  renderer, core count) and measure the visitorId after each.
-  NOTE the IP smart-signal (`datacenter_result:true`, `highActivity:true`) is a fraud FLAG, not the
-  identity anchor — deprioritized; a shared datacenter IP cannot by itself collapse distinct devices to
-  one visitorId (that would make FPJS useless for its own customers). Also still untested: Widevine/
-  OEMCrypto native path.
+  CONCLUSIVE (2026-07-25, by on-device elimination): the anchor is the hardware bundle `libfp.so` (the
+  FPJS Pro OBFUSCATED native lib) reads via DIRECT-LINKED `libandroid.so`/`libmediandk.so` JNI — NOT the
+  IP (proven: Mullvad changed the IP, visitorId didn't move), NOT app-local state (`pm clear` didn't move
+  it), NOT any signal we already spoof. Our in-process tracer proved these hardware reads bypass
+  open/fopen/prop/dlsym entirely (direct DT_NEEDED calls), so NO existing hook reaches them; they read the
+  real Pixel 4 sensors/cameras/GLES/native-MediaDrm every run.
+  → 1.3 work = inline-hook the specific NDK symbols in the Zygisk layer: `ASensorManager_getSensorList`,
+  `ACameraManager_getCameraIdList`/`getCameraCharacteristics`, `eglQueryString`/`glGetString`, native
+  MediaDrm. COHERENCE required (per-model hardware dataset). The Zygisk inline-hook layer is the right tool
+  (invisible to libfp's /proc/self/maps tamper check; tampering:false confirmed on-device).
+  CAVEAT: the FPJS DEMO is a weak proxy — its fixed API key holds a weeks-old server record (firstSeenAt
+  frozen) that re-matches through everything, so the demo's stuck visitorId understates how well device
+  spoofing works on a FRESH signup context (DoorDash-class). Don't over-index on the demo.
+  Already spoofed + proven on-device this session (kept — real coverage): native props (19/19), factory
+  reset (both paths), /proc/cpuinfo (redirect), boot_id, AT_HWCAP/2, full Java hardware set.
 
 ### Phase 2 — Plausibility (a coherent identity nobody has to squint at)
 

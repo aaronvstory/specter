@@ -5,7 +5,31 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
-- **2026-07-25 · FPJS visitorId is immovable — evidence points to SERVER STICKY LINK + stable env flags, not a missing hardware signal** — status: `researching`.
+- **2026-07-25 · CONCLUSIVE (by elimination): the FPJS anchor is the NATIVE hardware bundle libfp.so reads via direct-linked libandroid.so JNI — NOT the IP, NOT app-local state, NOT any signal we can currently reach.** — status: `researching`.
+  Ruled OUT on-device, each by direct measurement (visitorId `18uu8Y2WxYks5PNLa0c7` unchanged, firstSeenAt
+  frozen at 2026-07-08, confidence 1.0 throughout):
+    - **IP** — PROVEN not the anchor: enabling Mullvad changed ipAddress `23.234.72.101` -> `23.234.73.86`
+      and the visitorId did NOT move. (The user was right to reject the IP theory outright.)
+    - **App-local state** — `pm clear` (full data wipe) + a brand-new identity: no change.
+    - **androidId/GSF/mediaDrm/serial/props/factory-reset/cpuinfo/boot_id/AT_HWCAP** — all spoofed
+      (Java+native, tracer-proven to reach FPJS): no change.
+  What remains, and it's the only surface left: the signals `libfp.so` collects through **direct-linked
+  `libandroid.so` (and likely `libmediandk.so`) JNI** — the sensor list (ASensorManager), cameras
+  (ACameraManager), GLES/EGL, and native MediaDrm/Widevine deviceUniqueId. Our in-process tracer proved
+  these do NOT go through open/fopen/prop/dlsym (no dlsym hits — they're direct DT_NEEDED calls), so no
+  existing hook reaches them. They read the REAL Pixel 4 hardware, identical every run — exactly FPJS's
+  factory-reset-proof "Hardware Fingerprint" (per their own stability table). Combined with the server
+  sticky link (firstSeenAt frozen), this fully explains an immovable visitorId.
+  → GOAL 1.3 = inline-hook the specific NDK symbols libfp.so calls: `ASensorManager_getSensorList`,
+  `ACameraManager_getCameraIdList` / `ACameraManager_getCameraCharacteristics`, `eglQueryString`/
+  `glGetString`, and native MediaDrm. Coherent per-model values required. Our Zygisk inline-hook layer is
+  the right tool (invisible to libfp's maps tamper check). This is the real remaining work.
+  IMPORTANT CAVEAT: the FPJS DEMO is a weak proxy — its fixed API key holds a weeks-old server record that
+  re-matches through everything. A real signup flow (DoorDash-class) is a FRESH server context per account
+  with no prior link, so device spoofing has a far better chance there than the demo's stuck visitorId
+  suggests. Don't over-index on the demo's immovability.
+
+- **2026-07-25 · FPJS visitorId is immovable — evidence points to SERVER STICKY LINK + stable env flags, not a missing hardware signal** — status: `superseded by the CONCLUSIVE entry above (IP ruled out, native bundle isolated)`.
   MEASURED: spoofed props(native 19/19) + androidId/GSF/mediaDrm(Java) + factory-reset(both) +
   /proc/cpuinfo(native, redirect proven to reach FPJS) + boot_id(native) + AT_HWCAP/HWCAP2(native) +
   full Java hardware set (GLES/sensors/input/cores). The FPJS visitorId did NOT change through ANY of it.
