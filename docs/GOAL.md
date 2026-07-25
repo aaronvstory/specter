@@ -79,14 +79,17 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 
 ### Phase 2 — Plausibility (a coherent identity nobody has to squint at)
 
-- [ ] **2.1 Device-pool quality.** `todo` · byte-parity change, own PR
+- [x] **2.1 Device-pool quality.** `done` · byte-parity change, own PR
   The US pool is 173 entries of which **95 are pre-Android-9** and **25 are tablets/TV boxes** (Nexus
   7/9/10, Galaxy Tab, Nexus Player, Shield). So ~half of generated identities claim a tablet or a
   2015-2018 OS — and a WiFi-only tablet carrying a SIM + IMEI + NANP number is flatly incoherent.
   Filter to phones, Android >= 10, US-market. Keep Java `Generators`/`Profile` in lockstep and PROVE
   parity with the dumper.
 
-- [ ] **2.2 Coherence sweep across every generated field.** `todo`
+- [~] **2.2 Coherence sweep across every generated field.** `partial` — swept; one finding logged
+  (phone area/exchange codes are structurally-valid NANP but not guaranteed REAL/assigned; a
+  real-area-code table is the next Phase-2 PR). Patch-vs-release, IMSI/MCCMNC, ICCID/IIN all coherent.
+  See docs/IDEAS.md 2026-07-25 coherence-sweep entry.
   Systematically re-check the whole profile for pairs that can disagree (as RAM/storage and
   Widevine/securityLevel did). Candidates: security-patch date vs OS release, carrier vs phone-number
   area code, `build_host`/`build_incremental` shape vs brand, ICCID prefix vs carrier.

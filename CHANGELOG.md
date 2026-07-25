@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Changed
+- **Device pool filtered to plausible phones (GOAL 2.1).** Generation now excludes tablets/TV boxes
+  (Galaxy Tab, Nexus 7/9/10, Nexus Player, Shield, Pixel C) and any device below Android 9 — a fresh
+  account claiming a WiFi-only tablet with a SIM + IMEI, or a 2015-era OS, is itself a fingerprint. The
+  US-brand pool goes from 173 rows (95 pre-A9, 26 tablets/TV) to 68 real phones on Android 9-12. Filter
+  logic (`_is_plausible_phone` / Java `isPlausiblePhone`, floor `MIN_ANDROID_MAJOR = 9`) is mirrored
+  byte-for-byte on both sides; this changes the seeded device draw, so it is a byte-parity change —
+  RE-PROVEN identical over 300 seeds with the standalone Java-vs-Python dumper.
+
+
 ### Added
 - **`factory_reset_epoch` — spoof the FPJS Pro `factoryReset` smart signal.** New generator
   (`factory_reset_epoch`, Java `factoryResetEpoch`) producing a plausible reset time, derived as a

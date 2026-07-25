@@ -52,11 +52,36 @@ public final class Profile {
             "sim_subscriber_imsi", "sim_serial_iccid", "gmail",
     };
 
+    // Minimum plausible Android major. A fresh account on Android < 9 (2018) reads as a red flag.
+    // Mirror of profile.MIN_ANDROID_MAJOR — MUST match, or the pool differs and byte-parity breaks.
+    static final int MIN_ANDROID_MAJOR = 9;
+    // Tablet / TV markers (device NAME, row 0). We emit a phone number + SIM + IMEI, so a WiFi tablet
+    // or TV box is incoherent. Mirror of profile._NON_PHONE_MARKERS.
+    static final String[] NON_PHONE_MARKERS = {
+            "Tab", "Nexus 7", "Nexus 9", "Nexus 10", "Nexus Player", "Shield", "Pixel C"};
+
+    static int releaseMajorOf(List<String> dev) {
+        try {
+            String slot = dev.get(5);
+            int c = slot.indexOf(':');
+            String rel = c >= 0 ? slot.substring(c + 1) : "0";
+            int dot = rel.indexOf('.');
+            return Integer.parseInt(dot >= 0 ? rel.substring(0, dot) : rel);
+        } catch (Exception e) { return 0; }
+    }
+
+    static boolean isPlausiblePhone(List<String> dev) {
+        if (dev.size() <= 5) return false;
+        for (String m : NON_PHONE_MARKERS) if (dev.get(0).contains(m)) return false;
+        return releaseMajorOf(dev) >= MIN_ANDROID_MAJOR;
+    }
+
     static List<String> pickDevice(Generators.Rng r, List<List<String>> devices, boolean usBias) {
         if (usBias) {
             List<List<String>> pool = new ArrayList<>();
             for (List<String> d : devices)
-                if (d.size() > 2 && US_COMMON_BRANDS.contains(d.get(2).toLowerCase())) pool.add(d);
+                if (d.size() > 2 && US_COMMON_BRANDS.contains(d.get(2).toLowerCase())
+                        && isPlausiblePhone(d)) pool.add(d);
             if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
         }
         return devices.get(r.next(devices.size()));
@@ -67,7 +92,8 @@ public final class Profile {
             Set<String> brands = new HashSet<>(Arrays.asList(country.commonBrands));
             List<List<String>> pool = new ArrayList<>();
             for (List<String> d : devices)
-                if (d.size() > 2 && brands.contains(d.get(2).toLowerCase())) pool.add(d);
+                if (d.size() > 2 && brands.contains(d.get(2).toLowerCase())
+                        && isPlausiblePhone(d)) pool.add(d);
             if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
         }
         return devices.get(r.next(devices.size()));

@@ -82,3 +82,27 @@ def test_factory_reset_is_after_the_build_and_in_the_past():
 def test_factory_reset_present_in_every_profile():
     for p in _profiles(50):
         assert p.get("factory_reset_epoch"), "every profile must carry a factory-reset time"
+
+
+# ---- device plausibility (a phone signup from a 2012 tablet on Android 5 is itself a fingerprint) ----
+def _release_major(p):
+    return int(float(p["build_release"].split(".")[0]))
+
+
+def test_no_tablet_or_tv_device_in_the_generation_pool():
+    """We generate a phone number + SIM + IMEI, so the device must be a phone. Assert the FILTER at the
+    source: no tablet/TV row survives `_is_plausible_phone`, so none can ever be generated."""
+    import json
+    devs = json.load(open(P.DEVICES_PATH, encoding="utf-8"))
+    pool = [d for d in devs if len(d) > 2 and d[2].lower() in P.US_COMMON_BRANDS
+            and P._is_plausible_phone(d)]
+    assert pool, "plausible-phone pool must not be empty"
+    for d in pool:
+        assert not any(m in d[0] for m in P._NON_PHONE_MARKERS), "tablet/TV in pool: " + d[0]
+
+
+def test_generated_os_is_plausibly_recent():
+    """Android < 9 (2018) on a fresh account is a red flag — too old for a phone in real use today."""
+    for p in _profiles(300):
+        assert _release_major(p) >= 9, \
+            "implausibly old OS: Android %s (%s)" % (p["build_release"], p["build_fingerprint"])

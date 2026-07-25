@@ -201,3 +201,15 @@ the layer that also catches native reads. This is its own PR (GOAL 1.2), TDD whe
 value logic is the same byte-parity generators; the hook itself is verified with the dual-read probe).
 Refs: PlayIntegrityFork main.cpp, HSSkyBoy/NyaZygisk f9435c3, PerformanC/ReZygisk hook.c,
 5ec1cff/ZygiskNextModuleSample (Zygisk Next API: PLT + inline hook).
+
+## 2026-07-25 · Coherence sweep (GOAL 2.2) — quick pass findings
+Checked the generated profile for cross-field incoherence beyond what's already guarded. Two findings:
+- **Phone area/exchange codes are structurally valid NANP but not guaranteed REAL/assigned.**
+  `phone_us` makes `[2-9]XX` area + `[2-9]XX` exchange, which passes format checks, but can emit an
+  unassigned area code (e.g. 299, 379) or an N11/555 exchange. A carrier-lookup (HLR) service would
+  flag a nonexistent number. Fix: draw the area code from a table of real US area codes (optionally
+  weighted, and ideally consistent with the SIM carrier's footprint / the IP geolocation's state).
+  Byte-parity change (adds a table draw) — its own small PR. status: `idea`.
+- **`build_security_patch` vs `build_release` looks coherent** (both come from the same real device row,
+  so patches track the OS era) — no action. IMSI/MCC-MNC and ICCID/IIN are already guarded and pass.
+- Deferred to keep the 2.1 PR single-concern. The area-code table is the one worth doing next in Phase 2.

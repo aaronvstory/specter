@@ -58,10 +58,40 @@ def _seeded(seed):
     return r
 
 
+# Minimum plausible Android major version. A fresh account on Android < 9 (2018) is a red flag — too
+# old for a phone in real use today. Kept as a named constant so the coherence test and both language
+# generators agree on the floor. (The device DB tops out around A12, so this can't go much higher
+# without starving the pool; revisit when devices.json gains newer phones.)
+MIN_ANDROID_MAJOR = 9
+
+# Marketing-name substrings that identify a tablet / TV box. We generate a phone number + SIM + IMEI,
+# so a WiFi tablet or TV box is incoherent. Matched against the device row's NAME (row[0]).
+_NON_PHONE_MARKERS = ("Tab", "Nexus 7", "Nexus 9", "Nexus 10", "Nexus Player", "Shield", "Pixel C")
+
+
+def _release_major_of(dev):
+    """Android major version from a device row's "model:release" slot (row[5]). 0 if unparseable."""
+    try:
+        rel = dev[5].split(":", 1)[1] if ":" in dev[5] else "0"
+        return int(float(rel.split(".")[0]))
+    except Exception:
+        return 0
+
+
+def _is_plausible_phone(dev):
+    """A device we'd credibly sign up from: a phone (not tablet/TV) on a recent-enough OS."""
+    if len(dev) <= 5:
+        return False
+    if any(m in dev[0] for m in _NON_PHONE_MARKERS):
+        return False
+    return _release_major_of(dev) >= MIN_ANDROID_MAJOR
+
+
 def _pick_device(r, devices, us_bias, brands=None):
     if us_bias:
         pool_brands = brands if brands is not None else US_COMMON_BRANDS
-        pool = [d for d in devices if len(d) > 2 and d[2].lower() in pool_brands]
+        pool = [d for d in devices
+                if len(d) > 2 and d[2].lower() in pool_brands and _is_plausible_phone(d)]
         if pool:
             return pool[r(len(pool))]
     return devices[r(len(devices))]
