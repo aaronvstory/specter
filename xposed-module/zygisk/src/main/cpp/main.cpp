@@ -215,6 +215,21 @@ static FILE *my_fopen(const char *path, const char *mode) {
 
 // getauxval is imported by libfp.so — likely reads AT_HWCAP/AT_HWCAP2 (CPU feature bits, a hardware
 // signal). Trace which keys it asks for; we don't spoof yet (would need coherent hwcaps per SoC).
+// dlsym tracer: reveals exactly which native functions libfp.so resolves at runtime (sensors, mediadrm,
+// egl, etc.) — the JNI/NDK signal surface the file/prop tracer can't see. Trace-only, no spoof.
+using dlsym_t = void *(*)(void *, const char *);
+static dlsym_t orig_dlsym = nullptr;
+static void *my_dlsym(void *handle, const char *symbol) {
+    if (g_trace && symbol &&
+        (strstr(symbol, "Sensor") || strstr(symbol, "sensor") || strstr(symbol, "MediaDrm") ||
+         strstr(symbol, "mediadrm") || strstr(symbol, "Camera") || strstr(symbol, "camera") ||
+         strstr(symbol, "egl") || strstr(symbol, "gl") || strstr(symbol, "GL") ||
+         strstr(symbol, "Choreographer") || strstr(symbol, "Configuration") ||
+         strstr(symbol, "AAsset") || strstr(symbol, "getauxval") || strstr(symbol, "property")))
+        __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "dlsym %s", symbol);
+    return orig_dlsym(handle, symbol);
+}
+
 #ifndef AT_HWCAP
 #define AT_HWCAP 16
 #endif
@@ -394,6 +409,9 @@ private:
         }
         if (g_spoof_hwcap || g_trace) {
             applied += hookSym("getauxval", (void *) my_getauxval, (void **) &orig_getauxval);
+        }
+        if (g_trace) {
+            applied += hookSym("dlsym", (void *) my_dlsym, (void **) &orig_dlsym);
         }
         // In pure-trace mode prop_get may not be hooked yet (no props spoofed) — ensure it for the trace.
         if (g_trace && g_prop_spoof.empty()) {

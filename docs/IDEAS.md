@@ -5,6 +5,29 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-25 · FPJS visitorId is immovable — evidence points to SERVER STICKY LINK + stable env flags, not a missing hardware signal** — status: `researching`.
+  MEASURED: spoofed props(native 19/19) + androidId/GSF/mediaDrm(Java) + factory-reset(both) +
+  /proc/cpuinfo(native, redirect proven to reach FPJS) + boot_id(native) + AT_HWCAP/HWCAP2(native) +
+  full Java hardware set (GLES/sensors/input/cores). The FPJS visitorId did NOT change through ANY of it.
+  The Raw block explains why, and it is NOT a hardware signal:
+    1. **Server sticky link:** `firstSeenAt` stays `2026-07-08` (unchanged from the first run weeks ago)
+       across every device change, `visitorFound:true`, `confidenceScore:1.0` (never even dented). FPJS
+       Pro's fuzzy matcher is re-matching an OLD server record — its selling point is surviving
+       hardware/OS/reset changes. To get a new visitorId we must drop match confidence below threshold.
+    2. **Stable environmental flags (spoofable, unspoofed, all constant → strong cluster):**
+       `rootApps:true`, `developerTools:true`, `vpn:true` (vpn_confidence high, vpn_origin_country PH,
+       `timezone_mismatch:true`, `public_vpn:true`). `tampering:false`/`anomaly_score:0` (our hooks are
+       NOT detected — good). These flags are TRUE every run and identify the device as "rooted + devtools
+       + PH VPN + tz mismatch" — a very stable signature.
+  The libfp.so file/prop native surface is now fully enumerated by our in-process tracer (cpuinfo, boot_id,
+  AT_HWCAP/2, /proc/self/task/comm, a handful of props). Sensor/camera/GLES come via libandroid.so
+  DIRECT-LINKED JNI (no dlsym — our dlsym tracer saw nothing), so intercepting them needs inline hooks on
+  the specific libandroid symbols. BUT given confidence never dents, the hardware bundle is likely not the
+  binding constraint — the sticky link + env flags are. NEXT: hide root (`rootApps`), fix timezone↔VPN
+  coherence, and to get a clean measurement, break the server link (fresh IP / a device+app-data state the
+  server has never seen). Only then can we tell if any hardware signal still matters.
+
+
 - **2026-07-25 · Spoof the HARDWARE-CHARACTERISTIC signals — the REAL reason FPJS still wins (ROOT CAUSE)** — status: `researching`.
   After the Zygisk native layer closed the prop + factory-reset blind spot (probe-proven 19/19), FPJS Pro
   STILL returned the same `visitorId` for two totally different identities. Root cause found by reading the
