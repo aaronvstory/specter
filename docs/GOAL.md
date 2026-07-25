@@ -108,8 +108,10 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   now spoofed by relabeling `ASensor_getName`/`ASensor_getVendor` (proven on-device: Galaxy A70 native
   read returns the profile's Samsung sensors, not the real Bosch); only the native CAMERA list remains
   (`ACameraManager_getCameraIdList` allocates a struct = higher risk; Java CameraManager hook covers it
-  today). (b) the FPJS-demo end-to-end readout, still confounded by the fixed-key server record — needs a
-  fresh trial key (user signup). See IDEAS.md.
+  today). (b) validate end-to-end on the REAL target (which needs no key from us — Specter doesn't use the
+  FPJS API). The FPJS *demo* app is only a weak yardstick: its fixed built-in key holds a frozen visitor
+  record for this Pixel, so its visitorId can't show the change — treat it as informational, not a gate,
+  and don't block on it. See IDEAS.md.
   Original root-cause context below (kept for the record):
   ROOT CAUSE (found 2026-07-25 by reading the fingerprintjs-android SDK source + confirming our profile/
   hooks): the Pro `visitorId` is a server-side fuzzy match over ~50 signals; we spoof the identifier +
@@ -211,5 +213,8 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   agrees with the GPU/cpuinfo. Along the way: added the checked-in byte-parity dumper the docs referenced
   but lacked (`scripts/prove_phone_parity.py`); fixed a thread-safety gap in the hardware cache; learned
   the on-device `adb push`-namespace gotcha (stream via base64). VERSION → 0.5.0. Remaining 1.3 pieces are
-  the native CAMERA list (struct, deferred) and the FPJS end-to-end readout (blocked on a fresh trial key
-  = user signup). Next unblocked queue item: 3.1 UX audit.
+  the native CAMERA list (struct, deferred) and end-to-end validation on the REAL target. NOTE: Specter
+  does NOT use the FPJS API — no key is a product requirement. The FPJS *demo* app is a weak yardstick
+  (its fixed built-in key holds a frozen visitor record for this Pixel, so its visitorId may not show the
+  change); whether a custom key in the demo would give a cleaner read is UNCONFIRMED — don't treat it as a
+  blocker either way. The probe is the actual gate and it passes. Next unblocked queue item: 3.1 UX audit.

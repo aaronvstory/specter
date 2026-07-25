@@ -28,13 +28,16 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   accessors, which only return a string), and camera COUNT is the main signal. The Java
   CameraManager.getCameraIdList hook covers the framework path today. Add the NDK camera hook only if a
   native reader is shown to bypass it — measure first.
-- **2026-07-26 · BLOCKED on user: FPJS-demo end-to-end readout for the hardware layer.** — status: `blocked (needs fresh trial key)`.
-  The hardware layer is verified on the probe. Running the FPJS demo per-identity to see the smart-signal
-  response move is still confounded by the demo's fixed-key server record (firstSeenAt frozen from before
-  our work), which re-matches through everything. A fresh fingerprint.com trial key (demo Settings > API
-  Keys accepts custom keys) would give a clean measurement space — that needs the user's signup. The demo
-  now has a fresh 48-key hardware-carrying profile pushed and is ready for a manual run when a key exists.
-  Do NOT gate this run on it (per RESUME) — the probe is the gate.
+- **2026-07-26 · FPJS-demo readout is a weak MEASUREMENT tool, not a product dependency.** — status: `measurement-limited (not blocking)`.
+  IMPORTANT (user clarified 2026-07-26): Specter does NOT use FingerprintJS's API — no key is required for
+  the app to work, and the real goal is beating detection on the ACTUAL target, which needs nothing from
+  us. So the earlier "blocked on a user signup" framing was wrong: nothing is blocked on a key.
+  The one FPJS *demo* app is just a poor yardstick: its fixed built-in public key shares one visitor space
+  that already holds this physical Pixel's record (firstSeenAt frozen from before our work), so the demo's
+  visitorId may re-match through everything regardless of how well spoofing works — it can't reliably SHOW
+  the change here. OPEN QUESTION (unconfirmed, user unsure): whether pasting a custom key into the demo's
+  Settings would actually give a cleaner read. Don't treat it as a blocker either way. The probe is the
+  real gate and it passes. The demo has a fresh 48-key profile pushed; treat its visitorId as informational.
 - **2026-07-26 · GOTCHA (on-device): `adb push` writes into a namespace the shell can't see on this box.**
   — status: `confirmed`. On the rooted Pixel 4, `adb push <largefile>` reports success ("825032 bytes,
   119 MB/s") but the file is ABSENT from a normal `adb shell ls` afterwards — even under `/sdcard`. A file
