@@ -54,6 +54,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookHardwareSignals(lpparam, p);
         hookStorage(lpparam, p);
         hookFactoryResetTime(pkg, p);
+        hookInstalledApps(lpparam);
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -445,6 +446,61 @@ public class HookEntry implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(os, "stat", statHook);
             XposedBridge.hookAllMethods(os, "lstat", statHook);
         } catch (Throwable t) { XposedBridge.log("[specter] factory-reset Os.stat hook fail: " + t); }
+    }
+
+    // ---- installed-app list — hide root/hooking/anti-fingerprint packages ----
+    // The installed-app enumeration is a raw signal FingerprintJS collects (PackageManager). Leaving
+    // com.specter, the probe, Magisk/LSPosed managers, or a hide-my-app tool in the returned list both
+    // raises the device's entropy and is a direct "this device is instrumented" tell. Filter them out of
+    // getInstalledApplications/getInstalledPackages/getInstalledModules, and make a direct lookup of a
+    // hidden package throw NameNotFound (as if it were not installed).
+    @SuppressWarnings("unchecked")
+    private void hookInstalledApps(final XC_LoadPackage.LoadPackageParam lp) {
+        Class<?> pm = XposedHelpers.findClassIfExists("android.app.ApplicationPackageManager", lp.classLoader);
+        if (pm == null) return;
+        XC_MethodHook listFilter = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                Object res = mp.getResult();
+                if (!(res instanceof java.util.List)) return;
+                java.util.List<Object> in = (java.util.List<Object>) res;
+                java.util.List<Object> out = new java.util.ArrayList<>(in.size());
+                for (Object item : in) {
+                    String name = pkgNameOf(item);
+                    if (name != null && SpoofLogic.isSensitivePackage(name)) continue;
+                    out.add(item);
+                }
+                if (out.size() != in.size()) mp.setResult(out);
+            }
+        };
+        for (String m : new String[]{"getInstalledApplications", "getInstalledPackages",
+                "getInstalledApplicationsAsUser", "getInstalledPackagesAsUser", "getInstalledModules"}) {
+            try { XposedBridge.hookAllMethods(pm, m, listFilter); } catch (Throwable ignored) {}
+        }
+        // A direct lookup of a hidden package must look like "not installed".
+        XC_MethodHook notFound = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam mp) throws Throwable {
+                if (mp.args.length > 0 && mp.args[0] instanceof String
+                        && SpoofLogic.isSensitivePackage((String) mp.args[0])) {
+                    throw new android.content.pm.PackageManager.NameNotFoundException((String) mp.args[0]);
+                }
+            }
+        };
+        for (String m : new String[]{"getPackageInfo", "getApplicationInfo", "getPackageUid",
+                "getPackageGids", "getInstallerPackageName"}) {
+            try { XposedBridge.hookAllMethods(pm, m, notFound); } catch (Throwable ignored) {}
+        }
+    }
+
+    // ApplicationInfo / PackageInfo both expose the package name; ResolveInfo nests it. Pull it robustly.
+    private static String pkgNameOf(Object item) {
+        if (item == null) return null;
+        try {
+            if (item instanceof android.content.pm.PackageInfo) return ((android.content.pm.PackageInfo) item).packageName;
+            if (item instanceof android.content.pm.ApplicationInfo) return ((android.content.pm.ApplicationInfo) item).packageName;
+            java.lang.reflect.Field f = item.getClass().getField("packageName");
+            Object v = f.get(item);
+            return v instanceof String ? (String) v : null;
+        } catch (Throwable ignored) { return null; }
     }
 
     /** True only for the exact reset-marker dirs — never a prefix match, so app files are untouched. */

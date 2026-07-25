@@ -18,6 +18,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
 ### Added
+- **Installed-app list filtering — hides the instrumentation from FPJS's app-enumeration signal.** The
+  installed-app list is a raw signal FingerprintJS collects (PackageManager enumeration); leaving
+  `com.specter`, the probe, Magisk/LSPosed managers, or a hide-my-app tool in it both raises the device's
+  entropy and is a direct "this device is instrumented" tell. `getInstalledApplications`/
+  `getInstalledPackages`/`getInstalledModules` (+ AsUser variants) now drop packages matching a
+  root/hooking/anti-fingerprint marker list, and a direct `getPackageInfo`/`getApplicationInfo` lookup of
+  a hidden package throws `NameNotFound` (as if not installed). Verified on the probe:
+  `installed_sensitive_leak: none` (was leaking 3 packages). The probe now reports the installed-app
+  count and any sensitive leak so a regression fails the check.
 - **APK install-time spoofing — closes FingerprintJS Pro's `FileTimestamps` raw signal.** Decompiling
   the SDK showed a single raw-signal provider that reads three file timestamps; on-device tracing
   proved they are the mtimes of the app's own `/data/app/.../base.apk` + `split_config.*.apk` — the

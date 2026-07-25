@@ -93,6 +93,22 @@ public class ProbeActivity extends Activity {
                 put(o, "webview_ua", android.webkit.WebSettings.getDefaultUserAgent(this));
             } catch (Throwable t) { put(o, "webview_ua", "ERR:" + t); }
 
+            // Installed-app enumeration — a raw signal FPJS collects. Report whether any root/hooking/
+            // anti-fingerprint package leaks through (the module hides these), plus the total count.
+            try {
+                java.util.List<android.content.pm.ApplicationInfo> apps =
+                        getPackageManager().getInstalledApplications(0);
+                StringBuilder leaked = new StringBuilder();
+                String[] markers = {"com.specter", "magisk", "lsposed", "xposed", "hidemocklocation",
+                        "hidemyapplist", "riru", "zygisk", "shamiko"};
+                for (android.content.pm.ApplicationInfo ai : apps) {
+                    String n = ai.packageName == null ? "" : ai.packageName.toLowerCase();
+                    for (String mk : markers) if (n.contains(mk)) { leaked.append(ai.packageName).append(","); break; }
+                }
+                put(o, "installed_app_count", String.valueOf(apps.size()));
+                put(o, "installed_sensitive_leak", leaked.length() == 0 ? "none" : leaked.toString());
+            } catch (Throwable t) { put(o, "installed_sensitive_leak", "ERR:" + t); }
+
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }
 

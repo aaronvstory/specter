@@ -98,4 +98,26 @@ public final class SpoofLogic {
         int spread = path == null ? 0 : (Math.abs(path.hashCode()) % 13);   // 0..12s, stable per path
         return base + spread;
     }
+
+    // Package-name substrings that betray root / a hooking framework / an anti-fingerprint tool. The
+    // installed-app list is a raw signal FPJS collects (PackageManager enumeration); any of these in it
+    // both raises entropy and is a direct "this device is instrumented" tell. Hidden from enumeration.
+    static final String[] SENSITIVE_PKG_MARKERS = {
+        "com.specter",                 // this module + its probe
+        "magisk", "com.topjohnwu",     // Magisk (+ manager)
+        "lsposed", "xposed", "edxposed", "riru", "zygisk", "shamiko",
+        "hidemocklocation",            // the mock-location hider on this device
+        "kingroot", "kingouser", "supersu", "superuser", "com.koushikdutta.superuser",
+        "com.noshufou.android.su", "me.weishu.kernelsu", "kernelsu",
+        "io.github.vvb2060", "hidemyapplist", "com.tsng.hidemyapplist",
+        "momo", "riru.momo", "com.zhufucdev",   // detection-probe apps
+    };
+
+    /** True if this package name should be HIDDEN from the target's installed-app enumeration. */
+    public static boolean isSensitivePackage(String pkg) {
+        if (pkg == null) return false;
+        String p = pkg.toLowerCase();
+        for (String m : SENSITIVE_PKG_MARKERS) if (p.contains(m)) return true;
+        return false;
+    }
 }
