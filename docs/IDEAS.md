@@ -5,6 +5,18 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-25 · The FPJS DEMO is a confirmed weak proxy — validating "beats FPJS" needs a fresh server context (own API key or the real target).** — status: `blocked (needs a fresh FPJS key or real-target test)`.
+  The demo (App v4.1.4, Fingerprint SDK v4.0.0-alpha.0) uses a FIXED built-in public API key, so every
+  identification shares ONE visitor space that already holds our device's weeks-old record (firstSeenAt
+  frozen 2026-07-08). PROVEN this can't be broken device-side: IP change (Mullvad), pm-clear, fresh
+  identity, and full native+Java spoofing all left the visitorId unchanged. The demo's Settings > API Keys
+  screen DOES accept a custom Public/Secret key ("Use your API keys" toggle) → a different key = a CLEAN
+  visitor space where firstSeenAt resets and our spoofing could be measured properly. That needs a real
+  fingerprint.com key (a signup), which is the gate. POSITIVE signal that our spoofing is NOT inert:
+  `suspectScore` dropped 40 -> 34 across the session as we spoofed more — the server-side scoring reacts,
+  the visitor LINK just doesn't break in the demo's sticky space. Recommendation: get a personal FPJS
+  trial key for a clean-slate test, OR pivot validation to the actual target detection (the real goal).
+
 - **2026-07-25 · CORRECTION to the entry below: libfp.so imports NO ASensor/ACamera/egl/gl/MediaDrm symbols — the "libandroid JNI bundle" claim was WRONG.** `readelf` on libfp.so's FULL import list: its only
   device reads are files (`fopen`/`openat`/`__open_2`/`pread`/`stat`), `__system_property_get`,
   `getauxval`, dl_iterate_phdr/dladdr (lib enumeration + anti-tamper), and **`syscall`** (raw syscalls) +
