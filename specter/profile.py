@@ -11,6 +11,7 @@ import json
 import os
 import secrets
 import tempfile
+import threading
 
 from . import generators as G
 from .identifiers import BUILD_FIELDS, UNIQUE_KEYS
@@ -46,14 +47,19 @@ def _load_devices():
 
 
 _HARDWARE_CACHE = None
+_HARDWARE_LOCK = threading.Lock()
 
 
 def _load_hardware():
-    """Per-model hardware descriptors (data/hardware.json), keyed by device codename. Cached: it's a
-    constant lookup table, read once. See scripts/build_hardware_dataset.py for how it's generated."""
+    """Per-model hardware descriptors (data/hardware.json), keyed by device codename. Cached under a
+    lock so it is read exactly once even when many threads generate profiles concurrently (an unlocked
+    lazy read has each thread parse the 200KB file, which perturbs timing and wastes work). It's a
+    constant lookup table. See scripts/build_hardware_dataset.py for how it's generated."""
     global _HARDWARE_CACHE
     if _HARDWARE_CACHE is None:
-        _HARDWARE_CACHE = json.load(open(HARDWARE_PATH, encoding="utf-8"))
+        with _HARDWARE_LOCK:
+            if _HARDWARE_CACHE is None:   # double-checked: another thread may have loaded it
+                _HARDWARE_CACHE = json.load(open(HARDWARE_PATH, encoding="utf-8"))
     return _HARDWARE_CACHE
 
 
@@ -166,6 +172,11 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     codename = product.split("_")[0]
     # Samsung derives its bootloader from the SM- model (device slot); others from the codename.
     bl_base = device if brand.lower() == "samsung" else codename
+    # Look up the per-model hardware bundle ONCE — its SoC drives soc_platform (so the reported SoC is
+    # coherent with the GPU/cpuinfo the same profile carries), and the whole entry is reused for the
+    # hardware fields appended at the end. Missing codename -> the coherent _default bundle.
+    _hw = (hardware or _load_hardware())
+    _hw_entry = _hw.get(codename) or _hw["_default"]
 
     p = {
         "android_id": G.hex16(r),
@@ -209,7 +220,7 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
         "total_storage": _ram_storage[1],
         "build_host": G.build_host(r),
         "build_display": build_id,
-        "soc_platform": G.soc_platform(r, product),
+        "soc_platform": G.soc_platform(product, _hw_entry.get("soc")),
         # Factory-reset time — the signal FPJS Pro used to re-link three rotated identities (PROVEN
         # 2026-07-25). Derived from this build's security patch so the pair is coherent by construction
         # (a device can't be reset before its own OS was built). LAST in the dict, so the draw is
@@ -220,7 +231,7 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # /proc/cpuinfo) — a coherent bundle for the device model this identity claims to be. Constant
     # lookup keyed on the picked device codename; consumes no RNG (byte-parity safe). LAST so every
     # existing field's draw order is unchanged.
-    p.update(_hw_fields(codename, hardware))
+    p.update(_hw_fields(codename, _hw))
     return p
 
 

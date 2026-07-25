@@ -150,13 +150,22 @@ _SOC_BY_DEVICE = {
     "sailfish": "msm8996", "marlin": "msm8996", "taimen": "msm8998",
     "h1": "msm8996", "elsa": "msm8996", "joan": "msm8998",
 }
-_SOC_POOL = ["msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
-             "sm8350", "sm6150", "kona", "lahaina", "trinket", "bengal"]
+# Draw-free default SoC — a real mid-range Snapdragon. Used only when neither the hardware bundle nor
+# the known-Pixel table has an entry (a non-selectable device, which generated profiles never pick).
+_DEFAULT_SOC = "sm6150"
 
-def soc_platform(r, product):
-    """ro.board.platform (SoC codename) — takes the PRODUCT codename (Build.PRODUCT, e.g. "flame",
-    "h1_lra_us"), NOT the marketing device name (devices.json stores "Pixel 4" in the device slot).
-    LG products carry a region suffix; match the leading token before "_". Mirrors Java socPlatform."""
+
+def soc_platform(product, hw_soc=None):
+    """ro.board.platform (SoC codename), COHERENT with the device this identity claims to be.
+
+    Prefers `hw_soc` — the SoC of the per-model hardware bundle (data/hardware.json) — so the reported
+    SoC always matches the GPU/cpuinfo/etc. the same profile carries. Falls back to the known-Pixel
+    table keyed on the PRODUCT codename (Build.PRODUCT, e.g. "flame", "h1_lra_us" — NOT the marketing
+    device name), then a fixed default. PURE (no RNG): a real device's SoC is a fact of the model, not
+    a random draw — the old random fallback produced INCOHERENT SoCs (a Galaxy S21 reporting a budget
+    chip). Being draw-free also keeps Java↔Python byte-parity trivially (a constant shifts nothing)."""
+    if hw_soc:
+        return hw_soc
     if product:
         key = product.lower()
         known = _SOC_BY_DEVICE.get(key)
@@ -167,7 +176,7 @@ def soc_platform(r, product):
             known = _SOC_BY_DEVICE.get(key[:us])
             if known is not None:
                 return known
-    return _SOC_POOL[r(len(_SOC_POOL))]
+    return _DEFAULT_SOC
 
 _RADIO_PREFIXES = ["g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"]
 

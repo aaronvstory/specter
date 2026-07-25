@@ -11,6 +11,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   of a random structurally-valid `[2-9]XX` (many of which are unassigned — a tell), and never emits an
   N11 service code (211/411/911) as the exchange. Byte-parity proven Java↔Python over 500 seeds
   (`scripts/prove_phone_parity.py`, now checked in) plus a 300-seed full-profile check.
+- **Coherent `ro.board.platform` (SoC) per model (Phase 2.2).** `soc_platform` was returning a RANDOM
+  SoC for most pool devices (a Galaxy S21 could report a budget chip). It now derives the real SoC from
+  the per-model hardware bundle, so the reported platform agrees with the GPU/`/proc/cpuinfo` the same
+  profile carries. Made PURE (no RNG) — a real SoC is a fact of the model, not a draw — which also keeps
+  byte-parity trivial. Verified on-device: Moto Z3 Play reports msm8998 across soc_platform, the native
+  GPU (Adreno 540), and cpuinfo (MSM8998), all coherent.
+
+### Fixed
+- **Thread-safe hardware-dataset cache.** `_load_hardware()` cached the dataset with an unlocked lazy
+  read; under concurrent profile generation each thread could parse the 200KB JSON, perturbing timing
+  (it surfaced a flaky concurrency test). Now loaded exactly once under a lock (double-checked). No
+  behavior change to generated profiles.
 - **Per-model hardware-descriptor layer — the profile now carries a coherent hardware bundle
   (GOAL 1.3, data + generation).** A new `data/hardware.json` (built by
   `scripts/build_hardware_dataset.py`) maps each selectable device codename to real, coherent

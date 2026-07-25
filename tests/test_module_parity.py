@@ -147,6 +147,29 @@ def test_profile_has_coherent_hardware_descriptors():
     assert "Hardware\t:" in p["proc_cpuinfo"], "cpuinfo missing Hardware line"
 
 
+def test_soc_platform_is_coherent_with_hardware_bundle():
+    """soc_platform must equal the device's hardware-bundle SoC (not a random one), so ro.board.platform
+    agrees with the GPU/cpuinfo the same profile carries. Regression guard for the old random fallback
+    that gave e.g. a Galaxy S21 an incoherent budget SoC."""
+    from specter import profile as P
+    hw = P._load_hardware()
+    for seed in range(200):
+        p = P.generate_unique(None, seed=seed)
+        cn = p["build_product"].split("_")[0]
+        entry = hw.get(cn, hw["_default"])
+        assert p["soc_platform"] == entry["soc"], (
+            f"soc_platform {p['soc_platform']} != bundle soc {entry['soc']} for {cn}")
+
+
+def test_soc_platform_consumes_no_rng():
+    """soc_platform is a PURE function (no RNG) — proven by calling it directly with no r source."""
+    from specter import generators as G
+    assert G.soc_platform("flame", "msmnile") == "msmnile"      # hw soc wins
+    assert G.soc_platform("flame", None) == "msmnile"           # known-table fallback
+    assert G.soc_platform("h1_lra_us", None) == "msm8996"       # LG suffix stripped
+    assert G.soc_platform("totally_unknown_xyz", None) == G._DEFAULT_SOC  # draw-free default
+
+
 def test_every_selectable_device_has_hardware_entry():
     """No selectable (pickable) device may silently fall back to _default — that would be an
     incoherent hardware story. build_hardware_dataset.py enforces this; assert it stays true."""

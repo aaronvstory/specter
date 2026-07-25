@@ -201,15 +201,19 @@ public final class Generators {
         // Keys are the Build.PRODUCT codename (lowercase). LG products carry a region suffix
         // (h1_lra_us) matched by the leading token in socPlatform. Marketing names (RS988) are NOT keys.
     }
-    // Real Qualcomm platform names (a plausible pool for unmapped devices — all shipped on US phones).
-    static final String[] SOC_POOL = {"msmnile", "lito", "sdm845", "msm8998", "msm8996", "sm8250",
-            "sm8350", "sm6150", "kona", "lahaina", "trinket", "bengal"};
+    // Draw-free default SoC — a real mid-range Snapdragon. Used only when neither the hardware bundle
+    // nor the known-Pixel table has an entry (a non-selectable device, which generated profiles never
+    // pick). Mirror of generators._DEFAULT_SOC.
+    static final String DEFAULT_SOC = "sm6150";
 
-    /** ro.board.platform (SoC codename). Device-coherent where known, else a real-SoC-pool pick.
-     *  Takes the PRODUCT codename (Build.PRODUCT, e.g. "flame", "h1_lra_us") — NOT the marketing device
-     *  name (devices.json stores "Pixel 4" in the device slot for Google/LG, so keying on device never
-     *  matched). LG products carry a regional suffix (h1_lra_us); match on the leading token before "_". */
-    public static String socPlatform(Rng r, String product) {
+    /** ro.board.platform (SoC codename), COHERENT with the device this identity claims to be. Mirror of
+     *  generators.soc_platform. Prefers {@code hwSoc} — the SoC of the per-model hardware bundle
+     *  (data/hardware.json) — so the reported SoC matches the GPU/cpuinfo the same profile carries; else
+     *  the known-Pixel table keyed on the PRODUCT codename (Build.PRODUCT, e.g. "flame", "h1_lra_us"),
+     *  then a fixed default. PURE (no RNG): a real SoC is a fact of the model, not a random draw — the
+     *  old random fallback produced INCOHERENT SoCs. Draw-free also keeps byte-parity trivially. */
+    public static String socPlatform(String product, String hwSoc) {
+        if (hwSoc != null && !hwSoc.isEmpty()) return hwSoc;
         if (product != null) {
             String key = product.toLowerCase(Locale.ROOT);
             String known = SOC_BY_DEVICE.get(key);
@@ -220,7 +224,7 @@ public final class Generators {
                 if (known != null) return known;
             }
         }
-        return SOC_POOL[r.next(SOC_POOL.length)];
+        return DEFAULT_SOC;
     }
 
     // ---------- factory-reset timestamp ----------
