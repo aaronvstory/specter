@@ -5,6 +5,24 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-26 · RE-CONFIRMED (deviceId side): all three identifier read paths FIRE and are correctly spoofed for the FPJS demo, visitorId still frozen.** — status: `confirmed`.
+  Instrumented every deviceId read path with `[specter][idtrace]` and ran one full identification (Pixel 4,
+  full `pm clear` + location pre-grant). All three fired AND substituted the spoofed value:
+    - `Settings.Secure` `android_id` -> spoofed `476645b7...`
+    - GSF ContentResolver cursor: real schema is `(key,value)` 2 cols, `selArgs=android_id`, wrapper
+      `SUBSTITUTED getString(1)` (returned the fake GSF). **Corrects the prior handoff note that "the GSF
+      cursor does NOT fire" — it fires and substitutes.**
+    - `MediaDrm` `deviceUniqueId` -> spoofed `5868301b...`
+  Result: visitorId unchanged (`18uu8Y2WxYks5PNLa0c7`), `suspectScore` 34, fresh `eventId`
+  (`1784996946827.qbhwCd`). => the demo's visitorId is provably NOT derived from any device identifier we
+  spoof; it is the server-side fuzzy match over hardware signals (GOAL 1.3) held by the sticky server
+  record (firstSeenAt frozen). This closes "Next Action step 1" from the 2026-07-26 handoff: nothing more
+  to instrument on the identifier paths — they are complete and correct.
+  DECISION FORK (surface to user): (a) build the hardware-signal Zygisk hooks (GOAL 1.3, the big lift) but
+  measure them against a demo whose record is stuck — a weak proxy; or (b) get a fresh fingerprint.com
+  trial key first (clean visitor space, firstSeenAt resets) so 1.3 work is actually measurable. Consensus
+  across every prior on-device elimination points to (b) being the higher-value order.
+
 - **2026-07-25 · The FPJS DEMO is a confirmed weak proxy — validating "beats FPJS" needs a fresh server context (own API key or the real target).** — status: `blocked (needs a fresh FPJS key or real-target test)`.
   The demo (App v4.1.4, Fingerprint SDK v4.0.0-alpha.0) uses a FIXED built-in public API key, so every
   identification shares ONE visitor space that already holds our device's weeks-old record (firstSeenAt
