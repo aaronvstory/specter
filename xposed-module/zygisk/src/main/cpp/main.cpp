@@ -23,6 +23,9 @@
 #include <cerrno>
 #include <string>
 #include <map>
+#include <vector>
+#include <mutex>
+#include <utility>
 #include <fcntl.h>
 
 #include <dlfcn.h>          // dlsym(RTLD_DEFAULT, ...) to resolve libc symbol addresses
@@ -368,6 +371,42 @@ static const unsigned char *my_glGetString(unsigned int name) {
     return orig_glGetString(name);
 }
 
+// ================= ASensor_getName / ASensor_getVendor (native sensor list) =================
+// The tracer PROVED libfp reads the sensor list via libandroid's ASensorManager/ASensor NDK — a
+// direct-JNI path the Java SensorManager hook cannot reach. Rather than fabricate ASensor structs
+// (crash-risky), we RELABEL: hook the two accessors so each real sensor reports the profile's
+// per-model name/vendor. Each distinct ASensor* is assigned the next (name,vendor) pair from the
+// profile on first sight and remembered, so the mapping is stable within a process (a fingerprinter
+// re-reading the same sensor gets the same spoofed label). We do NOT touch ASensorManager_getSensorList,
+// so the COUNT and every real ASensor pointer stay valid — no allocation, no struct forgery, no crash.
+static std::vector<std::pair<std::string, std::string>> g_sensor_labels;  // (name, vendor) from profile
+static std::map<const void *, size_t> g_sensor_assign;    // ASensor* -> index into g_sensor_labels
+static std::mutex g_sensor_mtx;
+
+static size_t sensor_index_for(const void *sensor) {
+    // Assign this ASensor* the next label slot on first sight; stable thereafter. Caller holds nothing.
+    std::lock_guard<std::mutex> lk(g_sensor_mtx);
+    auto it = g_sensor_assign.find(sensor);
+    if (it != g_sensor_assign.end()) return it->second;
+    size_t idx = g_sensor_assign.size() % g_sensor_labels.size();
+    g_sensor_assign[sensor] = idx;
+    return idx;
+}
+
+using ASensor_getName_t = const char *(*)(const void *);
+static ASensor_getName_t orig_ASensor_getName = nullptr;
+static const char *my_ASensor_getName(const void *sensor) {
+    if (g_sensor_labels.empty() || sensor == nullptr) return orig_ASensor_getName(sensor);
+    return g_sensor_labels[sensor_index_for(sensor)].first.c_str();
+}
+
+using ASensor_getVendor_t = const char *(*)(const void *);
+static ASensor_getVendor_t orig_ASensor_getVendor = nullptr;
+static const char *my_ASensor_getVendor(const void *sensor) {
+    if (g_sensor_labels.empty() || sensor == nullptr) return orig_ASensor_getVendor(sensor);
+    return g_sensor_labels[sensor_index_for(sensor)].second.c_str();
+}
+
 // Why inline hooks, not PLT: bionic's __system_property_get calls __system_property_read_callback via
 // an INTERNAL direct call, not through libc's PLT. PLT hooking only rewrites a *caller library's* GOT
 // import, so it can never intercept that internal path (proven on-device: the PLT attempt reported a
@@ -443,6 +482,27 @@ public:
         if (gl != profile.end() && !gl->second.empty())
             g_gl_version = "OpenGL ES " + gl->second + " V@0.0";
 
+        // Sensor labels — hw_sensors is "name|vendor|type" rows joined by ';' (the native reads only
+        // name+vendor; type is ignored here). Populated for the ASensor_getName/getVendor relabel hooks.
+        auto se = profile.find("hw_sensors");
+        if (se != profile.end() && !se->second.empty()) {
+            const std::string &raw = se->second;
+            size_t start = 0;
+            while (start < raw.size()) {
+                size_t semi = raw.find(';', start);
+                std::string row = raw.substr(start, semi == std::string::npos ? std::string::npos : semi - start);
+                size_t b1 = row.find('|');
+                if (b1 != std::string::npos) {
+                    std::string name = row.substr(0, b1);
+                    size_t b2 = row.find('|', b1 + 1);
+                    std::string vendor = row.substr(b1 + 1, b2 == std::string::npos ? std::string::npos : b2 - (b1 + 1));
+                    if (!name.empty()) g_sensor_labels.emplace_back(name, vendor);
+                }
+                if (semi == std::string::npos) break;
+                start = semi + 1;
+            }
+        }
+
         auto tr = profile.find("trace");
         if (tr != profile.end() && tr->second == "1") g_trace = true;
         // Hide root by default for every Specter target (a rooted-device flag is a strong linking signal).
@@ -504,7 +564,8 @@ public:
 
         if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&
             g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root &&
-            g_gl_renderer.empty() && g_gl_vendor.empty() && g_gl_version.empty()) return;
+            g_gl_renderer.empty() && g_gl_vendor.empty() && g_gl_version.empty() &&
+            g_sensor_labels.empty()) return;
         installHooks();
     }
 
@@ -570,6 +631,27 @@ private:
                 if (tramp) { g_hooked_addrs[sym] = true; orig_glGetString = (glGetString_t) tramp; applied++; }
                 else LOGD("A64HookFunction glGetString failed");
             } else if (!sym) LOGD("glGetString unresolved (no GL lib)");
+        }
+        // Native sensor list — libfp reads it via libandroid's ASensor_getName/getVendor (tracer-proven
+        // direct JNI). Relabel those two accessors to the profile's per-model sensor names/vendors.
+        // libandroid.so is typically already loaded; dlopen to be sure, then inline-hook, deduped by addr.
+        if (!g_sensor_labels.empty()) {
+            void *lah = dlopen("libandroid.so", RTLD_NOW | RTLD_NOLOAD);
+            if (!lah) lah = dlopen("libandroid.so", RTLD_NOW);
+            void *nSym = lah ? dlsym(lah, "ASensor_getName") : dlsym(RTLD_DEFAULT, "ASensor_getName");
+            if (nSym && !g_hooked_addrs.count(nSym)) {
+                void *tramp = nullptr;
+                A64HookFunction(nSym, (void *) my_ASensor_getName, &tramp);
+                if (tramp) { g_hooked_addrs[nSym] = true; orig_ASensor_getName = (ASensor_getName_t) tramp; applied++; }
+                else LOGD("A64HookFunction ASensor_getName failed");
+            } else if (!nSym) LOGD("ASensor_getName unresolved");
+            void *vSym = lah ? dlsym(lah, "ASensor_getVendor") : dlsym(RTLD_DEFAULT, "ASensor_getVendor");
+            if (vSym && !g_hooked_addrs.count(vSym)) {
+                void *tramp = nullptr;
+                A64HookFunction(vSym, (void *) my_ASensor_getVendor, &tramp);
+                if (tramp) { g_hooked_addrs[vSym] = true; orig_ASensor_getVendor = (ASensor_getVendor_t) tramp; applied++; }
+                else LOGD("A64HookFunction ASensor_getVendor failed");
+            } else if (!vSym) LOGD("ASensor_getVendor unresolved");
         }
         if (g_trace) {
             applied += hookSym("dlsym", (void *) my_dlsym, (void **) &orig_dlsym);

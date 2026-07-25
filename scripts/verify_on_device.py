@@ -143,12 +143,18 @@ def main():
     # the first sensor's name+vendor as a spot-check that the relabel landed.
     want_sensors = str(applied.get("hw_sensors", "<none>"))
     got_sensors = str(probe.get("hw_sensors", "<none>"))
+    got_sensors_native = str(probe.get("hw_sensors_native", "<none>"))
     if want_sensors != "<none>" and "|" in want_sensors:
         first = want_sensors.split(";")[0]                 # name|vendor|type
         name_vendor = "|".join(first.split("|")[:2])       # name|vendor
-        sens_ok = name_vendor.split("|")[0] in got_sensors
-        print(f"{'sensors[0]':22} {got_sensors[:36]:36} "
+        want_name = name_vendor.split("|")[0]
+        sens_ok = want_name in got_sensors
+        print(f"{'sensors[0] (java)':22} {got_sensors[:36]:36} "
               f"{'✅ relabelled' if sens_ok else '⚠ want ' + name_vendor[:20]}")
+        # Native ASensor read — the direct-JNI path the Zygisk ASensor_getName/getVendor hooks target.
+        nat_ok = want_name in got_sensors_native
+        print(f"{'sensors[0] (native)':22} {got_sensors_native[:36]:36} "
+              f"{'✅ spoofed (native)' if nat_ok else '⚠ want ' + want_name[:20]}")
 
     # Storage coherence: getTotalBytes must equal blockCount*blockSize, else an app computing total
     # from blocks gets a different (real) value than getTotalBytes — a worse tell than a plain leak.

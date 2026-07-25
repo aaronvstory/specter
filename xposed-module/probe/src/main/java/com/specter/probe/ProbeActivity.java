@@ -235,6 +235,10 @@ public class ProbeActivity extends Activity {
      *  GL_VERSION" or "ERR:...". */
     private static native String nativeGlStrings();
 
+    /** Native sensor list via the NDK ASensorManager/ASensor path — the direct-JNI reads Specter's
+     *  ASensor_getName/getVendor hooks target. Returns "name|vendor;..." or "ERR:...". */
+    private static native String nativeSensors();
+
     private void probeHardware(JSONObject o) {
         // --- GPU renderer: Java framework path (ConfigurationInfo GLES version) + native glGetString ---
         try {
@@ -261,6 +265,10 @@ public class ProbeActivity extends Activity {
             put(o, "hw_sensors", sb.toString());
             put(o, "hw_sensor_count", String.valueOf(list.size()));
         } catch (Throwable t) { put(o, "hw_sensors", "ERR:" + t); }
+        // Native sensor read (NDK ASensor path — what Specter's native ASensor_getName/getVendor hooks
+        // target). Proves the native relabel engaged, independent of the Java SensorManager hook.
+        try { put(o, "hw_sensors_native", NATIVE_LIB_ERR != null ? NATIVE_LIB_ERR : nativeSensors()); }
+        catch (Throwable t) { put(o, "hw_sensors_native", "ERR:" + t); }
 
         // --- Camera id list ---
         try {
