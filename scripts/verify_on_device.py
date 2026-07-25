@@ -37,6 +37,9 @@ CHECKS = {
     "bt_addr_adapter": "bluetooth_mac", "bt_addr_settings": "bluetooth_mac", "gsf_id": "gsf_id",
     # StatFs storage — was leaking (generated but never hooked). Must equal the spoofed total_storage.
     "storage_total_bytes": "total_storage",
+    # Hardware descriptors (GOAL 1.3) — direct-equality fields. GPU/sensors/cpuinfo are compound and
+    # checked in their own block below.
+    "hw_gles_version": "hw_gles_version", "hw_cores": "hw_cores", "hw_cameras": "hw_cameras",
 }
 # Known real Pixel-4 markers — if any appears in a probe value, that's a hard leak.
 REAL_MARKERS = ["flame", "Pixel 4", "g8150-00088-210507", "4.14.212", "google/flame"]
@@ -119,6 +122,33 @@ def main():
         print("  (unreadable)")
     else:
         print("  ○ coherent / n/a")
+
+    # Hardware-descriptor coherence (GOAL 1.3): the compound signals. GPU renderer via BOTH the
+    # native EGL/GLES read (hw_gl_native = VENDOR|RENDERER|VERSION — the path the Zygisk glGetString
+    # hook targets) and the framework GLES version; the sensor list; and /proc/cpuinfo's Hardware line.
+    print(f"\n--- Hardware descriptors ---")
+    want_renderer = str(applied.get("hw_gpu_renderer", "<none>"))
+    gl_native = str(probe.get("hw_gl_native", "<none>"))
+    native_ok = want_renderer != "<none>" and want_renderer in gl_native
+    print(f"{'gpu (native glGetStr)':22} {gl_native[:36]:36} "
+          f"{'✅ spoofed (native)' if native_ok else '⚠ want ' + want_renderer[:16]}")
+    # cpuinfo Hardware line must name the profile's SoC family, not the real Pixel 4 (SM8150/msmnile).
+    ci_hw = str(probe.get("cpuinfo_hardware", "<none>"))
+    ci_procs = str(probe.get("cpuinfo_processors", "<none>"))
+    want_cores = str(applied.get("hw_cores", "<none>"))
+    ci_note = "○" if ci_procs == want_cores else f"⚠ procs={ci_procs} want {want_cores}"
+    print(f"{'cpuinfo Hardware':22} {ci_hw[:36]:36}")
+    print(f"{'cpuinfo processors':22} {ci_procs:36} {ci_note}")
+    # sensor list: the probe reports name|vendor rows; the profile carries name|vendor|type. Compare
+    # the first sensor's name+vendor as a spot-check that the relabel landed.
+    want_sensors = str(applied.get("hw_sensors", "<none>"))
+    got_sensors = str(probe.get("hw_sensors", "<none>"))
+    if want_sensors != "<none>" and "|" in want_sensors:
+        first = want_sensors.split(";")[0]                 # name|vendor|type
+        name_vendor = "|".join(first.split("|")[:2])       # name|vendor
+        sens_ok = name_vendor.split("|")[0] in got_sensors
+        print(f"{'sensors[0]':22} {got_sensors[:36]:36} "
+              f"{'✅ relabelled' if sens_ok else '⚠ want ' + name_vendor[:20]}")
 
     # Storage coherence: getTotalBytes must equal blockCount*blockSize, else an app computing total
     # from blocks gets a different (real) value than getTotalBytes — a worse tell than a plain leak.
