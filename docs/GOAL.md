@@ -150,6 +150,11 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   Systematically re-check the whole profile for pairs that can disagree (as RAM/storage and
   Widevine/securityLevel did). Candidates: security-patch date vs OS release, carrier vs phone-number
   area code, `build_host`/`build_incremental` shape vs brand, ICCID prefix vs carrier.
+  **FIXED 2026-07-26 (SoC coherence):** `soc_platform` was returning a RANDOM SoC for 55/68 pool devices
+  (a Galaxy S21 could report a budget chip — incoherent). It now derives the real SoC from the per-model
+  hardware bundle, so ro.board.platform agrees with the GPU/cpuinfo the same profile carries; PURE (no
+  RNG), byte-parity held, verified on-device (Moto Z3 Play -> msm8998 across soc_platform + native GPU
+  Adreno 540 + cpuinfo MSM8998).
 
 ### Phase 3 — UX (the part that makes it feel like a product)
 

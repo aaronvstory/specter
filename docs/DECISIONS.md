@@ -10,6 +10,14 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   mirrored byte-for-byte in Java and proven with `scripts/prove_phone_parity.py` (500 seeds) + a 300-seed
   full-profile check. Area-code ↔ carrier region was deliberately NOT enforced: US numbers port across
   carriers and regions freely, so a mismatch there is normal, not a tell.
+- **2026-07-26 · soc_platform derives from the hardware bundle and is PURE (no RNG) (Phase 2.2)** —
+  it was returning a RANDOM SoC from a pool for 55/68 pool devices, which produced INCOHERENT combos
+  (a Galaxy S21 could report a budget chip) — an internally inconsistent profile is itself a tell. Now
+  it takes the SoC of the per-model hardware bundle (data/hardware.json), so ro.board.platform always
+  agrees with the GPU/cpuinfo the same profile carries. Removing the random draw makes it pure, which
+  ALSO keeps Java↔Python byte-parity trivially (a constant shifts no draw order). The old `_SOC_POOL`
+  random fallback was deleted on both sides; the JVM test path (no dataset) falls back to the known-Pixel
+  table then a fixed default, still draw-free. Verified on-device end-to-end.
 
 - **2026-07-25 · Native layer = per-app Zygisk INLINE hook, not PLT and not root resetprop/touch** —
   PLT hooking (tried first, via the Zygisk API's own lsplt) does NOT intercept bionic's INTERNAL

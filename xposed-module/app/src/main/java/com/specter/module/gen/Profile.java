@@ -199,30 +199,45 @@ public final class Profile {
         // on a spoofed Samsung/Moto). Build.DISPLAY is the build display id, ==build_id on real devices.
         p.put("build_host", Generators.buildHost(r));
         p.put("build_display", buildId);
-        // ro.board.platform (SoC codename) — device-coherent, so the fingerprint's CPU/SoC portion
-        // rotates per identity instead of leaking the real phone's SoC on every signup.
-        p.put("soc_platform", Generators.socPlatform(r, product));
+        // Resolve the per-model hardware bundle ONCE — its SoC drives soc_platform (so the reported SoC
+        // is coherent with the GPU/cpuinfo the same profile carries), and the whole entry is reused for
+        // the hardware fields appended at the end. Mirrors profile.py (which looks it up once).
+        Map<String, String> hwEntry = resolveHardware(codename, hardware);
+        // ro.board.platform (SoC codename) — COHERENT with the hardware bundle, PURE (no RNG). Mirrors
+        // profile.py: soc_platform(product, hwEntry.soc).
+        p.put("soc_platform", Generators.socPlatform(product, hwEntry.get("soc")));
         // LAST — appended to the end of the RNG order so every existing field is unchanged. Mirrors
         // profile.py, which passes the same security patch so the pair stays coherent.
         p.put("factory_reset_epoch", Generators.factoryResetEpoch(r, patch));
         // Per-model hardware descriptors — a coherent bundle for the device this identity claims to
         // be. Constant lookup keyed on the codename; consumes no RNG (byte-parity safe). LAST, so the
         // draw order of every field above is unchanged. Mirrors profile.py's _hw_fields().
-        p.putAll(hwFields(codename, hardware));
+        p.putAll(hwFieldsFromEntry(hwEntry));
         return p;
     }
 
-    /**
-     * Flat hardware-descriptor fields for a device codename. When {@code hardware} is null or lacks
-     * the codename, falls back to the "_default" entry (or the built-in DEFAULT_HW if the dataset
-     * itself is absent, e.g. the pure-JVM test path with no assets). Mirrors profile.py _hw_fields().
-     */
-    static Map<String, String> hwFields(String codename, Map<String, Map<String, String>> hardware) {
-        Map<String, String> e = null;
+    /** Resolve the hardware entry for a codename: the dataset entry, else "_default", else the built-in
+     *  DEFAULT_HW (the pure-JVM path with no asset dataset). Never null. */
+    static Map<String, String> resolveHardware(String codename, Map<String, Map<String, String>> hardware) {
         if (hardware != null) {
-            e = hardware.get(codename);
+            Map<String, String> e = hardware.get(codename);
             if (e == null) e = hardware.get("_default");
+            if (e != null) return e;
         }
+        return DEFAULT_HW;
+    }
+
+    /** Back-compat overload: resolve the entry for a codename, then render. */
+    static Map<String, String> hwFields(String codename, Map<String, Map<String, String>> hardware) {
+        return hwFieldsFromEntry(resolveHardware(codename, hardware));
+    }
+
+    /**
+     * Flat hardware-descriptor fields from an already-resolved hardware entry (never null). Mirrors
+     * profile.py _hw_fields(): fills each field, falling back to DEFAULT_HW for any absent key so the
+     * output is always complete and valid.
+     */
+    static Map<String, String> hwFieldsFromEntry(Map<String, String> e) {
         if (e == null) e = DEFAULT_HW;
         Map<String, String> out = new LinkedHashMap<>();
         out.put("hw_gpu_renderer", e.getOrDefault("hw_gpu_renderer", DEFAULT_HW.get("hw_gpu_renderer")));

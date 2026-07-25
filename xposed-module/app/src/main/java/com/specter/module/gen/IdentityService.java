@@ -90,6 +90,7 @@ public final class IdentityService {
                 String codename = it.next();
                 JSONObject e = root.getJSONObject(codename);
                 Map<String, String> f = new java.util.HashMap<>();
+                f.put("soc", e.optString("soc"));   // drives soc_platform (coherent with this bundle)
                 f.put("hw_gpu_renderer", e.optString("gpu_renderer"));
                 f.put("hw_gpu_vendor", e.optString("gpu_vendor"));
                 f.put("hw_gles_version", e.optString("gles_version"));
