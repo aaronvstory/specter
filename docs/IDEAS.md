@@ -153,3 +153,24 @@ suspicious, and a "phone" account on a WiFi-only tablet is incoherent with havin
 phones only, Android >= 10, and keep the Java `Generators`/`Profile` in lockstep so the same seed still
 yields identical output on both sides. Must be verified with the Java-vs-Python dumper, not assumed.
 Status: `idea` — deliberately NOT bundled into the native-probe PR.
+
+## 2026-07-25 · factoryReset fix attempt #1 — Java layer done, NOT sufficient
+`shipped` (the Java hooks + generator) / `blocked` (the actual FPJS win, needs the native layer).
+Built `factory_reset_epoch` + hooks on `File.lastModified` and `android.system.Os.stat/lstat`, both
+verified on-device (all 6 reset-marker dirs return the spoofed time via both paths). **FPJS Pro still
+reports the real `1773120233` and the same `visitorId`.** Conclusion (PROVEN by elimination): FPJS reads
+the reset time via a NATIVE `stat()`, not through the Java framework — the same blind spot already
+proven for system properties.
+
+**Consequence for the plan:** the native/root layer is no longer optional or speculative. Two
+independent, confirmed signals (system properties AND filesystem metadata) both leak exclusively via
+the native path. The Java hooks remain worth having — they close the paths that *some* SDKs use and they
+cost nothing — but on their own they cannot beat an NDK fingerprinter.
+
+**What the native layer has to cover (now evidence-based, not guesswork):**
+1. System properties → `resetprop` (or a libc `__system_property_get` hook via a Zygisk-style native module).
+2. Filesystem mtimes on the reset-marker dirs → either `touch` them (device-wide, irreversible, affects
+   GeerGit's apps — the reason it was deferred) or hook native `stat`/`fstatat` in-process.
+   A native in-process hook is strictly better than `touch`: per-app, reversible, no collateral damage.
+   That argues for a **Zygisk/native-hook module** over `resetprop`+`touch`, which is a change of
+   approach from the byedentity-imitating plan and should be evaluated as such before building.

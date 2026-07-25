@@ -51,6 +51,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookSystemProperties(p);
         hookHardwareInfo(lpparam, p);
         hookStorage(lpparam, p);
+        hookFactoryResetTime(p);
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -180,6 +181,70 @@ public class HookEntry implements IXposedHookLoadPackage {
     // blockCount*blockSize path must multiply out to the SAME spoofed total, else an app computing
     // total from blocks sees the real value and the two disagree (a worse tell than leaving it real).
     // available/free = a realistic ~35-55% of total (kept deterministic per-identity via the id hash).
+    // ---- factory-reset timestamp (File.lastModified on the reset-marker dirs) ----
+    // PROVEN 2026-07-25: FingerprintJS Pro re-identified the device across THREE full identity
+    // rotations via its `factoryReset` smart signal. That value is the mtime of directories written
+    // once at factory reset and never again; /data/misc/profiles and /data/bootchart are readable by
+    // an unprivileged app (verified: stat as plain shell succeeds), so any app gets a stable
+    // per-device id no other spoofed field can hide.
+    //
+    // lastModified() is a HOT, generic call on a path every app uses for its own files, so this
+    // matches an EXPLICIT path set and passes everything else through untouched. Matching broadly
+    // (e.g. any /data path) would corrupt target apps' own file bookkeeping.
+    static final String[] FACTORY_RESET_PATHS = {
+            "/data/misc/profiles", "/data/bootchart", "/data/misc/wifi", "/data/misc/bluetooth",
+            "/data/vendor", "/data/dalvik-cache", "/data/misc", "/data/system",
+    };
+
+    private void hookFactoryResetTime(final Map<String, String> p) {
+        String v = p.get("factory_reset_epoch");
+        if (v == null) return;
+        final long millis;
+        try { millis = Long.parseLong(v) * 1000L; } catch (Throwable t) { return; }
+        try {
+            XposedBridge.hookAllMethods(File.class, "lastModified", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (!(mp.thisObject instanceof File)) return;
+                    if (isResetMarker(((File) mp.thisObject).getAbsolutePath())) mp.setResult(millis);
+                }
+            });
+        } catch (Throwable t) { XposedBridge.log("[specter] factory-reset File hook fail: " + t); }
+
+        // android.system.Os.stat/lstat is a SECOND, independent read of the same fact — and it is the
+        // one that matters: PROVEN 2026-07-25 that FingerprintJS Pro reported the REAL reset time while
+        // our File.lastModified hook was verified active, and the probe confirmed Os.stat().st_mtime
+        // still returned the real value. Hooking only File.lastModified closes the path nobody uses.
+        // StructStat fields are final, so rewrite st_mtime by reflection on the returned object.
+        final long secs = millis / 1000L;
+        try {
+            Class<?> os = XposedHelpers.findClass("android.system.Os", null);
+            XC_MethodHook statHook = new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
+                    if (!isResetMarker((String) mp.args[0])) return;
+                    Object st = mp.getResult();
+                    if (st == null) return;
+                    for (String f : new String[]{"st_mtime", "st_ctime", "st_atime"}) {
+                        try {
+                            Field fl = st.getClass().getField(f);
+                            fl.setAccessible(true);
+                            fl.setLong(st, secs);
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            };
+            XposedBridge.hookAllMethods(os, "stat", statHook);
+            XposedBridge.hookAllMethods(os, "lstat", statHook);
+        } catch (Throwable t) { XposedBridge.log("[specter] factory-reset Os.stat hook fail: " + t); }
+    }
+
+    /** True only for the exact reset-marker dirs — never a prefix match, so app files are untouched. */
+    static boolean isResetMarker(String path) {
+        if (path == null) return false;
+        for (String marker : FACTORY_RESET_PATHS) if (path.equals(marker)) return true;
+        return false;
+    }
+
     private void hookStorage(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
         final String stStr = p.get("total_storage");
         if (stStr == null) return;

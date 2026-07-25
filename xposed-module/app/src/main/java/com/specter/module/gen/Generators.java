@@ -223,6 +223,45 @@ public final class Generators {
         return SOC_POOL[r.next(SOC_POOL.length)];
     }
 
+    // ---------- factory-reset timestamp ----------
+    // FPJS Pro reports `factoryReset` as a first-class smart signal, read from the mtime of dirs
+    // written once at reset (/data/misc/profiles, /data/bootchart — readable without root). PROVEN
+    // 2026-07-25: it re-identified the device across three full identity rotations.
+    // Coherent by construction: offset from the running build's security patch, so the reset can
+    // never predate the OS it runs. Byte-parity mirror of generators.factory_reset_epoch —
+    // RNG order: day offset, then seconds-within-day.
+    static final int FACTORY_RESET_MAX_DAYS_AFTER_PATCH = 540;   // ~18 months ownership window
+    static final long SECONDS_PER_DAY = 86400L;
+
+    private static long utcMidnight(int y, int m, int d) {
+        java.util.Calendar c = java.util.Calendar.getInstance(
+                java.util.TimeZone.getTimeZone("UTC"), Locale.ROOT);
+        c.clear();
+        c.set(y, m - 1, d, 0, 0, 0);
+        return c.getTimeInMillis() / 1000L;
+    }
+
+    /** Unix seconds of a plausible factory reset. Mirrors Python factory_reset_epoch. */
+    public static String factoryResetEpoch(Rng r, String securityPatch) {
+        long base;
+        if (securityPatch != null && securityPatch.length() >= 10) {
+            String[] p = securityPatch.split("-");
+            base = utcMidnight(Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2]));
+        } else {
+            base = utcMidnight(2023, 1, 1);
+        }
+        long days = 1 + r.next(FACTORY_RESET_MAX_DAYS_AFTER_PATCH);
+        long secs = r.next((int) SECONDS_PER_DAY);
+        long e = base + days * SECONDS_PER_DAY + secs;
+        long ceiling = System.currentTimeMillis() / 1000L - SECONDS_PER_DAY;
+        if (e > ceiling) {
+            long span = FACTORY_RESET_MAX_DAYS_AFTER_PATCH * SECONDS_PER_DAY;
+            long mod = Math.min(span, Math.max(ceiling - base, SECONDS_PER_DAY));
+            e = ceiling - (e % mod);
+        }
+        return Long.toString(e);
+    }
+
     // Baseband/radio version prefixes by SoC vendor — real basebands look like "g8150-00088-210507-B..."
     // (Qualcomm) or "M8998-2010..." Keeping a realistic vendor prefix avoids a synthetic-looking radio.
     static final String[] RADIO_PREFIXES = {"g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"};

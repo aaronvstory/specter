@@ -115,6 +115,25 @@ public class ProbeActivity extends Activity {
             // disagree, native reads see the real device and our Java-only hooks have a blind spot.
             nativeVsJavaProps(o);
 
+            // ---- factory-reset markers: File.lastModified() on dirs written once at reset ----
+            // The signal FPJS Pro used to re-link three rotated identities. Read every candidate so
+            // the verifier can prove ALL of them are spoofed, not just the one FPJS happened to use.
+            for (String path : new String[]{"/data/misc/profiles", "/data/bootchart",
+                    "/data/vendor", "/data/dalvik-cache", "/data/misc", "/data/system"}) {
+                String key = "mtime_" + path.replace('/', '_');
+                try { put(o, key, String.valueOf(new File(path).lastModified() / 1000L)); }
+                catch (Throwable t) { put(o, key, "ERR:" + t); }
+                // Same fact via android.system.Os.stat — a DIFFERENT read path that File.lastModified
+                // does not necessarily route through. FPJS reported the real reset time while our
+                // File.lastModified hook was proven active, so something else reads it; find out what.
+                try {
+                    Object st = Class.forName("android.system.Os")
+                            .getMethod("stat", String.class).invoke(null, path);
+                    long mt = st.getClass().getField("st_mtime").getLong(st);
+                    put(o, "osstat_" + path.replace('/', '_'), String.valueOf(mt));
+                } catch (Throwable t) { put(o, "osstat_" + path.replace('/', '_'), "ERR:" + t); }
+            }
+
             // Settings.Secure android_id
             try {
                 put(o, "android_id", Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID));

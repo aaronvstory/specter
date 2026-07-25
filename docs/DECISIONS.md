@@ -76,3 +76,16 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   string alone** — a rotating visitorId would be the pass signal; an unchanged one with `firstSeenAt` weeks
   in the past is proof of re-linking. Record the whole `identification` block (eventId to prove the call was
   fresh, firstSeenAt to prove the age of the link) when re-running this test, not just the id.
+- **2026-07-25 · Hook BOTH `File.lastModified` and `Os.stat` for any filesystem-metadata signal** — the
+  File-only hook was verified active on-device and the spoofed value verified returned, and FPJS Pro
+  STILL read the real reset time, because it goes through `android.system.Os.stat().st_mtime`. One fact,
+  two independent Java read paths; spoofing the obvious one is a cosmetic fix. The parity test now
+  asserts both, so this can't regress. Generalises the same lesson as `Build.MODEL` vs `ro.product.model`.
+- **2026-07-25 · `factory_reset_epoch` is derived from `build_security_patch`, not from a bare epoch** —
+  coherence has to hold by construction, not by luck: an offset from the build's own patch date can
+  never produce a device "reset before its OS existed". Cost is one extra generator argument; the
+  alternative (random epoch + a validation retry loop) would burn RNG draws and complicate parity.
+- **2026-07-25 · The new draw is appended LAST in the profile dict** — the seeded RNG is consumed in
+  dict order, so inserting a draw anywhere else would change every subsequent field's value for the
+  same seed and invalidate the no-reuse ledger. Appending is the only position that is parity-neutral
+  for existing fields. Proven with a 200-seed Java-vs-Python dump diff, not assumed.

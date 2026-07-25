@@ -34,6 +34,7 @@ public final class Profile {
     /** All profile keys, in insertion order matching the Python dict / pushed JSON. */
     public static final String[] KEYS = {
             "android_id", "imei1", "imei2", "serial", "advertising_id", "gsf_id", "media_drm_id",
+            "media_drm_security_level",
             "bluetooth_mac", "wifi_mac", "wifi_bssid", "wifi_ssid", "mobile_number",
             "sim_operator_mccmnc", "sim_operator_name", "sim_subscriber_imsi", "sim_serial_iccid",
             "gmail", "build_manufacturer", "build_brand", "build_device", "build_product",
@@ -41,6 +42,7 @@ public final class Profile {
             "build_security_patch", "build_bootloader",
             "build_hardware", "build_board", "build_kernel_version", "build_radio",
             "total_ram", "total_storage", "build_host", "build_display", "soc_platform",
+            "factory_reset_epoch",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -104,6 +106,10 @@ public final class Profile {
         p.put("advertising_id", Generators.uuid(r));
         p.put("gsf_id", Generators.gsf(r));
         p.put("media_drm_id", Generators.hex32(r));
+        // L3 (software Widevine): coherent with a spoofed/changing deviceUniqueId — a genuine L1
+        // device has a FIXED hardware id, so a changing id at L1 is a red flag. Constant, so it
+        // consumes no RNG and the byte-parity draw order is unchanged. Mirrors profile.py.
+        p.put("media_drm_security_level", "L3");
         p.put("bluetooth_mac", Generators.macUpper(r));
         p.put("wifi_mac", Generators.macUpper(r));
         p.put("wifi_bssid", Generators.macLower(r));
@@ -148,6 +154,9 @@ public final class Profile {
         // ro.board.platform (SoC codename) — device-coherent, so the fingerprint's CPU/SoC portion
         // rotates per identity instead of leaking the real phone's SoC on every signup.
         p.put("soc_platform", Generators.socPlatform(r, product));
+        // LAST — appended to the end of the RNG order so every existing field is unchanged. Mirrors
+        // profile.py, which passes the same security patch so the pair stays coherent.
+        p.put("factory_reset_epoch", Generators.factoryResetEpoch(r, patch));
         return p;
     }
 

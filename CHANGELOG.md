@@ -5,6 +5,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Added
+- **`factory_reset_epoch` — spoof the FPJS Pro `factoryReset` smart signal.** New generator
+  (`factory_reset_epoch`, Java `factoryResetEpoch`) producing a plausible reset time, derived as a
+  1..540-day offset from the profile's own `build_security_patch` so the pair is coherent by
+  construction — a device cannot be reset before its own OS was built — and clamped to never land in
+  the future. Byte-parity PROVEN against Python across 200 seeds with a standalone Java dumper.
+  Appended LAST in the profile dict, so the new draw does not shift any existing field's value.
+- **`HookEntry.hookFactoryResetTime`** spoofs the reset time on BOTH Java read paths:
+  `java.io.File.lastModified()` AND `android.system.Os.stat/lstat` (rewriting `st_mtime`/`st_ctime`/
+  `st_atime` on the returned `StructStat`). Matches an EXPLICIT path set (`isResetMarker`, exact
+  equality — never a prefix) so target apps' own file bookkeeping is untouched. Verified on-device:
+  all 6 reset-marker dirs return the spoofed time via both paths (real `1773120233` → `1636101883`).
+- **Probe: `mtime_*` / `osstat_*` pairs** — reads each reset-marker dir via `File.lastModified` AND
+  `Os.stat`, which is what isolated the leak to `Os.stat` after the File-only hook proved insufficient.
+
+### Fixed
+- **`media_drm_security_level` was missing from the Java side entirely** (caught by a new
+  `test_module_keys_match_python_profile_keys` parity guard). `profile.py` emitted it but Java's
+  `Profile.KEYS`/`build()` did not, so a Java-generated profile carried no `L3` field and last
+  session's Widevine coherence fix silently did not apply on that path — leaving the exact
+  incoherence (a changing DRM id at hardware L1) it was meant to close. Both keys now mirror Python.
+
+### Known-unfixed (measured, not speculation)
+- **FPJS Pro still does not rotate.** With both Java read paths provably spoofed in-process (probe
+  confirms `Os.stat().st_mtime` → spoofed), FingerprintJS Pro still reports the REAL
+  `factoryReset: 1773120233` and the same `visitorId`. It therefore reads the reset time **natively**
+  (`stat()` via NDK), the same blind spot already PROVEN for system properties. This makes the root
+  `resetprop`/native layer a prerequisite rather than an optional extra — see `docs/GOAL.md` item 1.2.
+
+
 ### Changed
 - **Module renamed `com.fleet.idrotate` → `com.specter`** (Java package `com.specter.module`, LSPosed entry
   `com.specter.module.HookEntry`). The old id leaked the internal codename in LSPosed's UI and update

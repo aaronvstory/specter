@@ -102,6 +102,47 @@ def build_host(r):
     pre = ["abfarm", "wprd", "SWDG", "vf-build", "r-build", "prod"]
     return pre[r(len(pre))] + "-" + digits(r, 5)
 
+# ---------- factory-reset timestamp ----------
+# FPJS Pro reports `factoryReset` as a first-class smart signal, read from the mtime of directories
+# written once at reset (/data/misc/profiles, /data/bootchart — readable without root). PROVEN
+# 2026-07-25: it re-identified the device across three full identity rotations, so a real value here
+# defeats every other field we spoof.
+#
+# Coherence, not just difference: the value must land AFTER the running build's security patch (a
+# device cannot be reset before its own OS was built) and BEFORE now. So it is generated as an offset
+# from the patch date rather than from a bare epoch — the patch date is already in the profile, which
+# makes the pair coherent by construction instead of by luck.
+#
+# Deterministic in r() alone (no wall-clock inside the seeded path) so Java mirrors it byte-for-byte.
+# RNG order: one draw for the day offset, one for the seconds-within-day.
+FACTORY_RESET_MAX_DAYS_AFTER_PATCH = 540   # ~18 months: a plausible ownership window
+SECONDS_PER_DAY = 86400
+
+
+def factory_reset_epoch(r, security_patch=None):
+    """Unix seconds of a plausible factory reset. Mirrors Java factoryResetEpoch.
+
+    With `security_patch` ("YYYY-MM-DD") the reset lands 1..540 days after it — coherent with the
+    build. Without it, falls back to a fixed base so the generator stays usable standalone (tests).
+    Clamped to at most yesterday, so it is never in the future however old the patch is.
+    """
+    import calendar, datetime as _dt
+    if security_patch:
+        y, m, d = (int(x) for x in security_patch.split("-"))
+        base = calendar.timegm((y, m, d, 0, 0, 0, 0, 0, 0))
+    else:
+        base = calendar.timegm((2023, 1, 1, 0, 0, 0, 0, 0, 0))
+    days = 1 + r(FACTORY_RESET_MAX_DAYS_AFTER_PATCH)
+    secs = r(SECONDS_PER_DAY)
+    e = base + days * SECONDS_PER_DAY + secs
+    # never in the future: if the offset overshoots, pull it back into the recent past deterministically
+    ceiling = calendar.timegm(_dt.datetime.now(_dt.timezone.utc).utctimetuple()) - SECONDS_PER_DAY
+    if e > ceiling:
+        span = FACTORY_RESET_MAX_DAYS_AFTER_PATCH * SECONDS_PER_DAY
+        e = ceiling - (e % min(span, max(ceiling - base, SECONDS_PER_DAY)))
+    return str(e)
+
+
 _SOC_BY_DEVICE = {
     "flame": "msmnile", "coral": "msmnile", "redfin": "lito", "bramble": "lito",
     "sunfish": "sm6150", "barbet": "lito", "oriole": "gs101", "raven": "gs101",
@@ -296,6 +337,11 @@ def ssid(r):
     return nets[r(len(nets))] + digits(r, 2)
 
 # ---------- validators (runtime correctness checks) ----------
+def _now_epoch():
+    import calendar, datetime as _dt
+    return calendar.timegm(_dt.datetime.now(_dt.timezone.utc).utctimetuple())
+
+
 def validate(key, value):
     """Return True if value has the right format for key. Used by profile.validate()."""
     checks = {
@@ -313,6 +359,8 @@ def validate(key, value):
         "sim_subscriber_imsi": lambda v: len(v) == 15 and v.isdigit(),
         "sim_serial_iccid":    lambda v: len(v) == 20 and v.isdigit() and luhn_valid(v),
         "gsf_id":              lambda v: v.isdigit() and 0 < int(v) <= LONG_MAX,
+        # plausible past unix seconds: after 2015, before now (a future reset is impossible)
+        "factory_reset_epoch": lambda v: bool(re.fullmatch(r"\d{10}", v)) and 1420070400 < int(v) < _now_epoch(),
         "gmail":               lambda v: bool(re.fullmatch(r"[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?@(gmail\.com|outlook\.com|yahoo\.com|hotmail\.com|proton\.me|icloud\.com)", v)),
     }
     fn = checks.get(key)

@@ -47,29 +47,31 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 
 ### Phase 1 — Beat the fingerprinters (the thing that makes it a product)
 
-- [ ] **1.1 `factoryReset` leak — the reason FPJS re-links us.** `todo` · **highest value**
-  PROVEN 2026-07-25: FPJS Pro reported `factoryReset.timestamp = 1773120233`, which is the mtime of
-  `/data/misc/profiles`, `/data/bootchart`, `/data/misc/wifi`, `/data/misc/bluetooth`. The first two are
-  readable by an unprivileged app. This is a stable per-device value we never spoof, and it survived
-  `pm clear`, app-data deletion, and deleting the UID-scoped Keystore master key.
-  Approach: hook `java.io.File.lastModified()` (and `stat`-family reachable equivalents) and return a
-  per-identity coherent timestamp for those paths ONLY. Add `factory_reset_epoch` to the profile.
-  Coherence rules: must be *older* than the account it's used for, never in the future, plausibly spaced
-  from the build's `build_security_patch`, and STABLE per identity (a reset time that changes per launch
-  is its own tell). Danger: `lastModified` is a hot, generic path — a too-broad match breaks target apps,
-  so match an explicit path set and pass everything else through untouched.
-  Done when: the FPJS demo yields two different visitorIds across two identities.
+- [x] **1.1 `factoryReset` leak — Java layer DONE; did NOT win alone.** `done (java) / superseded by 1.2`
+  Shipped `factory_reset_epoch` (coherent: derived from the build's own security patch; byte-parity proven
+  over 200 seeds) + hooks on `File.lastModified` AND `android.system.Os.stat/lstat`. Verified on-device:
+  all 6 reset-marker dirs return the spoofed time via both Java paths.
+  **Result: FPJS Pro STILL reports the real `1773120233` and the same `visitorId`.** By elimination it
+  reads the reset time via native `stat()`. Two confirmed signals (properties AND filesystem metadata)
+  now leak exclusively through the native path, so **1.2 is a prerequisite, not an option.**
+  Kept anyway: the Java hooks close the paths other SDKs do use, and they cost nothing.
 
-- [ ] **1.2 Native prop-read blind spot.** `todo`
-  PROVEN 2026-07-25: libc `__system_property_get` returns the REAL device for 10 of 19 props while the
-  Java path returns spoofed. An NDK fingerprinter reads through every hook we have. Fix needs a root
-  `resetprop` layer setting the same values Specter already generates, so Java and native agree.
-  Blast radius is device-wide (it also changes what GeerGit's fleet apps see) and it destroys the real
-  values, so: needs a revert path, must derive from the ONE generated profile, and must be re-verified
-  with the dual-read probe. Sequence AFTER 1.1 — no evidence yet that DoorDash reads props natively,
-  whereas `factoryReset` is a confirmed live signal.
+- [ ] **1.2 The native read path — now the critical path, not an optional extra.** `todo` · **highest value**
+  PROVEN twice over: (a) libc `__system_property_get` returns the REAL device for 10 of 19 props while the
+  Java path returns spoofed; (b) FPJS Pro reads the factory-reset mtime natively, straight through two
+  verified-working Java hooks. **Every signal we have failed to hide leaks exclusively via native code.**
+  Two candidate mechanisms — evaluate before building, the choice is not obvious:
+    - **Zygisk / native in-process hook** of `__system_property_get` + `stat`/`fstatat`/`statx`. Per-app,
+      reversible, no collateral damage to GeerGit's fleet apps, and it can serve per-identity values from
+      the same profile. Strictly better on blast radius than the byedentity-style approach.
+    - **Root `resetprop` + `touch`** (what byedentity does). Simpler to write, but device-wide,
+      irreversible for the real mtimes, and it changes what the fleet apps see. Needs a revert path.
+  Either way: values come from the ONE generated profile (never a second source of truth), and it is
+  re-verified with the dual-read probe + the FPJS test, not assumed.
+  Done when: the probe shows native == Java for every dual-read field, AND the FPJS demo yields two
+  different `visitorId`s across two identities.
 
-- [ ] **1.3 Re-audit for the NEXT leak after 1.1 lands.** `todo`
+- [ ] **1.3 Re-audit for the NEXT leak after 1.2 lands.** `todo`
   When the visitorId rotates, don't declare victory — re-run the FPJS test on a third and fourth identity
   and read the whole smartSignals block for the next anchor. The pattern this session: each fix reveals
   the next signal. Also still untested: the Widevine/OEMCrypto **native** path (different API, not covered
@@ -112,3 +114,8 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 - **2026-07-25** — Queue created. Phase 1 chosen as the entry point because Test B proved a live,
   reproducible detection failure with an identified root cause; everything else is quality work that
   doesn't matter if the product is detected.
+- **2026-07-25** — 1.1 shipped (Java layer, both read paths, byte-parity proven) but did NOT beat FPJS.
+  Re-ordered: 1.2 (native layer) promoted to the critical path, because two independent confirmed signals
+  now leak exclusively through native code. Also caught a real pre-existing bug on the way: Java's
+  `Profile.KEYS` was missing `media_drm_security_level`, so last session's Widevine coherence fix never
+  applied on the Java path. A parity test now guards the key list against drift.
