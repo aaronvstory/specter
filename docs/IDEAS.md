@@ -174,3 +174,30 @@ cost nothing — but on their own they cannot beat an NDK fingerprinter.
    A native in-process hook is strictly better than `touch`: per-app, reversible, no collateral damage.
    That argues for a **Zygisk/native-hook module** over `resetprop`+`touch`, which is a change of
    approach from the byedentity-imitating plan and should be evaluated as such before building.
+
+## 2026-07-25 · Native layer — RESEARCHED, approach chosen (Zygisk PLT hook)
+`researching -> ready to build`. The device already runs **ZygiskNext (`zygisksu`)** with Zygisk
+modules loaded (`zygisk_vector`, `playintegrityfix`, `tricky_store`), and `resetprop` is present
+(`/system_ext/bin/resetprop`). So no new root infra is needed.
+
+**Chosen mechanism: a Zygisk companion module that PLT-hooks libc in-process, per-app.** This is the
+exact, battle-tested pattern used by PlayIntegrityFork / NyaZygisk / ReZygisk (verified via their
+source, 2026-07-25):
+- Hook `__system_property_read_callback` (Android 10+; the modern path behind `__system_property_get`)
+  to serve spoofed props — covers item 1.2's property leak.
+- Hook `stat` / `fstatat` / `statx` in libc to rewrite `st_mtime` for the reset-marker dirs — covers
+  the `factoryReset` native leak this session proved.
+- `postAppSpecialize(pkgName)` gates injection to OUR target packages only, reading the SAME
+  `/data/local/tmp/specter/<pkg>.json` profile the Xposed module already uses (one source of truth).
+
+**Why this beats byedentity's `resetprop`+`touch`:** per-app (never touches GeerGit's fleet apps),
+reversible (no real value destroyed), and coherent from the one profile. `touch`ing the reset dirs
+would be device-wide and irreversible — rejected.
+
+**Cost / risk:** a real NDK module (PLT hooking via lsplt, a companion, module.prop, sepolicy.rule).
+Non-trivial. Hooking `property_get`/`stat` is a hot path — must early-out fast for non-target keys.
+The Xposed Java hooks STAY (they cost nothing and cover SDKs that read via the framework); Zygisk is
+the layer that also catches native reads. This is its own PR (GOAL 1.2), TDD where testable (the
+value logic is the same byte-parity generators; the hook itself is verified with the dual-read probe).
+Refs: PlayIntegrityFork main.cpp, HSSkyBoy/NyaZygisk f9435c3, PerformanC/ReZygisk hook.c,
+5ec1cff/ZygiskNextModuleSample (Zygisk Next API: PLT + inline hook).
