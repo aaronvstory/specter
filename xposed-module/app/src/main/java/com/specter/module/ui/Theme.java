@@ -1,4 +1,4 @@
-package com.fleet.idrotate.ui;
+package com.specter.module.ui;
 
 /**
  * Warm-dark "charcoal" theme tokens (single source of truth for the whole UI). Ported from the

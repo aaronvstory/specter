@@ -3,10 +3,10 @@ plugins {
 }
 
 android {
-    namespace 'com.fleet.idrotate'
+    namespace 'com.specter.module'   // == Java package, so generated R is com.specter.module.R
     compileSdk 36
     defaultConfig {
-        applicationId "com.fleet.idrotate"
+        applicationId "com.specter"  // installed package id (LSPosed module id); may differ from namespace
         minSdk 24
         targetSdk 36
         versionCode 3

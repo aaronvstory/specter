@@ -25,6 +25,43 @@ import java.lang.reflect.Method;
  */
 public class ProbeActivity extends Activity {
 
+    /** libc __system_property_get, in-process — the path an NDK-based fingerprinter uses. */
+    private static native String nativeGetprop(String key);
+
+    private static final String NATIVE_LIB_ERR;
+    static {
+        String err = null;
+        try { System.loadLibrary("probe"); } catch (Throwable t) { err = "ERR:" + t; }
+        NATIVE_LIB_ERR = err;
+    }
+
+    /** Props Specter spoofs via the Java SystemProperties hook — read each BOTH ways and compare. */
+    private static final String[] DUAL_READ_PROPS = {
+        "ro.board.platform", "ro.hardware.chipname", "gsm.version.baseband",
+        "ro.product.model", "ro.product.brand", "ro.product.manufacturer",
+        "ro.product.device", "ro.product.name", "ro.build.id", "ro.build.fingerprint",
+        "ro.build.version.release", "ro.build.version.incremental", "ro.build.host",
+        "ro.bootloader", "ro.boot.bootloader", "ro.hardware", "ro.product.board",
+        "ro.serialno", "ro.boot.serialno",
+    };
+
+    private void nativeVsJavaProps(JSONObject o) {
+        Method get = null;
+        try {
+            get = Class.forName("android.os.SystemProperties").getMethod("get", String.class);
+        } catch (Throwable t) { put(o, "dual_read_java_err", "ERR:" + t); }
+        for (String k : DUAL_READ_PROPS) {
+            String base = "prop_" + k.replace('.', '_');
+            if (get != null) {
+                try { put(o, base + "_java", (String) get.invoke(null, k)); }
+                catch (Throwable t) { put(o, base + "_java", "ERR:" + t); }
+            }
+            if (NATIVE_LIB_ERR != null) { put(o, base + "_native", NATIVE_LIB_ERR); continue; }
+            try { put(o, base + "_native", nativeGetprop(k)); }
+            catch (Throwable t) { put(o, base + "_native", "ERR:" + t); }
+        }
+    }
+
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -72,6 +109,12 @@ public class ProbeActivity extends Activity {
                 put(o, "soc_platform", (String) get.invoke(null, "ro.board.platform"));
             } catch (Throwable t) { put(o, "soc_platform", "ERR:" + t); }
 
+            // ---- Java-vs-native read of the SAME prop (native-read blind-spot test) ----
+            // Xposed hooks android.os.SystemProperties.get (Java). libc __system_property_get is a
+            // different code path in the SAME process — an NDK fingerprinter uses it. If the two
+            // disagree, native reads see the real device and our Java-only hooks have a blind spot.
+            nativeVsJavaProps(o);
+
             // Settings.Secure android_id
             try {
                 put(o, "android_id", Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID));
@@ -116,7 +159,22 @@ public class ProbeActivity extends Activity {
                 put(o, "total_ram", String.valueOf(mi.totalMem));
             } catch (Throwable t) { put(o, "total_ram", "ERR:" + t); }
 
-            // MediaDrm Widevine deviceUniqueId — a FingerprintJS deviceId source
+            // StatFs total storage — was LEAKING (generated but never hooked). Read total + the
+            // blockCount*blockSize path so verify can confirm they're coherent (multiply to the same total).
+            try {
+                android.os.StatFs sf = new android.os.StatFs(android.os.Environment.getDataDirectory().getPath());
+                put(o, "storage_total_bytes", String.valueOf(sf.getTotalBytes()));
+                put(o, "storage_blocks_x_size", String.valueOf(sf.getBlockCountLong() * sf.getBlockSizeLong()));
+                put(o, "storage_available_bytes", String.valueOf(sf.getAvailableBytes()));
+            } catch (Throwable t) { put(o, "storage_total_bytes", "ERR:" + t); }
+
+            // MediaDrm Widevine deviceUniqueId — a FingerprintJS deviceId source.
+            // Also read securityLevel: it is the COHERENCE cross-check. Specter value-spoofs
+            // deviceUniqueId but (as of this probe) leaves securityLevel real — a *changing* id at a
+            // real L1 is itself incoherent (a genuine L1 device has a fixed hardware id). byedentity
+            // avoids this by dropping to L3 via a liboemcrypto bind-mount. If media_drm_id looks
+            // spoofed but media_drm_security_level still reads L1, that mismatch is the leak.
+            // See docs/BYEDENTITY-ANALYSIS.md "Widevine coherence hole".
             try {
                 java.util.UUID widevine = new java.util.UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L);
                 android.media.MediaDrm md = new android.media.MediaDrm(widevine);
@@ -124,7 +182,12 @@ public class ProbeActivity extends Activity {
                 StringBuilder hex = new StringBuilder();
                 for (byte x : id) hex.append(String.format("%02x", x));
                 put(o, "media_drm_id", hex.toString());
-            } catch (Throwable t) { put(o, "media_drm_id", "ERR:" + t); }
+                try { put(o, "media_drm_security_level", md.getPropertyString("securityLevel")); }
+                catch (Throwable t) { put(o, "media_drm_security_level", "ERR:" + t); }
+            } catch (Throwable t) {
+                put(o, "media_drm_id", "ERR:" + t);
+                put(o, "media_drm_security_level", "ERR:" + t);
+            }
 
             // Telephony (needs READ_PHONE_STATE; may throw on newer APIs w/o it — record the attempt)
             probeTelephony(o);

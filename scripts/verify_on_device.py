@@ -35,6 +35,8 @@ CHECKS = {
     "build_incremental": "build_incremental",
     # Bluetooth MAC via BOTH paths (adapter + Settings) must equal the spoofed value; GSF deviceId source.
     "bt_addr_adapter": "bluetooth_mac", "bt_addr_settings": "bluetooth_mac", "gsf_id": "gsf_id",
+    # StatFs storage — was leaking (generated but never hooked). Must equal the spoofed total_storage.
+    "storage_total_bytes": "total_storage",
 }
 # Known real Pixel-4 markers — if any appears in a probe value, that's a hard leak.
 REAL_MARKERS = ["flame", "Pixel 4", "g8150-00088-210507", "4.14.212", "google/flame"]
@@ -97,6 +99,38 @@ def main():
             print(f"{pk:22} {got[:36]:36} ⚠ (want {want[:16]})"); other += 1
 
     print(f"\n>>> {ok} spoofed, {leak} hard leaks, {benign} OS-placeholder/perm, {other} other <<<")
+
+    # Widevine DRM coherence observation (NOT a pass/fail spoof check — securityLevel has no profile
+    # value). Specter value-spoofs media_drm_id but does NOT hook getPropertyString("securityLevel").
+    # A *changing* deviceUniqueId at a real L1 is itself incoherent (genuine L1 = fixed hardware id).
+    # This measures the "Widevine coherence hole" from docs/BYEDENTITY-ANALYSIS.md — the native-read
+    # blind spot byedentity closes via a liboemcrypto L1->L3 bind-mount. If id looks spoofed but level
+    # reads L1, that mismatch is the leak to fix (add securityLevel to the hook, or drop to L3).
+    drm_id = str(probe.get("media_drm_id", "<none>"))
+    drm_lvl = str(probe.get("media_drm_security_level", "<none>"))
+    want_id = str(applied.get("media_drm_id", "<none>"))
+    id_spoofed = drm_id == want_id and drm_id not in ("<none>", "unknown") and not drm_id.startswith("ERR:")
+    print(f"\n--- Widevine coherence ---")
+    print(f"{'media_drm_id':22} {drm_id[:36]:36} {'✅ spoofed' if id_spoofed else '(see table)'}")
+    print(f"{'  securityLevel':22} {drm_lvl[:36]:36}", end="")
+    if id_spoofed and drm_lvl == "L1":
+        print("  ⚠ INCOHERENT: spoofed id @ real L1 (a changing id at L1 is a red flag)")
+    elif drm_lvl.startswith("ERR:"):
+        print("  (unreadable)")
+    else:
+        print("  ○ coherent / n/a")
+
+    # Storage coherence: getTotalBytes must equal blockCount*blockSize, else an app computing total
+    # from blocks gets a different (real) value than getTotalBytes — a worse tell than a plain leak.
+    st_total = str(probe.get("storage_total_bytes", "<none>"))
+    st_bxs = str(probe.get("storage_blocks_x_size", "<none>"))
+    if st_total not in ("<none>",) and not st_total.startswith("ERR:"):
+        print(f"\n--- Storage coherence ---")
+        coherent = st_total == st_bxs
+        print(f"{'getTotalBytes':22} {st_total[:36]:36}")
+        print(f"{'blockCount*blockSize':22} {st_bxs[:36]:36} "
+              f"{'○ coherent' if coherent else '⚠ INCOHERENT (total != blocks*size)'}")
+
     return 1 if leak else 0
 
 

@@ -1,4 +1,4 @@
-package com.fleet.idrotate.gen;
+package com.specter.module.gen;
 
 /** Plain-JVM tests for RootWriter command-building + fail-loudly behaviour. Run via run-jvm-tests.sh. */
 public class RootWriterTest {

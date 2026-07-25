@@ -3,6 +3,76 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Module renamed `com.fleet.idrotate` → `com.specter`** (Java package `com.specter.module`, LSPosed entry
+  `com.specter.module.HookEntry`). The old id leaked the internal codename in LSPosed's UI and update
+  notifications. On-device this is a migration (LSPosed sees a new module id), so scope is re-established;
+  GeerGit's LSPosed module is never touched. `scope_probe.py` updated to the new package.
+
+### Added
+- **FPJS Pro lab test run (Test B) — result: the fingerprint does NOT rotate, root cause identified.**
+  Applied three fully distinct coherent identities (Google Pixel → Samsung Note 20 Ultra → Nexus 7) to the
+  FingerprintJS Pro demo, `pm clear`ing between runs. All three returned the SAME `visitorId` with a fresh
+  `eventId` per call, `visitorFound: true`, `confidenceScore: 1.0`, and `firstSeenAt` 17 days earlier.
+  Root cause: the `factoryReset` smart signal — a timestamp Specter does not spoof, readable from
+  directory mtimes (`/data/misc/profiles`, `/data/bootchart` are readable WITHOUT root; verified the
+  reported `1773120233` matches them exactly). Ruled out local persistence (`pm clear`), Keystore-backed
+  encrypted prefs (deleted `10302_USRPKEY__androidx_security_master_key_`, ID unchanged), and any
+  file dated near `firstSeenAt`. Documented in `docs/IDEAS.md`; the fix is deliberately a separate PR
+  (see `docs/DECISIONS.md` for why hooking `File.lastModified` vs root `touch` both need their own review).
+
+- **Native-read blind-spot probe** (`probe/src/main/cpp/native-probe.cpp`, NDK 27 + CMake). A JNI function
+  calls libc `__system_property_get` **in-process**, so the probe reads 19 system properties BOTH ways —
+  Java `SystemProperties.get` (which Specter hooks) and native libc (which it does not) — and
+  `verify_on_device.py`-style comparison shows exactly where the two disagree. `getprop` via exec is a
+  false proxy for this (separate, unhooked process); the read must be in-process JNI.
+  **Result (PROVEN on-device, Pixel 4):** the Java side returns the spoofed value for all 19 props while
+  the native side returns the REAL device value for 10 of them (`ro.product.model` → `Pixel 4`,
+  `ro.board.platform` → `msmnile`, `ro.hardware`/`ro.product.board`/`ro.product.device`/`ro.product.name`
+  → `flame`, `ro.build.fingerprint` → `google/flame/flame:11/RQ…`, `ro.bootloader`/`ro.boot.bootloader`,
+  `gsm.version.baseband`). An NDK-based fingerprinter reading props natively sees the real hardware.
+  This is the one axis byedentity's root `resetprop` layer beats us on — see `docs/IDEAS.md`.
+
+- **byedentity 3-way analysis** (`docs/BYEDENTITY-ANALYSIS.md`): decompiled `com.byedentity` v3.0.1 and
+  compared GeerGit vs Specter vs byedentity. byedentity is a root/Magisk + native-JNI, server-validated
+  changer that spoofs system-wide via `resetprop` + `pm clear` + a Widevine `liboemcrypto.so` bind-mount
+  (L1→L3). Findings carry PROVEN/HYPOTHESIS labels (adversarially verified). Adoption candidates in
+  `docs/IDEAS.md`; do-not-adopt calls (server/kill-switch/anti-tamper) in `docs/DECISIONS.md`.
+- **Probe: Widevine `securityLevel`** — the probe now reads `MediaDrm.getPropertyString("securityLevel")`
+  alongside `deviceUniqueId`, and `verify_on_device.py` prints a Widevine-coherence line.
+
+### Fixed
+- **`ro.*` property aliases leaked the real device (PROVEN, found by the new dual-read probe).** Specter
+  spoofed each `Build.*` field but only 6 property keys (`os.version`, baseband, SoC). Every other Build
+  field has a `ro.*` property alias that a fingerprinter can read directly, and those returned the real
+  hardware: `SystemProperties.get("ro.product.model")` → `"Pixel 4"` and `("ro.boot.bootloader")` →
+  the real bootloader, while `Build.MODEL`/`Build.BOOTLOADER` were correctly spoofed. `HookEntry` now
+  dispatches a `PROP_ALIASES` table covering 30 keys (model/brand/manufacturer/device/name/board/hardware/
+  bootloader/serialno/fingerprint/id/display/release/incremental/security_patch/host, plus the `vendor.`
+  variants) from the SAME profile values as the fields — coherent by construction, consumes no RNG, so
+  Java↔Python byte-parity is unaffected. Verified on-device: **19/19 props spoofed, 0 Java-layer leaks**
+  (was 2). Note this closes the *Java* path only; native `__system_property_get` still reads real (above).
+- **Widevine DRM coherence (no root).** Specter value-spoofed `deviceUniqueId` but left `securityLevel`
+  reporting the real **L1** — a *changing* device id at hardware-L1 is itself a fingerprint. Confirmed
+  on-device (Pixel 4: spoofed id @ L1), then fixed: `profile.py` emits `media_drm_security_level: "L3"`
+  (software Widevine, where a changing id is coherent) and `HookEntry` hooks
+  `getPropertyString("securityLevel")` to return it. Re-verified coherent on-device (@ L3). The value is a
+  constant → consumes no RNG → Java↔Python byte-parity unchanged. Achieves byedentity's L1→L3 outcome
+  without its root `liboemcrypto` bind-mount.
+- **StatFs storage leak closed + RAM/storage made coherent (device-linking signal).** `total_storage` was
+  generated but never injected, so real internal storage leaked — a stable value that links accounts. Added
+  a coherent `StatFs` hook (`getTotalBytes` and `getBlockCountLong`×`getBlockSizeLong` multiply to the same
+  spoofed total; available/free ~35-55%). Also replaced the independent RAM and storage draws with a single
+  coherent pair (`ram_storage_bytes`): storage is derived from the chosen RAM tier, so an incoherent combo
+  (e.g. 12GB RAM + 32GB storage) can no longer occur. Java↔Python byte-parity re-proven; verified on-device.
+- **Brand-plausible serial format (was detectably synthetic).** `serial` was `hex16upper` — 16 pure-hex
+  chars, but a real Pixel serial is 14 alphanumeric incl non-hex letters (`9B151FFAZ00FPF`) and a Samsung
+  is `R`+10 (11 chars). Added `serial_for_brand` (Base34 alphabet, brand prefix + correct length for
+  Samsung/Google/Motorola/LGE). Java↔Python byte-parity proven; verified on-device (Pixel profile →
+  `A6X71GDYHX9WC3`). A device claiming to be a Pixel no longer reports an impossible pure-hex serial.
+
 ## [0.3.0] — 2026-07-08
 
 UI/UX polish + real multi-app targeting, per-country SIM, and realistic emails. The app now

@@ -1,4 +1,4 @@
-package com.fleet.idrotate.ui;
+package com.specter.module.ui;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -19,9 +19,9 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.fleet.idrotate.gen.Country;
-import com.fleet.idrotate.gen.Generators;
-import com.fleet.idrotate.gen.IdentityService;
+import com.specter.module.gen.Country;
+import com.specter.module.gen.Generators;
+import com.specter.module.gen.IdentityService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -97,7 +97,7 @@ public class MainActivity extends Activity {
         row.setPadding(dp(16), dp(14), dp(16), dp(6));
 
         ImageView logo = new ImageView(this);
-        logo.setImageResource(com.fleet.idrotate.R.drawable.ic_specter_logo);
+        logo.setImageResource(com.specter.module.R.drawable.ic_specter_logo);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(30), dp(30));
         lp.setMargins(0, 0, dp(10), 0);
         logo.setLayoutParams(lp);

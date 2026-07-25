@@ -95,10 +95,14 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "android_id": G.hex16(r),
         "imei1": G.imei(r, tac),
         "imei2": G.imei(r, tac),
-        "serial": G.hex16upper(r),
+        "serial": G.serial_for_brand(r, brand),
         "advertising_id": G.uuid(r),
         "gsf_id": G.gsf(r),
         "media_drm_id": G.hex32(r),
+        # L3 (software Widevine): coherent with a spoofed/changing deviceUniqueId. A genuine L1
+        # device has a FIXED hardware id, so a changing id at L1 is a red flag (confirmed on-device).
+        # Constant -> consumes no RNG -> Java byte-parity order is unchanged. See docs/BYEDENTITY-ANALYSIS.md.
+        "media_drm_security_level": "L3",
         "bluetooth_mac": G.mac_upper(r),
         "wifi_mac": G.mac_upper(r),
         "wifi_bssid": G.mac_lower(r),
@@ -124,8 +128,9 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "build_board": codename,
         "build_kernel_version": G.kernel_version(r),
         "build_radio": G.radio_version(r),
-        "total_ram": G.total_ram_bytes(r),
-        "total_storage": G.total_storage_bytes(r),
+        # walrus keeps the RNG draw AT this position (between radio and host) to preserve Java parity
+        "total_ram": (_ram_storage := G.ram_storage_bytes(r))[0],
+        "total_storage": _ram_storage[1],
         "build_host": G.build_host(r),
         "build_display": build_id,
         "soc_platform": G.soc_platform(r, product),

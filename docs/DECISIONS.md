@@ -2,6 +2,33 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-25 · Renamed module com.fleet.idrotate -> com.specter (namespace com.specter.module)** —
+  the old applicationId leaked the internal codename in LSPosed's UI + notifications. applicationId is now
+  `com.specter`; Java package `com.specter.module` (so generated R resolves); LSPosed entry
+  `com.specter.module.HookEntry`. Removed the manifest `package=` attr (AGP takes namespace from gradle).
+  ON-DEVICE this is a migration, not a rebrand: LSPosed registered it as a NEW module (mid 154), so scope
+  had to be re-established (DevInfo + probe + fpjs). Old mid 25 stays until the new one is verified, then
+  the old app is uninstalled. GeerGit (mid 101) never touched. scope_probe.py SPECTER_PKG updated to match.
+
+- **2026-07-25 · Widevine coherence: return L3 (not a faked L1) alongside the spoofed deviceUniqueId** —
+  probing PROVED the incoherence (spoofed id @ real L1 on the Pixel 4). Chose L3 because L3 = *software*
+  Widevine, where a changing/derived device id is normal and expected; faking L1 while emitting a changing id
+  would keep the contradiction (real L1 = fixed hardware id). Implemented as a Java getter hook on
+  `getPropertyString("securityLevel")` — NO root, unlike byedentity's liboemcrypto bind-mount. Re-verified
+  coherent on-device. The `media_drm_security_level` profile value is a CONSTANT ("L3") so it consumes no RNG
+  → Java↔Python byte-parity is preserved automatically (no generator, no reorder).
+- **2026-07-25 · byedentity adoption: probed the Widevine coherence hole FIRST, then fixed it (not blind)** —
+  measured the mismatch on-device before committing the fix; HYPOTHESIS → PROVEN → fixed → proven-fixed, all
+  on real hardware. The heavier root bind-mount (candidate #4) is unnecessary for this signal.
+- **2026-07-25 · Do NOT adopt byedentity's server/anti-tamper stack** — its HMAC attestation, remote
+  kill-switch (403→wipe local auth), public-IP telemetry, and native Frida gate serve byedentity's OWN
+  licensing/control, not the user's anti-detection goal. Specter is deliberately stateless with no server
+  leash. Adopt only the identity-coherence ideas (mask-preserving generators, DRM coherence, StatFs).
+- **2026-07-25 · Port the mask-preserving-generator IDEA, not byedentity's native code** — its serial
+  generators (buildMask/generateFromMask/generateLikePreservingBlocks) live in un-disassembled native
+  (JNI names only = HYPOTHESIS on internals). Reimplement the concept (per-model format masks + prefixes)
+  in generators.py with Java byte-parity + US-device templates; don't guess at their arithmetic.
+
 - **2026-07-25 · Intermittent-detection finding is a HYPOTHESIS, not proven** — GeerGit HAS an
   IMEI-increment mode + manual-uniqueness burden (plausible cause of intermittent bans), but we have NOT
   confirmed it flags the fleet. Documented as hypothesis with a confirm-path; don't present as fact.
@@ -24,3 +51,28 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 - **2026-07-18 · Narrow hooks / DevInfo-only scope justified by fragility + system-scope side effects**,
   NOT a "pairip kills broad hooks" law (that claim was disproved by device evidence — a broken base-only
   Dasher install, not a hook, caused the crash).
+- **2026-07-25 · Spoof `ro.*` property aliases in the SAME hook, from the same profile values** — the
+  dual-read probe proved `SystemProperties.get("ro.product.model")` returned the real `"Pixel 4"` while
+  `Build.MODEL` was spoofed. Rather than a second hook, `hookSystemProperties` now builds a prop→value map
+  (`PROP_ALIASES`) once per process and dispatches on lookup. Same one hot-path hook, no extra overhead,
+  values identical to the fields (so coherent by construction) and no RNG draws (so byte-parity safe).
+- **2026-07-25 · The native-read test MUST be in-process JNI, not `getprop`** — `getprop` execs a separate
+  process that Specter never hooks, so it always shows real values regardless of whether our hooks work.
+  It would "prove" a blind spot that might not exist. The probe calls libc `__system_property_get` inside
+  the hooked process, which is what an NDK fingerprinting SDK actually does.
+- **2026-07-25 · Native prop leak: documented, NOT yet fixed** — closing it needs a root layer that changes
+  props at the source (`resetprop`), which mutates the whole device, not just the scoped app. That is a
+  materially larger blast radius than a per-app Xposed hook and needs its own PR + coherence review.
+  Logged as the top adoption candidate in `docs/IDEAS.md` instead of rushed in here.
+- **2026-07-25 · The FPJS `factoryReset` leak is documented, NOT fixed in this PR** — proven that FPJS Pro
+  re-identifies the device across three full identity rotations via a factory-reset timestamp read from
+  directory mtimes (`/data/misc/profiles`, `/data/bootchart`, `/data/vendor`, `/data/dalvik-cache` — the
+  first two readable without root). Two possible fixes, both needing their own review: (a) hook
+  `java.io.File.lastModified()` for those paths only — our usual per-app mechanism, but `lastModified` is a
+  very hot, very generic call and a too-broad match would break target apps; (b) root `touch` the dirs —
+  device-wide, so it would also alter what GeerGit's fleet apps see, and it destroys the real value with no
+  undo. Neither is a safe drive-by change, so the finding ships as evidence and the fix gets a dedicated PR.
+- **2026-07-25 · `visitorFound:true` at `confidenceScore:1.0` is the metric that matters, not the visitorId
+  string alone** — a rotating visitorId would be the pass signal; an unchanged one with `firstSeenAt` weeks
+  in the past is proof of re-linking. Record the whole `identification` block (eventId to prove the call was
+  fresh, firstSeenAt to prove the age of the link) when re-running this test, not just the id.

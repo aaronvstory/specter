@@ -43,6 +43,28 @@ def hex16(r):        return hexs(r, 8)                 # android_id: 16 hex char
 def hex16upper(r):   return hexs(r, 8).upper()         # serial
 def hex32(r):        return hexs(r, 16)                # media_drm deviceUniqueId (16 bytes)
 
+# Real device serials are NOT pure hex — broader uppercase-alnum alphabet, brand-specific length, and a
+# fixed leading prefix (Samsung serials always start "R", 11 chars; a real Pixel serial is 14 alnum incl
+# letters like Z/P absent from hex). hex16upper (16 pure-hex) is detectably synthetic for a Pixel/Galaxy.
+# We replicate the FORMAT (prefix + length + alphabet), not decodable factory/date fields. Mirrors Java.
+_SERIAL_ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # 34 chars (no I, no O — confusables)
+
+def _serial_spec_for_brand(brand):
+    b = (brand or "").lower()
+    if "samsung" in b:  return ("R", 11)     # Samsung: "R" + 10, 11 total
+    if "google" in b:   return ("", 14)      # Pixel: 14 alnum (e.g. 9B151FFAZ00FPF)
+    if "motorola" in b or b == "moto": return ("ZY", 12)
+    if "lg" in b:       return ("", 15)
+    return ("", 12)
+
+def serial_for_brand(r, brand):
+    """Brand-plausible serial: fixed prefix + alphanumeric body, correct per-brand length. Mirrors Java."""
+    prefix, length = _serial_spec_for_brand(brand)
+    out = prefix
+    while len(out) < length:
+        out += _SERIAL_ALPHABET[r(len(_SERIAL_ALPHABET))]
+    return out
+
 # Real 8-digit TAC (Type Allocation Code) prefixes by manufacturer. An IMEI's first 8 digits
 # identify the make/model; a random TAC can be rejected by checks that validate TAC-against-brand.
 # These are real, allocated TAC ranges (not model-exact, but brand-plausible).
@@ -132,18 +154,31 @@ def bootloader(r, brand, device):
 _RAM_GB = [3, 4, 6, 8, 12]
 _STORAGE_GB = [32, 64, 128, 256]
 
-def total_ram_bytes(r):
-    """total RAM in bytes as ActivityManager.MemoryInfo.totalMem reports (mirrors Java totalRamBytes)."""
-    gb = _RAM_GB[r(len(_RAM_GB))]
-    nominal = gb * 1024 * 1024 * 1024
-    reported = nominal - (nominal * (3 + r(6)) // 100)
-    return str((reported // (1024 * 1024)) * 1024 * 1024)
+# storage capacities that plausibly ship with each RAM tier (index-aligned to _RAM_GB); a 12GB
+# flagship is never 32GB, a 3GB budget phone is never 512GB. Coherence matters — an incoherent
+# RAM+storage combo is itself a fingerprint, so storage is DERIVED from the chosen RAM tier.
+_STORAGE_FOR_RAM = [
+    [32, 64],        # 3GB
+    [32, 64, 128],   # 4GB
+    [64, 128, 256],  # 6GB
+    [128, 256],      # 8GB
+    [128, 256, 512], # 12GB
+]
 
-def total_storage_bytes(r):
-    """total internal storage in bytes (mirrors Java totalStorageBytes)."""
-    gb = _STORAGE_GB[r(len(_STORAGE_GB))]
-    nominal = gb * 1000 * 1000 * 1000
-    return str(nominal * (90 + r(5)) // 100)
+def ram_storage_bytes(r):
+    """RAM+storage as one coherent pair, (ram_bytes, storage_bytes). Mirrors Java ramStorageBytes.
+    RNG order: ram-tier idx, ram-shave, storage-capacity idx, storage-fill."""
+    ram_idx = r(len(_RAM_GB))
+    ram_gb = _RAM_GB[ram_idx]
+    ram_nominal = ram_gb * 1024 * 1024 * 1024
+    ram_reported = ram_nominal - (ram_nominal * (3 + r(6)) // 100)
+    ram = str((ram_reported // (1024 * 1024)) * 1024 * 1024)
+
+    pool = _STORAGE_FOR_RAM[ram_idx]
+    st_gb = pool[r(len(pool))]
+    st_nominal = st_gb * 1000 * 1000 * 1000
+    storage = str(st_nominal * (90 + r(5)) // 100)
+    return ram, storage
 
 def imei(r, tac=None):
     """15-digit Luhn-valid IMEI. If a TAC is given, use it as the first 8 digits (brand-coherent)."""
@@ -265,7 +300,8 @@ def validate(key, value):
     """Return True if value has the right format for key. Used by profile.validate()."""
     checks = {
         "android_id":          lambda v: bool(re.fullmatch(r"[0-9a-f]{16}", v)),
-        "serial":              lambda v: bool(re.fullmatch(r"[0-9A-F]{16}", v)),
+        # brand-plausible serials: Base34 (0-9 A-Z minus I,O), prefix optional, 11-15 chars per brand.
+        "serial":              lambda v: bool(re.fullmatch(r"[0-9A-HJ-NP-Z]{11,15}", v)),
         "media_drm_id":        lambda v: bool(re.fullmatch(r"[0-9a-f]{32}", v)),
         "imei1":               lambda v: len(v) == 15 and v.isdigit() and luhn_valid(v),
         "imei2":               lambda v: len(v) == 15 and v.isdigit() and luhn_valid(v),

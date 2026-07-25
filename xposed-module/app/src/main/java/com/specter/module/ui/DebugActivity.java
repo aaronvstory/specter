@@ -1,4 +1,4 @@
-package com.fleet.idrotate.ui;
+package com.specter.module.ui;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -9,7 +9,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.fleet.idrotate.gen.IdentityService;
+import com.specter.module.gen.IdentityService;
 
 import java.util.Map;
 

@@ -1,4 +1,4 @@
-package com.fleet.idrotate;
+package com.specter.module;
 
 import android.os.Build;
 import android.provider.Settings;
@@ -50,6 +50,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookMediaDrm(lpparam, p);
         hookSystemProperties(p);
         hookHardwareInfo(lpparam, p);
+        hookStorage(lpparam, p);
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -173,30 +174,91 @@ public class HookEntry implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
+    // ---- StatFs total/available storage — a FingerprintJS hardware signal that was LEAKING ----
+    // profile.py generates total_storage but nothing injected it, so real storage leaked (a STABLE
+    // real value that links accounts). Hook the whole StatFs family COHERENTLY: getTotalBytes and the
+    // blockCount*blockSize path must multiply out to the SAME spoofed total, else an app computing
+    // total from blocks sees the real value and the two disagree (a worse tell than leaving it real).
+    // available/free = a realistic ~35-55% of total (kept deterministic per-identity via the id hash).
+    private void hookStorage(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String stStr = p.get("total_storage");
+        if (stStr == null) return;
+        final long total;
+        try { total = Long.parseLong(stStr); } catch (Throwable t) { return; }
+        final long BS = 4096L;                          // standard f2fs/ext4 block size
+        final long blockCount = total / BS;             // blockCount*blockSize == total (coherent)
+        // free fraction: derive a stable 35-55% from the value itself so it doesn't jitter per call.
+        final long freeBytes = total * (35 + (int)(Math.abs(total % 21))) / 100;
+        final long freeBlocks = freeBytes / BS;
+        try {
+            Class<?> sf = XposedHelpers.findClass("android.os.StatFs", lp.classLoader);
+            XposedBridge.hookAllMethods(sf, "getTotalBytes",     constLong(total));
+            XposedBridge.hookAllMethods(sf, "getBlockCountLong", constLong(blockCount));
+            XposedBridge.hookAllMethods(sf, "getBlockSizeLong",  constLong(BS));
+            XposedBridge.hookAllMethods(sf, "getBlockCount",     constInt((int) Math.min(blockCount, Integer.MAX_VALUE)));
+            XposedBridge.hookAllMethods(sf, "getBlockSize",      constInt((int) BS));
+            XposedBridge.hookAllMethods(sf, "getAvailableBytes", constLong(freeBytes));
+            XposedBridge.hookAllMethods(sf, "getFreeBytes",      constLong(freeBytes));
+            XposedBridge.hookAllMethods(sf, "getAvailableBlocksLong", constLong(freeBlocks));
+            XposedBridge.hookAllMethods(sf, "getFreeBlocksLong",      constLong(freeBlocks));
+            XposedBridge.hookAllMethods(sf, "getAvailableBlocks", constInt((int) Math.min(freeBlocks, Integer.MAX_VALUE)));
+            XposedBridge.hookAllMethods(sf, "getFreeBlocks",      constInt((int) Math.min(freeBlocks, Integer.MAX_VALUE)));
+        } catch (Throwable ignored) {}
+    }
+
+    private static XC_MethodHook constLong(final long v) {
+        return new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(v); } };
+    }
+    private static XC_MethodHook constInt(final int v) {
+        return new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(v); } };
+    }
+
     // ---- ONE SystemProperties.get hook for ALL spoofed props ----
     // SystemProperties.get is an extremely HOT path — hook it exactly once and dispatch every spoofed
     // key inside a single callback (kernel os.version, baseband, SoC platform) instead of registering
     // three separate hooks that each add overhead on every property read.
+    // prop key -> profile key. Every Build.* field we spoof has a ro.* property alias; spoofing only
+    // the field leaves the alias reading the REAL device (proven on-device: SystemProperties.get(
+    // "ro.product.model") returned "Pixel 4" while Build.MODEL was correctly "sailfish"). Same values
+    // as the fields, so this is coherent by construction and consumes no RNG (byte-parity safe).
+    private static final String[][] PROP_ALIASES = {
+        {"os.version", "build_kernel_version"},
+        {"gsm.version.baseband", "build_radio"}, {"ril.baseband", "build_radio"},
+        {"ro.board.platform", "soc_platform"}, {"ro.hardware.chipname", "soc_platform"},
+        {"ro.soc.model", "soc_platform"},
+        {"ro.product.model", "build_model"}, {"ro.product.vendor.model", "build_model"},
+        {"ro.product.brand", "build_brand"}, {"ro.product.vendor.brand", "build_brand"},
+        {"ro.product.manufacturer", "build_manufacturer"},
+        {"ro.product.vendor.manufacturer", "build_manufacturer"},
+        {"ro.product.device", "build_device"}, {"ro.product.vendor.device", "build_device"},
+        {"ro.product.name", "build_product"}, {"ro.product.vendor.name", "build_product"},
+        {"ro.build.id", "build_id"}, {"ro.build.display.id", "build_display"},
+        {"ro.build.fingerprint", "build_fingerprint"},
+        {"ro.vendor.build.fingerprint", "build_fingerprint"},
+        {"ro.build.version.incremental", "build_incremental"},
+        {"ro.build.version.release", "build_release"},
+        {"ro.build.version.security_patch", "build_security_patch"},
+        {"ro.build.host", "build_host"},
+        {"ro.bootloader", "build_bootloader"}, {"ro.boot.bootloader", "build_bootloader"},
+        {"ro.hardware", "build_hardware"},
+        {"ro.product.board", "build_board"},
+        {"ro.serialno", "serial"}, {"ro.boot.serialno", "serial"},
+    };
+
     private void hookSystemProperties(final Map<String, String> p) {
-        final String kernel = p.get("build_kernel_version");
-        final String radio = p.get("build_radio");
-        final String soc = p.get("soc_platform");
-        if (kernel == null && radio == null && soc == null) return;
+        final Map<String, String> byProp = new HashMap<>();
+        for (String[] a : PROP_ALIASES) {
+            String v = p.get(a[1]);
+            if (v != null) byProp.put(a[0], v);
+        }
+        if (byProp.isEmpty()) return;
         try {
             Class<?> sp = XposedHelpers.findClass("android.os.SystemProperties", null);
             XposedBridge.hookAllMethods(sp, "get", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
                     if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
-                    String k = (String) mp.args[0];
-                    switch (k) {
-                        case "os.version":
-                            if (kernel != null) mp.setResult(kernel); break;
-                        case "gsm.version.baseband": case "ril.baseband":
-                            if (radio != null) mp.setResult(radio); break;
-                        case "ro.board.platform": case "ro.hardware.chipname": case "ro.soc.model":
-                            if (soc != null) mp.setResult(soc); break;
-                        default: // not a spoofed key — leave the real value
-                    }
+                    String v = byProp.get((String) mp.args[0]);
+                    if (v != null) mp.setResult(v);
                 }
             });
         } catch (Throwable ignored) {}
@@ -443,6 +505,21 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
+        // securityLevel MUST be coherent with the spoofed deviceUniqueId: a changing id at a real L1
+        // (fixed-hardware-id) is itself a fingerprint. Return L3 (software Widevine) so id+level agree.
+        // Confirmed on-device: without this, probe read spoofed id @ real L1. See docs/BYEDENTITY-ANALYSIS.md.
+        final String drmLevel = p.get("media_drm_security_level");
+        if (drmLevel != null) {
+            try {
+                XposedBridge.hookAllMethods(md, "getPropertyString", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if (param.args.length > 0 && "securityLevel".equals(String.valueOf(param.args[0]))) {
+                            param.setResult(drmLevel);
+                        }
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
     }
 
     // ---- helpers ----
