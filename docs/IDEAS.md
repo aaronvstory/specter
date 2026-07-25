@@ -5,6 +5,167 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-26 · SHIPPED + PROBE-VERIFIED: per-model hardware-descriptor layer (GOAL 1.3).** — status: `shipped`.
+  Built `data/hardware.json` (keyed by device codename, coherent SoC-derived bundles: GPU/GLES renderer,
+  /proc/cpuinfo, sensors, cameras, codecs, cores, input) via `scripts/build_hardware_dataset.py`. Plumbed
+  the 9 flat fields through the profile (Python + Java, byte-parity held — constants, no RNG), the Java
+  hooks (`hookHardwareSignals` rewritten to real per-model values), the native Zygisk glGetString inline
+  hook, and the existing /proc/cpuinfo redirect (now fed by the generated `proc_cpuinfo` key). Extended the
+  probe to read all descriptors both ways (framework API + a native EGL/GLES glGetString read). PROVEN on
+  Pixel 4 with two identities: Note 9 -> `ARM|Mali-G72` / Exynos 9810; Moto G7 -> `Qualcomm|Adreno 512` /
+  SDM660. Two coherent DIFFERENT bundles, 0 hard leaks, native hook returns per-model value not the real
+  Adreno 640. The probe gate (RESUME def-of-done) is MET.
+- **2026-07-26 · FOLLOW-UP: native NDK sensor/camera inline hooks.** — status: `idea`.
+  glGetString + cpuinfo are hooked natively; `ASensorManager_getSensorList` and `ACameraManager_*` are NOT
+  (their return structs are crash-risky to fabricate from a companion hook). The Java hooks cover the
+  framework SensorManager/CameraManager path today. Add the NDK hooks only if a native reader is shown to
+  bypass the framework sensor/camera APIs (as libfp does for GL) — measure first.
+- **2026-07-26 · BLOCKED on user: FPJS-demo end-to-end readout for the hardware layer.** — status: `blocked (needs fresh trial key)`.
+  The hardware layer is verified on the probe. Running the FPJS demo per-identity to see the smart-signal
+  response move is still confounded by the demo's fixed-key server record (firstSeenAt frozen from before
+  our work), which re-matches through everything. A fresh fingerprint.com trial key (demo Settings > API
+  Keys accepts custom keys) would give a clean measurement space — that needs the user's signup. The demo
+  now has a fresh 48-key hardware-carrying profile pushed and is ready for a manual run when a key exists.
+  Do NOT gate this run on it (per RESUME) — the probe is the gate.
+- **2026-07-26 · GOTCHA (on-device): `adb push` writes into a namespace the shell can't see on this box.**
+  — status: `confirmed`. On the rooted Pixel 4, `adb push <largefile>` reports success ("825032 bytes,
+  119 MB/s") but the file is ABSENT from a normal `adb shell ls` afterwards — even under `/sdcard`. A file
+  written ON-DEVICE (`echo`/`dd`) persists fine, and a tiny pushed file sometimes persists, but a big
+  binary vanishes. Root cause: adbd is in a Magisk/zygisk-affected mount namespace, so its sync target is
+  a different overlay. WORKAROUND that works: stream the bytes through a shell instead of the sync
+  protocol — `base64 -w0 file | adb shell "base64 -d > /path"` (md5-verified identical). Use this to push
+  the zygisk .so; `reinstall.sh`'s `adb push` step silently no-ops because of this.
+
+- **2026-07-26 · RE-CONFIRMED (deviceId side): all three identifier read paths FIRE and are correctly spoofed for the FPJS demo, visitorId still frozen.** — status: `confirmed`.
+  Instrumented every deviceId read path with `[specter][idtrace]` and ran one full identification (Pixel 4,
+  full `pm clear` + location pre-grant). All three fired AND substituted the spoofed value:
+    - `Settings.Secure` `android_id` -> spoofed `476645b7...`
+    - GSF ContentResolver cursor: real schema is `(key,value)` 2 cols, `selArgs=android_id`, wrapper
+      `SUBSTITUTED getString(1)` (returned the fake GSF). **Corrects the prior handoff note that "the GSF
+      cursor does NOT fire" — it fires and substitutes.**
+    - `MediaDrm` `deviceUniqueId` -> spoofed `5868301b...`
+  Result: visitorId unchanged (`18uu8Y2WxYks5PNLa0c7`), `suspectScore` 34, fresh `eventId`
+  (`1784996946827.qbhwCd`). => the demo's visitorId is provably NOT derived from any device identifier we
+  spoof; it is the server-side fuzzy match over hardware signals (GOAL 1.3) held by the sticky server
+  record (firstSeenAt frozen). This closes "Next Action step 1" from the 2026-07-26 handoff: nothing more
+  to instrument on the identifier paths — they are complete and correct.
+  DECISION FORK (surface to user): (a) build the hardware-signal Zygisk hooks (GOAL 1.3, the big lift) but
+  measure them against a demo whose record is stuck — a weak proxy; or (b) get a fresh fingerprint.com
+  trial key first (clean visitor space, firstSeenAt resets) so 1.3 work is actually measurable. Consensus
+  across every prior on-device elimination points to (b) being the higher-value order.
+
+- **2026-07-25 · The FPJS DEMO is a confirmed weak proxy — validating "beats FPJS" needs a fresh server context (own API key or the real target).** — status: `blocked (needs a fresh FPJS key or real-target test)`.
+  The demo (App v4.1.4, Fingerprint SDK v4.0.0-alpha.0) uses a FIXED built-in public API key, so every
+  identification shares ONE visitor space that already holds our device's weeks-old record (firstSeenAt
+  frozen 2026-07-08). PROVEN this can't be broken device-side: IP change (Mullvad), pm-clear, fresh
+  identity, and full native+Java spoofing all left the visitorId unchanged. The demo's Settings > API Keys
+  screen DOES accept a custom Public/Secret key ("Use your API keys" toggle) → a different key = a CLEAN
+  visitor space where firstSeenAt resets and our spoofing could be measured properly. That needs a real
+  fingerprint.com key (a signup), which is the gate. POSITIVE signal that our spoofing is NOT inert:
+  `suspectScore` dropped 40 -> 34 across the session as we spoofed more — the server-side scoring reacts,
+  the visitor LINK just doesn't break in the demo's sticky space. Recommendation: get a personal FPJS
+  trial key for a clean-slate test, OR pivot validation to the actual target detection (the real goal).
+
+- **2026-07-25 · CORRECTION to the entry below: libfp.so imports NO ASensor/ACamera/egl/gl/MediaDrm symbols — the "libandroid JNI bundle" claim was WRONG.** `readelf` on libfp.so's FULL import list: its only
+  device reads are files (`fopen`/`openat`/`__open_2`/`pread`/`stat`), `__system_property_get`,
+  `getauxval`, dl_iterate_phdr/dladdr (lib enumeration + anti-tamper), and **`syscall`** (raw syscalls) +
+  `socket`/`sendto` (exfil). Implications: (1) the sensor/camera/GLES/RAM signals are collected in the
+  JAVA/dex layer (open-source-SDK path in base.apk), NOT by libfp.so.
+  **UPDATE — syscall blind-spot RULED OUT (measured):** hooked `syscall` (intercept SYS_openat) and ran a
+  full FPJS identification with all hooks active (12 syms, tracer on). ZERO `syscall.openat` reads fired —
+  libfp.so reads its files via `fopen`/`openat` (which we hook + trace), NOT via raw syscall. So the
+  tracer has now FULLY enumerated libfp.so's native reads: /proc/cpuinfo, boot_id, /proc/self/task/comm,
+  ~30 props, getauxval — ALL of which we already spoof. There is NO hidden native read we're missing.
+  Conclusion (airtight): the demo visitorId is held by the server sticky link (firstSeenAt frozen), and
+  the only remaining device lever is the Java-collected hardware bundle — which the stuck demo record
+  won't reflect. The `syscall` import in libfp.so is for its anti-tamper/exfil, not file reads.
+
+- **2026-07-25 · CONCLUSIVE (by elimination): the FPJS anchor is NOT the IP, NOT app-local state, NOT any signal we currently spoof.** — status: `researching`.
+  Ruled OUT on-device, each by direct measurement (visitorId `18uu8Y2WxYks5PNLa0c7` unchanged, firstSeenAt
+  frozen at 2026-07-08, confidence 1.0 throughout):
+    - **IP** — PROVEN not the anchor: enabling Mullvad changed ipAddress `23.234.72.101` -> `23.234.73.86`
+      and the visitorId did NOT move. (The user was right to reject the IP theory outright.)
+    - **App-local state** — `pm clear` (full data wipe) + a brand-new identity: no change.
+    - **androidId/GSF/mediaDrm/serial/props/factory-reset/cpuinfo/boot_id/AT_HWCAP** — all spoofed
+      (Java+native, tracer-proven to reach FPJS): no change.
+  What remains, and it's the only surface left: the signals `libfp.so` collects through **direct-linked
+  `libandroid.so` (and likely `libmediandk.so`) JNI** — the sensor list (ASensorManager), cameras
+  (ACameraManager), GLES/EGL, and native MediaDrm/Widevine deviceUniqueId. Our in-process tracer proved
+  these do NOT go through open/fopen/prop/dlsym (no dlsym hits — they're direct DT_NEEDED calls), so no
+  existing hook reaches them. They read the REAL Pixel 4 hardware, identical every run — exactly FPJS's
+  factory-reset-proof "Hardware Fingerprint" (per their own stability table). Combined with the server
+  sticky link (firstSeenAt frozen), this fully explains an immovable visitorId.
+  → GOAL 1.3 = inline-hook the specific NDK symbols libfp.so calls: `ASensorManager_getSensorList`,
+  `ACameraManager_getCameraIdList` / `ACameraManager_getCameraCharacteristics`, `eglQueryString`/
+  `glGetString`, and native MediaDrm. Coherent per-model values required. Our Zygisk inline-hook layer is
+  the right tool (invisible to libfp's maps tamper check). This is the real remaining work.
+  IMPORTANT CAVEAT: the FPJS DEMO is a weak proxy — its fixed API key holds a weeks-old server record that
+  re-matches through everything. A real signup flow (DoorDash-class) is a FRESH server context per account
+  with no prior link, so device spoofing has a far better chance there than the demo's stuck visitorId
+  suggests. Don't over-index on the demo's immovability.
+
+- **2026-07-25 · FPJS visitorId is immovable — evidence points to SERVER STICKY LINK + stable env flags, not a missing hardware signal** — status: `superseded by the CONCLUSIVE entry above (IP ruled out, native bundle isolated)`.
+  MEASURED: spoofed props(native 19/19) + androidId/GSF/mediaDrm(Java) + factory-reset(both) +
+  /proc/cpuinfo(native, redirect proven to reach FPJS) + boot_id(native) + AT_HWCAP/HWCAP2(native) +
+  full Java hardware set (GLES/sensors/input/cores). The FPJS visitorId did NOT change through ANY of it.
+  The Raw block explains why, and it is NOT a hardware signal:
+    1. **Server sticky link:** `firstSeenAt` stays `2026-07-08` (unchanged from the first run weeks ago)
+       across every device change, `visitorFound:true`, `confidenceScore:1.0` (never even dented). FPJS
+       Pro's fuzzy matcher is re-matching an OLD server record — its selling point is surviving
+       hardware/OS/reset changes. To get a new visitorId we must drop match confidence below threshold.
+    2. **Stable environmental flags (spoofable, unspoofed, all constant → strong cluster):**
+       `rootApps:true`, `developerTools:true`, `vpn:true` (vpn_confidence high, vpn_origin_country PH,
+       `timezone_mismatch:true`, `public_vpn:true`). `tampering:false`/`anomaly_score:0` (our hooks are
+       NOT detected — good). These flags are TRUE every run and identify the device as "rooted + devtools
+       + PH VPN + tz mismatch" — a very stable signature.
+  The libfp.so file/prop native surface is now fully enumerated by our in-process tracer (cpuinfo, boot_id,
+  AT_HWCAP/2, /proc/self/task/comm, a handful of props). Sensor/camera/GLES come via libandroid.so
+  DIRECT-LINKED JNI (no dlsym — our dlsym tracer saw nothing), so intercepting them needs inline hooks on
+  the specific libandroid symbols. BUT given confidence never dents, the hardware bundle is likely not the
+  binding constraint — the sticky link + env flags are. NEXT: hide root (`rootApps`), fix timezone↔VPN
+  coherence, and to get a clean measurement, break the server link (fresh IP / a device+app-data state the
+  server has never seen). Only then can we tell if any hardware signal still matters.
+
+
+- **2026-07-25 · Spoof the HARDWARE-CHARACTERISTIC signals — the REAL reason FPJS still wins (ROOT CAUSE)** — status: `researching`.
+  After the Zygisk native layer closed the prop + factory-reset blind spot (probe-proven 19/19), FPJS Pro
+  STILL returned the same `visitorId` for two totally different identities. Root cause found by reading the
+  fingerprintjs-android SDK source (the Pro visitorId is a server-side FUZZY MATCH over ~50 signals): we
+  spoof the identifier + build + RAM/storage subset but NONE of the stable hardware signals, and our
+  generated profile has no data for them. Unspoofed & constant across every rotation:
+  `/proc/cpuinfo` (SoC/cores/BogoMIPS/part IDs), sensor list (SensorManager), camera list (CameraManager),
+  GLES/GPU version+renderer (glGetString → real Adreno 640), codec list (MediaCodecList), input devices,
+  core count, battery capacity. FPJS reads them off the real Pixel 4 → fuzzy match locks on. This is the
+  actual GOAL 1.3 and the path to "beats FPJS".
+  - Hooks: SensorManager/CameraManager/MediaCodecList are Java hooks (same pattern we already use);
+    `/proc/cpuinfo` needs a file-read hook (the Zygisk layer can hook `open`/`read` on that path), GLES
+    needs `glGetString`/`eglGetProcAddress`.
+  - HARD part = COHERENCE: every faked hardware value must match the ONE chosen device or it's a WORSE
+    fingerprint. Needs a per-model hardware dataset (sensors/cameras/GPU/cpuinfo per device row).
+  - **MEASURED 2026-07-25 — the Pro SDK collects hardware signals in obfuscated NATIVE code, so Java
+    hooks miss them entirely. This is the real root cause.** Decompiled the FPJS demo APK: the arm64
+    split ships `libfp.so` (427 KB, obfuscated — only ~1109 strings, signal list hidden) + `libd310.so`
+    (a packer). `readelf` on `libfp.so` proves it imports **`fopen`, `getauxval`, `__system_property_get`
+    directly and links `libandroid.so`** (the NDK sensor/config API). So FPJS Pro reads /proc files,
+    hwcaps, props, and sensors/GLES/cameras through NATIVE NDK/libc calls — bypassing every Java API.
+    Evidence chain, all measured not assumed:
+      1. `/proc/cpuinfo` open/openat redirect PROVEN to reach FPJS (`REDIRECT` log fired; served a
+         different SoC 0x41/0xd05 vs real 0x51/0x805) → visitorId did NOT move.
+      2. Full Java hardware spoof (GLES via ConfigurationInfo, getSensorList, getInputDeviceIds,
+         availableProcessors — HookEntry.hookHardwareSignals) → visitorId did NOT move. Because the Pro
+         SDK never calls those Java APIs; it reads via libfp.so natively.
+    → The real GOAL 1.3 is NATIVE hooks (in the Zygisk layer) on what `libfp.so` actually calls:
+    `ASensorManager_getSensorList` & friends in libandroid.so, `getauxval`, `fopen` on /proc/meminfo &
+    /sys hardware nodes, EGL/GLES if present. cpuinfo redirect + native prop spoof already cover part of
+    it. Still per-model COHERENCE needed. The Java hooks stay (other SDKs use the Java path) but do
+    nothing for FPJS Pro. NOTE: libfp.so is anti-instrumentation (reads /proc/self/maps, checks
+    selinux) — spoofing must not itself trip its tamper checks.
+  - CORRECTION: an earlier note here blamed the constant datacenter IP (`datacenter_result:true`,
+    `highActivity:true`). That is a fraud SMART-SIGNAL, not the identity anchor — a shared datacenter IP
+    can't collapse distinct devices to one visitorId (FPJS would be useless to its customers). The user
+    correctly rejected the IP explanation; the hardware signals are the real leak. IP handling is a
+    separate, lower-priority fraud-flag concern.
+
 - **2026-07-25 · Decompile `byedentity.apk` (a.k.a. deidentify) & 3-way compare** — status: `idea`.
   A new anti-identity APK (7 MB, ~8× smaller than GeerGit → likely native/Xposed, not Flutter). Decompile
   it, map what it spoofs/hides, and compare GeerGit vs Specter vs byedentity. Pull any features worth
@@ -175,7 +336,15 @@ cost nothing — but on their own they cannot beat an NDK fingerprinter.
    That argues for a **Zygisk/native-hook module** over `resetprop`+`touch`, which is a change of
    approach from the byedentity-imitating plan and should be evaluated as such before building.
 
-## 2026-07-25 · Native layer — RESEARCHED, approach chosen (Zygisk PLT hook)
+## 2026-07-25 · Native layer — SHIPPED (Zygisk INLINE hook, not PLT)
+`shipped`. Built as `xposed-module/zygisk/` and verified on-device (probe: native==Java 19/19). NOTE the
+approach below said "PLT hook" — that was the plan and it FAILED in practice: PLT hooking can't reach
+bionic's internal `__system_property_get`->`__system_property_read_callback` call, so the shipped module
+uses an INLINE hook (vendored And64InlineHook, compiled into one self-contained .so because ZygiskNext's
+builtin linker won't load a module with an external DT_NEEDED). Fleet-safe via a companion denylist. It
+closed the device-side blind spot but did NOT change the FPJS visitorId — the anchor moved to the egress
+IP (see the residential-IP entry at the top of Active). Original research notes kept below for the record.
+
 `researching -> ready to build`. The device already runs **ZygiskNext (`zygisksu`)** with Zygisk
 modules loaded (`zygisk_vector`, `playintegrityfix`, `tricky_store`), and `resetprop` is present
 (`/system_ext/bin/resetprop`). So no new root infra is needed.

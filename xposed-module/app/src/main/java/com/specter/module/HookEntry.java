@@ -50,6 +50,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookMediaDrm(lpparam, p);
         hookSystemProperties(p);
         hookHardwareInfo(lpparam, p);
+        hookHardwareSignals(lpparam, p);
         hookStorage(lpparam, p);
         hookFactoryResetTime(p);
     }
@@ -173,6 +174,121 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
+    }
+
+    // ---- Hardware-characteristic signals (GOAL 1.3) — real per-model values from the profile ----
+    // FPJS Pro's visitorId is a server-side fuzzy match over ~50 signals; a big, STABLE, real subset
+    // (GPU/GLES renderer, sensor list, camera list, input devices, core count) leaked unchanged every
+    // rotation. Now spoofed to the COHERENT per-model bundle carried in the profile (hw_* fields,
+    // from data/hardware.json), so every reading app sees the hardware of the device this identity
+    // claims to be. The native (Zygisk) layer covers the direct-JNI reads libfp uses; these Java
+    // hooks close the framework-API paths other SDKs read (SensorManager, CameraManager, GLES20, etc).
+    private void hookHardwareSignals(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        // GL_ES version reported by ConfigurationInfo (e.g. "3.2").
+        final String gles = p.get("hw_gles_version");
+        if (gles != null && !gles.isEmpty()) {
+            try {
+                Class<?> ci = XposedHelpers.findClass("android.content.pm.ConfigurationInfo", lp.classLoader);
+                XposedBridge.hookAllMethods(ci, "getGlEsVersion", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(gles); }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // glGetString(GL_RENDERER/GL_VENDOR/GL_VERSION) — the GPU renderer string is a strong hardware
+        // signal. Dispatch by the GL enum arg so RENDERER/VENDOR/VERSION each return the profile value.
+        final String renderer = p.get("hw_gpu_renderer");
+        final String vendor = p.get("hw_gpu_vendor");
+        if ((renderer != null && !renderer.isEmpty()) || (vendor != null && !vendor.isEmpty())) {
+            final int GL_VENDOR = 0x1F00, GL_RENDERER = 0x1F01, GL_VERSION = 0x1F02;
+            XC_MethodHook glHook = new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length == 0 || !(mp.args[0] instanceof Integer)) return;
+                    int name = (Integer) mp.args[0];
+                    if (name == GL_RENDERER && renderer != null && !renderer.isEmpty()) mp.setResult(renderer);
+                    else if (name == GL_VENDOR && vendor != null && !vendor.isEmpty()) mp.setResult(vendor);
+                    else if (name == GL_VERSION && gles != null && !gles.isEmpty()) mp.setResult("OpenGL ES " + gles + " V@0.0");
+                }
+            };
+            for (String cls : new String[]{"android.opengl.GLES20", "android.opengl.GLES30"}) {
+                try {
+                    Class<?> gl = XposedHelpers.findClass(cls, lp.classLoader);
+                    XposedBridge.hookAllMethods(gl, "glGetString", glHook);
+                } catch (Throwable ignored) {}
+            }
+        }
+        // Core count — Runtime.availableProcessors is the common Java path. Report the profile's count.
+        final String coresStr = p.get("hw_cores");
+        if (coresStr != null && !coresStr.isEmpty()) {
+            try {
+                final int cores = Integer.parseInt(coresStr);
+                XposedBridge.hookAllMethods(Runtime.class, "availableProcessors", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(cores); }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // Camera id list — return exactly the profile's camera ids (a hardware-count signal).
+        final String cams = p.get("hw_cameras");
+        if (cams != null && !cams.isEmpty()) {
+            final String[] camIds = cams.split(",");
+            try {
+                Class<?> cm = XposedHelpers.findClass("android.hardware.camera2.CameraManager", lp.classLoader);
+                XposedBridge.hookAllMethods(cm, "getCameraIdList", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(camIds); }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // Input devices — the COUNT is the signal; size an int[] from the profile's input-device list.
+        final String inputs = p.get("hw_input_devices");
+        if (inputs != null && !inputs.isEmpty()) {
+            final int n = inputs.split(",").length;
+            try {
+                Class<?> im = XposedHelpers.findClass("android.hardware.input.InputManager", lp.classLoader);
+                XposedBridge.hookAllMethods(im, "getInputDeviceIds", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        int[] ids = new int[n];
+                        for (int k = 0; k < n; k++) ids[k] = k;   // stable 0..n-1
+                        mp.setResult(ids);
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
+        // Sensor list — Sensor objects can't be constructed from an app hook, so relabel the REAL list
+        // in place to the profile's sensor names/vendors (reflection on private mName/mVendor) and
+        // truncate to the profile's sensor count. This changes the sensor-set hash without fabricating
+        // Sensor instances. The native layer covers the ASensorManager NDK reads.
+        final String sensors = p.get("hw_sensors");
+        if (sensors != null && !sensors.isEmpty()) {
+            final String[] rows = sensors.split(";");
+            try {
+                Class<?> sm = XposedHelpers.findClass("android.hardware.SensorManager", lp.classLoader);
+                XposedBridge.hookAllMethods(sm, "getSensorList", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        Object res = mp.getResult();
+                        if (!(res instanceof java.util.List)) return;
+                        java.util.List<?> in = (java.util.List<?>) res;
+                        if (in.isEmpty()) return;
+                        java.util.List<Object> out = new java.util.ArrayList<>();
+                        int idx = 0;
+                        for (Object sensor : in) {
+                            if (idx >= rows.length) break;
+                            String[] parts = rows[idx].split("\\|");
+                            if (parts.length >= 2) {
+                                try {
+                                    Field nm = sensor.getClass().getDeclaredField("mName");
+                                    nm.setAccessible(true); nm.set(sensor, parts[0]);
+                                    Field vn = sensor.getClass().getDeclaredField("mVendor");
+                                    vn.setAccessible(true); vn.set(sensor, parts[1]);
+                                } catch (Throwable ignored) {}
+                            }
+                            out.add(sensor);
+                            idx++;
+                        }
+                        if (out.isEmpty()) out.add(in.get(0));
+                        mp.setResult(out);
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
     }
 
     // ---- StatFs total/available storage — a FingerprintJS hardware signal that was LEAKING ----
@@ -343,7 +459,10 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (aid == null) return;
         XC_MethodHook h = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (SpoofLogic.argsContainKey(param.args, "android_id")) { param.setResult(aid); return; }
+                if (SpoofLogic.argsContainKey(param.args, "android_id")) {
+                    XposedBridge.log("[specter][idtrace] Settings.Secure android_id -> " + aid);
+                    param.setResult(aid); return;
+                }
                 // Settings.Secure.getString(cr, "bluetooth_address") is a SECOND path to the BT MAC that
                 // BluetoothAdapter.getAddress() doesn't cover — spoof it here too, or it leaks the real MAC.
                 if (btMac != null && SpoofLogic.argsContainKey(param.args, "bluetooth_address")) {
@@ -473,7 +592,10 @@ public class HookEntry implements IXposedHookLoadPackage {
                 XposedBridge.hookAllMethods(gs, "getString", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
                         for (Object a : param.args)
-                            if ("android_id".equals(String.valueOf(a))) { param.setResult(gsf); return; }
+                            if ("android_id".equals(String.valueOf(a))) {
+                                XposedBridge.log("[specter][idtrace] Gservices.getString android_id -> " + gsf);
+                                param.setResult(gsf); return;
+                            }
                     }
                 });
             } catch (Throwable ignored) {}
@@ -484,7 +606,10 @@ public class HookEntry implements IXposedHookLoadPackage {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
                         if (gsfLong < 0) return;
                         for (Object a : param.args)
-                            if ("android_id".equals(String.valueOf(a))) { param.setResult(gsfLong); return; }
+                            if ("android_id".equals(String.valueOf(a))) {
+                                XposedBridge.log("[specter][idtrace] Gservices.getLong android_id -> " + gsfLong);
+                                param.setResult(gsfLong); return;
+                            }
                     }
                 });
             } catch (Throwable ignored) {}
@@ -495,7 +620,12 @@ public class HookEntry implements IXposedHookLoadPackage {
         // reads GSF via this cursor path (confirmed by dexdump), so it's how we keep GSF fully
         // verifiable on our test target. Real targets use the narrow Gservices.getString/getLong hooks
         // above only (GeerGit's approach — smaller surface, less fragile). See docs/PAIRIP-CONSTRAINT.md.
-        if (!"com.liuzh.deviceinfo".equals(lp.packageName)) return;
+        // The FPJS SDK reads GSF ID via the ContentResolver gservices CURSOR path (it holds
+        // READ_GSERVICES). The narrow Gservices.getString/getLong hooks above may not cover that
+        // read, so enable the cursor wrapper for the FPJS demo too — else the real GSF leaks and
+        // becomes a stable cross-wipe device identifier.
+        if (!"com.liuzh.deviceinfo".equals(lp.packageName)
+                && !"com.fingerprintjs.android.fpjs_pro_demo".equals(lp.packageName)) return;
         final XC_MethodHook wrapCursor = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 try {
@@ -504,6 +634,20 @@ public class HookEntry implements IXposedHookLoadPackage {
                         return;
                     final android.database.Cursor real = (android.database.Cursor) param.getResult();
                     if (real == null) return;
+                    XposedBridge.log("[specter] GSF cursor wrapped for " + lp.packageName + " uri=" + uri);
+                    // idtrace: dump the ACTUAL cursor schema so we can see whether the (name,value)
+                    // assumption in SpoofLogic.isAndroidIdValueColumn holds for this caller.
+                    try {
+                        StringBuilder sb = new StringBuilder("[specter][idtrace] gsf cursor cols=");
+                        sb.append(real.getColumnCount()).append(" names=");
+                        for (String cn : real.getColumnNames()) sb.append(cn).append(',');
+                        sb.append(" rows=").append(real.getCount());
+                        Object sel = param.args.length > 3 ? param.args[3] : null;
+                        sb.append(" selArgs=");
+                        if (sel instanceof String[]) for (String sa : (String[]) sel) sb.append(sa).append(',');
+                        else sb.append(String.valueOf(sel));
+                        XposedBridge.log(sb.toString());
+                    } catch (Throwable ignored2) {}
                     param.setResult(new GsfCursorWrapper(real, gsf));
                 } catch (Throwable ignored) {}
             }
@@ -526,12 +670,16 @@ public class HookEntry implements IXposedHookLoadPackage {
         private final String fakeGsf;
         GsfCursorWrapper(android.database.Cursor c, String fakeGsf) { super(c); this.fakeGsf = fakeGsf; }
         @Override public String getString(int columnIndex) {
-            if (isAndroidIdValueColumn(columnIndex)) return fakeGsf;
+            if (isAndroidIdValueColumn(columnIndex)) {
+                XposedBridge.log("[specter][idtrace] GSF cursor SUBSTITUTED getString(" + columnIndex + ")");
+                return fakeGsf;
+            }
             return super.getString(columnIndex);
         }
         @Override public long getLong(int columnIndex) {
             // GSF android_id is frequently read via getLong on the value column — cover it too.
             if (isAndroidIdValueColumn(columnIndex)) {
+                XposedBridge.log("[specter][idtrace] GSF cursor SUBSTITUTED getLong(" + columnIndex + ")");
                 return SpoofLogic.gsfToLong(fakeGsf, super.getLong(columnIndex));
             }
             return super.getLong(columnIndex);
@@ -569,6 +717,7 @@ public class HookEntry implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(md, "getPropertyByteArray", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (param.args.length > 0 && "deviceUniqueId".equals(String.valueOf(param.args[0]))) {
+                        XposedBridge.log("[specter][idtrace] MediaDrm deviceUniqueId -> " + drm);
                         param.setResult(hexToBytes(drm));
                     }
                 }

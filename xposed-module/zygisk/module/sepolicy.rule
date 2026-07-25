@@ -1,0 +1,5 @@
+# PLT hooking (lsplt, inside the Zygisk loader) writes to copied anonymous pages, which needs execmem
+# in the injected app domain on some ZygiskNext builds. Granting it to zygote covers the injection path.
+# The profile file itself is read by the ROOT companion (magisk daemon domain, which can already read
+# shell_data_file), so no app-domain file rule is needed — that is the whole point of the companion.
+allow zygote self execmem

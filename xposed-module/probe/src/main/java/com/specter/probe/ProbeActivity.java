@@ -208,6 +208,10 @@ public class ProbeActivity extends Activity {
                 put(o, "media_drm_security_level", "ERR:" + t);
             }
 
+            // Hardware-characteristic signals (GOAL 1.3): read every descriptor Specter now spoofs,
+            // via the framework API (Java hooks) AND — for GPU + cpuinfo — the native path.
+            probeHardware(o);
+
             // Telephony (needs READ_PHONE_STATE; may throw on newer APIs w/o it — record the attempt)
             probeTelephony(o);
         } catch (Throwable t) {
@@ -224,6 +228,75 @@ public class ProbeActivity extends Activity {
         ScrollView sv = new ScrollView(this);
         sv.addView(tv);
         setContentView(sv);
+    }
+
+    /** Native GPU renderer via an in-process EGL/GLES context — the direct-JNI path Specter's native
+     *  glGetString hook targets (what a native fingerprinter reads). Returns "GL_VENDOR|GL_RENDERER|
+     *  GL_VERSION" or "ERR:...". */
+    private static native String nativeGlStrings();
+
+    private void probeHardware(JSONObject o) {
+        // --- GPU renderer: Java framework path (ConfigurationInfo GLES version) + native glGetString ---
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            android.content.pm.ConfigurationInfo ci = am.getDeviceConfigurationInfo();
+            put(o, "hw_gles_version", ci.getGlEsVersion());
+        } catch (Throwable t) { put(o, "hw_gles_version", "ERR:" + t); }
+        try { put(o, "hw_gl_native", NATIVE_LIB_ERR != null ? NATIVE_LIB_ERR : nativeGlStrings()); }
+        catch (Throwable t) { put(o, "hw_gl_native", "ERR:" + t); }
+
+        // --- Core count ---
+        try { put(o, "hw_cores", String.valueOf(Runtime.getRuntime().availableProcessors())); }
+        catch (Throwable t) { put(o, "hw_cores", "ERR:" + t); }
+
+        // --- Sensor list (name|vendor rows) ---
+        try {
+            android.hardware.SensorManager sm = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
+            java.util.List<android.hardware.Sensor> list = sm.getSensorList(android.hardware.Sensor.TYPE_ALL);
+            StringBuilder sb = new StringBuilder();
+            for (android.hardware.Sensor s : list) {
+                if (sb.length() > 0) sb.append(';');
+                sb.append(s.getName()).append('|').append(s.getVendor());
+            }
+            put(o, "hw_sensors", sb.toString());
+            put(o, "hw_sensor_count", String.valueOf(list.size()));
+        } catch (Throwable t) { put(o, "hw_sensors", "ERR:" + t); }
+
+        // --- Camera id list ---
+        try {
+            android.hardware.camera2.CameraManager cm =
+                    (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
+            String[] ids = cm.getCameraIdList();
+            put(o, "hw_cameras", android.text.TextUtils.join(",", ids));
+        } catch (Throwable t) { put(o, "hw_cameras", "ERR:" + t); }
+
+        // --- Input device count ---
+        try {
+            android.hardware.input.InputManager im =
+                    (android.hardware.input.InputManager) getSystemService(INPUT_SERVICE);
+            int[] ids = im.getInputDeviceIds();
+            put(o, "hw_input_count", String.valueOf(ids.length));
+        } catch (Throwable t) { put(o, "hw_input_count", "ERR:" + t); }
+
+        // --- /proc/cpuinfo (native redirect target): report the Hardware line + processor count ---
+        try {
+            java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader("/proc/cpuinfo"));
+            String line; String hw = ""; int procs = 0;
+            while ((line = br.readLine()) != null) {
+                if (line.startsWith("processor")) procs++;
+                if (line.startsWith("Hardware")) hw = line;
+            }
+            br.close();
+            put(o, "cpuinfo_hardware", hw);
+            put(o, "cpuinfo_processors", String.valueOf(procs));
+        } catch (Throwable t) { put(o, "cpuinfo_hardware", "ERR:" + t); }
+
+        // --- Codec list (count + a couple of names) ---
+        try {
+            android.media.MediaCodecList mcl = new android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS);
+            android.media.MediaCodecInfo[] infos = mcl.getCodecInfos();
+            put(o, "hw_codec_count", String.valueOf(infos.length));
+        } catch (Throwable t) { put(o, "hw_codec_count", "ERR:" + t); }
     }
 
     private void probeTelephony(JSONObject o) {
