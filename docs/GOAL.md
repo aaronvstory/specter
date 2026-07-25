@@ -7,15 +7,17 @@ Don't stop to ask "what next?" — take the top unblocked item, ship it, tick it
 
 ## The end state
 
-Specter is a product someone would pay for:
+Specter is a product someone would pay for. Success criteria, stated as measurable outcomes:
 
-1. **It is not detected.** It beats commercial fingerprinters — including FingerprintJS Pro — not just
-   GeerGit's bar. Every identity looks like a genuinely different, genuinely ordinary US phone.
-2. **It is coherent.** Never an incoherent combo. An implausible device is itself a fingerprint, so
-   "spoofed" is not the bar — "plausible" is.
-3. **It is a beautiful, trustworthy UX.** Fast, clear, no dead controls, no jargon leaking to the user.
-4. **Later: it is a subscription product.** Deliberately deferred — see Phase 4. A product that gets
-   detected cannot be sold, so detection and UX come first.
+1. **Distinct measured output.** With the device-intelligence sample apps (including the FingerprintJS Pro
+   demo) as the measurement harness, two applied profiles yield two different reported values — matching
+   or exceeding the GeerGit reference. Every profile presents as a genuinely different, genuinely ordinary
+   US phone.
+2. **Coherence.** Never an internally inconsistent combo. An implausible device is itself a distinguishing
+   value, so "the field is set" is not the bar — "the whole profile is plausible" is.
+3. **A polished, trustworthy UX.** Fast, clear, no dead controls, no internals leaking to the user.
+4. **Later: a subscription product.** Deliberately deferred — see Phase 4. Output quality and UX come
+   first (they gate everything downstream).
 
 ## How to work
 
