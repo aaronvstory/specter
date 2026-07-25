@@ -347,47 +347,89 @@ def _atomic_write_json(path, obj):
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(obj, f, indent=2)
-        os.replace(tmp, path)
+            f.flush()
+            os.fsync(f.fileno())   # durable BEFORE the rename, so a concurrent reader that sees the
+                                   # replaced name never reads stale/empty content (Windows visibility gap)
+        # os.replace fails with ERROR_ACCESS_DENIED (PermissionError) on Windows when another
+        # thread/process has the TARGET open for reading (a share violation) — a TRANSIENT condition,
+        # not a real failure. Without a retry it would bubble out of record()/generate_unique() and
+        # silently drop that caller (a lost ledger update under concurrency). Retry briefly.
+        import time as _t
+        for _attempt in range(50):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                _t.sleep(0.02)
+        else:
+            os.replace(tmp, path)   # final attempt: let a persistent failure raise (real problem)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
 
 
+# In-process locks keyed by lockpath. The OS file lock (msvcrt/fcntl) guards CROSS-PROCESS access,
+# but msvcrt byte-range locks are NOT reliably exclusive between THREADS of one process (each thread
+# opens its own handle) — proven by a flaky tiny-keyspace concurrency test. This per-path threading
+# lock serializes threads in-process; the file lock still serializes across processes. Belt+suspenders.
+_INPROC_LOCKS = {}
+_INPROC_LOCKS_GUARD = threading.Lock()
+
+
+def _inproc_lock_for(lockpath):
+    with _INPROC_LOCKS_GUARD:
+        lk = _INPROC_LOCKS.get(lockpath)
+        if lk is None:
+            lk = threading.Lock()
+            _INPROC_LOCKS[lockpath] = lk
+        return lk
+
+
 class _file_lock:
-    """Cross-platform exclusive lock on a sidecar .lock file (msvcrt on Windows, fcntl elsewhere)."""
+    """Exclusive lock across BOTH processes (msvcrt/fcntl on the sidecar .lock file) and threads
+    (a per-path in-process threading.Lock, since msvcrt locks don't reliably exclude sibling threads)."""
     def __init__(self, target_path):
         self.lockpath = target_path + ".lock"
         self.fh = None
+        self._tlock = _inproc_lock_for(self.lockpath)
 
     def __enter__(self):
-        self.fh = open(self.lockpath, "a+")
+        self._tlock.acquire()                       # serialize threads first (msvcrt is per-handle)
         try:
-            import fcntl
-            fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX)
-        except ImportError:
-            import msvcrt
-            self.fh.seek(0)
-            while True:
-                try:
-                    msvcrt.locking(self.fh.fileno(), msvcrt.LK_LOCK, 1)
-                    break
-                except OSError:
-                    import time as _t
-                    _t.sleep(0.05)
+            self.fh = open(self.lockpath, "a+")
+            try:
+                import fcntl
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX)
+            except ImportError:
+                import msvcrt
+                self.fh.seek(0)
+                while True:
+                    try:
+                        msvcrt.locking(self.fh.fileno(), msvcrt.LK_LOCK, 1)
+                        break
+                    except OSError:
+                        import time as _t
+                        _t.sleep(0.05)
+        except BaseException:
+            self._tlock.release()                   # never leak the thread lock on an open/lock failure
+            raise
         return self
 
     def __exit__(self, *exc):
         try:
-            import fcntl
-            fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
-        except ImportError:
-            import msvcrt
             try:
-                self.fh.seek(0)
-                msvcrt.locking(self.fh.fileno(), msvcrt.LK_UNLCK, 1)
-            except OSError:
-                pass
-        self.fh.close()
+                import fcntl
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+            except ImportError:
+                import msvcrt
+                try:
+                    self.fh.seek(0)
+                    msvcrt.locking(self.fh.fileno(), msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+            self.fh.close()
+        finally:
+            self._tlock.release()                   # always release the in-process lock
 
 
 def generate_unique(used_store, us_bias=True, seed=None, max_tries=1000, country="US"):
