@@ -96,7 +96,23 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
   same `visitorId` (`confidenceScore 1.0`). Kept anyway: closing the native prop/reset path is real and
   necessary (other SDKs read natively), it just isn't sufficient on its own.
 
-- [~] **1.3 Spoof the HARDWARE-CHARACTERISTIC signals — hardware layer BUILT + PROBE-VERIFIED.** `partial` · **highest value**
+- [~] **1.3 — ROOT CAUSE PROVEN 2026-07-26: FPJS still wins because the USER-AGENT leaks the real Pixel 4.** `partial` · **THE fix**
+  > **THIS IS THE ACTIVE PROBLEM. Read the 2026-07-26 top entry in docs/IDEAS.md first.**
+  > With the Fingerprint Server API wired up (user's own Public key in the demo -> events in the USER's
+  > clean workspace; Secret key `zTZsBALjWuvpfyMI3Kvm`, AP/Mumbai region, read via curl), we ran the clean
+  > two-rotation test: TWO totally different profiles (Moto G6, Galaxy Tab) BOTH returned visitorId
+  > `SJoG6j4i4vS9DoH6EM90`, confidence 1.0 — Specter does NOT beat FPJS. The raw API response shows WHY:
+  > the server saw the REAL device both times — `device="Pixel 4"`, `osVersion="11"`,
+  > `userAgent="Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)"`, and `rootApps=True`.
+  > The FPJS Android SDK reads device identity from the USER-AGENT (framework-built from Build.* in a
+  > system/WebView process — NOT the in-app Build.* reads our Xposed hooks cover). Our probe shows Build.*
+  > spoofed in-process, but the UA path is unhooked, so the real "Pixel 4" string is the visitorId anchor.
+  > NEXT (the fix, half-started): (1) hook `WebSettings.getDefaultUserAgent()` +
+  > `System.getProperty("http.agent")` + the `http.agent` prop to rebuild the UA from the spoofed Build
+  > fields (add near hookBuildFields in HookEntry.java); (2) close the `rootApps=True` detection FPJS uses;
+  > (3) re-run the two-rotation test in the user's workspace — the visitorId should finally split. The
+  > hardware layer below is real + kept, but it was NOT the anchor — the UA is.
+
   DONE + PROVEN on-device (2026-07-26): a per-model hardware dataset (`data/hardware.json`, keyed by
   device codename, coherent SoC-derived bundles) now flows through the profile (Python + Java, byte-parity
   held) into the Java hooks AND the native Zygisk glGetString hook + the /proc/cpuinfo redirect. Verified

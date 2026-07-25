@@ -2,6 +2,20 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-26 · The FPJS demo is now measured via the Server API in the USER's own workspace, and the
+  visitorId anchor is PROVEN to be the User-Agent, not the hardware bundle** — earlier docs waffled on
+  whether the demo's stuck visitorId was stale server memory vs a real leak, and framed a fresh key as a
+  "blocker needing signup". WRONG on both counts: (a) no key is a product dependency (Specter doesn't call
+  FPJS's API); (b) the ambiguity was resolvable and is now resolved. Setup: user pasted their Public key
+  into the demo's Settings ("Use your API keys" ON) so events land in THEIR workspace; their Secret key
+  (AP/Mumbai) reads events back via `GET https://ap.api.fpjs.io/events/{id}` with header `Auth-API-Key`.
+  In that CLEAN workspace, two different profiles STILL collapsed to one visitorId (confidence 1.0), and
+  the raw response showed the server saw the REAL Pixel 4 UA/device/osVersion both times. So the anchor is
+  the User-Agent (framework-built from Build.*, read by the SDK from a system/WebView path our in-app
+  Build.* hooks don't cover), plus `rootApps=True`. The hardware layer (GPU/cpuinfo/sensors) is real and
+  kept but was NOT the anchor. Fix = hook the UA + close root detection, then re-run the two-rotation test.
+  OPERATIONAL: use `push --no-clear` (NOT `rotate`) against the demo — `pm clear` wipes the demo's API-key
+  settings; `am force-stop` preserves them.
 - **2026-07-26 · App versionName derives from the VERSION file; kept the honest Location placeholder (UX 3.1/3.2)** —
   `app/build.gradle` hardcoded `versionName "0.3.0"` while the repo VERSION was 0.5.0, so the in-app
   header under-reported the version and would drift every release. Wired it to read `../VERSION` (single
