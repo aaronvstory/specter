@@ -55,6 +55,21 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 
 ### Phase 1 — Beat the fingerprinters (the thing that makes it a product)
 
+> **2026-07-25 dev intel + our on-device finding — READ THIS before more FPJS-demo work.**
+> The existing GeerGit tool reportedly PASSES the FPJS check on Nothing phones / Motorolas, but was
+> NOT tested on Pixels; on OUR Pixel 4, GeerGit ALSO returns the same stuck visitorId as Specter. Two
+> readings, not yet distinguished: (a) a Pixel-specific hardware-rooted signal (Titan M / hardware key
+> attestation / Widevine L1) that neither tool spoofs because it's computed in a SEPARATE process
+> (mediaserver/keystore) and delivered by binder — no in-process hook (Xposed or Zygisk) can reach it;
+> (b) simpler — the FPJS DEMO's fixed API key holds a stale record for THIS physical Pixel
+> (firstSeenAt frozen 2026-07-08, from before our work), while the tested Motos had no prior record, so
+> the demo just can't show a change here. On-device we RULED OUT the IP (changed it, id didn't move),
+> app-local state (pm clear), and every signal libfp.so reads natively (tracer-enumerated, all spoofed).
+> suspectScore DID drop 40->34, so our spoofing affects server scoring — the visitor LINK just won't
+> break in the demo. **To distinguish (a) vs (b) needs a FRESH server context: a personal
+> fingerprint.com trial key (the demo Settings>API Keys accepts custom keys) OR validating against the
+> real target. Until then, device-side hardware-signal work (coherent per-model) is the buildable path.**
+
 - [x] **1.1 `factoryReset` leak — Java layer DONE + MERGED (PR #8); did NOT win alone.** `done`
   Shipped `factory_reset_epoch` (coherent: derived from the build's own security patch; byte-parity proven
   over 200 seeds) + hooks on `File.lastModified` AND `android.system.Os.stat/lstat`. Verified on-device:

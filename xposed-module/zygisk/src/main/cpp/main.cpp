@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstdarg>
 #include <cstdio>
+#include <cerrno>
 #include <string>
 #include <map>
 #include <fcntl.h>
@@ -46,6 +47,8 @@ using zygisk::ServerSpecializeArgs;
 // -------- per-process spoof state (populated once in postAppSpecialize) --------
 static std::map<std::string, std::string> g_prop_spoof;  // prop name -> spoofed value
 static long g_reset_epoch = 0;                            // factory_reset_epoch (seconds), 0 = unset
+static bool g_hide_root = false;                          // hide root-indicator paths (ENOENT)
+static bool is_root_path(const char *path);              // defined below with the file hooks
 
 // -------- passive tracer (GOAL 1.3) --------
 // When the profile carries "trace":"1", log every file open / prop / getauxval the target makes, so we
@@ -135,11 +138,13 @@ static fstatat_t orig_fstatat = nullptr;
 static statx_t orig_statx = nullptr;
 
 static int my_stat(const char *path, struct stat *st) {
+    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     int r = orig_stat(path, st);
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
 }
 static int my_lstat(const char *path, struct stat *st) {
+    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     int r = orig_lstat(path, st);
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
@@ -188,8 +193,29 @@ static const char *redirect_path(const char *path) {
     if (!g_bootid_path.empty()  && is_bootid(path))  return g_bootid_path.c_str();
     return path;
 }
+
+// Root-indicator paths FPJS (and other SDKs) probe to set `rootApps`/root-detection. Making these
+// reads fail (ENOENT) hides root from an in-process check. Enabled per identity (g_hide_root). We match
+// the common su/Magisk/root-manager paths; exact-match a small set + the "su" binary dirs.
+static const char *ROOT_PATHS[] = {
+    "/system/xbin/su", "/system/bin/su", "/sbin/su", "/su/bin/su", "/system/sd/xbin/su",
+    "/system/bin/failsafe/su", "/data/local/su", "/data/local/bin/su", "/data/local/xbin/su",
+    "/system/app/Superuser.apk", "/system/xbin/daemonsu", "/system/etc/init.d/99SuperSUDaemon",
+    "/dev/com.koushikdutta.superuser.daemon/", "/system/xbin/busybox", "/data/adb/magisk",
+    "/data/adb/modules", "/sbin/.magisk", "/cache/.disable_magisk", "/system/bin/magisk",
+    "/system/xbin/magisk", "/data/adb/ksu", "/data/adb/ap",
+};
+static bool is_root_path(const char *path) {
+    if (!path) return false;
+    for (auto p : ROOT_PATHS) if (strcmp(path, p) == 0) return true;
+    // "which su" style: any path ending in "/su"
+    size_t n = strlen(path);
+    if (n >= 3 && strcmp(path + n - 3, "/su") == 0) return true;
+    return false;
+}
 static int my_openat(int dirfd, const char *path, int flags, ...) {
     if (g_trace) trace_path("openat", path);
+    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     const char *rp = redirect_path(path);
     if (rp != path) return orig_openat(AT_FDCWD, rp, O_RDONLY | O_CLOEXEC);
     va_list ap; va_start(ap, flags); mode_t mode = va_arg(ap, int); va_end(ap);
@@ -197,6 +223,7 @@ static int my_openat(int dirfd, const char *path, int flags, ...) {
 }
 static int my_open(const char *path, int flags, ...) {
     if (g_trace) trace_path("open", path);
+    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     const char *rp = redirect_path(path);
     if (rp != path) return orig_open(rp, O_RDONLY | O_CLOEXEC);
     va_list ap; va_start(ap, flags); mode_t mode = va_arg(ap, int); va_end(ap);
@@ -208,9 +235,18 @@ using fopen_t = FILE *(*)(const char *, const char *);
 static fopen_t orig_fopen = nullptr;
 static FILE *my_fopen(const char *path, const char *mode) {
     if (g_trace) trace_path("fopen", path);
+    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return nullptr; }
     const char *rp = redirect_path(path);
     if (rp != path) return orig_fopen(rp, mode);
     return orig_fopen(path, mode);
+}
+
+// access() is the most common root check (access("/system/xbin/su", F_OK)). Hide root paths.
+using access_t = int (*)(const char *, int);
+static access_t orig_access = nullptr;
+static int my_access(const char *path, int mode) {
+    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    return orig_access(path, mode);
 }
 
 // getauxval is imported by libfp.so — likely reads AT_HWCAP/AT_HWCAP2 (CPU feature bits, a hardware
@@ -334,6 +370,10 @@ public:
 
         auto tr = profile.find("trace");
         if (tr != profile.end() && tr->second == "1") g_trace = true;
+        // Hide root by default for every Specter target (a rooted-device flag is a strong linking signal).
+        g_hide_root = true;
+        auto hr = profile.find("hide_root");
+        if (hr != profile.end() && hr->second == "0") g_hide_root = false;
 
         // boot_id: a per-boot UUID FPJS reads (tracer-proven). Derive a stable per-identity UUID from
         // android_id and redirect the file. hwcap: drop-only feature-bit tweak so the CPU mask varies.
@@ -383,7 +423,7 @@ public:
         }
 
         if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&
-            g_bootid_path.empty() && !g_spoof_hwcap && !g_trace) return;
+            g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root) return;
         installHooks();
     }
 
@@ -418,11 +458,19 @@ private:
             applied += hookSym("fstatat64", (void *) my_fstatat, (void **) &orig_fstatat);
             applied += hookSym("statx",     (void *) my_statx,   (void **) &orig_statx);
         }
-        // File hooks: needed for the cpuinfo/boot_id redirects AND for the passive tracer.
-        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace) {
+        // File hooks: needed for cpuinfo/boot_id redirects, the tracer, AND root-hiding.
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || g_hide_root) {
             applied += hookSym("openat", (void *) my_openat, (void **) &orig_openat);
             applied += hookSym("open",   (void *) my_open,   (void **) &orig_open);
             applied += hookSym("fopen",  (void *) my_fopen,  (void **) &orig_fopen);
+        }
+        if (g_hide_root) {
+            applied += hookSym("access", (void *) my_access, (void **) &orig_access);
+            // stat/lstat carry the root-hide check too; install them if not already (reset path installs them).
+            if (g_reset_epoch == 0) {
+                applied += hookSym("stat",  (void *) my_stat,  (void **) &orig_stat);
+                applied += hookSym("lstat", (void *) my_lstat, (void **) &orig_lstat);
+            }
         }
         if (g_spoof_hwcap || g_trace) {
             applied += hookSym("getauxval", (void *) my_getauxval, (void **) &orig_getauxval);
