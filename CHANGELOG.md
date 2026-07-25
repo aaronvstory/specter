@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Native sensor relabel (ASensor NDK hooks).** The tracer proved a native fingerprinter reads the
+  sensor list via libandroid's `ASensor_getName`/`ASensor_getVendor` (direct JNI, unreachable by the
+  Java SensorManager hook). The Zygisk layer now relabels those two accessors so each real sensor
+  reports the profile's per-model name/vendor — no ASensor struct fabrication (crash-safe), stable per
+  sensor pointer. Verified on-device: with a Galaxy A70 profile the native ASensor read returns the
+  profile's Samsung sensors (LSM6DSO / STMicroelectronics), not the real Pixel 4's Bosch BMI160. The
+  probe reads it via a new `nativeSensors()` NDK JNI. (Camera NDK hooks remain a follow-up — the camera
+  id list is an allocated struct, higher risk; the Java CameraManager hook covers that path today.)
 - **Real US area codes for generated phone numbers (Phase 2.2 coherence).** `phone_us` now draws the
   area code from a table of real, currently-assigned US area codes (broad metro/state spread) instead
   of a random structurally-valid `[2-9]XX` (many of which are unassigned — a tell), and never emits an

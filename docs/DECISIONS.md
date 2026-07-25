@@ -2,6 +2,15 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-26 · Native sensor spoof RELABELS the accessors, does NOT fabricate the sensor list** —
+  libfp reads sensors via libandroid's ASensor NDK (direct JNI). The obvious hook is
+  `ASensorManager_getSensorList`, but returning a fabricated `ASensor**` array means allocating and
+  forging ASensor structs whose internal layout is undocumented and version-specific — a crash risk in
+  a Zygisk companion that runs in EVERY app process. Instead we leave the real list (real count, real
+  valid pointers) and hook only `ASensor_getName`/`ASensor_getVendor` to return the profile's per-model
+  labels, assigning each real ASensor* a stable label slot on first sight. Same safety profile as the
+  glGetString string-swap; the name/vendor is the signal that mattered. Camera list deferred for the
+  same reason (it's an allocated struct) — measure whether a native reader bypasses the Java hook first.
 - **2026-07-26 · Phone area codes come from a real-assigned table; N11 exchanges avoided (Phase 2.2)** —
   a random `[2-9]XX` area code is often UNASSIGNED (a fingerprint tell), and `X11` exchanges are service
   codes never used for subscriber lines. `phone_us` now picks the area code from a curated list of real

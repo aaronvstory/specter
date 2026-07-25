@@ -6,6 +6,7 @@
 #include <string>
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
+#include <android/sensor.h>
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_specter_probe_ProbeActivity_nativeGetprop(JNIEnv *env, jobject, jstring key) {
@@ -50,5 +51,30 @@ Java_com_specter_probe_ProbeActivity_nativeGlStrings(JNIEnv *env, jobject) {
     eglDestroyContext(dpy, ctx);
     eglDestroySurface(dpy, surf);
     eglTerminate(dpy);
+    return env->NewStringUTF(out.c_str());
+}
+
+// Native sensor list via the NDK ASensorManager/ASensor path — the direct-JNI reads Specter's
+// ASensor_getName/getVendor hooks target (what a native fingerprinter uses). Returns "name|vendor;..."
+// or "ERR:<stage>". The COUNT and pointers come from the real manager (unhooked); the names/vendors
+// are what the relabel hooks rewrite, so this proves the hook engaged.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_specter_probe_ProbeActivity_nativeSensors(JNIEnv *env, jobject) {
+    ASensorManager *mgr = ASensorManager_getInstance();
+    if (!mgr) return env->NewStringUTF("ERR:no-manager");
+    ASensorList list = nullptr;
+    int n = ASensorManager_getSensorList(mgr, &list);
+    if (n <= 0 || !list) return env->NewStringUTF("ERR:no-sensors");
+    std::string out;
+    for (int i = 0; i < n; i++) {
+        const ASensor *s = list[i];
+        if (!s) continue;
+        const char *name = ASensor_getName(s);
+        const char *vendor = ASensor_getVendor(s);
+        if (!out.empty()) out += ";";   // separator on APPENDED rows, not index — skips stay clean
+        out += (name ? name : "?");
+        out += "|";
+        out += (vendor ? vendor : "?");
+    }
     return env->NewStringUTF(out.c_str());
 }

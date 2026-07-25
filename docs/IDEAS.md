@@ -15,11 +15,19 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   Pixel 4 with two identities: Note 9 -> `ARM|Mali-G72` / Exynos 9810; Moto G7 -> `Qualcomm|Adreno 512` /
   SDM660. Two coherent DIFFERENT bundles, 0 hard leaks, native hook returns per-model value not the real
   Adreno 640. The probe gate (RESUME def-of-done) is MET.
-- **2026-07-26 · FOLLOW-UP: native NDK sensor/camera inline hooks.** — status: `idea`.
-  glGetString + cpuinfo are hooked natively; `ASensorManager_getSensorList` and `ACameraManager_*` are NOT
-  (their return structs are crash-risky to fabricate from a companion hook). The Java hooks cover the
-  framework SensorManager/CameraManager path today. Add the NDK hooks only if a native reader is shown to
-  bypass the framework sensor/camera APIs (as libfp does for GL) — measure first.
+- **2026-07-26 · SHIPPED: native ASensor relabel hooks (the sensor half of the NDK follow-up).** — status: `shipped`.
+  The tracer proved libfp reads the sensor list via libandroid's ASensor NDK (direct JNI, unreachable by
+  the Java SensorManager hook). Rather than fabricate ASensor structs (crash-risky), the Zygisk layer now
+  relabels the two ACCESSORS — `ASensor_getName` / `ASensor_getVendor` — so each real sensor reports the
+  profile's per-model name/vendor (stable per ASensor* via a first-seen assignment map). No allocation, no
+  struct forgery, same safety profile as the glGetString hook. PROVEN on-device (Galaxy A70 profile): the
+  native ASensor read returns `LSM6DSO Acceleration Sensor|STMicroelectronics;...` — the profile's Samsung
+  sensors, NOT the real Pixel 4's Bosch BMI160. Probe reads it via a new `nativeSensors()` NDK JNI.
+- **2026-07-26 · FOLLOW-UP: native ACameraManager hooks (the camera half).** — status: `idea`.
+  `ACameraManager_getCameraIdList` ALLOCATES an `ACameraIdList` struct (higher crash risk than the sensor
+  accessors, which only return a string), and camera COUNT is the main signal. The Java
+  CameraManager.getCameraIdList hook covers the framework path today. Add the NDK camera hook only if a
+  native reader is shown to bypass it — measure first.
 - **2026-07-26 · BLOCKED on user: FPJS-demo end-to-end readout for the hardware layer.** — status: `blocked (needs fresh trial key)`.
   The hardware layer is verified on the probe. Running the FPJS demo per-identity to see the smart-signal
   response move is still confounded by the demo's fixed-key server record (firstSeenAt frozen from before
