@@ -187,6 +187,44 @@ static std::string g_bootid_path;   // path to our spoofed boot_id file, empty =
 static bool is_bootid(const char *path) {
     return path && strcmp(path, "/proc/sys/kernel/random/boot_id") == 0;
 }
+// /proc/self/maps hiding: libfp.so reads maps (tracer-proven) to detect our injected .so + Magisk/Zygisk
+// (that's what sets rootApps/tampering). maps changes per read, so we regenerate a FILTERED copy on each
+// open: drop any line naming our lib or a known root artifact. Returns an fd to a fresh temp, or -1.
+static std::string g_files_dir;   // /data/data/<pkg>/files — a dir we can write temp files to
+[[maybe_unused]] static bool is_maps(const char *path) {
+    return path && strcmp(path, "/proc/self/maps") == 0;
+}
+static const char *MAPS_HIDE_MARKERS[] = {
+    "libspecter_zygisk", "/data/adb/", "magisk", "zygisk", "/memfd:", "riru", "lsposed", "edxposed",
+    "/dev/.magisk", "KSU", "kernelsu",
+};
+[[maybe_unused]] static int clean_maps_fd() {
+    FILE *real = fopen("/proc/self/maps", "re");
+    if (!real) return -1;
+    // Build filtered content in memory.
+    std::string out;
+    char line[1024];
+    while (fgets(line, sizeof(line), real)) {
+        bool hide = false;
+        for (auto m : MAPS_HIDE_MARKERS) {
+            // case-insensitive-ish contains
+            if (strstr(line, m)) { hide = true; break; }
+        }
+        if (!hide) out.append(line);
+    }
+    fclose(real);
+    // Write to a private temp fd the caller reads. Use a unique path in the app's cache dir isn't
+    // reliable pre-`pkg`; use a memfd-like temp under /data/local? Not writable. Fall back to a temp file
+    // under the app files dir which we know (g_cpuinfo_path shares that dir).
+    if (g_files_dir.empty()) return -1;
+    std::string mp = g_files_dir + "/.specter_maps";
+    int fd = open(mp.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd < 0) return -1;
+    write(fd, out.data(), out.size());
+    lseek(fd, 0, SEEK_SET);
+    return fd;
+}
+
 // Map a spoof-target path to our replacement file, or return the original path unchanged.
 static const char *redirect_path(const char *path) {
     if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) return g_cpuinfo_path.c_str();
@@ -213,6 +251,10 @@ static bool is_root_path(const char *path) {
     if (n >= 3 && strcmp(path + n - 3, "/su") == 0) return true;
     return false;
 }
+// NOTE: /proc/self/maps cleaning was tried and REVERTED — ART reads its own maps during startup/GC, so
+// handing it a filtered file crashed FPJS on launch (splash loop, process died). Hiding root/tamper from
+// libfp.so's maps read needs a far more surgical approach (identify the libfp caller, or intercept only
+// its specific read), out of scope for a quick pass. clean_maps_fd()/is_maps() kept but unused.
 static int my_openat(int dirfd, const char *path, int flags, ...) {
     if (g_trace) trace_path("openat", path);
     if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
@@ -374,6 +416,11 @@ public:
         g_hide_root = true;
         auto hr = profile.find("hide_root");
         if (hr != profile.end() && hr->second == "0") g_hide_root = false;
+        // A writable dir we own, for temp files (cleaned maps etc.).
+        if (!pkg.empty()) {
+            g_files_dir = "/data/data/" + pkg + "/files";
+            mkdir(g_files_dir.c_str(), 0700);
+        }
 
         // boot_id: a per-boot UUID FPJS reads (tracer-proven). Derive a stable per-identity UUID from
         // android_id and redirect the file. hwcap: drop-only feature-bit tweak so the CPU mask varies.
