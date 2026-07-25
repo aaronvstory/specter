@@ -141,24 +141,28 @@ static fstatat_t orig_fstatat = nullptr;
 static statx_t orig_statx = nullptr;
 
 static int my_stat(const char *path, struct stat *st) {
+    if (g_trace) trace_path("stat", path);
     if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     int r = orig_stat(path, st);
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
 }
 static int my_lstat(const char *path, struct stat *st) {
+    if (g_trace) trace_path("lstat", path);
     if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     int r = orig_lstat(path, st);
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
 }
 static int my_fstatat(int dirfd, const char *path, struct stat *st, int flags) {
+    if (g_trace) trace_path("fstatat", path);
     int r = orig_fstatat(dirfd, path, st, flags);
     // The reset markers are absolute paths, so dirfd is irrelevant when the path matches.
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
 }
 static int my_statx(int dirfd, const char *path, int flags, unsigned int mask, struct statx *stx) {
+    if (g_trace) trace_path("statx", path);
     int r = orig_statx(dirfd, path, flags, mask, stx);
     if (r == 0 && stx && g_reset_epoch != 0 && is_reset_marker(path)) {
         stx->stx_mtime.tv_sec = g_reset_epoch; stx->stx_mtime.tv_nsec = 0;

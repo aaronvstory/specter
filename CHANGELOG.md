@@ -18,6 +18,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
 ### Added
+- **APK install-time spoofing — closes FingerprintJS Pro's `FileTimestamps` raw signal.** Decompiling
+  the SDK showed a single raw-signal provider that reads three file timestamps; on-device tracing
+  proved they are the mtimes of the app's own `/data/app/.../base.apk` + `split_config.*.apk` — the
+  INSTALL time, constant across every rotation. `File.lastModified()` and `android.system.Os.stat/lstat`
+  are now hooked to return a per-identity install time derived from `factory_reset_epoch` (install ~5
+  weeks after the reset; base/split spread 0–12s) for the target's own APKs only. No new profile field,
+  no RNG — byte-parity safe.
 - **User-Agent spoofing — closes the PROVEN FingerprintJS visitorId anchor.** The default HTTP
   User-Agent (`System.getProperty("http.agent")`) and the WebView UA
   (`WebSettings.getDefaultUserAgent`) are now rebuilt from the profile's own

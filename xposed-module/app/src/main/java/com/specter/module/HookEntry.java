@@ -53,7 +53,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookHardwareInfo(lpparam, p);
         hookHardwareSignals(lpparam, p);
         hookStorage(lpparam, p);
-        hookFactoryResetTime(p);
+        hookFactoryResetTime(pkg, p);
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -389,16 +389,22 @@ public class HookEntry implements IXposedHookLoadPackage {
             "/data/vendor", "/data/dalvik-cache", "/data/misc", "/data/system",
     };
 
-    private void hookFactoryResetTime(final Map<String, String> p) {
+    private void hookFactoryResetTime(final String pkg, final Map<String, String> p) {
         String v = p.get("factory_reset_epoch");
         if (v == null) return;
         final long millis;
         try { millis = Long.parseLong(v) * 1000L; } catch (Throwable t) { return; }
+        final long resetSecs = millis / 1000L;
         try {
             XposedBridge.hookAllMethods(File.class, "lastModified", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
                     if (!(mp.thisObject instanceof File)) return;
-                    if (isResetMarker(((File) mp.thisObject).getAbsolutePath())) mp.setResult(millis);
+                    String ap = ((File) mp.thisObject).getAbsolutePath();
+                    if ("1".equals(p.get("trace"))) XposedBridge.log("[specter][lastmod] " + ap);
+                    if (isResetMarker(ap)) { mp.setResult(millis); return; }
+                    // The app's own APK install-time — FPJS Pro's FileTimestamps visitorId anchor.
+                    if (SpoofLogic.isOwnApk(ap, pkg))
+                        mp.setResult(SpoofLogic.apkInstallSeconds(resetSecs, ap) * 1000L);
                 }
             });
         } catch (Throwable t) { XposedBridge.log("[specter] factory-reset File hook fail: " + t); }
@@ -411,10 +417,16 @@ public class HookEntry implements IXposedHookLoadPackage {
         final long secs = millis / 1000L;
         try {
             Class<?> os = XposedHelpers.findClass("android.system.Os", null);
+            final boolean trace = "1".equals(p.get("trace"));
             XC_MethodHook statHook = new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
                     if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
-                    if (!isResetMarker((String) mp.args[0])) return;
+                    String path = (String) mp.args[0];
+                    if (trace) XposedBridge.log("[specter][osstat] " + path);
+                    long spoofSecs;
+                    if (isResetMarker(path)) spoofSecs = secs;
+                    else if (SpoofLogic.isOwnApk(path, pkg)) spoofSecs = SpoofLogic.apkInstallSeconds(secs, path);
+                    else return;
                     Object st = mp.getResult();
                     if (st == null) return;
                     // Rewrite ctime/atime alongside mtime: leaving them real would leak the true
@@ -425,7 +437,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                         try {
                             Field fl = st.getClass().getField(f);
                             fl.setAccessible(true);
-                            fl.setLong(st, secs);
+                            fl.setLong(st, spoofSecs);
                         } catch (Throwable ignored) {}
                     }
                 }

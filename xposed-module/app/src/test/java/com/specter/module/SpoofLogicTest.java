@@ -57,6 +57,23 @@ public class SpoofLogicTest {
                         + " Chrome/120.0.6099.43 Mobile Safari/537.36"),
                 "webview UA matches the AOSP shape");
 
+        // APK install-time anchor (FPJS FileTimestamps). Match only the target's own /data/app APKs.
+        String own = "/data/app/~~abc==/com.fingerprintjs.android.fpjs_pro_demo-xyz==/base.apk";
+        String split = "/data/app/~~abc==/com.fingerprintjs.android.fpjs_pro_demo-xyz==/split_config.arm64_v8a.apk";
+        String pkg = "com.fingerprintjs.android.fpjs_pro_demo";
+        check(SpoofLogic.isOwnApk(own, pkg), "base.apk of own pkg matches");
+        check(SpoofLogic.isOwnApk(split, pkg), "split apk of own pkg matches");
+        check(!SpoofLogic.isOwnApk("/data/app/~~q==/com.pyshivam.geergit-1==/base.apk", pkg), "another pkg's apk not matched");
+        check(!SpoofLogic.isOwnApk("/data/user/0/" + pkg + "/files/x.apk", pkg), "app's data-dir file not matched (only /data/app)");
+        check(!SpoofLogic.isOwnApk("/data/app/~~q==/" + pkg + "-1==/lib/arm64/x.so", pkg), "non-apk in own dir not matched");
+        check(!SpoofLogic.isOwnApk(null, pkg) && !SpoofLogic.isOwnApk(own, null), "null-safe");
+        long reset = 1618552951L;
+        long baseT = SpoofLogic.apkInstallSeconds(reset, own);
+        check(baseT > reset, "install time is AFTER the factory reset");
+        check(baseT == SpoofLogic.apkInstallSeconds(reset, own), "stable per (reset, path)");
+        check(SpoofLogic.apkInstallSeconds(reset, split) - reset - SpoofLogic.APK_INSTALL_OFFSET_SEC < 13,
+                "split spread stays within 0..12s of the base offset");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

@@ -68,4 +68,34 @@ public final class SpoofLogic {
                 + "; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/"
                 + chromeVersion + " Mobile Safari/537.36";
     }
+
+    // Real installs land the app's APKs a while after the factory reset (you reset, then install apps),
+    // and the base/split APKs are written within a few seconds of each other. This must land AFTER the
+    // reset epoch and stay stable per (identity, path).
+    static final long APK_INSTALL_OFFSET_SEC = 37 * 24 * 3600L;   // ~5 weeks after the reset — a used phone
+
+    /**
+     * True when {@code path} is one of the target app's OWN installed APKs under /data/app.
+     * PROVEN 2026-07-25 to be FingerprintJS Pro's `FileTimestamps` raw signal / visitorId anchor: the
+     * SDK reads {@code File.lastModified()} on base.apk + split_config.*.apk, whose mtimes are the
+     * INSTALL time — set once, identical across every identity rotation, unique to this install. Match
+     * only this app's own package dir so we never rewrite mtimes of other files the app legitimately uses.
+     */
+    public static boolean isOwnApk(String path, String pkg) {
+        if (path == null || pkg == null) return false;
+        return path.startsWith("/data/app/") && path.endsWith(".apk") && path.contains("/" + pkg + "-");
+    }
+
+    /**
+     * Spoofed install mtime (SECONDS) for an own-APK path: a stable per-identity value derived from the
+     * factory-reset epoch, offset so the install plausibly follows the reset. Base and split APKs get a
+     * small deterministic spread (0..12s from the path hash) so they are not byte-identical, as on a real
+     * multi-APK install. Pure function of (resetEpoch, path) — no wall clock, no RNG — so it is stable
+     * within a boot and identical wherever it is recomputed.
+     */
+    public static long apkInstallSeconds(long resetEpoch, String path) {
+        long base = resetEpoch + APK_INSTALL_OFFSET_SEC;
+        int spread = path == null ? 0 : (Math.abs(path.hashCode()) % 13);   // 0..12s, stable per path
+        return base + spread;
+    }
 }

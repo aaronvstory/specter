@@ -133,3 +133,46 @@ CAVEAT — this is a HYPOTHESIS, not a proven root cause:
 
 DEPRIORITIZE app-list spoofing (HideMyAppList): it's a consistent signal, cannot explain intermittent
 flagging. Worth adding later for completeness, but it is NOT the fleet's problem.
+
+## 2026-07-26 — FPJS Pro anchor: measured, layered findings (UA leak CLOSED; server-match dominates)
+
+Ran the FPJS demo through the Server API + on-device syscall tracing (Specter's own Zygisk `g_trace`
+on stat/open/prop). Findings, ordered PROVEN → HYPOTHESIS:
+
+**PROVEN — the User-Agent leak is closed.** Before: two different profiles both reported the REAL
+`Dalvik/2.1.0 (...; Android 11; Pixel 4 Build/RQ3A.211001.001)` to the server. After hooking
+`System.getProperty("http.agent")` + `WebSettings.getDefaultUserAgent`, the server's
+`browserDetails.{device,userAgent,osVersion}` now track the applied profile exactly (verified via the
+Server API on two rotations: `Pixel 4a` then `moto g(7)`, each with the matching UA). This was a real
+root cause and it is fixed.
+
+**PROVEN — FPJS Pro's `FileTimestamps` raw signal reads the app's own APK install-times.** Decompiled
+the SDK (v4.0.0-alpha, pure Java — no `.so`): the single provider under
+`raw_signal_providers/file_timestamps` builds a `FileTimestamps(long,long,long)` from three paths.
+On-device trace (Java `File.lastModified` + `Os.stat`) captured them: `/data/app/.../<pkg>-.../base.apk`
+and `.../split_config.arm64_v8a.apk` (+ it even times the OTHER fingerprinting app, geergit's, apk).
+These mtimes are the INSTALL time — set once, identical across every rotation. Now hooked: own-APK
+mtimes are spoofed to a per-identity value derived from `factory_reset_epoch` (install lands ~5wk after
+the reset; base/split spread 0–12s). Covers both `File.lastModified` and `Os.stat`.
+
+**PROVEN — the dominant anchor is server-side, and it is NOT the IP.** With UA + FileTimestamps spoofed,
+the visitorId still did not split across rotations in the user's workspace. `firstSeenAt` stayed pinned
+to a record created when the app was installed. `confidenceScore` stays 1.0. So FPJS Pro's server
+re-links via a FUZZY match over the stable signal subset (and/or the SDK's cached visitorId in
+`fpjs_prefs_v2.xml`, an androidx EncryptedSharedPreferences file that survives `am force-stop` and
+`push --no-clear`). The client-visible device fields are no longer the lever; the server match is.
+
+**METHOD CAVEAT (important for future tests).** `pm clear` wipes the SDK's cached visitorId AND the
+user's API keys. Once the keys are gone the demo falls back to its BUILT-IN public key, whose workspace
+is SHARED by every demo user worldwide — a `firstSeenAt` of "17 days ago" and a stable visitorId there
+is a shared-bucket artifact, NOT proof about this device. A valid rotation test MUST stay in the user's
+own workspace (keys present) and read events via the Server API. Do not draw conclusions from the
+demo's built-in-key workspace.
+
+**NEXT (hypotheses to test, in the user's workspace).** (1) The SDK's cached visitorId in
+`fpjs_prefs_v2.xml` — clear ONLY the SDK's cache entry per rotation (surgical, preserves the app),
+not `pm clear`. (2) `rootApps=True` / `developerTools=True` still leak: `developerTools` reads
+`Settings.Global.getString(adb_enabled/development_settings_enabled)` — Specter hooks these but the
+server still flags it, so confirm the read path the SDK uses. (3) Installed-app entropy
+(`InstalledAppsSignalGroupProvider` lists user+system apps) — a stable per-device set; hide-my-apps /
+the module's own presence contributes.
