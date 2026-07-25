@@ -345,6 +345,29 @@ static unsigned long my_getauxval(unsigned long type) {
     return v;
 }
 
+// ================= glGetString hook (GPU renderer — a hardware-characteristic signal) =================
+// The GPU renderer/vendor string ("Adreno (TM) 640", "Qualcomm") is a strong, STABLE hardware signal a
+// fingerprinter reads via libGLESv2's glGetString(GLenum) — a direct-JNI / native call the Xposed Java
+// hook on android.opengl.GLES20 cannot reach in a native reader. Return the profile's coherent per-model
+// value for GL_RENDERER/GL_VENDOR/GL_VERSION; pass everything else (extensions, etc.) straight through.
+// Strings are stored in process-lifetime globals so the returned pointer stays valid after we return.
+#define GL_VENDOR_ENUM   0x1F00
+#define GL_RENDERER_ENUM 0x1F01
+#define GL_VERSION_ENUM  0x1F02
+static std::string g_gl_renderer, g_gl_vendor, g_gl_version;
+using glGetString_t = const unsigned char *(*)(unsigned int);
+static glGetString_t orig_glGetString = nullptr;
+static const unsigned char *my_glGetString(unsigned int name) {
+    if (g_trace) __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "glGetString 0x%x", name);
+    if (name == GL_RENDERER_ENUM && !g_gl_renderer.empty())
+        return reinterpret_cast<const unsigned char *>(g_gl_renderer.c_str());
+    if (name == GL_VENDOR_ENUM && !g_gl_vendor.empty())
+        return reinterpret_cast<const unsigned char *>(g_gl_vendor.c_str());
+    if (name == GL_VERSION_ENUM && !g_gl_version.empty())
+        return reinterpret_cast<const unsigned char *>(g_gl_version.c_str());
+    return orig_glGetString(name);
+}
+
 // Why inline hooks, not PLT: bionic's __system_property_get calls __system_property_read_callback via
 // an INTERNAL direct call, not through libc's PLT. PLT hooking only rewrites a *caller library's* GOT
 // import, so it can never intercept that internal path (proven on-device: the PLT attempt reported a
@@ -410,6 +433,16 @@ public:
         auto ep = profile.find("factory_reset_epoch");
         if (ep != profile.end()) g_reset_epoch = strtol(ep->second.c_str(), nullptr, 10);
 
+        // GPU renderer/vendor/version — the profile's coherent per-model values (GOAL 1.3). Read here;
+        // the glGetString inline hook returns them. GL_VERSION is shaped like a real driver string.
+        auto gr = profile.find("hw_gpu_renderer");
+        if (gr != profile.end()) g_gl_renderer = gr->second;
+        auto gv = profile.find("hw_gpu_vendor");
+        if (gv != profile.end()) g_gl_vendor = gv->second;
+        auto gl = profile.find("hw_gles_version");
+        if (gl != profile.end() && !gl->second.empty())
+            g_gl_version = "OpenGL ES " + gl->second + " V@0.0";
+
         auto tr = profile.find("trace");
         if (tr != profile.end() && tr->second == "1") g_trace = true;
         // Hide root by default for every Specter target (a rooted-device flag is a strong linking signal).
@@ -470,7 +503,8 @@ public:
         }
 
         if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&
-            g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root) return;
+            g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root &&
+            g_gl_renderer.empty() && g_gl_vendor.empty() && g_gl_version.empty()) return;
         installHooks();
     }
 
@@ -521,6 +555,21 @@ private:
         }
         if (g_spoof_hwcap || g_trace) {
             applied += hookSym("getauxval", (void *) my_getauxval, (void **) &orig_getauxval);
+        }
+        // glGetString (GPU renderer/vendor/version). libGLESv2.so may not be loaded yet at
+        // specialize-time (it loads when the app first touches GL), so dlopen it to resolve the symbol;
+        // the inline patch then applies to the real function every later caller uses. Best-effort — if
+        // the lib can't be opened the app just isn't a GL reader, and nothing is lost.
+        if (!g_gl_renderer.empty() || !g_gl_vendor.empty() || !g_gl_version.empty()) {
+            void *glh = dlopen("libGLESv2.so", RTLD_NOW | RTLD_NOLOAD);
+            if (!glh) glh = dlopen("libGLESv2.so", RTLD_NOW);
+            void *sym = glh ? dlsym(glh, "glGetString") : dlsym(RTLD_DEFAULT, "glGetString");
+            if (sym && !g_hooked_addrs.count(sym)) {
+                void *tramp = nullptr;
+                A64HookFunction(sym, (void *) my_glGetString, &tramp);
+                if (tramp) { g_hooked_addrs[sym] = true; orig_glGetString = (glGetString_t) tramp; applied++; }
+                else LOGD("A64HookFunction glGetString failed");
+            } else if (!sym) LOGD("glGetString unresolved (no GL lib)");
         }
         if (g_trace) {
             applied += hookSym("dlsym", (void *) my_dlsym, (void **) &orig_dlsym);
