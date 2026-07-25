@@ -76,3 +76,25 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   string alone** — a rotating visitorId would be the pass signal; an unchanged one with `firstSeenAt` weeks
   in the past is proof of re-linking. Record the whole `identification` block (eventId to prove the call was
   fresh, firstSeenAt to prove the age of the link) when re-running this test, not just the id.
+- **2026-07-25 · Hook BOTH `File.lastModified` and `Os.stat` for any filesystem-metadata signal** — the
+  File-only hook was verified active on-device and the spoofed value verified returned, and FPJS Pro
+  STILL read the real reset time, because it goes through `android.system.Os.stat().st_mtime`. One fact,
+  two independent Java read paths; spoofing the obvious one is a cosmetic fix. The parity test now
+  asserts both, so this can't regress. Generalises the same lesson as `Build.MODEL` vs `ro.product.model`.
+- **2026-07-25 · `factory_reset_epoch` is derived from `build_security_patch`, not from a bare epoch** —
+  coherence has to hold by construction, not by luck: an offset from the build's own patch date can
+  never produce a device "reset before its OS existed". Cost is one extra generator argument; the
+  alternative (random epoch + a validation retry loop) would burn RNG draws and complicate parity.
+- **2026-07-25 · The new draw is appended LAST in the profile dict** — the seeded RNG is consumed in
+  dict order, so inserting a draw anywhere else would change every subsequent field's value for the
+  same seed and invalidate the no-reuse ledger. Appending is the only position that is parity-neutral
+  for existing fields. Proven with a 200-seed Java-vs-Python dump diff, not assumed.
+- **2026-07-25 · `factory_reset_epoch` reads NO wall clock — determinism beats a "never future" clamp**
+  (code-review catch). The first cut clamped the value against `now()` sampled independently in Python
+  and Java; a review proved that if the clamp ever fired, the two runtimes (different process, different
+  instant) would diverge and break byte-parity — latent today (all pool patches are old enough) but a
+  silent trap the moment the pool gains a recent phone. Fix: drop the clamp, make the value a pure
+  function of (r, patch). "Never in the future" is now enforced by a TEST
+  (test_factory_reset_is_after_the_build_and_in_the_past) that goes red — loudly — if a too-new patch
+  enters the pool, instead of being silently patched over at runtime. A loud test failure is the right
+  place for this invariant, not a clock read inside a parity-critical generator.

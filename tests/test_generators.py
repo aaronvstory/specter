@@ -123,3 +123,54 @@ def test_advertising_id_is_rfc4122_v4():
         assert v[14] == "4", f"version nibble not 4: {v}"
         assert v[19] in "89ab", f"variant bits wrong: {v}"
         assert G.validate("advertising_id", v)
+
+
+# ---- factory-reset timestamp (the FPJS Pro `factoryReset` smart signal) ----
+# FPJS re-identified the device across three full identity rotations via the factory-reset time,
+# read from the mtime of dirs written once at reset (/data/misc/profiles, /data/bootchart).
+# Spoofing it must produce a value that is stable per identity and PLAUSIBLE, not just different.
+
+def test_factory_reset_epoch_is_a_plausible_past_unix_time():
+    import time
+    now = int(time.time())
+    for _ in range(500):
+        v = G.factory_reset_epoch(r)
+        assert v.isdigit(), f"must be a digit string, got {v!r}"
+        e = int(v)
+        # never in the future — a device reset tomorrow is impossible and is itself a tell
+        assert e < now, f"{e} is in the future (now={now})"
+        # and not absurdly old: Android device, so within the last ~6 years
+        assert e > now - 6 * 365 * 86400, f"{e} is implausibly old"
+
+
+def test_factory_reset_epoch_validates():
+    for _ in range(200):
+        assert G.validate("factory_reset_epoch", G.factory_reset_epoch(r))
+
+
+def test_factory_reset_epoch_rejects_bad_values():
+    for bad in ("", "abc", "-1", "0", "99999999999999", "1.5"):
+        assert not G.validate("factory_reset_epoch", bad), f"{bad!r} should be rejected"
+
+
+def test_factory_reset_epoch_varies():
+    """Distinct identities must get distinct reset times, or it becomes a shared linking signal."""
+    seen = {G.factory_reset_epoch(r) for _ in range(200)}
+    assert len(seen) > 150, f"too few distinct values ({len(seen)}/200) — weak entropy"
+
+
+def test_factory_reset_epoch_is_deterministic_no_wallclock():
+    """The value must be a pure function of (r, patch) — no wall-clock read — or Python (which
+    generates the profile) and Java (which re-derives it only in the parity harness) can silently
+    diverge. Regression guard for the clamp-branch parity bug: a recent patch that WOULD have tripped
+    the old wall-clock clamp must still be reproducible bit-for-bit from the same seed."""
+    from specter import profile as P
+    recent = "2025-06-01"  # newer than any real pool device — the case the old clamp mishandled
+    a = G.factory_reset_epoch(P._seeded(42), recent)
+    b = G.factory_reset_epoch(P._seeded(42), recent)
+    assert a == b, "not deterministic for a recent patch"
+    # and the offset stays within the documented 1..540-day window above the patch
+    import calendar
+    base = calendar.timegm((2025, 6, 1, 0, 0, 0, 0, 0, 0))
+    off = int(a) - base
+    assert 0 < off <= (G.FACTORY_RESET_MAX_DAYS_AFTER_PATCH + 1) * G.SECONDS_PER_DAY, off

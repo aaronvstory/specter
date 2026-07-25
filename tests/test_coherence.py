@@ -58,3 +58,27 @@ def test_soc_is_a_real_platform_codename():
     for p in _profiles():
         soc = p["soc_platform"]
         assert re.fullmatch(r"[a-z0-9]{4,10}", soc), f"implausible SoC {soc!r}"
+
+
+def test_factory_reset_is_after_the_build_and_in_the_past():
+    """A device cannot be factory-reset before its own OS was built, nor in the future.
+
+    FPJS Pro reports `factoryReset` as a first-class smart signal, so the value has to survive a human
+    (or model) sanity check: reset time > security-patch date of the running build, and < now.
+    A reset "before the phone existed" is a louder tell than not spoofing at all.
+    """
+    import datetime as dt
+    now = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    for p in _profiles(200):
+        e = int(p["factory_reset_epoch"])
+        patch = dt.datetime.strptime(p["build_security_patch"], "%Y-%m-%d").replace(
+            tzinfo=dt.timezone.utc)
+        assert e > int(patch.timestamp()), (
+            f"reset {e} predates the build's security patch {p['build_security_patch']} "
+            f"({p['build_fingerprint']})")
+        assert e < now, f"reset {e} is in the future"
+
+
+def test_factory_reset_present_in_every_profile():
+    for p in _profiles(50):
+        assert p.get("factory_reset_epoch"), "every profile must carry a factory-reset time"

@@ -81,3 +81,34 @@ def test_cursor_wrapper_covers_blob_and_buffer():
     java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/HookEntry.java")).read()
     assert "getBlob" in java, "cursor must override getBlob"
     assert "copyStringToBuffer" in java, "cursor must override copyStringToBuffer"
+
+
+def test_module_hooks_file_last_modified_for_factory_reset():
+    """The factory-reset time leaks via File.lastModified() on dirs written once at reset.
+
+    PROVEN 2026-07-25: FPJS Pro re-identified the device across three identity rotations using this
+    signal. The hook must (a) target File.lastModified, (b) know the reset-marker paths, and (c) match
+    an explicit path set — lastModified is a very hot generic call, so a broad match breaks target apps.
+    """
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/HookEntry.java")).read()
+    assert "lastModified" in java, "must hook java.io.File.lastModified"
+    for path in ("/data/misc/profiles", "/data/bootchart"):
+        assert path in java, "must cover the reset-marker path " + path
+    assert "factory_reset_epoch" in java, "must read the spoofed reset time from the profile"
+    # BOTH read paths, or the fix is cosmetic: PROVEN 2026-07-25 that FPJS Pro read the real value via
+    # android.system.Os.stat().st_mtime while the File.lastModified hook was verified active. Hooking
+    # one path and declaring victory is exactly the failure this test exists to prevent.
+    assert "android.system.Os" in java, "must hook android.system.Os (the path FPJS actually uses)"
+    assert '"stat"' in java and '"lstat"' in java, "must hook both Os.stat and Os.lstat"
+    assert "st_mtime" in java, "must rewrite StructStat.st_mtime"
+
+
+def test_module_keys_match_python_profile_keys():
+    """Profile.KEYS (Java) must match the Python dict order exactly, or byte-parity is broken."""
+    from specter import profile as P
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/gen/Profile.java")).read()
+    m = re.search(r"KEYS\s*=\s*\{(.*?)\};", java, re.S)
+    assert m, "Profile.KEYS not found"
+    java_keys = re.findall(r'"([^"]+)"', m.group(1))
+    py_keys = list(P.generate_unique(None).keys())
+    assert java_keys == py_keys, "key order drift\n java: %s\n  py : %s" % (java_keys, py_keys)

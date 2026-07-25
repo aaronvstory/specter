@@ -134,6 +134,11 @@ def build_profile(r, devices, us_bias=True, country="US"):
         "build_host": G.build_host(r),
         "build_display": build_id,
         "soc_platform": G.soc_platform(r, product),
+        # Factory-reset time — the signal FPJS Pro used to re-link three rotated identities (PROVEN
+        # 2026-07-25). Derived from this build's security patch so the pair is coherent by construction
+        # (a device can't be reset before its own OS was built). LAST in the dict, so the draw is
+        # appended to the end of the RNG order and every existing field's value is unchanged.
+        "factory_reset_epoch": G.factory_reset_epoch(r, patch),
     }
 
 

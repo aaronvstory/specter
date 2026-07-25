@@ -102,6 +102,47 @@ def build_host(r):
     pre = ["abfarm", "wprd", "SWDG", "vf-build", "r-build", "prod"]
     return pre[r(len(pre))] + "-" + digits(r, 5)
 
+# ---------- factory-reset timestamp ----------
+# FPJS Pro reports `factoryReset` as a first-class smart signal, read from the mtime of directories
+# written once at reset (/data/misc/profiles, /data/bootchart — readable without root). PROVEN
+# 2026-07-25: it re-identified the device across three full identity rotations, so a real value here
+# defeats every other field we spoof.
+#
+# Coherence, not just difference: the value must land AFTER the running build's security patch (a
+# device cannot be reset before its own OS was built) and BEFORE now. So it is generated as an offset
+# from the patch date rather than from a bare epoch — the patch date is already in the profile, which
+# makes the pair coherent by construction instead of by luck.
+#
+# Deterministic in r() alone (no wall-clock inside the seeded path) so Java mirrors it byte-for-byte.
+# RNG order: one draw for the day offset, one for the seconds-within-day.
+FACTORY_RESET_MAX_DAYS_AFTER_PATCH = 540   # ~18 months: a plausible ownership window
+SECONDS_PER_DAY = 86400
+
+
+def factory_reset_epoch(r, security_patch=None):
+    """Unix seconds of a plausible factory reset. Mirrors Java factoryResetEpoch.
+
+    The reset lands 1..N days after the build's `security_patch`, where N is bounded so the value can
+    NEVER exceed the patch date by more than ~18 months. There is deliberately NO wall-clock read: the
+    result is a pure function of (r, security_patch), so Python (which generates the profile PC-side)
+    and Java (which only re-derives it in the byte-parity test harness) always agree for the same seed.
+
+    "Never in the future" holds by construction as long as the pool's patches are older than ~18 months,
+    which is enforced by test_factory_reset_is_after_the_build_and_in_the_past. That test IS the guard:
+    if the device pool ever gains a phone with a patch newer than ~18 months ago, it goes red and this
+    bound (or the pool) must be revisited — a loud failure instead of a silent parity drift.
+    """
+    import calendar
+    if security_patch:
+        y, m, d = (int(x) for x in security_patch.split("-"))
+        base = calendar.timegm((y, m, d, 0, 0, 0, 0, 0, 0))
+    else:
+        base = calendar.timegm((2023, 1, 1, 0, 0, 0, 0, 0, 0))
+    days = 1 + r(FACTORY_RESET_MAX_DAYS_AFTER_PATCH)
+    secs = r(SECONDS_PER_DAY)
+    return str(base + days * SECONDS_PER_DAY + secs)
+
+
 _SOC_BY_DEVICE = {
     "flame": "msmnile", "coral": "msmnile", "redfin": "lito", "bramble": "lito",
     "sunfish": "sm6150", "barbet": "lito", "oriole": "gs101", "raven": "gs101",
@@ -296,6 +337,11 @@ def ssid(r):
     return nets[r(len(nets))] + digits(r, 2)
 
 # ---------- validators (runtime correctness checks) ----------
+def _now_epoch():
+    import calendar, datetime as _dt
+    return calendar.timegm(_dt.datetime.now(_dt.timezone.utc).utctimetuple())
+
+
 def validate(key, value):
     """Return True if value has the right format for key. Used by profile.validate()."""
     checks = {
@@ -313,6 +359,8 @@ def validate(key, value):
         "sim_subscriber_imsi": lambda v: len(v) == 15 and v.isdigit(),
         "sim_serial_iccid":    lambda v: len(v) == 20 and v.isdigit() and luhn_valid(v),
         "gsf_id":              lambda v: v.isdigit() and 0 < int(v) <= LONG_MAX,
+        # plausible past unix seconds: after 2015, before now (a future reset is impossible)
+        "factory_reset_epoch": lambda v: bool(re.fullmatch(r"\d{10}", v)) and 1420070400 < int(v) < _now_epoch(),
         "gmail":               lambda v: bool(re.fullmatch(r"[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?@(gmail\.com|outlook\.com|yahoo\.com|hotmail\.com|proton\.me|icloud\.com)", v)),
     }
     fn = checks.get(key)
