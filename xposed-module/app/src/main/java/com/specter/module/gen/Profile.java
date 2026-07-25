@@ -61,12 +61,20 @@ public final class Profile {
             "Tab", "Nexus 7", "Nexus 9", "Nexus 10", "Nexus Player", "Shield", "Pixel C"};
 
     static int releaseMajorOf(List<String> dev) {
+        // Leading-digit-run only, kept in exact lockstep with profile._release_major_of — no locale or
+        // float path, so it can't diverge even if a future row has a non-numeric release string.
         try {
             String slot = dev.get(5);
             int c = slot.indexOf(':');
             String rel = c >= 0 ? slot.substring(c + 1) : "0";
             int dot = rel.indexOf('.');
-            return Integer.parseInt(dot >= 0 ? rel.substring(0, dot) : rel);
+            String head = dot >= 0 ? rel.substring(0, dot) : rel;
+            StringBuilder digits = new StringBuilder();
+            for (int i = 0; i < head.length(); i++) {
+                char ch = head.charAt(i);
+                if (ch >= '0' && ch <= '9') digits.append(ch); else break;
+            }
+            return digits.length() > 0 ? Integer.parseInt(digits.toString()) : 0;
         } catch (Exception e) { return 0; }
     }
 

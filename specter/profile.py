@@ -70,10 +70,18 @@ _NON_PHONE_MARKERS = ("Tab", "Nexus 7", "Nexus 9", "Nexus 10", "Nexus Player", "
 
 
 def _release_major_of(dev):
-    """Android major version from a device row's "model:release" slot (row[5]). 0 if unparseable."""
+    """Android major version from a device row's "model:release" slot (row[5]). 0 if unparseable.
+    Parses ONLY leading digits of the major component — kept in exact lockstep with Java
+    releaseMajorOf (Integer.parseInt of the digit run), so no float/locale path can ever diverge."""
     try:
-        rel = dev[5].split(":", 1)[1] if ":" in dev[5] else "0"
-        return int(float(rel.split(".")[0]))
+        head = dev[5].split(":", 1)[1].split(".")[0] if ":" in dev[5] else "0"
+        digits = ""
+        for ch in head:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        return int(digits) if digits else 0
     except Exception:
         return 0
 
