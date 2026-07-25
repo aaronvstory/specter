@@ -40,6 +40,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         XposedBridge.log("[specter] active for " + pkg + " (" + p.size() + " fields)");
 
         hookBuildFields(p);
+        hookUserAgent(lpparam, p);
         hookSettingsSecure(p);
         hookSettingsGlobal(p);
         hookTelephony(lpparam, p);
@@ -127,15 +128,91 @@ public class HookEntry implements IXposedHookLoadPackage {
     // ---- kernel version (os.version) — a high-entropy FingerprintJS signal ----
     private void hookKernelVersion(final String kernel) {
         if (kernel == null) return;
+        sysProps.put("os.version", kernel);
+        hookSystemGetProperty();
+    }
+
+    // Java system properties (System.getProperty), NOT android.os.SystemProperties. Both "os.version"
+    // and "http.agent" are read through here, and getProperty is hot — register ONE hook and dispatch
+    // from a map, the same pattern as hookSystemProperties below.
+    private final Map<String, String> sysProps = new HashMap<>();
+    private boolean sysPropsHooked = false;
+
+    private void hookSystemGetProperty() {
+        if (sysPropsHooked) return;
+        sysPropsHooked = true;
         // hookAllMethods over findAndHookMethod (the varargs overload NoSuchMethodErrors against
-        // LSPosed's obfuscated XposedHelpers). Cover System.getProperty AND the raw SystemProperties.
+        // LSPosed's obfuscated XposedHelpers).
         try {
             XposedBridge.hookAllMethods(System.class, "getProperty", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    if (mp.args.length > 0 && "os.version".equals(mp.args[0])) mp.setResult(kernel);
+                    if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
+                    String v = sysProps.get((String) mp.args[0]);
+                    if (v != null) mp.setResult(v);
                 }
             });
         } catch (Throwable ignored) {}
+    }
+
+    // ---- User-Agent — PROVEN to be FingerprintJS Pro's dominant visitorId anchor (2026-07-26).
+    // The framework builds the UA from Build.MODEL/VERSION.RELEASE/ID in a process that ran BEFORE
+    // our field hooks (libcore caches http.agent at zygote init; WebView builds its UA in the
+    // WebView provider). Result: two totally different profiles both reported
+    //   "Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)"
+    // to the FPJS Server API and collapsed to the SAME visitorId. So rebuild both UA strings from the
+    // profile's build_release/build_model/build_id and serve them on every read path.
+    // Coherent by construction (no new field, no RNG -> byte-parity safe).
+    // The two string builders live in SpoofLogic so the plain-JVM test suite covers their exact shape.
+    private void hookUserAgent(final XC_LoadPackage.LoadPackageParam lp, Map<String, String> p) {
+        final String release = p.get("build_release");
+        final String model = p.get("build_model");
+        final String id = p.get("build_id");
+        if (release == null || model == null || id == null) return;
+
+        // http.agent -> the Dalvik UA. This is what HttpURLConnection/OkHttp send by default and what
+        // the FPJS SDK's server-side browserDetails.userAgent came from.
+        sysProps.put("http.agent", SpoofLogic.dalvikUserAgent(release, model, id));
+        hookSystemGetProperty();
+
+        // WebView UA: keep the device's REAL Chrome version (that part isn't device-identifying and
+        // faking it would be incoherent with the installed WebView), only swap the device segment.
+        final String webUa = SpoofLogic.webViewUserAgent(release, model, id, chromeVersion());
+        try {
+            Class<?> ws = XposedHelpers.findClass("android.webkit.WebSettings", lp.classLoader);
+            // static WebSettings.getDefaultUserAgent(Context) and the instance
+            // WebSettings.getUserAgentString() (WebSettingsClassic/AwSettings subclass it, so hook
+            // the concrete provider class too via hookAllMethods on the returned object's class).
+            XposedBridge.hookAllMethods(ws, "getDefaultUserAgent", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(webUa); }
+            });
+        } catch (Throwable ignored) {}
+        try {
+            // The instance getter lives on the provider impl (WebSettingsWrapper -> AwSettings), not
+            // the abstract WebSettings. ponytail: rewrite unconditionally — an app that set a CUSTOM
+            // UA is not the leak we are closing, and detecting "custom" reliably needs the pre-hook
+            // default we no longer have.
+            Class<?> aw = XposedHelpers.findClass("android.webkit.WebSettingsWrapper", lp.classLoader);
+            XposedBridge.hookAllMethods(aw, "getUserAgentString", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(webUa); }
+            });
+        } catch (Throwable ignored) {}
+        XposedBridge.log("[specter] UA -> " + sysProps.get("http.agent"));
+    }
+
+    // Real installed WebView Chrome version, e.g. "120.0.6099.43". Falls back to a plausible constant
+    // if the package isn't queryable (some apps can't see the WebView provider).
+    private String chromeVersion() {
+        // Plain reflection, not XposedHelpers — the vendored Xposed stub only exposes
+        // setStaticObjectField/findClass/hookAllMethods (see CLAUDE.md).
+        try {
+            Class<?> wv = Class.forName("android.webkit.WebViewFactory");
+            Object info = wv.getMethod("getLoadedPackageInfo").invoke(null);
+            if (info != null) {
+                Object v = info.getClass().getField("versionName").get(info);
+                if (v instanceof String && ((String) v).length() > 0) return (String) v;
+            }
+        } catch (Throwable ignored) {}
+        return "120.0.6099.43";
     }
 
     // ---- baseband/radio — a confirmed FingerprintJS leak. DevInfo (and getRadioVersion itself)

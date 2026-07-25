@@ -17,7 +17,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   hook `WebSettings.getDefaultUserAgent()` + `System.getProperty("http.agent")` + close `rootApps`
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
+### Added
+- **User-Agent spoofing — closes the PROVEN FingerprintJS visitorId anchor.** The default HTTP
+  User-Agent (`System.getProperty("http.agent")`) and the WebView UA
+  (`WebSettings.getDefaultUserAgent`) are now rebuilt from the profile's own
+  `build_release`/`build_model`/`build_id`, so they report the device the identity claims to be.
+  The framework builds both strings at zygote/WebView init from the REAL `Build.*` values, before any
+  in-app field hook runs — which is why two completely different profiles previously both reported
+  `Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)` to the FPJS Server API and
+  collapsed to one visitorId. Derived from existing fields: no new profile key, no RNG draw, so
+  Java<->Python byte-parity is unchanged. `System.getProperty` is now hooked once and dispatched from
+  a map (it also serves `os.version`) rather than per-key on a hot path. Verified on-device: the probe
+  reads the spoofed UA on both paths.
+- The probe reports `http_agent` and `webview_ua`, and `verify_on_device.py` checks the Dalvik UA
+  against the expectation derived from the applied profile — so a UA regression fails the table.
+
 ### Fixed
+- **`Build.MODEL` and `Build.DEVICE` were bound to the wrong dataset columns (coherence leak).**
+  Every generated profile reported the device CODENAME as the marketing model and vice-versa,
+  producing fingerprints like `google/bramble/Pixel 4a (5G):11/...` — a DEVICE slot containing spaces
+  and parentheses, which no real Android build emits, plus `Build.MODEL="flame"` where a real Pixel 4
+  says `"Pixel 4"`. Verified against the physical device (`MODEL="Pixel 4"`, `DEVICE=PRODUCT="flame"`,
+  `fp="google/flame/flame:11/..."`). Fixed identically in `profile.py` and `Profile.java`; the Samsung
+  bootloader base follows the marketing model as before. Java<->Python parity re-proven byte-for-byte
+  over 195 identity/build values. The bug survived because `ProfileTest`'s inline fixtures had the two
+  columns transposed relative to the real `data/devices.json` — the fixtures now mirror production
+  data, and both suites assert the fingerprint's DEVICE slot is a codename.
+- **`tests/test_jvm_logic.py` was silently skipping on every run** (it referenced the pre-rename
+  package `com/fleet/idrotate` and only searched a non-existent vendored JDK), so the Java logic was
+  never exercised from the Python suite. It now resolves the JDK from `JAVA_HOME`/PATH, asserts the
+  sources exist rather than skipping, and runs all four JVM test mains.
+
 - **UsedStore concurrency hardening (ban-critical no-reuse ledger).** Three real defects surfaced by
   a flaky concurrency test, all fixed at the root: (1) `_atomic_write_json` now `fsync`s before
   `os.replace`, so a concurrent reader that sees the renamed file can never read stale/empty content;

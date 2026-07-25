@@ -122,18 +122,21 @@ public final class Profile {
     }
 
     /**
-     * Build a full identity. Device rows are [name, manufacturer, brand, device, product,
-     * "model:release", build_id, incremental, patch]. {@code hardware} maps a device codename to its
+     * Build a full identity. Device rows are [name, manufacturer, brand, MODEL, PRODUCT,
+     * "DEVICE:release", build_id, incremental, patch] — col3 is the MARKETING model (Build.MODEL,
+     * "Pixel 4") and col5's prefix is the DEVICE CODENAME (Build.DEVICE, "flame"), verified against a
+     * real Pixel 4 (MODEL="Pixel 4", DEVICE=PRODUCT="flame", fingerprint "google/flame/flame:11/...").
+     * {@code hardware} maps a device codename to its
      * flat hardware-descriptor fields (from data/hardware.json); when null or a codename is absent,
      * the coherent _default bundle is used so every profile is complete and valid.
      */
     public static Map<String, String> build(Generators.Rng r, List<List<String>> devices, boolean usBias, Country country, Map<String, Map<String, String>> hardware) {
         List<String> dev = pickDevice(r, devices, usBias, country);
-        String manufacturer = dev.get(1), brand = dev.get(2), device = dev.get(3), product = dev.get(4);
-        String modelRel = dev.get(5);
-        int colon = modelRel.indexOf(':');
-        String model = colon >= 0 ? modelRel.substring(0, colon) : modelRel;
-        String release = colon >= 0 ? modelRel.substring(colon + 1) : "11";
+        String manufacturer = dev.get(1), brand = dev.get(2), model = dev.get(3), product = dev.get(4);
+        String deviceRel = dev.get(5);
+        int colon = deviceRel.indexOf(':');
+        String device = colon >= 0 ? deviceRel.substring(0, colon) : deviceRel;
+        String release = colon >= 0 ? deviceRel.substring(colon + 1) : "11";
         String buildId = dev.size() > 6 ? dev.get(6) : "RQ3A.211001.001";
         String incremental = dev.size() > 7 ? dev.get(7) : Generators.digits(r, 7);
         String patch = dev.size() > 8 ? dev.get(8) : "2021-01-01";
@@ -183,9 +186,9 @@ public final class Profile {
         String codename = product;
         int usx = codename.indexOf('_');          // strip LG regional suffix: h1_lra_us -> h1
         if (usx > 0) codename = codename.substring(0, usx);
-        // Bootloader: Samsung derives it from the SM- model (device slot); Google/others from the
-        // codename (device slot = "Pixel 4" would yield a space-containing, incoherent bootloader).
-        String blBase = "samsung".equalsIgnoreCase(brand) ? device : codename;
+        // Bootloader: Samsung derives it from the SM- marketing model; Google/others from the
+        // codename (the marketing model "Pixel 4" would yield a space-containing, incoherent bootloader).
+        String blBase = "samsung".equalsIgnoreCase(brand) ? model : codename;
         p.put("build_bootloader", Generators.bootloader(r, brand, blBase));
         // Build.HARDWARE/BOARD are the board codename too.
         p.put("build_hardware", codename);

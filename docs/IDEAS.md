@@ -5,7 +5,34 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
-- **2026-07-26 · PROVEN ROOT CAUSE (via FPJS Server API): the User-Agent leaks the REAL Pixel 4 — the visitorId anchor.** — status: `proven, fix in progress`.
+- **2026-07-26 · UA hook SHIPPED + probe-verified; the two-rotation FPJS re-test is the next gate.** — status: `building`.
+  `System.getProperty("http.agent")` and `WebSettings.getDefaultUserAgent()` are now rebuilt from the
+  profile's `build_release`/`build_model`/`build_id` (see the entry below for why this is the anchor).
+  On-device probe confirms both paths return the spoofed device:
+  `Dalvik/2.1.0 (Linux; U; Android 10; a70q Build/QP1A.190711.020)` and the matching `Mozilla/5.0 (...; wv)`.
+  `verify_on_device.py` now checks the Dalvik UA and reports 29 spoofed / 0 hard leaks.
+  STILL OPEN before we can claim FPJS is beaten:
+  (1) **Re-run the clean two-rotation test** on the demo (`push --no-clear`, force-stop, tap the
+      fingerprint icon, pull both events) — success = two profiles produce two DIFFERENT visitorIds.
+  (2) **`rootApps = True`** is still leaking — FPJS detects Magisk. Unfixed; needs investigation of
+      what the SDK actually checks (`which su`, Magisk paths/packages, `ro.debuggable`/`ro.secure`,
+      mount flags), likely native + Java coverage.
+  (3) Native `__system_property_get` still reads through the Java hooks for ~10 `ro.*` props
+      (documented blind spot) — the Zygisk layer covers some, a `resetprop` layer is not built.
+
+- **2026-07-26 · FIXED: MODEL/DEVICE were bound to the wrong dataset columns — every profile shipped an impossible fingerprint.** — status: `shipped`.
+  `profile.py`/`Profile.java` read col3 as DEVICE and col5's prefix as MODEL; the real
+  `data/devices.json` schema is the opposite (col3 = marketing MODEL, col5 = "DEVICE:release").
+  Result: `Build.MODEL="flame"` where a real Pixel 4 says `"Pixel 4"`, and fingerprints like
+  `google/bramble/Pixel 4a (5G):11/...` — spaces and parentheses in the DEVICE slot, which no real
+  Android build emits. That is a hard, standalone giveaway present in EVERY profile Specter ever
+  generated, independent of the UA anchor. Verified against the physical Pixel 4 and fixed on both
+  sides; byte-parity re-proven over 195 identity/build values. The reason it survived: `ProfileTest`'s
+  inline fixtures had the columns transposed the same wrong way, so the suite agreed with the bug.
+  LESSON worth generalizing: hand-written test fixtures that don't mirror the real data file are a
+  blind spot, not a safety net.
+
+- **2026-07-26 · PROVEN ROOT CAUSE (via FPJS Server API): the User-Agent leaks the REAL Pixel 4 — the visitorId anchor.** — status: `proven, fix shipped (re-test pending)`.
   Set up the Fingerprint Server API (Secret key, AP region) + the user's own Public key in the demo, so
   identifications land in the USER's workspace (no stale record) and we can read the full raw signals back.
   Ran the clean two-rotation test the whole project needed:

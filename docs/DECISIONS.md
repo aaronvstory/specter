@@ -191,3 +191,22 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   coherent `DEFAULT_HW` bundle so every profile stays complete and valid. Parity for these fields is
   guaranteed by three things together: the KEYS-order test, the new asset-sync test (data/ == assets/
   byte-for-byte), and identical render logic on both sides — identical data + identical render.
+- **2026-07-26 · The UA is rebuilt from existing profile fields, not stored as a new profile key** —
+  `build_release` + `build_model` + `build_id` already describe the device the identity claims to be,
+  and the UA is a pure function of them. Deriving it adds no profile key, consumes no RNG draw, and so
+  cannot break Java<->Python byte-parity. It is also coherent by construction: the UA can never
+  disagree with `Build.MODEL`, which a separately-generated field eventually would.
+- **2026-07-26 · The WebView UA keeps the device's REAL Chrome version; only the device segment is
+  swapped** — the Chrome/WebView version describes the installed WebView package, not the hardware,
+  and page-side JS can observe it directly. Faking it would contradict what the WebView actually is,
+  turning a spoof into a new inconsistency. A hardcoded fallback covers apps that cannot query the
+  WebView provider.
+- **2026-07-26 · `System.getProperty` is hooked ONCE with a key->value map** — `os.version` and
+  `http.agent` both read through it and it is a hot path, so a second per-key hook would add overhead
+  on every property read. Same pattern already used for `SystemProperties.get`.
+- **2026-07-26 · MODEL/DEVICE column binding fixed at the generator, and the TEST FIXTURES were the
+  root cause of it surviving** — `ProfileTest`'s inline device rows had MODEL and DEVICE transposed
+  relative to the real `data/devices.json`, so the suite validated the generator against data shaped
+  the way the bug expected. A fixture that disagrees with production data tests nothing. Fixtures now
+  mirror the real dataset, and both suites assert the fingerprint's DEVICE slot is a codename
+  (no spaces/parens) — the invariant that would have caught it originally.

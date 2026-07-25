@@ -152,10 +152,16 @@ def _pick_device(r, devices, us_bias, brands=None):
 def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     cc = country_of(country)
     dev = _pick_device(r, devices, us_bias, cc["brands"])
-    manufacturer, brand, device, product = dev[1], dev[2], dev[3], dev[4]
-    model_rel = dev[5]
-    model = model_rel.split(":")[0]
-    release = model_rel.split(":")[1] if ":" in model_rel else "11"
+    # Dataset row: [name, manufacturer, brand, MODEL, PRODUCT, "DEVICE:release", id, incremental, patch].
+    # col3 is the MARKETING model (Build.MODEL, "Pixel 4"), col5's prefix is the DEVICE CODENAME
+    # (Build.DEVICE, "flame") — verified against a real Pixel 4: MODEL="Pixel 4", DEVICE=PRODUCT="flame",
+    # fingerprint "google/flame/flame:11/...". Binding them the other way round produced fingerprints
+    # like "google/bramble/Pixel 4a (5G):11/..." — a DEVICE slot containing spaces and parentheses,
+    # which no real Android build ever emits, i.e. a hard giveaway in every profile.
+    manufacturer, brand, model, product = dev[1], dev[2], dev[3], dev[4]
+    device_rel = dev[5]
+    device = device_rel.split(":")[0]
+    release = device_rel.split(":")[1] if ":" in device_rel else "11"
     build_id = dev[6] if len(dev) > 6 else "RQ3A.211001.001"
     incremental = dev[7] if len(dev) > 7 else G.digits(r, 7)
     patch = dev[8] if len(dev) > 8 else "2021-01-01"
@@ -170,8 +176,8 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # Board/platform CODENAME lives in the product slot ("flame" for a Pixel 4), not the marketing
     # device name ("Pixel 4"). LG products carry a region suffix (h1_lra_us) — strip it.
     codename = product.split("_")[0]
-    # Samsung derives its bootloader from the SM- model (device slot); others from the codename.
-    bl_base = device if brand.lower() == "samsung" else codename
+    # Samsung derives its bootloader from the SM- marketing model; others from the codename.
+    bl_base = model if brand.lower() == "samsung" else codename
     # Look up the per-model hardware bundle ONCE — its SoC drives soc_platform (so the reported SoC is
     # coherent with the GPU/cpuinfo the same profile carries), and the whole entry is reused for the
     # hardware fields appended at the end. Missing codename -> the coherent _default bundle.

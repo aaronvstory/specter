@@ -40,6 +40,9 @@ CHECKS = {
     # Hardware descriptors (GOAL 1.3) — direct-equality fields. GPU/sensors/cpuinfo are compound and
     # checked in their own block below.
     "hw_gles_version": "hw_gles_version", "hw_cores": "hw_cores", "hw_cameras": "hw_cameras",
+    # User-Agent — PROVEN to be FPJS Pro's dominant visitorId anchor. Derived, not a profile field
+    # (see expected_user_agent below), so its expectation is injected into `applied` before the diff.
+    "http_agent": "_expect_http_agent",
 }
 # Known real Pixel-4 markers — if any appears in a probe value, that's a hard leak.
 REAL_MARKERS = ["flame", "Pixel 4", "g8150-00088-210507", "4.14.212", "google/flame"]
@@ -63,6 +66,12 @@ def main():
         print("FAIL: no profile for the probe — apply an identity in Specter first.")
         return 2
     applied = json.loads(applied_raw)
+    # The UA is derived from three build fields, not stored in the profile — mirror HookEntry's
+    # rebuild (SpoofLogic.dalvikUserAgent) so the diff below can check it like any other field.
+    if all(applied.get(k) for k in ("build_release", "build_model", "build_id")):
+        applied["_expect_http_agent"] = (
+            f"Dalvik/2.1.0 (Linux; U; Android {applied['build_release']}; "
+            f"{applied['build_model']} Build/{applied['build_id']})")
 
     # 2. relaunch the probe fresh so Specter re-hooks it
     adb("shell", "am", "force-stop", PROBE)

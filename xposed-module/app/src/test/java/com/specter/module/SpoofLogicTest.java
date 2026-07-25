@@ -42,6 +42,21 @@ public class SpoofLogicTest {
         check(!SpoofLogic.argsContainKey(null, "android_id"), "null args safe");
         check(SpoofLogic.argsContainKey(new Object[]{"android_id"}, "android_id"), "key at index 0");
 
+        // User-Agent rebuild. The shape must match the REAL device string byte-for-byte, else the
+        // UA itself becomes a novel fingerprint. Ground truth captured from the test Pixel 4
+        // (Android 11 / RQ3A.211001.001) via the FPJS Server API on 2026-07-26.
+        check(SpoofLogic.dalvikUserAgent("11", "Pixel 4", "RQ3A.211001.001")
+                .equals("Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)"),
+                "dalvik UA matches the real device string exactly");
+        check(SpoofLogic.dalvikUserAgent("10", "moto g(6)", "PPSS29.55-37-8")
+                .equals("Dalvik/2.1.0 (Linux; U; Android 10; moto g(6) Build/PPSS29.55-37-8)"),
+                "dalvik UA carries the SPOOFED model, not the real one");
+        check(SpoofLogic.webViewUserAgent("10", "moto g(6)", "PPSS29.55-37-8", "120.0.6099.43")
+                .equals("Mozilla/5.0 (Linux; Android 10; moto g(6) Build/PPSS29.55-37-8; wv)"
+                        + " AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0"
+                        + " Chrome/120.0.6099.43 Mobile Safari/537.36"),
+                "webview UA matches the AOSP shape");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

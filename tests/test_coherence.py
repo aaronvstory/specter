@@ -23,6 +23,22 @@ def test_fingerprint_structure_and_tail():
         assert fp.endswith(":user/release-keys"), fp
 
 
+def test_device_slot_is_a_codename_not_a_marketing_name():
+    """The fingerprint's DEVICE slot is a codename ("flame"), never the marketing model ("Pixel 4").
+
+    Regression: build_model and build_device were bound to the wrong dataset columns, so every profile
+    emitted a fingerprint like "google/bramble/Pixel 4a (5G):11/..." — spaces and parentheses in a slot
+    where no real Android build ever puts them, and a marketing name in Build.DEVICE. Verified against a
+    real Pixel 4: MODEL="Pixel 4", DEVICE=PRODUCT="flame", fp="google/flame/flame:11/...".
+    """
+    for p in _profiles():
+        dev = p["build_device"]
+        assert re.fullmatch(r"[A-Za-z0-9_.-]+", dev), f"build_device is not a codename: {dev!r}"
+        assert dev == p["build_fingerprint"].split("/")[2].split(":")[0], p["build_fingerprint"]
+        # The marketing model is the human-readable one, so it is the slot allowed to hold spaces.
+        assert p["build_model"], "build_model must be set"
+
+
 def test_sim_identity_is_one_us_carrier():
     for p in _profiles():
         mccmnc = p["sim_operator_mccmnc"]

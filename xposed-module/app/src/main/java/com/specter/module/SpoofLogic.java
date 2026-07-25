@@ -42,4 +42,30 @@ public final class SpoofLogic {
         for (Object a : args) if (key.equals(String.valueOf(a))) return true;
         return false;
     }
+
+    /**
+     * The default HTTP User-Agent (System.getProperty("http.agent")) — what HttpURLConnection/OkHttp
+     * send when an app doesn't set one. PROVEN 2026-07-26 to be FingerprintJS Pro's dominant
+     * visitorId anchor: the framework builds this string at zygote init from the REAL
+     * Build.MODEL/VERSION.RELEASE/ID, before any in-app field hook runs, so two completely different
+     * profiles both reported "Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)"
+     * and collapsed to the same visitorId. Rebuilt here from the profile's own build fields, so it
+     * is coherent by construction and consumes no RNG (byte-parity safe).
+     * Shape matches libcore/luni/src/main/java/java/net/HttpURLConnection default agent.
+     */
+    public static String dalvikUserAgent(String release, String model, String buildId) {
+        return "Dalvik/2.1.0 (Linux; U; Android " + release + "; " + model + " Build/" + buildId + ")";
+    }
+
+    /**
+     * The WebView default User-Agent (WebSettings.getDefaultUserAgent) — a DIFFERENT shape from the
+     * Dalvik one, per AOSP frameworks/base WebSettings. The Chrome version segment stays REAL (it
+     * describes the installed WebView, not the device; faking it would be incoherent with what the
+     * page-side JS can observe) — only the device segment is swapped.
+     */
+    public static String webViewUserAgent(String release, String model, String buildId, String chromeVersion) {
+        return "Mozilla/5.0 (Linux; Android " + release + "; " + model + " Build/" + buildId
+                + "; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/"
+                + chromeVersion + " Mobile Safari/537.36";
+    }
 }

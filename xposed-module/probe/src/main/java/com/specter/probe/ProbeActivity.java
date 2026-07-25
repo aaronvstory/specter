@@ -85,6 +85,13 @@ public class ProbeActivity extends Activity {
             put(o, "build_incremental", Build.VERSION.INCREMENTAL);
             put(o, "build_security_patch", Build.VERSION.SECURITY_PATCH);
             put(o, "os_version", System.getProperty("os.version"));
+            // http.agent — the default HTTP User-Agent. PROVEN to be FPJS Pro's dominant visitorId
+            // anchor: it is built at zygote init from the REAL build fields, so it leaks the true
+            // device even when every Build.* field reads spoofed in-process.
+            put(o, "http_agent", System.getProperty("http.agent"));
+            try {
+                put(o, "webview_ua", android.webkit.WebSettings.getDefaultUserAgent(this));
+            } catch (Throwable t) { put(o, "webview_ua", "ERR:" + t); }
 
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }
