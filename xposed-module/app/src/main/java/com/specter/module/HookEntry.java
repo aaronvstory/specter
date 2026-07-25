@@ -399,7 +399,10 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (aid == null) return;
         XC_MethodHook h = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (SpoofLogic.argsContainKey(param.args, "android_id")) { param.setResult(aid); return; }
+                if (SpoofLogic.argsContainKey(param.args, "android_id")) {
+                    XposedBridge.log("[specter][idtrace] Settings.Secure android_id -> " + aid);
+                    param.setResult(aid); return;
+                }
                 // Settings.Secure.getString(cr, "bluetooth_address") is a SECOND path to the BT MAC that
                 // BluetoothAdapter.getAddress() doesn't cover — spoof it here too, or it leaks the real MAC.
                 if (btMac != null && SpoofLogic.argsContainKey(param.args, "bluetooth_address")) {
@@ -529,7 +532,10 @@ public class HookEntry implements IXposedHookLoadPackage {
                 XposedBridge.hookAllMethods(gs, "getString", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
                         for (Object a : param.args)
-                            if ("android_id".equals(String.valueOf(a))) { param.setResult(gsf); return; }
+                            if ("android_id".equals(String.valueOf(a))) {
+                                XposedBridge.log("[specter][idtrace] Gservices.getString android_id -> " + gsf);
+                                param.setResult(gsf); return;
+                            }
                     }
                 });
             } catch (Throwable ignored) {}
@@ -540,7 +546,10 @@ public class HookEntry implements IXposedHookLoadPackage {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
                         if (gsfLong < 0) return;
                         for (Object a : param.args)
-                            if ("android_id".equals(String.valueOf(a))) { param.setResult(gsfLong); return; }
+                            if ("android_id".equals(String.valueOf(a))) {
+                                XposedBridge.log("[specter][idtrace] Gservices.getLong android_id -> " + gsfLong);
+                                param.setResult(gsfLong); return;
+                            }
                     }
                 });
             } catch (Throwable ignored) {}
@@ -566,6 +575,19 @@ public class HookEntry implements IXposedHookLoadPackage {
                     final android.database.Cursor real = (android.database.Cursor) param.getResult();
                     if (real == null) return;
                     XposedBridge.log("[specter] GSF cursor wrapped for " + lp.packageName + " uri=" + uri);
+                    // idtrace: dump the ACTUAL cursor schema so we can see whether the (name,value)
+                    // assumption in SpoofLogic.isAndroidIdValueColumn holds for this caller.
+                    try {
+                        StringBuilder sb = new StringBuilder("[specter][idtrace] gsf cursor cols=");
+                        sb.append(real.getColumnCount()).append(" names=");
+                        for (String cn : real.getColumnNames()) sb.append(cn).append(',');
+                        sb.append(" rows=").append(real.getCount());
+                        Object sel = param.args.length > 3 ? param.args[3] : null;
+                        sb.append(" selArgs=");
+                        if (sel instanceof String[]) for (String sa : (String[]) sel) sb.append(sa).append(',');
+                        else sb.append(String.valueOf(sel));
+                        XposedBridge.log(sb.toString());
+                    } catch (Throwable ignored2) {}
                     param.setResult(new GsfCursorWrapper(real, gsf));
                 } catch (Throwable ignored) {}
             }
@@ -588,12 +610,16 @@ public class HookEntry implements IXposedHookLoadPackage {
         private final String fakeGsf;
         GsfCursorWrapper(android.database.Cursor c, String fakeGsf) { super(c); this.fakeGsf = fakeGsf; }
         @Override public String getString(int columnIndex) {
-            if (isAndroidIdValueColumn(columnIndex)) return fakeGsf;
+            if (isAndroidIdValueColumn(columnIndex)) {
+                XposedBridge.log("[specter][idtrace] GSF cursor SUBSTITUTED getString(" + columnIndex + ")");
+                return fakeGsf;
+            }
             return super.getString(columnIndex);
         }
         @Override public long getLong(int columnIndex) {
             // GSF android_id is frequently read via getLong on the value column — cover it too.
             if (isAndroidIdValueColumn(columnIndex)) {
+                XposedBridge.log("[specter][idtrace] GSF cursor SUBSTITUTED getLong(" + columnIndex + ")");
                 return SpoofLogic.gsfToLong(fakeGsf, super.getLong(columnIndex));
             }
             return super.getLong(columnIndex);
@@ -631,6 +657,7 @@ public class HookEntry implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(md, "getPropertyByteArray", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (param.args.length > 0 && "deviceUniqueId".equals(String.valueOf(param.args[0]))) {
+                        XposedBridge.log("[specter][idtrace] MediaDrm deviceUniqueId -> " + drm);
                         param.setResult(hexToBytes(drm));
                     }
                 }
