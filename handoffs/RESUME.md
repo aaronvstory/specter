@@ -25,20 +25,27 @@ reads the applied values back; we compare the values reported across two applied
 - **Safety (non-negotiable):** on-device work targets ONLY the probe/test apps and the vendor sample app.
   Never scope, apply, or test against the income apps listed in `CLAUDE.md`.
 
-## The objective for THIS run — fix the User-Agent leak (ROOT CAUSE PROVEN 2026-07-26)
-**FIRST READ `handoffs/2026-07-26_fpjs-root-cause-ua-leak.md`** — it has the proof, the exact fix, the
-reusable measurement setup (Fingerprint Server API), and the test procedure. Short version:
+## The objective for THIS run — beat the sample app's reported id (UA leak now CLOSED)
+**FIRST READ `handoffs/2026-07-26_ua-fix-shipped-server-match-anchor.md`** — current state, the proven
+findings, and the one manual step that unblocks clean measurement. Short version:
 
-We proved via the vendor sample app's own server API (in the user's own measurement space, no stale
-record) that two different applied profiles still report the SAME value because the **User-Agent string
-still carries the real device identity** (`device`, `osVersion`, and the full `Build/...` string), on a
-framework read path our current hooks don't cover. The per-model config we built earlier is applied
-correctly but is NOT the value the sample reads to identify the device — the User-Agent is.
+The User-Agent leak (the previously-proven anchor) is **fixed and confirmed**: the sample app's server
+now reports the applied profile's device + UA, not the real one. Two more real fixes shipped alongside:
+the inverted MODEL/DEVICE dataset columns (every profile had been shipping an impossible fingerprint),
+and the APK install-mtime signal the sample reads (`FileTimestamps`). All on branch `feat/ua-spoof`.
 
-The objective: **close the User-Agent leak** (rebuild the UA from the profile's build fields on
-`WebSettings.getDefaultUserAgent` + `System.getProperty("http.agent")` + the prop), also close the
-root-detection tell the sample flags, then re-run the two-rotation measurement in the user's space and
-confirm the reported value finally differs across identities. Full detail + procedure in the handoff.
+BUT the sample's reported id still doesn't split across applied profiles, and we proved WHY: deleting the
+sample's ENTIRE local cache and re-reading returns the identical id → the id is computed **100%
+server-side** from the signal payload. The remaining anchor is a signal (or set) still sent truthfully —
+NOT the UA, device fields, file timestamps, or IP (all ruled out). Prime suspects, in order: the
+installed-app set, then whatever corroborates the server's `rootApps`/`developerTools` Smart Signals
+(both are server-computed — the client-side dev-settings hook is confirmed working but not sufficient).
+
+The blocker for clean measurement: a valid two-rotation test must run in the USER's own measurement space
+(sample-app keys present), and `pm clear`/`rotate` wipes those keys, dropping into a shared public
+workspace whose ids are meaningless bucket artifacts. The keys can only be re-entered via the sample's UI
+(encrypted, unscriptable) — see the handoff for the exact one-line manual step. Until then, use
+`push --no-clear` and pursue the signal-elimination hunt; do not treat shared-workspace ids as the gate.
 
 --- (prior objective, DONE + merged — kept for context) ---
 Built GOAL 1.3: the hardware-descriptor configuration layer, coherent per device model, verified on the
