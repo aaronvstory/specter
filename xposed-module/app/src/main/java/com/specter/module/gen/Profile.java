@@ -43,6 +43,10 @@ public final class Profile {
             "build_hardware", "build_board", "build_kernel_version", "build_radio",
             "total_ram", "total_storage", "build_host", "build_display", "soc_platform",
             "factory_reset_epoch",
+            // Per-model hardware descriptors — appended LAST, same order as specter/profile.py's
+            // _hw_fields(), so the flat-JSON key order and byte-parity draw order stay in lockstep.
+            "hw_gpu_renderer", "hw_gpu_vendor", "hw_gles_version", "hw_cores", "hw_sensors",
+            "hw_cameras", "hw_codecs", "hw_input_devices", "proc_cpuinfo",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -107,13 +111,23 @@ public final class Profile {
         return devices.get(r.next(devices.size()));
     }
 
-    /** Build a full 27-field identity for the US (back-compat overload; seeded output unchanged). */
+    /** Build a full identity for the US (back-compat overload; seeded output unchanged). */
     public static Map<String, String> build(Generators.Rng r, List<List<String>> devices, boolean usBias) {
-        return build(r, devices, usBias, Country.US);
+        return build(r, devices, usBias, Country.US, null);
     }
 
-    /** Build a full 28-field identity. Device rows are [name, manufacturer, brand, device, product, "model:release", build_id, incremental, patch]. */
+    /** Build overload without a hardware dataset (uses the coherent _default bundle for hardware). */
     public static Map<String, String> build(Generators.Rng r, List<List<String>> devices, boolean usBias, Country country) {
+        return build(r, devices, usBias, country, null);
+    }
+
+    /**
+     * Build a full identity. Device rows are [name, manufacturer, brand, device, product,
+     * "model:release", build_id, incremental, patch]. {@code hardware} maps a device codename to its
+     * flat hardware-descriptor fields (from data/hardware.json); when null or a codename is absent,
+     * the coherent _default bundle is used so every profile is complete and valid.
+     */
+    public static Map<String, String> build(Generators.Rng r, List<List<String>> devices, boolean usBias, Country country, Map<String, Map<String, String>> hardware) {
         List<String> dev = pickDevice(r, devices, usBias, country);
         String manufacturer = dev.get(1), brand = dev.get(2), device = dev.get(3), product = dev.get(4);
         String modelRel = dev.get(5);
@@ -191,7 +205,53 @@ public final class Profile {
         // LAST — appended to the end of the RNG order so every existing field is unchanged. Mirrors
         // profile.py, which passes the same security patch so the pair stays coherent.
         p.put("factory_reset_epoch", Generators.factoryResetEpoch(r, patch));
+        // Per-model hardware descriptors — a coherent bundle for the device this identity claims to
+        // be. Constant lookup keyed on the codename; consumes no RNG (byte-parity safe). LAST, so the
+        // draw order of every field above is unchanged. Mirrors profile.py's _hw_fields().
+        p.putAll(hwFields(codename, hardware));
         return p;
+    }
+
+    /**
+     * Flat hardware-descriptor fields for a device codename. When {@code hardware} is null or lacks
+     * the codename, falls back to the "_default" entry (or the built-in DEFAULT_HW if the dataset
+     * itself is absent, e.g. the pure-JVM test path with no assets). Mirrors profile.py _hw_fields().
+     */
+    static Map<String, String> hwFields(String codename, Map<String, Map<String, String>> hardware) {
+        Map<String, String> e = null;
+        if (hardware != null) {
+            e = hardware.get(codename);
+            if (e == null) e = hardware.get("_default");
+        }
+        if (e == null) e = DEFAULT_HW;
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("hw_gpu_renderer", e.getOrDefault("hw_gpu_renderer", DEFAULT_HW.get("hw_gpu_renderer")));
+        out.put("hw_gpu_vendor", e.getOrDefault("hw_gpu_vendor", DEFAULT_HW.get("hw_gpu_vendor")));
+        out.put("hw_gles_version", e.getOrDefault("hw_gles_version", DEFAULT_HW.get("hw_gles_version")));
+        out.put("hw_cores", e.getOrDefault("hw_cores", DEFAULT_HW.get("hw_cores")));
+        out.put("hw_sensors", e.getOrDefault("hw_sensors", DEFAULT_HW.get("hw_sensors")));
+        out.put("hw_cameras", e.getOrDefault("hw_cameras", DEFAULT_HW.get("hw_cameras")));
+        out.put("hw_codecs", e.getOrDefault("hw_codecs", DEFAULT_HW.get("hw_codecs")));
+        out.put("hw_input_devices", e.getOrDefault("hw_input_devices", DEFAULT_HW.get("hw_input_devices")));
+        out.put("proc_cpuinfo", e.getOrDefault("proc_cpuinfo", DEFAULT_HW.get("proc_cpuinfo")));
+        return out;
+    }
+
+    /** Built-in coherent fallback bundle (mirrors data/hardware.json "_default": SM6150-class). Used
+     *  only when no dataset is supplied — the pure-JVM test path, which cannot load APK assets. */
+    static final Map<String, String> DEFAULT_HW = new LinkedHashMap<>();
+    static {
+        DEFAULT_HW.put("hw_gpu_renderer", "Adreno (TM) 612");
+        DEFAULT_HW.put("hw_gpu_vendor", "Qualcomm");
+        DEFAULT_HW.put("hw_gles_version", "3.2");
+        DEFAULT_HW.put("hw_cores", "8");
+        DEFAULT_HW.put("hw_sensors", "Accelerometer|STMicro|1;Gyroscope|STMicro|4;Magnetometer|AKM|2;"
+                + "Proximity Sensor|AMS|8;Light Sensor|AMS|5");
+        DEFAULT_HW.put("hw_cameras", "0,1");
+        DEFAULT_HW.put("hw_codecs", "OMX.qcom.video.decoder.avc,OMX.qcom.video.decoder.hevc,"
+                + "c2.android.avc.decoder,c2.android.aac.decoder");
+        DEFAULT_HW.put("hw_input_devices", "gpio-keys,qpnp_pon,uinput-fpc,synaptics_dsx,sec_touchscreen");
+        DEFAULT_HW.put("proc_cpuinfo", "processor\t: 0\nHardware\t: Qualcomm Technologies, Inc SM6150\n");
     }
 
     /** Per-field format + cross-field coherence. Returns the list of errors (empty == valid). */

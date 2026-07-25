@@ -73,6 +73,56 @@ public final class IdentityService {
         }
     }
 
+    /**
+     * Load data/hardware.json (APK asset) and render each entry to the flat hardware-descriptor
+     * fields Profile.build consumes — the SAME encoding as specter/profile.py _hw_fields (sensors as
+     * {@code name|vendor|type} joined by ';', lists comma-joined, cpuinfo verbatim). Keyed by device
+     * codename, plus "_default". Returns an empty map (→ Profile falls back to DEFAULT_HW) on failure.
+     */
+    Map<String, Map<String, String>> loadHardware() {
+        Map<String, Map<String, String>> out = new java.util.HashMap<>();
+        try (InputStream in = ctx.getAssets().open("hardware.json")) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192]; int r;
+            while ((r = in.read(buf)) != -1) bos.write(buf, 0, r);
+            JSONObject root = new JSONObject(new String(bos.toByteArray(), "UTF-8"));
+            for (java.util.Iterator<String> it = root.keys(); it.hasNext(); ) {
+                String codename = it.next();
+                JSONObject e = root.getJSONObject(codename);
+                Map<String, String> f = new java.util.HashMap<>();
+                f.put("hw_gpu_renderer", e.optString("gpu_renderer"));
+                f.put("hw_gpu_vendor", e.optString("gpu_vendor"));
+                f.put("hw_gles_version", e.optString("gles_version"));
+                f.put("hw_cores", String.valueOf(e.optInt("cores", 8)));
+                JSONArray sensors = e.optJSONArray("sensors");
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; sensors != null && i < sensors.length(); i++) {
+                    JSONObject s = sensors.getJSONObject(i);
+                    if (i > 0) sb.append(';');
+                    sb.append(s.optString("name")).append('|').append(s.optString("vendor"))
+                      .append('|').append(s.optInt("type"));
+                }
+                f.put("hw_sensors", sb.toString());
+                f.put("hw_cameras", joinArray(e.optJSONArray("cameras")));
+                f.put("hw_codecs", joinArray(e.optJSONArray("codecs")));
+                f.put("hw_input_devices", joinArray(e.optJSONArray("input_devices")));
+                f.put("proc_cpuinfo", e.optString("cpuinfo"));
+                out.put(codename, f);
+            }
+        } catch (Exception e) {
+            // A missing/broken asset must not brick generation — Profile.build falls back to
+            // DEFAULT_HW when the dataset is empty, so every profile stays complete and valid.
+        }
+        return out;
+    }
+
+    private static String joinArray(JSONArray a) {
+        if (a == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < a.length(); i++) { if (i > 0) sb.append(','); sb.append(a.optString(i)); }
+        return sb.toString();
+    }
+
     private File ledgerFile() { return new File(ctx.getFilesDir(), "used_ids.json"); }
 
     /** Load the no-reuse ledger; FAILS CLOSED (quarantine + throw) on a corrupt file. */
@@ -143,10 +193,11 @@ public final class IdentityService {
     public Map<String, String> generateUnique() {
         synchronized (LEDGER_LOCK) {
             List<List<String>> devices = loadDevices();
+            Map<String, Map<String, String>> hardware = loadHardware();
             UsedStore store = loadLedger();
             Generators.Rng r = secureRng();
             for (int tries = 0; tries < 1000; tries++) {
-                Map<String, String> p = Profile.build(r, devices, true, country);
+                Map<String, String> p = Profile.build(r, devices, true, country, hardware);
                 if (!Profile.isValid(p)) continue;
                 if (store.collides(p)) continue;
                 if (store.record(p)) { saveLedger(store); return p; }

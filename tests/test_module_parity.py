@@ -112,3 +112,51 @@ def test_module_keys_match_python_profile_keys():
     java_keys = re.findall(r'"([^"]+)"', m.group(1))
     py_keys = list(P.generate_unique(None).keys())
     assert java_keys == py_keys, "key order drift\n java: %s\n  py : %s" % (java_keys, py_keys)
+
+
+def test_data_json_matches_apk_assets():
+    """The APK bundles data/*.json as assets; the copy is manual, so nothing but this test stops
+    silent drift that would break byte-parity between the PC (Python) and on-device (Java) paths."""
+    import hashlib
+    for name in ("devices.json", "hardware.json"):
+        src = os.path.join(ROOT, "data", name)
+        asset = os.path.join(ROOT, "xposed-module/app/src/main/assets", name)
+        assert os.path.exists(asset), f"missing APK asset {name} — copy data/{name} into assets/"
+        a = hashlib.sha256(open(src, "rb").read()).hexdigest()
+        b = hashlib.sha256(open(asset, "rb").read()).hexdigest()
+        assert a == b, f"{name}: data/ and assets/ differ — re-copy so both paths read the same data"
+
+
+def test_profile_has_coherent_hardware_descriptors():
+    """Every generated profile carries the per-model hardware bundle, coherent with the device it
+    claims to be (right SoC GPU) and different across different models."""
+    from specter import profile as P
+    hw = P._load_hardware()
+    # Pixel 4 (flame, SD855) -> Adreno 640; Galaxy S10e (beyond0lteeea, Exynos 9820) -> Mali-G76.
+    assert hw["flame"]["gpu_renderer"] == "Adreno (TM) 640"
+    assert hw["beyond0lteeea"]["gpu_renderer"] == "Mali-G76"
+    # A generated profile has all 9 hardware fields, non-empty, keyed off its own codename.
+    p = P.generate_unique(None, seed=42)
+    for k in ("hw_gpu_renderer", "hw_gpu_vendor", "hw_gles_version", "hw_cores",
+              "hw_sensors", "hw_cameras", "hw_codecs", "hw_input_devices", "proc_cpuinfo"):
+        assert p.get(k), f"profile missing hardware field {k}"
+    cn = p["build_product"].split("_")[0]
+    expected = hw.get(cn, hw["_default"])
+    assert p["hw_gpu_renderer"] == expected["gpu_renderer"], "GPU renderer not coherent with device"
+    assert p["proc_cpuinfo"].rstrip("\n") in p["proc_cpuinfo"]  # cpuinfo present, multi-line
+    assert "Hardware\t:" in p["proc_cpuinfo"], "cpuinfo missing Hardware line"
+
+
+def test_every_selectable_device_has_hardware_entry():
+    """No selectable (pickable) device may silently fall back to _default — that would be an
+    incoherent hardware story. build_hardware_dataset.py enforces this; assert it stays true."""
+    from specter import profile as P
+    hw = P._load_hardware()
+    devices = P._load_devices()
+    for d in devices:
+        if not P._is_plausible_phone(d):
+            continue
+        if d[2].lower() not in P.US_COMMON_BRANDS:
+            continue
+        cn = d[4].split("_")[0]
+        assert cn in hw, f"selectable device codename {cn} missing from hardware.json"

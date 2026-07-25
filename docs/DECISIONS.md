@@ -122,3 +122,25 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   devices.json gains newer phones. The plausibility predicate is a NAMED, mirrored function on both
   sides precisely because it changes the seeded pool: any drift between Python and Java silently breaks
   byte-parity, so it must be one logic expressed identically, proven by the 300-seed dumper.
+- **2026-07-26 · Hardware descriptors are keyed by device codename and are CONSTANTS (GOAL 1.3)** —
+  the per-model hardware bundle (`data/hardware.json`) is a pure lookup on the already-picked device
+  codename (the stripped Build.PRODUCT), so it consumes NO seeded RNG. This is the deliberate parity
+  choice: a constant never shifts the draw order, so byte-parity holds by construction (same as
+  `media_drm_security_level` and the Build.* device fields), and no new dumper diff was needed for the
+  generators. The fields are appended LAST in both `profile.py` and `Profile.KEYS`, mirroring the
+  factory_reset_epoch convention. WHY not per-unit-exact values: the goal is a bundle that is coherent
+  for the claimed model and DIFFERS between two different models — model-plausible, not serial-exact.
+- **2026-07-26 · Hardware values are keyed by SoC, mapped from codename (GOAL 1.3)** — the signals a
+  fingerprinter reads (GPU renderer, cpuinfo CPU-part IDs, core layout, GLES version) are
+  SoC-determined, not model-determined: two phones on the same Snapdragon 855 report the same Adreno
+  640. So the source of truth is a small table of real SoC specs, and each pool codename maps to its
+  real SoC (longest-prefix match, since Samsung variants carry suffixes like `beyond1ltexx`). This
+  keeps the dataset small and every value grounded in a real chip. Sensor/camera *counts* layer on by
+  brand + model tier. Left the existing `soc_platform()` random-fallback UNCHANGED (fixing it removes
+  an RNG draw → parity break); the hardware layer is independent of it and does not depend on it.
+- **2026-07-26 · Java loads hardware.json from assets and renders flat; a built-in DEFAULT_HW covers
+  the pure-JVM test path** — the on-device app path passes the loaded dataset into `Profile.build`
+  the same way `devices` is passed; the pure-JVM test (which cannot load APK assets) uses a built-in
+  coherent `DEFAULT_HW` bundle so every profile stays complete and valid. Parity for these fields is
+  guaranteed by three things together: the KEYS-order test, the new asset-sync test (data/ == assets/
+  byte-for-byte), and identical render logic on both sides — identical data + identical render.

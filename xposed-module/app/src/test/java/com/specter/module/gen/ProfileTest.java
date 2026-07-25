@@ -106,6 +106,34 @@ public class ProfileTest {
             check(p.get("imei1").substring(0, 8).equals(p.get("imei2").substring(0, 8)), "imeis share TAC s=" + s);
         }
 
+        // ---- Hardware descriptors ----
+        // Every built profile carries the 9 hardware fields (from DEFAULT_HW here — the JVM test has
+        // no asset dataset), non-empty and complete, so it is valid and byte-parity KEYS-complete.
+        Map<String, String> hwp = Profile.build(seeded(11), devs, true);
+        for (String k : new String[]{"hw_gpu_renderer", "hw_gpu_vendor", "hw_gles_version", "hw_cores",
+                "hw_sensors", "hw_cameras", "hw_codecs", "hw_input_devices", "proc_cpuinfo"}) {
+            check(hwp.get(k) != null && !hwp.get(k).isEmpty(), "hw field present " + k);
+        }
+        // hwFields renders a supplied entry with the SAME encoding as specter/profile.py _hw_fields:
+        // sensors "name|vendor|type" joined by ';', lists comma-joined. This is the cross-language
+        // render contract — the data itself is byte-identical (asset-sync test), so identical render +
+        // identical data == byte-parity for these fields.
+        Map<String, Map<String, String>> hwDs = new HashMap<>();
+        Map<String, String> entry = new HashMap<>();
+        entry.put("hw_gpu_renderer", "Adreno (TM) 640");
+        entry.put("hw_sensors", "BMI160 accelerometer|Bosch|1;BMI160 gyroscope|Bosch|4");
+        entry.put("hw_cameras", "0,1,2,3");
+        hwDs.put("flame", entry);
+        Map<String, String> rendered = Profile.hwFields("flame", hwDs);
+        check(rendered.get("hw_gpu_renderer").equals("Adreno (TM) 640"), "hwFields uses dataset value");
+        check(rendered.get("hw_sensors").equals("BMI160 accelerometer|Bosch|1;BMI160 gyroscope|Bosch|4"),
+                "hwFields sensor encoding matches Python");
+        check(rendered.get("hw_cameras").equals("0,1,2,3"), "hwFields camera encoding matches Python");
+        // Unknown codename -> _default (or built-in DEFAULT_HW when dataset lacks _default).
+        Map<String, String> fb = Profile.hwFields("no_such_device", hwDs);
+        check(fb.get("hw_gpu_renderer").equals(Profile.DEFAULT_HW.get("hw_gpu_renderer")),
+                "hwFields falls back to DEFAULT_HW for unknown codename");
+
         // A truncated profile (missing a key) must FAIL validation — else it could be written to
         // the target app and leak the real id for the missing field.
         Map<String, String> truncated = new HashMap<>(Profile.build(seeded(9), devs, true));

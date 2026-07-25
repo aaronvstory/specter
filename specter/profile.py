@@ -18,6 +18,7 @@ from .identifiers import BUILD_FIELDS, UNIQUE_KEYS
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DEVICES_PATH = os.path.join(ROOT, "data", "devices.json")
+HARDWARE_PATH = os.path.join(ROOT, "data", "hardware.json")
 
 US_COMMON_BRANDS = {"samsung", "google", "motorola", "lge"}
 
@@ -42,6 +43,43 @@ def country_of(code):
 
 def _load_devices():
     return json.load(open(DEVICES_PATH, encoding="utf-8"))
+
+
+_HARDWARE_CACHE = None
+
+
+def _load_hardware():
+    """Per-model hardware descriptors (data/hardware.json), keyed by device codename. Cached: it's a
+    constant lookup table, read once. See scripts/build_hardware_dataset.py for how it's generated."""
+    global _HARDWARE_CACHE
+    if _HARDWARE_CACHE is None:
+        _HARDWARE_CACHE = json.load(open(HARDWARE_PATH, encoding="utf-8"))
+    return _HARDWARE_CACHE
+
+
+def _hw_fields(codename, hardware=None):
+    """Flat string->string hardware fields for a device codename, ready for the flat-JSON transport
+    both the Java and native hooks read. Lists are delimiter-joined; cpuinfo keeps its real newlines
+    (device.py json.dumps handles the escaping; the native layer decodes 
+/	).
+
+    These are CONSTANTS keyed on the already-picked device — they consume NO seeded RNG, so they are
+    byte-parity-safe by construction (a constant never shifts the draw order). Missing codenames fall
+    back to the coherent "_default" bundle so the lookup is total."""
+    hw = (hardware or _load_hardware())
+    e = hw.get(codename) or hw["_default"]
+    sensors = ";".join("%s|%s|%d" % (x["name"], x["vendor"], x["type"]) for x in e["sensors"])
+    return {
+        "hw_gpu_renderer": e["gpu_renderer"],
+        "hw_gpu_vendor": e["gpu_vendor"],
+        "hw_gles_version": e["gles_version"],
+        "hw_cores": str(e["cores"]),
+        "hw_sensors": sensors,
+        "hw_cameras": ",".join(e["cameras"]),
+        "hw_codecs": ",".join(e["codecs"]),
+        "hw_input_devices": ",".join(e["input_devices"]),
+        "proc_cpuinfo": e["cpuinfo"],
+    }
 
 
 def _csprng(n):
@@ -105,7 +143,7 @@ def _pick_device(r, devices, us_bias, brands=None):
     return devices[r(len(devices))]
 
 
-def build_profile(r, devices, us_bias=True, country="US"):
+def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     cc = country_of(country)
     dev = _pick_device(r, devices, us_bias, cc["brands"])
     manufacturer, brand, device, product = dev[1], dev[2], dev[3], dev[4]
@@ -129,7 +167,7 @@ def build_profile(r, devices, us_bias=True, country="US"):
     # Samsung derives its bootloader from the SM- model (device slot); others from the codename.
     bl_base = device if brand.lower() == "samsung" else codename
 
-    return {
+    p = {
         "android_id": G.hex16(r),
         "imei1": G.imei(r, tac),
         "imei2": G.imei(r, tac),
@@ -178,6 +216,12 @@ def build_profile(r, devices, us_bias=True, country="US"):
         # appended to the end of the RNG order and every existing field's value is unchanged.
         "factory_reset_epoch": G.factory_reset_epoch(r, patch),
     }
+    # Per-model hardware descriptors (GPU/GLES, sensors, cameras, codecs, input, core count,
+    # /proc/cpuinfo) — a coherent bundle for the device model this identity claims to be. Constant
+    # lookup keyed on the picked device codename; consumes no RNG (byte-parity safe). LAST so every
+    # existing field's draw order is unchanged.
+    p.update(_hw_fields(codename, hardware))
+    return p
 
 
 def validate(profile):

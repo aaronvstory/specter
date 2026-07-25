@@ -6,6 +6,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Per-model hardware-descriptor layer — the profile now carries a coherent hardware bundle
+  (GOAL 1.3, data + generation).** A new `data/hardware.json` (built by
+  `scripts/build_hardware_dataset.py`) maps each selectable device codename to real, coherent
+  hardware descriptors — GPU/GLES renderer, `/proc/cpuinfo`, sensor list, camera list, codec list,
+  input devices, core count — grounded in the model's actual SoC (e.g. Pixel 4 -> Adreno 640 /
+  SM8150; Galaxy S10e -> Mali-G76 / Exynos 9820). `specter/profile.py` and the Java `Profile.build`
+  now inject these 9 flat fields into every generated profile, keyed on the picked device codename.
+  They are CONSTANTS (a lookup, no seeded RNG), so byte-parity is preserved by construction; the
+  Java `Profile.KEYS` order still matches the Python dict (guarded by the parity test), and a new
+  asset-sync test asserts `data/*.json` == the bundled APK assets so the PC and on-device paths can
+  never read different data. So far this is the DATA + GENERATION half; the hooks that inject these
+  values into a reading app (Java + native) land next.
 - **Zygisk native layer — closes the native read paths (GOAL 1.2).** A new self-contained Zygisk
   companion module (`xposed-module/zygisk/`) that INLINE-hooks libc per-app, from the SAME
   `/data/local/tmp/specter/<pkg>.json` the Xposed module reads (one source of truth). It spoofs:
