@@ -250,16 +250,12 @@ public final class Generators {
         } else {
             base = utcMidnight(2023, 1, 1);
         }
+        // No wall-clock read — a pure function of (r, securityPatch) so this stays byte-identical to
+        // the Python generator. "Never in the future" is guaranteed by the pool's patches staying
+        // older than ~18 months, enforced by test_factory_reset_is_after_the_build_and_in_the_past.
         long days = 1 + r.next(FACTORY_RESET_MAX_DAYS_AFTER_PATCH);
         long secs = r.next((int) SECONDS_PER_DAY);
-        long e = base + days * SECONDS_PER_DAY + secs;
-        long ceiling = System.currentTimeMillis() / 1000L - SECONDS_PER_DAY;
-        if (e > ceiling) {
-            long span = FACTORY_RESET_MAX_DAYS_AFTER_PATCH * SECONDS_PER_DAY;
-            long mod = Math.min(span, Math.max(ceiling - base, SECONDS_PER_DAY));
-            e = ceiling - (e % mod);
-        }
-        return Long.toString(e);
+        return Long.toString(base + days * SECONDS_PER_DAY + secs);
     }
 
     // Baseband/radio version prefixes by SoC vendor — real basebands look like "g8150-00088-210507-B..."

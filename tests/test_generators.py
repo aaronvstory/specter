@@ -157,3 +157,20 @@ def test_factory_reset_epoch_varies():
     """Distinct identities must get distinct reset times, or it becomes a shared linking signal."""
     seen = {G.factory_reset_epoch(r) for _ in range(200)}
     assert len(seen) > 150, f"too few distinct values ({len(seen)}/200) — weak entropy"
+
+
+def test_factory_reset_epoch_is_deterministic_no_wallclock():
+    """The value must be a pure function of (r, patch) — no wall-clock read — or Python (which
+    generates the profile) and Java (which re-derives it only in the parity harness) can silently
+    diverge. Regression guard for the clamp-branch parity bug: a recent patch that WOULD have tripped
+    the old wall-clock clamp must still be reproducible bit-for-bit from the same seed."""
+    from specter import profile as P
+    recent = "2025-06-01"  # newer than any real pool device — the case the old clamp mishandled
+    a = G.factory_reset_epoch(P._seeded(42), recent)
+    b = G.factory_reset_epoch(P._seeded(42), recent)
+    assert a == b, "not deterministic for a recent patch"
+    # and the offset stays within the documented 1..540-day window above the patch
+    import calendar
+    base = calendar.timegm((2025, 6, 1, 0, 0, 0, 0, 0, 0))
+    off = int(a) - base
+    assert 0 < off <= (G.FACTORY_RESET_MAX_DAYS_AFTER_PATCH + 1) * G.SECONDS_PER_DAY, off

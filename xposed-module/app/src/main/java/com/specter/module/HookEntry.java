@@ -224,6 +224,10 @@ public class HookEntry implements IXposedHookLoadPackage {
                     if (!isResetMarker((String) mp.args[0])) return;
                     Object st = mp.getResult();
                     if (st == null) return;
+                    // Rewrite ctime/atime alongside mtime: leaving them real would leak the true
+                    // reset date via a different StructStat field (a provable leak), which is worse
+                    // than the mild "all three equal" tell — and on a dir untouched since factory
+                    // reset, ctime==mtime and (under relatime) atime==mtime is in fact common.
                     for (String f : new String[]{"st_mtime", "st_ctime", "st_atime"}) {
                         try {
                             Field fl = st.getClass().getField(f);

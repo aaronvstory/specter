@@ -89,3 +89,12 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   dict order, so inserting a draw anywhere else would change every subsequent field's value for the
   same seed and invalidate the no-reuse ledger. Appending is the only position that is parity-neutral
   for existing fields. Proven with a 200-seed Java-vs-Python dump diff, not assumed.
+- **2026-07-25 · `factory_reset_epoch` reads NO wall clock — determinism beats a "never future" clamp**
+  (code-review catch). The first cut clamped the value against `now()` sampled independently in Python
+  and Java; a review proved that if the clamp ever fired, the two runtimes (different process, different
+  instant) would diverge and break byte-parity — latent today (all pool patches are old enough) but a
+  silent trap the moment the pool gains a recent phone. Fix: drop the clamp, make the value a pure
+  function of (r, patch). "Never in the future" is now enforced by a TEST
+  (test_factory_reset_is_after_the_build_and_in_the_past) that goes red — loudly — if a too-new patch
+  enters the pool, instead of being silently patched over at runtime. A loud test failure is the right
+  place for this invariant, not a clock read inside a parity-critical generator.

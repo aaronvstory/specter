@@ -9,8 +9,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - **`factory_reset_epoch` — spoof the FPJS Pro `factoryReset` smart signal.** New generator
   (`factory_reset_epoch`, Java `factoryResetEpoch`) producing a plausible reset time, derived as a
   1..540-day offset from the profile's own `build_security_patch` so the pair is coherent by
-  construction — a device cannot be reset before its own OS was built — and clamped to never land in
-  the future. Byte-parity PROVEN against Python across 200 seeds with a standalone Java dumper.
+  construction — a device cannot be reset before its own OS was built. It reads NO wall clock (a
+  code-review catch: an earlier clamp sampled `now()` independently in Python and Java, which would
+  silently break byte-parity if it ever fired); "never in the future" is instead enforced by a test
+  that fails loudly if the device pool gains a too-recent patch. Byte-parity PROVEN against Python
+  across 200 seeds with a standalone Java dumper.
   Appended LAST in the profile dict, so the new draw does not shift any existing field's value.
 - **`HookEntry.hookFactoryResetTime`** spoofs the reset time on BOTH Java read paths:
   `java.io.File.lastModified()` AND `android.system.Os.stat/lstat` (rewriting `st_mtime`/`st_ctime`/

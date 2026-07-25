@@ -122,11 +122,17 @@ SECONDS_PER_DAY = 86400
 def factory_reset_epoch(r, security_patch=None):
     """Unix seconds of a plausible factory reset. Mirrors Java factoryResetEpoch.
 
-    With `security_patch` ("YYYY-MM-DD") the reset lands 1..540 days after it — coherent with the
-    build. Without it, falls back to a fixed base so the generator stays usable standalone (tests).
-    Clamped to at most yesterday, so it is never in the future however old the patch is.
+    The reset lands 1..N days after the build's `security_patch`, where N is bounded so the value can
+    NEVER exceed the patch date by more than ~18 months. There is deliberately NO wall-clock read: the
+    result is a pure function of (r, security_patch), so Python (which generates the profile PC-side)
+    and Java (which only re-derives it in the byte-parity test harness) always agree for the same seed.
+
+    "Never in the future" holds by construction as long as the pool's patches are older than ~18 months,
+    which is enforced by test_factory_reset_is_after_the_build_and_in_the_past. That test IS the guard:
+    if the device pool ever gains a phone with a patch newer than ~18 months ago, it goes red and this
+    bound (or the pool) must be revisited — a loud failure instead of a silent parity drift.
     """
-    import calendar, datetime as _dt
+    import calendar
     if security_patch:
         y, m, d = (int(x) for x in security_patch.split("-"))
         base = calendar.timegm((y, m, d, 0, 0, 0, 0, 0, 0))
@@ -134,13 +140,7 @@ def factory_reset_epoch(r, security_patch=None):
         base = calendar.timegm((2023, 1, 1, 0, 0, 0, 0, 0, 0))
     days = 1 + r(FACTORY_RESET_MAX_DAYS_AFTER_PATCH)
     secs = r(SECONDS_PER_DAY)
-    e = base + days * SECONDS_PER_DAY + secs
-    # never in the future: if the offset overshoots, pull it back into the recent past deterministically
-    ceiling = calendar.timegm(_dt.datetime.now(_dt.timezone.utc).utctimetuple()) - SECONDS_PER_DAY
-    if e > ceiling:
-        span = FACTORY_RESET_MAX_DAYS_AFTER_PATCH * SECONDS_PER_DAY
-        e = ceiling - (e % min(span, max(ceiling - base, SECONDS_PER_DAY)))
-    return str(e)
+    return str(base + days * SECONDS_PER_DAY + secs)
 
 
 _SOC_BY_DEVICE = {
