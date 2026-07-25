@@ -5,7 +5,21 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
-- **2026-07-25 · CONCLUSIVE (by elimination): the FPJS anchor is the NATIVE hardware bundle libfp.so reads via direct-linked libandroid.so JNI — NOT the IP, NOT app-local state, NOT any signal we can currently reach.** — status: `researching`.
+- **2026-07-25 · CORRECTION to the entry below: libfp.so imports NO ASensor/ACamera/egl/gl/MediaDrm symbols — the "libandroid JNI bundle" claim was WRONG.** `readelf` on libfp.so's FULL import list: its only
+  device reads are files (`fopen`/`openat`/`__open_2`/`pread`/`stat`), `__system_property_get`,
+  `getauxval`, dl_iterate_phdr/dladdr (lib enumeration + anti-tamper), and **`syscall`** (raw syscalls) +
+  `socket`/`sendto` (exfil). Implications: (1) the sensor/camera/GLES/RAM signals are collected in the
+  JAVA/dex layer (open-source-SDK path in base.apk), NOT by libfp.so.
+  **UPDATE — syscall blind-spot RULED OUT (measured):** hooked `syscall` (intercept SYS_openat) and ran a
+  full FPJS identification with all hooks active (12 syms, tracer on). ZERO `syscall.openat` reads fired —
+  libfp.so reads its files via `fopen`/`openat` (which we hook + trace), NOT via raw syscall. So the
+  tracer has now FULLY enumerated libfp.so's native reads: /proc/cpuinfo, boot_id, /proc/self/task/comm,
+  ~30 props, getauxval — ALL of which we already spoof. There is NO hidden native read we're missing.
+  Conclusion (airtight): the demo visitorId is held by the server sticky link (firstSeenAt frozen), and
+  the only remaining device lever is the Java-collected hardware bundle — which the stuck demo record
+  won't reflect. The `syscall` import in libfp.so is for its anti-tamper/exfil, not file reads.
+
+- **2026-07-25 · CONCLUSIVE (by elimination): the FPJS anchor is NOT the IP, NOT app-local state, NOT any signal we currently spoof.** — status: `researching`.
   Ruled OUT on-device, each by direct measurement (visitorId `18uu8Y2WxYks5PNLa0c7` unchanged, firstSeenAt
   frozen at 2026-07-08, confidence 1.0 throughout):
     - **IP** — PROVEN not the anchor: enabling Mullvad changed ipAddress `23.234.72.101` -> `23.234.73.86`

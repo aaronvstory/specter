@@ -215,6 +215,23 @@ static FILE *my_fopen(const char *path, const char *mode) {
 
 // getauxval is imported by libfp.so — likely reads AT_HWCAP/AT_HWCAP2 (CPU feature bits, a hardware
 // signal). Trace which keys it asks for; we don't spoof yet (would need coherent hwcaps per SoC).
+// syscall tracer + redirect: libfp.so imports raw `syscall` (readelf), which BYPASSES our open/openat/
+// fopen inline hooks. Intercept syscall(SYS_openat,...) so we both SEE and can redirect those reads.
+#include <sys/syscall.h>
+static const char *redirect_path(const char *path);   // defined with the openat hooks below
+using syscall_t = long (*)(long, ...);
+static syscall_t orig_syscall = nullptr;
+static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5, long a6) {
+    if (number == __NR_openat) {
+        const char *path = (const char *) a2;   // openat(dirfd, path, flags, mode)
+        if (g_trace) trace_path("syscall.openat", path);
+        const char *rp = redirect_path(path);
+        if (rp != path)
+            return orig_syscall(number, (long) AT_FDCWD, (long) rp, (long)(O_RDONLY | O_CLOEXEC), 0, a5, a6);
+    }
+    return orig_syscall(number, a1, a2, a3, a4, a5, a6);
+}
+
 // dlsym tracer: reveals exactly which native functions libfp.so resolves at runtime (sensors, mediadrm,
 // egl, etc.) — the JNI/NDK signal surface the file/prop tracer can't see. Trace-only, no spoof.
 using dlsym_t = void *(*)(void *, const char *);
@@ -412,6 +429,10 @@ private:
         }
         if (g_trace) {
             applied += hookSym("dlsym", (void *) my_dlsym, (void **) &orig_dlsym);
+        }
+        // syscall: needed whenever we redirect files (libfp reads via raw syscall) or trace.
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace) {
+            applied += hookSym("syscall", (void *) my_syscall, (void **) &orig_syscall);
         }
         // In pure-trace mode prop_get may not be hooked yet (no props spoofed) — ensure it for the trace.
         if (g_trace && g_prop_spoof.empty()) {
