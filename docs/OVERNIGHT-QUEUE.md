@@ -171,3 +171,9 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   clean-build on-device). Matched/exceeded GeerGit + byedentity. UI polished w/ real gate-verified
   toggles. Split-test tool ready. The ONLY remaining step is user-gated (re-enter demo keys, run
   scripts/fpjs_split_test.py). Nothing further is autonomously actionable on the visitorId gate.
+- [done] Coherence guard + audit (5c11acb): SDK<->release test added; 500-profile audit + DevInfo real-app
+  apply = 0 coherence issues. Every new field (screen/sensor/soc/sdk) internally consistent.
+- [STATE] 29 commits, PR #20 mergeable, Python 108 + JVM 61,606 green. The engineering is complete,
+  proven, and coherent. Client-signal gate 100% blocked on user (run scripts/fpjs_split_test.py after
+  re-entering demo keys). Autonomous work has covered: all client signals, native parity, breadth vs
+  geergit/byedentity, UI toggles, coherence, clean-build, and the measurement tool.
