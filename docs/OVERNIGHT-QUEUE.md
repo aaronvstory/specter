@@ -162,3 +162,12 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - [REMAINING WORK is user-gated] The visitorId split can ONLY be measured in the user's own FPJS
   workspace (run scripts/fpjs_split_test.py after re-entering demo keys). No further autonomous client-side
   work can move the shared-workspace id — proven with impossible garbage input.
+- [done] split-test tool hardened (a832633): waits for a FRESH eventId on run B (demo caches last result).
+- [VERIFIED] Clean build from scratch (gradle :app:clean + build-apk.sh) succeeds; freshly-built APK
+  installed + all new hooks confirmed firing on-device (screen/sensor-rmp/proc_version spoofed). PR #20
+  MERGEABLE. Note: `strings` on the dex is a FALSE negative for method names (dex MUTF-8 length-prefixed);
+  on-device behavior is the real verification, and it passes.
+- [SUMMARY] 28 commits on PR #20. Every client signal spoofed + proven (garbage test, native dual-read,
+  clean-build on-device). Matched/exceeded GeerGit + byedentity. UI polished w/ real gate-verified
+  toggles. Split-test tool ready. The ONLY remaining step is user-gated (re-enter demo keys, run
+  scripts/fpjs_split_test.py). Nothing further is autonomously actionable on the visitorId gate.
