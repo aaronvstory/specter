@@ -36,6 +36,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   (`fts`) and PMIC (`qpnp_pon`) names still went out on every read. Now `getInputDevice(int)` is also
   hooked: each returned InputDevice's `mName` is relabeled to the profile's input-device list and
   `mVendorId`/`mProductId` zeroed (what internal touchscreens report). Fixes a stable per-device signal.
+  Advertised input-device ids are now capped to the REAL resolvable ids (was 0..n-1), so the device
+  COUNT matches the number of readable names — no "5 ids but 3 names" mismatch tell — and a
+  malformed empty `hw_input_devices` value can no longer divide-by-zero (both found by the /gauntlet).
 - **Remaining build props leaked the real device.** A full prop sweep found ro.build.product (=flame),
   ro.build.flavor (=flame-user), ro.build.description (=flame-user 11 RQ3A...), and
   ro.bootimage.build.fingerprint (=google/flame/...) all leaked the real Pixel 4. Aliased product/

@@ -288,10 +288,10 @@ the real Pixel-4 touchscreen (`fts`) and PMIC (`qpnp_pon`) names still went out 
 the probe (extended to read names as FPJS does) shows `uinput-fpc|0;synaptics_dsx|0;sec_touchscreen|0`
 (the spoofed Samsung set), NOT the real Pixel-4 names. AOSP-verified the field names are correct for API 30.
 
-- **HYPOTHESIS (open, low-confidence):** `getInputDeviceIds` returns `0..n-1` (n=5 from the profile) but
-  the real Pixel 4 resolves only ~3 of those ids to non-null devices, so FPJS sees a COUNT of 5 but only
-  3 names. Whether that count/name mismatch is itself a distinguishable tell is UNPROVEN (code-review put
-  exploitability <80%). NOT fixed — a "cap ids to real resolvable count" fix would re-leak the real device
-  COUNT (arguably worse), and fabricating InputDevice objects to fill the gap is high-effort/low-payoff
-  (the count is low-entropy; the NAMES were the anchor and those are closed). Revisit only if a live flag
-  correlates with it.
+- **RESOLVED (was an open hypothesis):** `getInputDeviceIds` originally returned `0..n-1` (n=5 from the
+  profile) but the real Pixel 4 resolves only ~4 of those ids, so FPJS saw a COUNT of 5 but fewer names.
+  The `/gauntlet` (code-reviewer + codex both flagged it) confirmed the mismatch is worth closing. FIX:
+  cap the advertised ids to the REAL resolvable ids (`Math.min(n, realIds.length)`), so count == names.
+  The count is low-entropy (~4, typical for a phone) — leaking it is far less than a count/name disagreement.
+  Also guarded `n==0` (empty/malformed `hw_input_devices` → div-by-zero) and switched to `Math.floorMod`.
+  PROVEN on-device: `hw_input_count == hw_input_resolved == 4`, names all spoofed, no real Pixel-4 leak.
