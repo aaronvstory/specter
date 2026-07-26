@@ -472,3 +472,27 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   diagnostics/trace mode must be read-only w.r.t. those (the native companion already hard-denylists them).
   Do AFTER the vault PR (#21). Research the cleanest on-device logcat capture (a foreground service reading
   its own logcat, or a Shizuku/root logcat pull) via exa before building.
+
+- **2026-07-26 · CORRECTION to a competitive-comparison error + the REAL gap list vs GeerGit/byedentity** —
+  status: `researching`. A web-only comparison (wrong method) falsely claimed Specter was broadly "behind"
+  GeerGit/byedentity and lacked Gmail spoofing. GROUND TRUTH from our OWN decompile docs
+  (`docs/BYEDENTITY-ANALYSIS.md`, from the actual APKs) + code: **Specter is AHEAD on breadth, coherence,
+  USA-realism, no-reuse, and native reach.** Both competitors LEAVE MOST HARDWARE REAL (byedentity only
+  *collects* Build.*/SoC/baseband/RAM into its server payload; GeerGit under-spoofs hardware). The only axis
+  either led was native-read reach (byedentity's resetprop/bind-mount), largely closed by our Zygisk layer.
+  The ACTUAL, narrow, verified gaps:
+  1. **Gmail/account hook NOT wired (real).** `profile.py:238` generates a coherent Gmail and
+     `identifiers.py:45` DECLARES `AccountManager.getAccountsByType('com.google')` — but there is NO
+     `getAccounts`/`AccountManager` hook in HookEntry.java and the probe doesn't read it back. Generated,
+     never applied. GeerGit does apply Gmail spoofing → this is a genuine gap. FIX: add `hookAccounts`
+     (getAccounts + getAccountsByType('com.google')) returning an Account with the profile gmail. CAUTION:
+     account enumeration is sensitive — per-app scoped only, and must not break a target app's real Google
+     login; gate it and test that a scoped app still functions.
+  2. **App Set ID not spoofed (real, small).** No `getAppSetId` hook; HideMyAndroid has it. FIX: hook
+     `com.google.android.gms.appset.AppSet.getClient().getAppSetIdInfo()` → return a per-identity id. Add
+     profile field + probe readback + tests.
+  3. **Native root-detection (the deep one).** FPJS still reads `rootApps=True` via libfp.so's native
+     path our open/openat/stat/fopen hooks don't cover (measured 2026-07-26). Study Zygisk-Assistant's
+     technique; trace libfp.so's actual root-probe syscalls. Multi-hour, higher risk.
+  Priority: (1) and (2) are contained, real, mergeable wins that genuinely close breadth gaps vs the
+  competition. (3) is the thing holding back the FPJS visitorId but is a large native effort.
