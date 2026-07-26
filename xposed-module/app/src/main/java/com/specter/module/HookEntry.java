@@ -912,56 +912,43 @@ public class HookEntry implements IXposedHookLoadPackage {
     // paths (getAuthToken) are NOT touched, so an app that merely reads the account name sees the spoof
     // while we don't fabricate credentials. Masking model, same as GeerGit.
     private void hookAccounts(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        // OPT-IN (default OFF): account masking can break Google sign-in for an app that passes the
+        // enumerated account into a token API (codex HIGH). Only active when the user explicitly enables
+        // "Spoof Google account" (profile spoof_accounts="1"). Fleet apps never hit this by default.
+        if (!"1".equals(p.get("spoof_accounts"))) return;
         final String email = p.get("gmail");
         if (email == null || email.isEmpty()) return;
         final Class<?> am = XposedHelpers.findClassIfExists("android.accounts.AccountManager", lp.classLoader);
         final Class<?> acct = XposedHelpers.findClassIfExists("android.accounts.Account", lp.classLoader);
         if (am == null || acct == null) return;
-        final Object googleAcct;
-        try {
-            googleAcct = acct.getConstructor(String.class, String.class).newInstance(email, "com.google");
-        } catch (Throwable t) { return; }
-        // Type-based queries (getAccountsByType(type,...), getAccountsByTypeForPackage(type,pkg,...)):
-        // arg[0] is ALWAYS the account type. Rewrite ONLY when the app asked for com.google â checking
-        // every String arg was wrong (the package-name arg of ...ForPackage is never "com.google", which
-        // silently neutered that hook and leaked the real account).
-        XC_MethodHook byTypeRewrite = new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam mp) {
-                if (!(mp.getResult() instanceof Object[])) return;
-                if (mp.args.length == 0 || !"com.google".equals(mp.args[0])) return;   // not a google query
-                Object[] arr = (Object[]) java.lang.reflect.Array.newInstance(acct, 1);
-                arr[0] = googleAcct;
-                mp.setResult(arr);
-            }
-        };
-        // getAccounts() returns ALL account types. Filter IN PLACE: swap the com.google entries for our
-        // synthetic one, KEEP every other account (Exchange/Samsung/etc.) â replacing the whole array
-        // would drop real non-Google accounts and break apps enumerating them. If the device has NO
-        // google account, leave the list untouched (don't invent one where there is none).
-        XC_MethodHook allRewrite = new XC_MethodHook() {
+        // FLEET-SAFE approach (codex HIGH): do NOT fabricate a fake Account â an app that passes the
+        // enumerated Account into a token/credential API would get a rejection (fake account isn't in
+        // AccountManager), which can break Google sign-in. Instead we relabel the NAME field of the
+        // REAL com.google account in place (Account.name is final; set via reflection). The object stays
+        // a genuine registered account â auth paths still resolve it â only the visible email (the
+        // fingerprinting signal) is masked. If the device has NO google account, we invent NOTHING.
+        final java.lang.reflect.Field nameField;
+        try { nameField = acct.getField("name"); } catch (Throwable t) { return; }
+        final java.lang.reflect.Field typeField;
+        try { typeField = acct.getField("type"); } catch (Throwable t) { return; }
+        // Relabel every com.google account object we see, in place. Idempotent (setting name to email
+        // again is harmless), and shared across all enumeration methods so the value is consistent.
+        XC_MethodHook maskNames = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam mp) {
                 Object res = mp.getResult();
                 if (!(res instanceof Object[])) return;
-                Object[] real = (Object[]) res;
-                java.util.ArrayList<Object> out = new java.util.ArrayList<>(real.length);
-                boolean replaced = false;
-                for (Object a : real) {
-                    String type = null;
-                    try { type = (String) acct.getField("type").get(a); } catch (Throwable ignored) {}
-                    if ("com.google".equals(type)) {
-                        if (!replaced) { out.add(googleAcct); replaced = true; }   // one google acct, coherent
-                    } else {
-                        out.add(a);
-                    }
+                for (Object a : (Object[]) res) {
+                    if (a == null) continue;
+                    try {
+                        if ("com.google".equals(typeField.get(a))) nameField.set(a, email);
+                    } catch (Throwable ignored) {}
                 }
-                if (!replaced) return;   // no google account on device -> don't fabricate one
-                Object[] arr = (Object[]) java.lang.reflect.Array.newInstance(acct, out.size());
-                mp.setResult(out.toArray(arr));
+                // no array rewrite â real objects, real count, other account types untouched
             }
         };
-        try { XposedBridge.hookAllMethods(am, "getAccountsByType", byTypeRewrite); } catch (Throwable ignored) {}
-        try { XposedBridge.hookAllMethods(am, "getAccountsByTypeForPackage", byTypeRewrite); } catch (Throwable ignored) {}
-        try { XposedBridge.hookAllMethods(am, "getAccounts", allRewrite); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccountsByType", maskNames); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccountsByTypeForPackage", maskNames); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccounts", maskNames); } catch (Throwable ignored) {}
     }
 
     // ---- Media codecs (MediaCodecInfo.getName) â the codec-name SET leaks the SoC vendor ----
@@ -971,6 +958,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     // sensor/input relabel). Capabilities (mCaps) stay real; we only change the visible NAME, which is
     // what a fingerprinter hashes. Objects can't be constructed from an app hook, so relabel in place.
     private void hookCodecs(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        // OPT-IN (default OFF): relabeling codec names can break an app that does getName()->
+        // createByCodecName() (the relabeled name won't resolve) (codex HIGH). Only active when the user
+        // enables "Spoof media codecs" (profile spoof_codecs="1"). Fleet apps' playback is safe by default.
+        if (!"1".equals(p.get("spoof_codecs"))) return;
         final String codecs = p.get("hw_codecs");
         if (codecs == null || codecs.isEmpty()) return;
         final java.util.ArrayList<String> nl = new java.util.ArrayList<>();

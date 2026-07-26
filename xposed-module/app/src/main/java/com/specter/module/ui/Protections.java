@@ -22,15 +22,20 @@ public final class Protections {
     private Protections() {}
 
     public static final class P {
-        public final String gateKey;      // profile key written as "0" when the toggle is OFF
+        public final String gateKey;      // profile key controlling the hook
         public final String prefKey;      // SharedPreferences key for the toggle state
         public final String label;
         public final String desc;
-        P(String gateKey, String label, String desc) {
+        public final boolean defaultOn;   // most protections default ON; risky opt-ins default OFF
+        // A default-ON protection writes gateKey="0" when the user turns it OFF (the hook skips on "0").
+        // A default-OFF protection writes gateKey="1" when the user turns it ON (the hook runs only on "1").
+        P(String gateKey, String label, String desc) { this(gateKey, label, desc, true); }
+        P(String gateKey, String label, String desc, boolean defaultOn) {
             this.gateKey = gateKey;
             this.prefKey = "prot_on_" + gateKey;
             this.label = label;
             this.desc = desc;
+            this.defaultOn = defaultOn;
         }
     }
 
@@ -42,19 +47,27 @@ public final class Protections {
         new P("spoof_ua",      "Spoof User-Agent",   "Rebuilds the HTTP + WebView User-Agent from the applied device, so the UA no longer leaks the real phone."),
         new P("spoof_apktime", "Spoof install time", "Rewrites the app's own APK install timestamps to a per-identity value (the FingerprintJS FileTimestamps signal)."),
         new P("spoof_sysfs",   "Spoof hardware profile", "Aligns the deep hardware signature with the applied device: /sys cpu_capacity, gpu_model and present, plus /proc/version and the screen resolution/density (getDisplayMetrics)."),
+        // OPT-IN (default OFF) — these can break the target app, so the user must enable them knowingly.
+        new P("spoof_accounts", "Spoof Google account", "Masks the Google account email a target app reads from AccountManager. OFF by default: an app that signs in with the Google account may fail, so enable only for apps that just read the account for tracking.", false),
+        new P("spoof_codecs",   "Spoof media codecs", "Relabels the media-codec list (a per-SoC signal). OFF by default: an app that creates a codec by name may fail playback, so enable only when the target doesn't rely on media codecs.", false),
     };
 
-    /** True unless the user explicitly turned this protection off. */
+    /** The toggle's current state — defaults to the protection's defaultOn. */
     public static boolean isOn(SharedPreferences prefs, P p) {
-        return prefs.getBoolean(p.prefKey, true);
+        return prefs.getBoolean(p.prefKey, p.defaultOn);
     }
 
     public static void set(SharedPreferences prefs, P p, boolean on) {
         prefs.edit().putBoolean(p.prefKey, on).apply();
     }
 
-    /** Add gate keys for every protection the user turned OFF (value "0"). Applied profile only. */
+    /** Write gate keys into the applied profile. Default-ON protections write "0" when turned OFF (hook
+     *  skips on "0"); default-OFF protections write "1" when turned ON (hook runs only on "1"). */
     public static void applyGates(SharedPreferences prefs, Map<String, String> profile) {
-        for (P p : ALL) if (!isOn(prefs, p)) profile.put(p.gateKey, "0");
+        for (P p : ALL) {
+            boolean on = isOn(prefs, p);
+            if (p.defaultOn && !on) profile.put(p.gateKey, "0");
+            else if (!p.defaultOn && on) profile.put(p.gateKey, "1");
+        }
     }
 }
