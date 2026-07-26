@@ -148,7 +148,15 @@ public class ProbeActivity extends Activity {
                     Thread.sleep(4000);
                     String sdkLate = readProp("ro.build.version.sdk");
                     String apiLate = readProp("ro.product.first_api_level");
-                    appendLateProps(sdkLate, apiLate);
+                    // Verified-boot / lock-state props also live in the deferred native map — read them
+                    // NATIVELY (post-ready) to prove the native path reports a locked/stock device, not
+                    // the real unlocked/orange/test-keys of this rooted phone.
+                    java.util.Map<String, String> vb = new java.util.LinkedHashMap<>();
+                    for (String k : new String[]{"ro.boot.verifiedbootstate", "ro.boot.vbmeta.device_state",
+                            "ro.boot.flash.locked", "ro.build.tags", "ro.build.type", "ro.debuggable"}) {
+                        vb.put(k, nativeGetprop(k));
+                    }
+                    appendLateProps(sdkLate, apiLate, vb);
                 } catch (Throwable ignored) {}
             }).start();
             // Display metrics (getDisplayMetrics signal) — spoofed by the display hook.
@@ -470,7 +478,7 @@ public class ProbeActivity extends Activity {
     /** Re-read the already-written result file, add the post-readiness late-prop values, and rewrite it.
      *  Runs on a background thread AFTER onCreate's own writeResult() has completed, and shares no mutable
      *  state with the main thread (it re-parses a fresh JSONObject) — so there's no cross-thread race. */
-    private void appendLateProps(String sdkLate, String apiLate) {
+    private void appendLateProps(String sdkLate, String apiLate, java.util.Map<String, String> vbNativeLate) {
         String[] paths = {"/data/local/tmp/specter/probe_result.json", getFilesDir() + "/probe_result.json"};
         for (String p : paths) {
             try {
@@ -484,6 +492,11 @@ public class ProbeActivity extends Activity {
                 JSONObject o = new JSONObject(sb.toString());
                 o.put("prop_sdk_late", sdkLate);
                 o.put("prop_first_api_late", apiLate);
+                if (vbNativeLate != null) {
+                    for (java.util.Map.Entry<String, String> e : vbNativeLate.entrySet()) {
+                        o.put("prop_" + e.getKey().replace('.', '_') + "_native_late", e.getValue());
+                    }
+                }
                 writeResult(o.toString());
                 return;   // first existing path wins (same order writeResult prefers)
             } catch (Throwable ignored) {}

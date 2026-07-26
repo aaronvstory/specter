@@ -3,9 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] — 2026-07-27
 
 ### Added
+- **Verified-boot / lock-state prop spoofing.** A rooted device leaks `ro.boot.verifiedbootstate=orange`,
+  `ro.boot.vbmeta.device_state=unlocked`, `ro.boot.flash.locked=0`, `ro.build.tags=test-keys`, `ro.debuggable=1`
+  — a direct "unlocked + modified device" tell weighted by every root/fraud SDK, independent of the model
+  spoof. Now reports a stock, locked consumer device (green/locked/1/release-keys/user/0) on BOTH the Java
+  (SystemProperties.get) and native (libc) paths. Native values route through the deferred late-map (same
+  mechanism as SDK_INT) to avoid the zygote-init SIGSEGV; PROVEN on-device via the probe's native late-read.
 - **Diagnostics logging** — a Settings toggle (default OFF) that continuously captures what each
   Specter-scoped app READS (props/files/IDs, via the SpecterTrace trace) and the value returned, to
   /data/local/tmp/specter/diag.log (rotating, 32MB cap). A background foreground-service runs

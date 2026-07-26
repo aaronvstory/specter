@@ -52,16 +52,28 @@ public final class DiagnosticsActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
         scroll.addView(root);
 
+        // Title row with a back affordance (the hardware back works, but a visible ← is expected).
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = new TextView(this);
+        back.setText("←");
+        back.setTextColor(Theme.GOLD);
+        back.setTextSize(24);
+        back.setPadding(dp(2), 0, dp(14), 0);
+        back.setOnClickListener(v -> finish());
+        titleRow.addView(back);
         TextView title = new TextView(this);
         title.setText("Live trace — what the target reads");
         title.setTextColor(Theme.INK);
         title.setTextSize(18);
-        title.setPadding(0, 0, 0, dp(4));
-        root.addView(title);
+        titleRow.addView(title);
+        root.addView(titleRow);
 
         summary = new TextView(this);
         summary.setTextColor(Theme.DIM);
         summary.setTextSize(12);
+        summary.setPadding(0, dp(4), 0, 0);
         root.addView(summary);
 
         LinearLayout btns = new LinearLayout(this);
@@ -80,7 +92,10 @@ public final class DiagnosticsActivity extends Activity {
         Button refreshBtn = flatButton("Refresh");
         refreshBtn.setOnClickListener(v -> refresh());
         btns.addView(refreshBtn);
-        Button clearBtn = flatButton("Clear log");
+        Button exportBtn = flatButton("Export");
+        exportBtn.setOnClickListener(v -> exportLog());
+        btns.addView(exportBtn);
+        Button clearBtn = flatButton("Clear");
         clearBtn.setOnClickListener(v -> { clearLog(); refresh(); });
         btns.addView(clearBtn);
         root.addView(btns);
@@ -273,6 +288,26 @@ public final class DiagnosticsActivity extends Activity {
     private void clearLog() {
         try { Runtime.getRuntime().exec(new String[]{"su", "-c", ": > " + DiagnosticsCmd.LOG_PATH}).waitFor(); }
         catch (Throwable ignored) {}
+    }
+
+    /** Copy the capture to /sdcard/Download so it can be pulled/shared. Root-owned source -> su copy;
+     *  chmod world-readable so a file manager can open it. Toasts the destination (or the failure). */
+    private void exportLog() {
+        final String dest = "/sdcard/Download/specter-trace-" + System.currentTimeMillis() + ".log";
+        new Thread(() -> {
+            boolean ok = false;
+            try {
+                Process p = Runtime.getRuntime().exec(new String[]{"su", "-c",
+                        "cp " + DiagnosticsCmd.LOG_PATH + " " + dest + " && chmod 644 " + dest});
+                drain(p.getErrorStream());
+                drain(p.getInputStream());
+                ok = p.waitFor() == 0;
+            } catch (Throwable ignored) {}
+            final boolean done = ok;
+            h.post(() -> android.widget.Toast.makeText(this,
+                    done ? "Exported to " + dest : "Export failed (capture running? root granted?)",
+                    android.widget.Toast.LENGTH_LONG).show());
+        }, "specter-diag-export").start();
     }
 
     private Button flatButton(String text) {

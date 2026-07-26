@@ -194,9 +194,16 @@ public class MainActivity extends Activity {
         Button btn = new Button(this);
         btn.setText(text);
         btn.setAllCaps(false);
+        btn.setTextSize(13);
+        // Kill the default Button's chunky min-height (was making the tab row absurdly tall) + elevation.
+        btn.setMinWidth(0); btn.setMinHeight(0);
+        btn.setMinimumWidth(0); btn.setMinimumHeight(0);
+        btn.setPadding(dp(8), dp(5), dp(8), dp(5));
+        btn.setStateListAnimator(null);
+        btn.setLineSpacing(0f, 0.9f);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lp.setMargins(dp(4), dp(2), dp(4), dp(2));
+        lp.setMargins(dp(3), dp(1), dp(3), dp(1));
         btn.setLayoutParams(lp);
         styleTab(btn, active);
         return btn;

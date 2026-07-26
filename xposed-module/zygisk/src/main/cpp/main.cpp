@@ -638,6 +638,41 @@ public:
             g_prop_spoof_late["ro.build.version.sdk"] = sdk->second;
             g_prop_spoof_late["ro.product.first_api_level"] = sdk->second;
         }
+        // Verified-boot / lock-state props (native path). A rooted device leaks unlocked/orange/test-keys
+        // here — a heavy root flag independent of the model spoof. OEM-agnostic device STATE (a stock
+        // locked consumer phone reads the same for any model). Routed through the LATE map, not the
+        // always-on one: some (verifiedbootstate, veritymode) are read during early init like SDK_INT, so
+        // spoofing them at init risks the zygote SIGSEGV. The late map applies them after g_props_ready
+        // (~3s), long after init but well before any user-triggered fingerprint read. Keep in lockstep
+        // with HookEntry.STATIC_PROPS (Java path).
+        g_prop_spoof_late["ro.boot.verifiedbootstate"] = "green";
+        g_prop_spoof_late["ro.boot.vbmeta.device_state"] = "locked";
+        g_prop_spoof_late["ro.boot.flash.locked"] = "1";
+        g_prop_spoof_late["ro.boot.veritymode"] = "enforcing";
+        g_prop_spoof_late["ro.debuggable"] = "0";
+        g_prop_spoof_late["ro.secure"] = "1";
+        // build.tags/build.type DERIVED from the profile fingerprint so they never contradict it; warranty
+        // props ONLY for Samsung (their presence signals a Galaxy — a cross-OEM leak on a Pixel/LG). Keep
+        // in lockstep with the Java derivation in HookEntry.hookSystemProperties.
+        // Fingerprint tail is "...:<type>/<tags>" e.g. ":user/release-keys". tags = after the last '/'.
+        auto fpit = profile.find("build_fingerprint");
+        if (fpit != profile.end()) {
+            const std::string &fp = fpit->second;
+            size_t slash = fp.rfind('/');
+            if (slash != std::string::npos && slash + 1 < fp.size())
+                g_prop_spoof_late["ro.build.tags"] = fp.substr(slash + 1);   // "release-keys"
+            if (fp.find(":user/") != std::string::npos)      g_prop_spoof_late["ro.build.type"] = "user";
+            else if (fp.find(":userdebug/") != std::string::npos) g_prop_spoof_late["ro.build.type"] = "userdebug";
+        }
+        auto mfrit = profile.find("build_manufacturer");
+        if (mfrit != profile.end()) {
+            std::string mfr = mfrit->second;
+            for (auto &c : mfr) c = (char) tolower((unsigned char) c);
+            if (mfr == "samsung") {
+                g_prop_spoof_late["ro.boot.warranty_bit"] = "0";
+                g_prop_spoof_late["ro.warranty_bit"] = "0";
+            }
+        }
         auto ep = profile.find("factory_reset_epoch");
         if (ep != profile.end()) g_reset_epoch = strtol(ep->second.c_str(), nullptr, 10);
 

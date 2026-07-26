@@ -735,11 +735,46 @@ public class HookEntry implements IXposedHookLoadPackage {
         {"ro.serialno", "serial"}, {"ro.boot.serialno", "serial"},
     };
 
+    // Verified-boot / bootloader-lock props. A rooted Pixel 4 leaks these as unlocked/orange/test-keys —
+    // a direct "this device is unlocked + modified" tell that every root/fraud SDK weights heavily,
+    // INDEPENDENT of the model spoof. These are the DEVICE STATE of any stock locked consumer phone,
+    // OEM-agnostic, so they're the same for every model we claim.
+    // NOTE: build.tags/build.type/warranty_bit are DELIBERATELY NOT here — tags/type must match the
+    // profile's fingerprint suffix (derived below, not hardcoded), and warranty_bit is Samsung-specific
+    // (injecting it on a Pixel/LG profile is itself a cross-OEM tell) so it's handled per-manufacturer.
+    static final String[][] STATIC_PROPS = {
+        {"ro.boot.verifiedbootstate", "green"},
+        {"ro.boot.vbmeta.device_state", "locked"},
+        {"ro.boot.flash.locked", "1"},
+        {"ro.boot.veritymode", "enforcing"},
+        {"ro.debuggable", "0"},
+        {"ro.secure", "1"},
+    };
+
     private void hookSystemProperties(final Map<String, String> p) {
         final Map<String, String> byProp = new HashMap<>();
         for (String[] a : PROP_ALIASES) {
             String v = p.get(a[1]);
             if (v != null) byProp.put(a[0], v);
+        }
+        // Static lock-state constants always apply (not gated on a profile field).
+        for (String[] a : STATIC_PROPS) byProp.put(a[0], a[1]);
+        // build.tags/build.type DERIVED from the profile's fingerprint suffix so they can never contradict
+        // it (our generator always emits ":user/release-keys", but derive rather than assume). warranty_bit
+        // ONLY for Samsung profiles (its mere presence signals a Galaxy device — a leak on a Pixel/LG).
+        // Fingerprint tail is "...:<type>/<tags>" e.g. ":user/release-keys". tags = after the last '/',
+        // type = between the last ':' and that '/'.
+        String fp = p.get("build_fingerprint");
+        if (fp != null && fp.contains(":")) {
+            String tags = fp.substring(fp.lastIndexOf('/') + 1);     // "release-keys"
+            String type = fp.contains(":user/") ? "user" : (fp.contains(":userdebug/") ? "userdebug" : null);
+            if (!tags.isEmpty()) byProp.put("ro.build.tags", tags);
+            if (type != null) byProp.put("ro.build.type", type);
+        }
+        String mfr = p.get("build_manufacturer");
+        if (mfr != null && mfr.equalsIgnoreCase("samsung")) {
+            byProp.put("ro.boot.warranty_bit", "0");
+            byProp.put("ro.warranty_bit", "0");
         }
         if (byProp.isEmpty()) return;
         try {
