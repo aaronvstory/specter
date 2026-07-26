@@ -346,3 +346,8 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - State: all proven on-device (Pixel 4); codex gauntlet ran on every risky change, findings shipped.
   Both test suites green throughout (Python 110 · JVM 61k+ byte-parity + SpoofLogic 76 + VaultPortable).
 - NEXT: IDEAS backlog (b) custom-field editing (clone a specific device), then (c) non-root harvest.
+
+- [2026-07-27 AFK] IDEAS BACKLOG (b) CUSTOM FIELD EDITING SHIPPED + PROVEN (0.8.1): every identity + device
+  field editable to an EXACT value (clone a specific device's android_id/gsf/imei/etc). Identifiers edit
+  freely (format-validated); coupled device fields warn about coherence. On-device: set android_id to
+  aaaa1111bbbb2222, status confirmed, edit persisted. NEXT: IDEAS (c) non-root harvest / specter-lite.
