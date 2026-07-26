@@ -102,3 +102,17 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   HARD GOTCHA found+documented: ro.build.version.sdk in NATIVE PROP_ALIASES SIGSEGVs the zygote (ART
   reads it at init). SDK spoofed via Java only. Added Java<->native PROP_ALIASES lockstep test.
 - [done] /proc/version kernel banner redirect verified (real 4.14.212 gone).
+- [done] Narrowed installed-app markers (170d54c) — no false-positives, leak still none.
+- [VERIFIED] Full probe: 29 spoofed, 0 hard leaks. Sensors (java+native), GPU, cameras, cpuinfo,
+  cpu_capacity, gpu_model, /proc/version, SDK_INT, UA all spoofed. Injected libs NOT visible in the
+  demo's /proc/self/maps (Magisk DenyList hides them).
+- [ESTABLISHED, do not re-test the shared workspace] The demo's on-screen id can't split in FPJS's
+  SHARED public-demo workspace — it's a coarse bucket. Root/dev/emulator client checks are covered;
+  rootApps=True is a SERVER-side Smart Signal (the demo only probes emulator paths locally, not su/magisk;
+  our libs aren't in maps). The id-split is measurable ONLY in the user's own workspace (needs manual
+  key re-entry via the demo UI — encrypted, unscriptable). This is THE blocker, fully documented.
+- [NEXT for cron iterations] Breadth/polish only (the id-split gate is blocked on the user): (a) verify
+  emulator/frida/clonedApp/VM signals stay clean under more profiles; (b) audit any Build/prop the demo
+  reads that we can SAFELY spoof (NOT ro.build.version.sdk natively — SIGSEGVs); (c) keep the UI polished,
+  consider a per-protection "last verified" readout from the probe; (d) when the user returns and
+  re-enters demo keys, run the two-rotation split test in their workspace — the real gate.
