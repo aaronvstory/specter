@@ -188,3 +188,12 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   native dual-read, persistence audit — 3 independent proofs), coherence verified (500 profiles + DevInfo),
   breadth matches/exceeds geergit+byedentity, UI polished w/ gate-verified toggles, split-test tool ready.
   The ONLY open item is user-gated: re-enter demo keys, run scripts/fpjs_split_test.py.
+- [VERIFIED] Ban-critical no-reuse holds with the expanded field set: 200 generated profiles, 0 duplicates
+  across all 13 UNIQUE_KEYS (android_id/imei1/imei2/serial/advertising_id/bt_mac/wifi_mac/wifi_bssid/
+  mobile_number/imsi/iccid/gsf_id/media_drm_id). No FPJS demo reset option exists (menu = docs/support/
+  signup only), confirming no client-accessible way to clear the server link.
+- [LOOP STATUS: COMPLETE] All autonomous engineering is done, tested, coherent, robust, merge-ready. There
+  is NO further autonomous client-side work on the FPJS gate — proven blocked on the user (garbage test,
+  persistence audit, native parity, no in-app reset). Next iterations: only respond to NEW findings or
+  re-verify; do not manufacture marginal work. The user action (re-enter demo keys -> run
+  scripts/fpjs_split_test.py) is the sole remaining step. UI is polished; breadth exceeds geergit+byedentity.
