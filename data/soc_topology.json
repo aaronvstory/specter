@@ -1,0 +1,33 @@
+{
+  "_comment": "Per-SoC CPU capacity vector (kernel /sys/.../cpu_capacity, max 1024) + GPU model string (/sys/class/kgsl/kgsl-3d0/gpu_model, Adreno = numeric model id). cpu_present is always the 0-(N-1) range from the core count. Values are the real big.LITTLE normalized capacities for each SoC's cluster layout, so a spoofed device reports the CPU/GPU signature of the device it claims to be — closing the /sys hardware leak FingerprintJS reads. gpu_model is the KGSL numeric id for Qualcomm (Adreno); Exynos/Mali report empty (no kgsl node), which is itself coherent for those devices.",
+  "_default":   { "cpu_capacity": "381 381 381 381 1024 1024 1024 1024", "gpu_model": "" },
+
+  "msmnile":    { "cpu_capacity": "261 261 261 261 871 871 871 1024", "gpu_model": "640" },
+  "sdm855":     { "cpu_capacity": "261 261 261 261 871 871 871 1024", "gpu_model": "640" },
+  "kona":       { "cpu_capacity": "265 265 265 265 908 908 908 1024", "gpu_model": "650" },
+  "lahaina":    { "cpu_capacity": "251 251 251 251 870 870 870 1024", "gpu_model": "660" },
+  "lito":       { "cpu_capacity": "256 256 256 256 256 256 1024 1024", "gpu_model": "620" },
+  "sm6150":     { "cpu_capacity": "256 256 256 256 256 256 1024 1024", "gpu_model": "618" },
+  "sdm845":     { "cpu_capacity": "364 364 364 364 1024 1024 1024 1024", "gpu_model": "630" },
+  "msm8998":    { "cpu_capacity": "455 455 455 455 1024 1024 1024 1024", "gpu_model": "540" },
+  "sdm660":     { "cpu_capacity": "417 417 417 417 1024 1024 1024 1024", "gpu_model": "512" },
+  "sdm665":     { "cpu_capacity": "313 313 313 313 313 313 313 313", "gpu_model": "610" },
+  "bengal":     { "cpu_capacity": "313 313 313 313 313 313 313 313", "gpu_model": "610" },
+  "trinket":    { "cpu_capacity": "313 313 313 313 313 313 313 313", "gpu_model": "610" },
+
+  "exynos9820": { "cpu_capacity": "260 260 260 260 636 636 1024 1024", "gpu_model": "" },
+  "exynos9825": { "cpu_capacity": "260 260 260 260 636 636 1024 1024", "gpu_model": "" },
+  "exynos990":  { "cpu_capacity": "251 251 251 251 686 686 1024 1024", "gpu_model": "" },
+  "exynos2100": { "cpu_capacity": "215 215 215 215 640 640 640 1024", "gpu_model": "" },
+  "exynos9810": { "cpu_capacity": "533 533 533 533 1024 1024 1024 1024", "gpu_model": "" },
+  "exynos9610": { "cpu_capacity": "455 455 455 455 1024 1024 1024 1024", "gpu_model": "" },
+  "exynos9611": { "cpu_capacity": "455 455 455 455 1024 1024 1024 1024", "gpu_model": "" },
+  "exynos9904": { "cpu_capacity": "455 455 455 455 1024 1024 1024 1024", "gpu_model": "" },
+  "exynos7904": { "cpu_capacity": "551 551 551 551 551 551 1024 1024", "gpu_model": "" },
+  "exynos7885": { "cpu_capacity": "551 551 551 551 551 551 1024 1024", "gpu_model": "" },
+  "exynos7884": { "cpu_capacity": "555 555 555 555 555 555 555 555", "gpu_model": "" },
+  "exynos7870": { "cpu_capacity": "1024 1024 1024 1024 1024 1024 1024 1024", "gpu_model": "" },
+  "exynos1280": { "cpu_capacity": "397 397 397 397 397 397 1024 1024", "gpu_model": "" },
+  "exynos850":  { "cpu_capacity": "1024 1024 1024 1024 1024 1024 1024 1024", "gpu_model": "" },
+  "gs101":      { "cpu_capacity": "236 236 236 236 758 758 1024 1024", "gpu_model": "" }
+}

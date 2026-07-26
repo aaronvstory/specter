@@ -23,6 +23,22 @@ def test_fingerprint_structure_and_tail():
         assert fp.endswith(":user/release-keys"), fp
 
 
+def test_device_slot_is_a_codename_not_a_marketing_name():
+    """The fingerprint's DEVICE slot is a codename ("flame"), never the marketing model ("Pixel 4").
+
+    Regression: build_model and build_device were bound to the wrong dataset columns, so every profile
+    emitted a fingerprint like "google/bramble/Pixel 4a (5G):11/..." — spaces and parentheses in a slot
+    where no real Android build ever puts them, and a marketing name in Build.DEVICE. Verified against a
+    real Pixel 4: MODEL="Pixel 4", DEVICE=PRODUCT="flame", fp="google/flame/flame:11/...".
+    """
+    for p in _profiles():
+        dev = p["build_device"]
+        assert re.fullmatch(r"[A-Za-z0-9_.-]+", dev), f"build_device is not a codename: {dev!r}"
+        assert dev == p["build_fingerprint"].split("/")[2].split(":")[0], p["build_fingerprint"]
+        # The marketing model is the human-readable one, so it is the slot allowed to hold spaces.
+        assert p["build_model"], "build_model must be set"
+
+
 def test_sim_identity_is_one_us_carrier():
     for p in _profiles():
         mccmnc = p["sim_operator_mccmnc"]
@@ -53,11 +69,75 @@ def test_dual_sim_imei_distinct_but_share_tac():
         assert p["imei1"][:8] == p["imei2"][:8], "IMEIs must share the brand TAC"
 
 
+def test_build_sdk_matches_the_android_release():
+    """Build.VERSION.SDK_INT (build_sdk) must be the correct API level for the claimed Android release —
+    a profile claiming Android 9 reporting SDK 30 is itself a fingerprint. Cross-checks the emitted
+    field against the release->SDK map."""
+    from specter import generators as G
+    for p in _profiles():
+        assert p["build_sdk"] == str(G.sdk_for_release(p["build_release"])), \
+            f"SDK {p['build_sdk']} incoherent with release {p['build_release']}"
+        assert p["build_sdk"].isdigit() and 19 <= int(p["build_sdk"]) <= 36, f"implausible SDK {p['build_sdk']}"
+
+
+def test_every_dataset_release_has_a_real_sdk_mapping():
+    """Guard against the self-consistency blind spot: a release NOT in the SDK map falls through to the
+    default (30), so a KitKat device would report API 30 — incoherent. Assert EVERY distinct release
+    string actually present in data/devices.json maps to a plausible, non-default SDK for that era.
+    """
+    from specter import generators as G
+    devices = P._load_devices()
+    releases = {row[5].split(":")[1] for row in devices if len(row) > 5 and ":" in row[5]}
+    # rough era check: major version N should map to an SDK in a sane band, never the default fallback.
+    era = {"4": (14, 20), "5": (21, 22), "6": (23, 23), "7": (24, 25), "8": (26, 27),
+           "9": (28, 28), "10": (29, 29), "11": (30, 30), "12": (31, 32)}
+    for rel in sorted(releases):
+        assert rel in G._SDK_BY_RELEASE, f"release {rel!r} in devices.json has no explicit SDK mapping"
+        sdk = G.sdk_for_release(rel)
+        major = rel.split(".")[0]
+        lo, hi = era.get(major, (1, 36))
+        assert lo <= sdk <= hi, f"release {rel} -> SDK {sdk} is out of the Android {major}.x band {lo}-{hi}"
+
+
 def test_soc_is_a_real_platform_codename():
     # SoC is always a real Qualcomm/Google platform token — never a made-up or space-containing string.
     for p in _profiles():
         soc = p["soc_platform"]
         assert re.fullmatch(r"[a-z0-9]{4,10}", soc), f"implausible SoC {soc!r}"
+
+
+def test_soc_topology_signals_are_coherent():
+    """cpu_capacity / gpu_model / cpu_present describe the SoC the profile claims — the /sys hardware
+    signals FingerprintJS reads directly. Regression guard: they must exist, be well-formed, and
+    cpu_present must match the capacity-vector length.
+    """
+    for p in _profiles():
+        cap = p["cpu_capacity"]
+        vals = cap.split()
+        assert 1 <= len(vals) <= 16, f"implausible core count in cpu_capacity: {cap!r}"
+        for v in vals:
+            assert v.isdigit() and 1 <= int(v) <= 1024, f"cpu_capacity out of range: {v!r}"
+        # Kernel capacities are normalized so the fastest core is 1024. Homogeneous SoCs (e.g. SD665,
+        # all cores equal) legitimately peak below 1024 only when every core is the same; a
+        # heterogeneous vector (distinct values) MUST include a 1024. Either way, never exceed 1024.
+        caps = [int(v) for v in vals]
+        if len(set(caps)) > 1:
+            assert max(caps) == 1024, f"heterogeneous capacity vector must peak at 1024: {cap!r}"
+        assert p["cpu_present"] == f"0-{len(vals) - 1}", f"present must match core count: {p['cpu_present']}"
+        # Qualcomm SoCs expose a numeric KGSL gpu_model; Exynos/others have no kgsl node (empty is coherent).
+        assert re.fullmatch(r"\d*", p["gpu_model"]), f"gpu_model must be numeric-or-empty: {p['gpu_model']!r}"
+
+
+def test_screen_metrics_are_plausible():
+    """screen_width/height/density (the getDisplayMetrics signal) must be plausible real values:
+    portrait (height > width), sane resolution + density ranges. Keyed on the device codename, so a
+    given identity always reports the same screen."""
+    for p in _profiles():
+        w, h, d = int(p["screen_width"]), int(p["screen_height"]), int(p["screen_density"])
+        assert 480 <= w <= 1600, f"implausible screen width {w}"
+        assert 800 <= h <= 3400, f"implausible screen height {h}"
+        assert h > w, f"screen must be portrait (h>w): {w}x{h}"
+        assert 120 <= d <= 640, f"implausible densityDpi {d}"
 
 
 def test_factory_reset_is_after_the_build_and_in_the_past():

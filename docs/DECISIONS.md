@@ -191,3 +191,84 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   coherent `DEFAULT_HW` bundle so every profile stays complete and valid. Parity for these fields is
   guaranteed by three things together: the KEYS-order test, the new asset-sync test (data/ == assets/
   byte-for-byte), and identical render logic on both sides — identical data + identical render.
+- **2026-07-26 · The UA is rebuilt from existing profile fields, not stored as a new profile key** —
+  `build_release` + `build_model` + `build_id` already describe the device the identity claims to be,
+  and the UA is a pure function of them. Deriving it adds no profile key, consumes no RNG draw, and so
+  cannot break Java<->Python byte-parity. It is also coherent by construction: the UA can never
+  disagree with `Build.MODEL`, which a separately-generated field eventually would.
+- **2026-07-26 · The WebView UA keeps the device's REAL Chrome version; only the device segment is
+  swapped** — the Chrome/WebView version describes the installed WebView package, not the hardware,
+  and page-side JS can observe it directly. Faking it would contradict what the WebView actually is,
+  turning a spoof into a new inconsistency. A hardcoded fallback covers apps that cannot query the
+  WebView provider.
+- **2026-07-26 · `System.getProperty` is hooked ONCE with a key->value map** — `os.version` and
+  `http.agent` both read through it and it is a hot path, so a second per-key hook would add overhead
+  on every property read. Same pattern already used for `SystemProperties.get`.
+- **2026-07-26 · MODEL/DEVICE column binding fixed at the generator, and the TEST FIXTURES were the
+  root cause of it surviving** — `ProfileTest`'s inline device rows had MODEL and DEVICE transposed
+  relative to the real `data/devices.json`, so the suite validated the generator against data shaped
+  the way the bug expected. A fixture that disagrees with production data tests nothing. Fixtures now
+  mirror the real dataset, and both suites assert the fingerprint's DEVICE slot is a codename
+  (no spaces/parens) — the invariant that would have caught it originally.
+- **2026-07-26 · /sys CPU/GPU signals spoofed via native redirect, keyed on SoC (data/soc_topology.json
+  + embedded Java SOC_TOPOLOGY)** — FPJS reads /sys/.../cpu_capacity, kgsl gpu_model, cpu/present
+  directly (tracer-proven); these leaked the real Pixel 4 every rotation. Chose a per-SoC lookup table
+  (not per-model) because these are SoC-determined facts; keyed on the already-computed soc_platform so
+  no new RNG draw and byte-parity holds. Java embeds the table (not an asset) to avoid an extra asset
+  load; a parity test asserts the JSON and the embedded map agree. gpu_model empty for Exynos is correct
+  (no KGSL node). The probe reads these back (native redirect applies to its libc reads) as the gate.
+- **2026-07-26 · SDK level spoofed via Java Build.VERSION.SDK_INT ONLY, never the native prop layer** —
+  adding ro.build.version.sdk / ro.product.first_api_level to the native PROP_ALIASES SIGSEGVs the
+  zygote (ART/libc read these during process init, before the __system_property_get hook is safe;
+  proven on-device: probe + demo both crash, props=33). The Java field hook runs after init and is safe.
+  Accepted limitation: an app reading ro.build.version.sdk NATIVELY still sees the real value — not
+  worth chasing into the crash. build_sdk is a pure release->API lookup (byte-parity mirrored in Java).
+- **2026-07-26 · Protection toggles verified REAL end-to-end (no-fake-UI invariant)** — on-device matrix:
+  spoof_ua=0 -> UA hook skipped (no [specter] UA log); hide_apps=0 -> installed_sensitive_leak shows
+  com.specter.probe (leaks); spoof_sysfs=0 -> sys_cpu_capacity0 reads the REAL 261. Each toggle's OFF
+  state leaves the corresponding signal REAL, proving the switch changes what the device reports (the gate
+  key flows profile -> Java/native hook -> skipped). Default is ON for every protection.
+- **2026-07-26 · The native `__system_property_get` blind spot is CLOSED (byedentity parity reached)** —
+  the probe's dual read proves every aliased ro.* prop reads the SPOOFED value on BOTH the Java and native
+  paths (model/hardware/serial/board/fingerprint/bootloader/baseband/soc, _java == _native). Byedentity's
+  one claimed edge over Specter was "native-read reach" via a device-wide root resetprop; Specter reaches
+  the same depth per-app via the Zygisk my_prop_get inline hook — no device-wide mutation, no root
+  resetprop needed. Only ro.build.version.sdk / ro.product.first_api_level are Java-only by necessity
+  (native intercept SIGSEGVs the zygote); a native read of those two still returns real. The old CLAUDE.md
+  "resetprop layer not built yet" note was stale and is now corrected.
+- **2026-07-26 · Full profile coherence re-audited across 500 profiles + real-app apply (0 issues)** — every
+  new field (screen/sensor-rmp/soc-topology/sdk) is internally consistent: SDK matches release, cpu_present
+  matches capacity length, screen is portrait, device codename in the fingerprint with no space in the
+  device slot. Verified on DevInfo (a real device-info reader): a Galaxy S10 profile is coherent end-to-end
+  (device=beyond1, soc=exynos9820, screen=1440x3040@550, cpu=260..1024 tri-cluster, fp well-formed). Added
+  test_build_sdk_matches_the_android_release as the SDK<->release coherence guard.
+- **2026-07-26 · FNV-1a codenameHash byte-parity Java<->Python STRESS-VERIFIED** — the screen-spec lookup
+  hashes the device codename to pick a pool entry; Java (`h=(h^c)*16777619L; h&=0xFFFFFFFFL`) and Python
+  (`h=((h^ord)*16777619)&0xFFFFFFFF`) must agree or the on-device profile picks a different screen than the
+  PC one. Confirmed IDENTICAL across 13 cases incl. empty string, unicode (日本), 50-char strings, and edge
+  chars — the per-step 32-bit mask keeps intermediate products bounded identically in both languages.
+- **2026-07-26 · Magisk hidden from /proc/mounts + mountinfo via per-app filtered-copy redirect (NOT maps)**
+  — real mount reads leak Magisk bind-mounts blatantly (tmpfs magisk overlays), a strong root signal a
+  mount-reading detector catches past su-path hiding (the byedentity bind-mount vector). Chose a filtered
+  per-process copy in the app files dir + redirect_path swap (same proven pattern as cpuinfo), gated by
+  hide_root. Deliberately NOT applied to /proc/self/maps — ART reads its own maps during GC and a filtered
+  copy crashes the app (tried+reverted earlier); mountinfo has no such reader so it's safe. Per-app scope
+  (a non-hooked shell still sees real mounts) — no device-wide mutation.
+- **2026-07-26 · su binary: access/stat/open hiding YES, readdir enumeration NOT hooked (deliberate)** —
+  the su binary sits at /system_ext/bin/su (Magisk-placed). is_root_path catches any "/su"-suffixed path,
+  so access()/stat()/open()/File.exists() on it return ENOENT (the COMMON root-check vector, covered). A
+  more advanced detector could opendir("/system_ext/bin")+readdir and see the "su" entry — readdir/getdents
+  are NOT hooked. Deliberately NOT implementing a getdents entry-filter: it re-packs a raw dirent byte
+  buffer, and a bug corrupts EVERY directory read the app makes (breaks the app's own file access) — a
+  large blast radius for a vector no observed detector uses (the FPJS demo doesn't readdir; traced). If a
+  real target is later shown to enumerate dirs for su, revisit with a narrow, well-tested getdents filter.
+  Recorded so it isn't mistaken for an oversight.
+
+- [AUDIT] Surveyed all ro.boot.* props (via in-app hooked read, not exec getprop which is a false proxy).
+  Many low-level ones leak the real Pixel 4 to a hooked app (ro.boot.hardware.sku=G020I, ro.boot.ddr_info=
+  Micron, ro.boot.hardware.ufs=64GB SKHynix, bootdevice, cdt_hwid, revision, color, baseband). DECISION:
+  NOT spoofing them now — (a) the FPJS demo reads NONE of them (traced: only ro.arch/ro.hardware/
+  ro.board.platform, all covered); (b) no per-device coherent values exist in the dataset (a wrong SKU/DDR
+  vendor is a worse tell than a real one). The two that HAD spoofed counterparts (ro.boot.hardware /
+  ro.boot.hardware.platform, inconsistent with ro.hardware/ro.board.platform) are already fixed (c9e558d).
+  Revisit only if a real target is shown to read ro.boot.* — then add per-device SKU/DDR/UFS data first.

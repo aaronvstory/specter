@@ -42,6 +42,64 @@ public class SpoofLogicTest {
         check(!SpoofLogic.argsContainKey(null, "android_id"), "null args safe");
         check(SpoofLogic.argsContainKey(new Object[]{"android_id"}, "android_id"), "key at index 0");
 
+        // User-Agent rebuild. The shape must match the REAL device string byte-for-byte, else the
+        // UA itself becomes a novel fingerprint. Ground truth captured from the test Pixel 4
+        // (Android 11 / RQ3A.211001.001) via the FPJS Server API on 2026-07-26.
+        check(SpoofLogic.dalvikUserAgent("11", "Pixel 4", "RQ3A.211001.001")
+                .equals("Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)"),
+                "dalvik UA matches the real device string exactly");
+        check(SpoofLogic.dalvikUserAgent("10", "moto g(6)", "PPSS29.55-37-8")
+                .equals("Dalvik/2.1.0 (Linux; U; Android 10; moto g(6) Build/PPSS29.55-37-8)"),
+                "dalvik UA carries the SPOOFED model, not the real one");
+        check(SpoofLogic.webViewUserAgent("10", "moto g(6)", "PPSS29.55-37-8", "120.0.6099.43")
+                .equals("Mozilla/5.0 (Linux; Android 10; moto g(6) Build/PPSS29.55-37-8; wv)"
+                        + " AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0"
+                        + " Chrome/120.0.6099.43 Mobile Safari/537.36"),
+                "webview UA matches the AOSP shape");
+
+        // APK install-time anchor (FPJS FileTimestamps). Match only the target's own /data/app APKs.
+        String own = "/data/app/~~abc==/com.fingerprintjs.android.fpjs_pro_demo-xyz==/base.apk";
+        String split = "/data/app/~~abc==/com.fingerprintjs.android.fpjs_pro_demo-xyz==/split_config.arm64_v8a.apk";
+        String pkg = "com.fingerprintjs.android.fpjs_pro_demo";
+        check(SpoofLogic.isOwnApk(own, pkg), "base.apk of own pkg matches");
+        check(SpoofLogic.isOwnApk(split, pkg), "split apk of own pkg matches");
+        check(!SpoofLogic.isOwnApk("/data/app/~~q==/com.pyshivam.geergit-1==/base.apk", pkg), "another pkg's apk not matched");
+        check(!SpoofLogic.isOwnApk("/data/user/0/" + pkg + "/files/x.apk", pkg), "app's data-dir file not matched (only /data/app)");
+        check(!SpoofLogic.isOwnApk("/data/app/~~q==/" + pkg + "-1==/lib/arm64/x.so", pkg), "non-apk in own dir not matched");
+        check(!SpoofLogic.isOwnApk(null, pkg) && !SpoofLogic.isOwnApk(own, null), "null-safe");
+        long reset = 1618552951L;
+        long baseT = SpoofLogic.apkInstallSeconds(reset, own);
+        check(baseT > reset, "install time is AFTER the factory reset");
+        check(baseT == SpoofLogic.apkInstallSeconds(reset, own), "stable per (reset, path)");
+        check(SpoofLogic.apkInstallSeconds(reset, split) - reset - SpoofLogic.APK_INSTALL_OFFSET_SEC < 13,
+                "split spread stays within 0..12s of the base offset");
+
+        // Installed-app filter: hide root / hooking-framework / anti-fp packages, keep ordinary ones.
+        check(SpoofLogic.isSensitivePackage("com.specter"), "hide the module");
+        check(SpoofLogic.isSensitivePackage("com.specter.probe"), "hide the probe");
+        check(SpoofLogic.isSensitivePackage("com.topjohnwu.magisk"), "hide Magisk manager");
+        check(SpoofLogic.isSensitivePackage("org.lsposed.manager"), "hide LSPosed");
+        check(SpoofLogic.isSensitivePackage("io.github.auag0.hidemocklocation"), "hide mock-location hider");
+        check(SpoofLogic.isSensitivePackage("com.tsng.hidemyapplist"), "hide hide-my-applist");
+        check(!SpoofLogic.isSensitivePackage("com.android.chrome"), "keep Chrome");
+        check(!SpoofLogic.isSensitivePackage("com.whatsapp"), "keep a normal app");
+        check(!SpoofLogic.isSensitivePackage(null), "null-safe");
+        // Narrowed markers must NOT false-positive on legitimate apps that happen to contain a token.
+        check(!SpoofLogic.isSensitivePackage("com.immomo.momo"), "MoMo dating app kept (bare 'momo' not matched)");
+        check(!SpoofLogic.isSensitivePackage("com.riru.wallpaper"), "an app named riru-something kept unless it's the real riru pkg form");
+        check(!SpoofLogic.isSensitivePackage("com.example.xposedhelper"), "a random app with 'xposed' in a word kept (only real framework ids matched)");
+        check(SpoofLogic.isSensitivePackage("de.robv.android.xposed.installer"), "the real Xposed installer hidden");
+        check(SpoofLogic.isSensitivePackage("moe.shizuku.privileged.api"), "Shizuku hidden");
+
+        // Sensor resolution/maxRange/power per type — must be positive, plausible, and stable per type.
+        float[] acc = SpoofLogic.sensorRmp(1, "BMI160 accelerometer");
+        check(acc.length == 3 && acc[0] > 0 && acc[1] > 0, "accelerometer rmp positive");
+        check(java.util.Arrays.equals(acc, SpoofLogic.sensorRmp(1, "x")), "rmp stable per type (name ignored)");
+        float[] prox = SpoofLogic.sensorRmp(8, "proximity");
+        check(prox[0] == 5.0f, "proximity maxRange 5cm");
+        float[] gen = SpoofLogic.sensorRmp(999, "unknown");
+        check(gen.length == 3 && gen[0] > 0, "unknown type gets a generic plausible rmp");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

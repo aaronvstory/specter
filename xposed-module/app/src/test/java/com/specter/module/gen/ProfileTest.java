@@ -36,12 +36,16 @@ public class ProfileTest {
         } catch (Exception e) { throw new RuntimeException(e); }
     }
 
-    // A few real device rows (same positional shape as data/devices.json).
+    // A few real device rows. Column order MUST mirror data/devices.json exactly:
+    // [name, manufacturer, brand, MODEL, PRODUCT, "DEVICE:release", build_id, incremental, patch].
+    // These fixtures previously had MODEL and DEVICE transposed relative to the real dataset, which is
+    // precisely why the swapped-column bug passed the suite — a fixture that disagrees with production
+    // data tests nothing. Values below are verified against real device builds.
     static List<List<String>> devices() {
         List<List<String>> d = new ArrayList<>();
-        d.add(Arrays.asList("Google Pixel 5", "Google", "google", "redfin", "redfin", "Pixel 5:11", "RQ3A.210805.001.A1", "7474174", "2021-08-05"));
-        d.add(Arrays.asList("Samsung Galaxy S21", "Samsung", "samsung", "o1s", "o1sxxx", "SM-G991U:11", "RP1A.200720.012", "G991USQU4AUDA", "2021-04-01"));
-        d.add(Arrays.asList("OnePlus 8T", "OnePlus", "oneplus", "kebab", "OnePlus8T", "KB2005:11", "RP1A.201005.001", "2107220042", "2021-07-01"));
+        d.add(Arrays.asList("Google Pixel 5", "Google", "google", "Pixel 5", "redfin", "redfin:11", "RQ3A.210805.001.A1", "7474174", "2021-08-05"));
+        d.add(Arrays.asList("Samsung Galaxy S21", "Samsung", "samsung", "SM-G991U", "o1sxxx", "o1s:11", "RP1A.200720.012", "G991USQU4AUDA", "2021-04-01"));
+        d.add(Arrays.asList("OnePlus 8T", "OnePlus", "oneplus", "KB2005", "OnePlus8T", "kebab:11", "RP1A.201005.001", "2107220042", "2021-07-01"));
         return d;
     }
 
@@ -57,21 +61,35 @@ public class ProfileTest {
             check(p.size() == Profile.KEYS.length, "all keys s=" + s);
             // coherence spot-checks
             check(p.get("build_fingerprint").contains(p.get("build_brand")), "brand in fp s=" + s);
+            // The fingerprint is $BRAND/$PRODUCT/$DEVICE:$RELEASE/$ID/$INCREMENTAL:$TYPE/$TAGS, and the
+            // DEVICE slot is a CODENAME — never the marketing model. Regression: MODEL and DEVICE were
+            // bound to the wrong dataset columns, emitting "google/bramble/Pixel 4a (5G):11/..." with
+            // spaces and parens in the DEVICE slot. No real Android build does that, so it flagged
+            // every profile. Assert the shape here, where one check covers all 1000 seeds.
+            String fp = p.get("build_fingerprint");
+            check(fp.matches("[^/]+/[^/]+/[^/:]+:[^/]+/[^/]+/[^:]+:user/release-keys"),
+                    "fingerprint shape s=" + s + " " + fp);
+            String fpDevice = fp.split("/")[2].split(":")[0];
+            check(fpDevice.equals(p.get("build_device")), "fp device slot == build_device s=" + s + " " + fp);
+            check(!fpDevice.contains(" ") && !fpDevice.contains("("),
+                    "fp device slot is a codename, not a marketing name s=" + s + " " + fp);
+            check(!p.get("build_device").contains(" "), "build_device is a codename s=" + s + " " + p.get("build_device"));
             // BOOTLOADER present, non-empty, and DEVICE-coherent — it must be derived from the picked
             // device codename so it can never imply a different model (a Galaxy A01 must not report a
             // Galaxy S21 bootloader). Google embeds the codename; LG embeds the device; Samsung embeds
             // the model code (SM- stripped, uppercased).
             String bl = p.get("build_bootloader");
             String brand = p.get("build_brand").toLowerCase();
-            String device = p.get("build_device");
-            // Samsung's bootloader derives from the SM- model (device slot); Google/LG from the codename
-            // (product with the LG region suffix stripped) — the device slot holds the marketing name.
+            String model = p.get("build_model");
+            // Samsung's bootloader derives from the SM- MARKETING model (build_model); Google/LG from
+            // the codename (product with the LG region suffix stripped). build_device holds the
+            // codename ("flame"), build_model the marketing name ("Pixel 4") — as on a real device.
             String cn2 = p.get("build_product");
             int u2 = cn2.indexOf('_'); if (u2 > 0) cn2 = cn2.substring(0, u2);
             check(bl != null && !bl.isEmpty() && !bl.contains(" "), "bootloader shape s=" + s + " " + bl);
             boolean coherent =
                 brand.equals("google")   ? bl.startsWith(cn2.toLowerCase() + "-") :
-                brand.equals("samsung")  ? bl.startsWith(device.replace("SM-", "").toUpperCase() + "XXU") :
+                brand.equals("samsung")  ? bl.startsWith(model.replace("SM-", "").toUpperCase() + "XXU") :
                 brand.equals("lge")      ? bl.startsWith("LGE-" + cn2.toUpperCase() + "-") :
                 brand.equals("motorola") ? bl.startsWith("MBM-") : bl.startsWith("BL");
             check(coherent, "bootloader coherent s=" + s + " brand=" + brand + " bl=" + bl);

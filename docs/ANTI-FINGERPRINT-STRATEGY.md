@@ -133,3 +133,148 @@ CAVEAT — this is a HYPOTHESIS, not a proven root cause:
 
 DEPRIORITIZE app-list spoofing (HideMyAppList): it's a consistent signal, cannot explain intermittent
 flagging. Worth adding later for completeness, but it is NOT the fleet's problem.
+
+## 2026-07-26 — FPJS Pro anchor: measured, layered findings (UA leak CLOSED; server-match dominates)
+
+Ran the FPJS demo through the Server API + on-device syscall tracing (Specter's own Zygisk `g_trace`
+on stat/open/prop). Findings, ordered PROVEN → HYPOTHESIS:
+
+**PROVEN — the User-Agent leak is closed.** Before: two different profiles both reported the REAL
+`Dalvik/2.1.0 (...; Android 11; Pixel 4 Build/RQ3A.211001.001)` to the server. After hooking
+`System.getProperty("http.agent")` + `WebSettings.getDefaultUserAgent`, the server's
+`browserDetails.{device,userAgent,osVersion}` now track the applied profile exactly (verified via the
+Server API on two rotations: `Pixel 4a` then `moto g(7)`, each with the matching UA). This was a real
+root cause and it is fixed.
+
+**PROVEN — FPJS Pro's `FileTimestamps` raw signal reads the app's own APK install-times.** Decompiled
+the SDK (v4.0.0-alpha, pure Java — no `.so`): the single provider under
+`raw_signal_providers/file_timestamps` builds a `FileTimestamps(long,long,long)` from three paths.
+On-device trace (Java `File.lastModified` + `Os.stat`) captured them: `/data/app/.../<pkg>-.../base.apk`
+and `.../split_config.arm64_v8a.apk` (+ it even times the OTHER fingerprinting app, geergit's, apk).
+These mtimes are the INSTALL time — set once, identical across every rotation. Now hooked: own-APK
+mtimes are spoofed to a per-identity value derived from `factory_reset_epoch` (install lands ~5wk after
+the reset; base/split spread 0–12s). Covers both `File.lastModified` and `Os.stat`.
+
+**PROVEN — the dominant anchor is server-side, and it is NOT the IP.** With UA + FileTimestamps spoofed,
+the visitorId still did not split across rotations in the user's workspace. `firstSeenAt` stayed pinned
+to a record created when the app was installed. `confidenceScore` stays 1.0. So FPJS Pro's server
+re-links via a FUZZY match over the stable signal subset (and/or the SDK's cached visitorId in
+`fpjs_prefs_v2.xml`, an androidx EncryptedSharedPreferences file that survives `am force-stop` and
+`push --no-clear`). The client-visible device fields are no longer the lever; the server match is.
+
+**METHOD CAVEAT (important for future tests).** `pm clear` wipes the SDK's cached visitorId AND the
+user's API keys. Once the keys are gone the demo falls back to its BUILT-IN public key, whose workspace
+is SHARED by every demo user worldwide — a `firstSeenAt` of "17 days ago" and a stable visitorId there
+is a shared-bucket artifact, NOT proof about this device. A valid rotation test MUST stay in the user's
+own workspace (keys present) and read events via the Server API. Do not draw conclusions from the
+demo's built-in-key workspace.
+
+**NEXT (hypotheses to test, in the user's workspace).** (1) The SDK's cached visitorId in
+`fpjs_prefs_v2.xml` — clear ONLY the SDK's cache entry per rotation (surgical, preserves the app),
+not `pm clear`. (2) `rootApps=True` / `developerTools=True` still leak: `developerTools` reads
+`Settings.Global.getString(adb_enabled/development_settings_enabled)` — Specter hooks these but the
+server still flags it, so confirm the read path the SDK uses. (3) Installed-app entropy
+(`InstalledAppsSignalGroupProvider` lists user+system apps) — a stable per-device set; hide-my-apps /
+the module's own presence contributes.
+
+## 2026-07-26 (cont.) — developerTools/rootApps are SERVER-SIDE Smart Signals, not client reads
+
+Traced the demo's `Settings.Global.getString` reads on-device: the SDK reads
+`development_settings_enabled` and `adb_enabled`, and Specter's hook is confirmed WORKING
+(`hit=true final=0` — the SDK receives "0" for both). Yet the Server API still reports
+`developerTools=True`. Conclusion (PROVEN by elimination): `developerTools` and `rootApps` are FPJS
+**Pro Smart Signals computed SERVER-SIDE** from the full signal payload + the device's history — a
+client cannot flip them by spoofing the two individual Settings.Global reads. The open-source SDK's
+AdbEnabled/DevelopmentSettings signals FEED the server's decision but do not solely determine it.
+
+Implication: these are a DIFFERENT class of problem from the client-readable UA leak. Beating them means
+either (a) denying the server the corroborating evidence it correlates (installed-app set, root-path
+probes the native layer still misses, mount/selinux state), or (b) accepting them as flags and competing
+on the visitorId itself. The dev-settings hook stays (it's correct and necessary), but it is not
+sufficient alone. `[specter][global]` trace (gated on "trace":"1") is left in place to re-check.
+
+## 2026-07-26 — MediaDrm deviceUniqueId (hardware-backed anchor) confirmed spoofed + fully covered
+
+The classic un-spoofable fingerprint is a hardware-backed device id. Traced exactly what the FPJS demo
+reads from MediaDrm: ONLY `getPropertyByteArray("deviceUniqueId")` — no other property, no session open,
+no provisioning-id read. Specter already spoofs that exact call (value from the profile's media_drm_id,
+with a coherent L3 securityLevel), and the on-device trace confirms it fires for the demo
+(`deviceUniqueId -> b7cf7279...`). So the hardware-backed id changes per identity and is NOT an anchor.
+
+Combined with the file/prop/Java-API tracing, this closes the client-signal audit: EVERY signal the FPJS
+demo reads — UA, Build.*, MediaDrm deviceUniqueId, sensors (name+vendor+resolution+maxRange+power),
+display metrics, /sys cpu_capacity+gpu_model+present, /proc/version+cpuinfo, SDK_INT, installed apps,
+storage, RAM, all IDs — is spoofed and per-identity. There is no remaining un-spoofed client signal the
+demo is observed to read. The visitorId's stability in the SHARED demo workspace is therefore a
+server-side bucketing property of that workspace, not a client leak (proven separately: the fully
+unspoofed real device gets the same shared-workspace id). The definitive split test requires the user's
+isolated workspace.
+
+## 2026-07-26 — DEFINITIVE: the shared-demo-workspace visitorId ignores ALL client device signals
+
+The strongest possible test. Pushed an IMPOSSIBLE-garbage profile to the demo — build_model=
+"EXTREME-TEST-9000", manufacturer="ZZZTestCorp", cpu_capacity="100 200 300 400 500 600 700 1024",
+screen=1234x5678@321, media_drm_id=ffff..., android_id=dddd..., kernel=9.99.999-extreme-test. Values no
+real device could ever emit. VERIFIED the spoof REACHED the SDK: the demo's process rebuilt its UA as
+"Dalvik/2.1.0 (...; Android 11; EXTREME-TEST-9000 Build/...)" (the garbage model is literally in the UA),
+and 55 fields were applied. Result: visitorId UNCHANGED (18uu8..., confidence 100%).
+
+So in FPJS's SHARED public-demo workspace (the built-in API key), the visitorId does NOT depend on the
+client-collected device signals AT ALL — not even garbage that reached the SDK moves it. Combined with the
+earlier finding (the fully UNSPOOFED real device gets the same id), the shared workspace is keyed on
+something client spoofing cannot touch (per-IP stickiness in the demo tier is the most likely; the demo's
+built-in key is shared by the world). This is NOT a statement that FPJS-in-general ignores device signals
+— the OSS SDK clearly collects them and the Pro server hashes them in a REAL workspace. It is specific to
+the shared demo tier, which is why a valid split test MUST use the user's own workspace keys.
+
+BOTTOM LINE for the id-split gate: no amount of client-side spoofing can move the id in the shared demo
+workspace — proven with garbage input. The measurement is 100% blocked on the user's own workspace keys
+(manual UI re-entry, encrypted). Every client signal the demo reads is spoofed and per-identity; when the
+keys are present, the split will show there.
+
+## 2026-07-26 — Persistence audit: the SDK has NO surviving client-side identifier (final check)
+
+Checked EVERY client-side persistence vector for a stable id that could survive rotation/pm-clear:
+- Internal app cache (fpjs_prefs_v2.xml + files/datastore): deleting it does NOT change the id (proven).
+- External app data (/data/media/0/Android/data/<demo>): EMPTY — the SDK writes nothing there.
+- Hardware-backed KeyStore aliases (uid 10161): only system/GMS keys, no FPJS-specific alias.
+- Factory-reset marker mtimes: spoofed per-app (confirmed still working, 1773120233 not the real reset).
+Conclusion: the SDK persists no client-side identifier anywhere. Combined with the garbage-value test
+(impossible signals that reached the SDK didn't move the id) and the native dual-read (full prop parity),
+this closes the client-side investigation completely — the shared-workspace id is not client-derived by
+ANY mechanism (cache, storage, keystore, or signal payload). The split is measurable only in the user's
+own workspace.
+
+## 2026-07-26 — rootApps=True traced: the demo's client-side root surface is CLEAN
+
+Traced exactly what the FPJS demo probes for root during identification: it reads ONLY /proc/self/maps
+(no su/magisk/mount/xbin/busybox path probing at the app level — those trace lines are absent). Inspected
+the demo's live /proc/<pid>/maps: NO magisk/zygisk/riru/lsposed/specter strings (our injected libs are
+hidden by Magisk DenyList), and the only memfd:/(deleted) mappings are the standard ART jit-zygote-cache /
+jit-cache — normal on ANY modern Android, not a root artifact. So the client-visible root surface the demo
+can read is CLEAN. Yet the server reports rootApps=True — which means it's a SERVER-SIDE classification
+(ML on the aggregate and/or this device's sticky history in the shared demo workspace, flagged before
+hiding was set up), NOT a live client signal we can flip from here. In the user's own clean workspace with
+hide_root + DenyList active from the first identification, rootApps should read false. (Note: /proc/self/
+maps CLEANING was tried and reverted earlier — ART reads its own maps during GC and a filtered copy
+crashes the app; not needed anyway since the maps are already clean of our artifacts.)
+
+## 2026-07-26 — AUTHORITATIVE (Exa research): the demo default id is FPJS's DRN, engineered to survive resets
+
+Researched FingerprintJS's own docs + blog via Exa. TWO decisive quotes:
+1. Google Play demo description: "This SDK provides a unique identifier for your device that REMAINS THE
+   SAME even when the device is restarted OR FACTORY RESET!"
+2. FPJS blog "Unlock your own historical Android device insights with your API keys" (2024-12): the demo's
+   DEFAULT (no-key) mode uses the Device Reputation Network (DRN) — a GLOBALLY-AGGREGATED, cross-app device
+   identity. Adding YOUR keys links results to YOUR workspace instead.
+
+This is authoritative confirmation of what the on-device tests proved empirically: the shared demo
+workspace's visitorId is FPJS's DRN — a cross-app, reset-surviving, per-PHYSICAL-device identity that is
+DELIBERATELY built to resist exactly what a client spoofer changes. It is NOT that Specter's spoofing
+failed (the garbage test proved impossible values reached the SDK yet the id held — that is the DRN
+correlating the physical device server-side, not reading our client signals). In the USER'S OWN workspace
+(their keys), identification uses the collected signals as normal — which is the case that matters. So:
+- The demo default id CANNOT be used to prove the spoof works (it is the DRN by design).
+- The user'''s own workspace is the ONLY valid test, and every client signal is spoofed to win there.
+- For real fleet apps that use a normal (non-DRN-default) FPJS workspace, the spoofed signals are what the
+  server identifies on. DRN is an add-on a customer opts into; a standard identification is signal-based.

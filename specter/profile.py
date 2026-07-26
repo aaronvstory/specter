@@ -20,6 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DEVICES_PATH = os.path.join(ROOT, "data", "devices.json")
 HARDWARE_PATH = os.path.join(ROOT, "data", "hardware.json")
+SOC_TOPOLOGY_PATH = os.path.join(ROOT, "data", "soc_topology.json")
 
 US_COMMON_BRANDS = {"samsung", "google", "motorola", "lge"}
 
@@ -48,6 +49,35 @@ def _load_devices():
 
 _HARDWARE_CACHE = None
 _HARDWARE_LOCK = threading.Lock()
+_SOC_TOPO_CACHE = None
+_SOC_TOPO_LOCK = threading.Lock()
+
+
+def _load_soc_topology():
+    """Per-SoC CPU-capacity vector + GPU model (data/soc_topology.json), keyed by SoC codename.
+    These are the values behind /sys/.../cpu_capacity and /sys/class/kgsl/kgsl-3d0/gpu_model, which
+    FingerprintJS reads directly and which leaked the REAL device on every rotation. Pure constant
+    lookup keyed on the already-picked SoC (no RNG) -> byte-parity safe."""
+    global _SOC_TOPO_CACHE
+    if _SOC_TOPO_CACHE is None:
+        with _SOC_TOPO_LOCK:
+            if _SOC_TOPO_CACHE is None:
+                _SOC_TOPO_CACHE = json.load(open(SOC_TOPOLOGY_PATH, encoding="utf-8"))
+    return _SOC_TOPO_CACHE
+
+
+def _soc_topology_fields(soc, topo=None):
+    """cpu_capacity / gpu_model / cpu_present for a SoC. Falls back to "_default" so the lookup is
+    total. Coherent by construction: the values describe the SoC the profile already claims."""
+    t = (topo or _load_soc_topology())
+    e = t.get(soc) or t["_default"]
+    cap = e["cpu_capacity"]
+    n = len(cap.split())
+    return {
+        "cpu_capacity": cap,
+        "gpu_model": e.get("gpu_model", ""),
+        "cpu_present": "0-%d" % (n - 1),
+    }
 
 
 def _load_hardware():
@@ -152,10 +182,16 @@ def _pick_device(r, devices, us_bias, brands=None):
 def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     cc = country_of(country)
     dev = _pick_device(r, devices, us_bias, cc["brands"])
-    manufacturer, brand, device, product = dev[1], dev[2], dev[3], dev[4]
-    model_rel = dev[5]
-    model = model_rel.split(":")[0]
-    release = model_rel.split(":")[1] if ":" in model_rel else "11"
+    # Dataset row: [name, manufacturer, brand, MODEL, PRODUCT, "DEVICE:release", id, incremental, patch].
+    # col3 is the MARKETING model (Build.MODEL, "Pixel 4"), col5's prefix is the DEVICE CODENAME
+    # (Build.DEVICE, "flame") — verified against a real Pixel 4: MODEL="Pixel 4", DEVICE=PRODUCT="flame",
+    # fingerprint "google/flame/flame:11/...". Binding them the other way round produced fingerprints
+    # like "google/bramble/Pixel 4a (5G):11/..." — a DEVICE slot containing spaces and parentheses,
+    # which no real Android build ever emits, i.e. a hard giveaway in every profile.
+    manufacturer, brand, model, product = dev[1], dev[2], dev[3], dev[4]
+    device_rel = dev[5]
+    device = device_rel.split(":")[0]
+    release = device_rel.split(":")[1] if ":" in device_rel else "11"
     build_id = dev[6] if len(dev) > 6 else "RQ3A.211001.001"
     incremental = dev[7] if len(dev) > 7 else G.digits(r, 7)
     patch = dev[8] if len(dev) > 8 else "2021-01-01"
@@ -170,8 +206,8 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # Board/platform CODENAME lives in the product slot ("flame" for a Pixel 4), not the marketing
     # device name ("Pixel 4"). LG products carry a region suffix (h1_lra_us) — strip it.
     codename = product.split("_")[0]
-    # Samsung derives its bootloader from the SM- model (device slot); others from the codename.
-    bl_base = device if brand.lower() == "samsung" else codename
+    # Samsung derives its bootloader from the SM- marketing model; others from the codename.
+    bl_base = model if brand.lower() == "samsung" else codename
     # Look up the per-model hardware bundle ONCE — its SoC drives soc_platform (so the reported SoC is
     # coherent with the GPU/cpuinfo the same profile carries), and the whole entry is reused for the
     # hardware fields appended at the end. Missing codename -> the coherent _default bundle.
@@ -232,6 +268,23 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # lookup keyed on the picked device codename; consumes no RNG (byte-parity safe). LAST so every
     # existing field's draw order is unchanged.
     p.update(_hw_fields(codename, _hw))
+    # Per-SoC CPU-capacity vector + GPU model — the /sys hardware signals FPJS reads directly.
+    # Keyed on the already-computed soc_platform; pure constant, no RNG (byte-parity safe).
+    p.update(_soc_topology_fields(p["soc_platform"]))
+    # API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
+    # ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
+    p["build_sdk"] = str(G.sdk_for_release(release))
+    # Screen resolution + density (getDisplayMetrics signal). Keyed on the device codename;
+    # pure lookup/hash, no RNG (byte-parity safe).
+    _sw, _sh, _sd = G.screen_for_device(device)
+    p["screen_width"] = str(_sw)
+    p["screen_height"] = str(_sh)
+    p["screen_density"] = str(_sd)
+    # ro.build.flavor / ro.build.description composites (they leak the real device otherwise).
+    # flavor = "<device>-<type>"; description = "<device>-<type> <release> <id> <incr> <tags>".
+    # release-keys/user by construction. Pure (no RNG), byte-parity safe.
+    p["build_flavor"] = device + "-user"
+    p["build_description"] = device + "-user " + release + " " + build_id + " " + incremental + " release-keys"
     return p
 
 

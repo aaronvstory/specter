@@ -246,6 +246,75 @@ public final class Generators {
     }
 
     /** Unix seconds of a plausible factory reset. Mirrors Python factory_reset_epoch. */
+    // Android release -> API level (Build.VERSION.SDK_INT / ro.build.version.sdk). Mirrors
+    // generators.sdk_for_release: a profile claiming Android 9 must not report SDK 30. Pure, no RNG.
+    private static final Map<String, Integer> SDK_BY_RELEASE = new java.util.HashMap<>();
+    static {
+        SDK_BY_RELEASE.put("15", 35); SDK_BY_RELEASE.put("14", 34); SDK_BY_RELEASE.put("13", 33);
+        SDK_BY_RELEASE.put("12L", 32); SDK_BY_RELEASE.put("12", 31); SDK_BY_RELEASE.put("11", 30);
+        SDK_BY_RELEASE.put("10", 29); SDK_BY_RELEASE.put("9", 28); SDK_BY_RELEASE.put("8.1.0", 27);
+        SDK_BY_RELEASE.put("8.1", 27); SDK_BY_RELEASE.put("8.0.0", 26); SDK_BY_RELEASE.put("8.0", 26);
+        SDK_BY_RELEASE.put("7.1.2", 25); SDK_BY_RELEASE.put("7.1.1", 25); SDK_BY_RELEASE.put("7.1", 25);
+        SDK_BY_RELEASE.put("7.0", 24); SDK_BY_RELEASE.put("6.0.1", 23); SDK_BY_RELEASE.put("6.0", 23);
+        SDK_BY_RELEASE.put("5.1.1", 22); SDK_BY_RELEASE.put("5.1", 22); SDK_BY_RELEASE.put("5.0.1", 21);
+        SDK_BY_RELEASE.put("5.0.2", 21); SDK_BY_RELEASE.put("5.0", 21);
+        SDK_BY_RELEASE.put("4.4.4", 19); SDK_BY_RELEASE.put("4.4.2", 19); SDK_BY_RELEASE.put("4.4", 19);
+        SDK_BY_RELEASE.put("4.3", 18); SDK_BY_RELEASE.put("4.2.2", 17); SDK_BY_RELEASE.put("4.2", 17);
+    }
+
+    public static int sdkForRelease(String release) {
+        if (release == null || release.isEmpty()) return 30;
+        Integer v = SDK_BY_RELEASE.get(release);
+        if (v != null) return v;
+        Integer m = SDK_BY_RELEASE.get(release.split("\\.")[0]);
+        return m != null ? m : 30;
+    }
+
+    // Screen (width,height,densityDpi) — mirrors generators.screen_for_device. Known models use their
+    // real spec; unknown codenames map deterministically into a pool via codenameHash (== Python
+    // _codename_hash). Pure, no RNG (byte-parity safe).
+    private static final Map<String, int[]> SCREEN_KNOWN = new java.util.HashMap<>();
+    static {
+        SCREEN_KNOWN.put("flame", new int[]{1080, 2280, 440}); SCREEN_KNOWN.put("coral", new int[]{1440, 3040, 560});
+        SCREEN_KNOWN.put("redfin", new int[]{1080, 2340, 440}); SCREEN_KNOWN.put("bramble", new int[]{1080, 2400, 400});
+        SCREEN_KNOWN.put("sunfish", new int[]{1080, 2340, 440}); SCREEN_KNOWN.put("barbet", new int[]{1080, 2400, 400});
+        SCREEN_KNOWN.put("oriole", new int[]{1080, 2400, 420}); SCREEN_KNOWN.put("raven", new int[]{1440, 3120, 560});
+        SCREEN_KNOWN.put("blueline", new int[]{1080, 2160, 440}); SCREEN_KNOWN.put("crosshatch", new int[]{1440, 2960, 560});
+        SCREEN_KNOWN.put("sargo", new int[]{1080, 2220, 440}); SCREEN_KNOWN.put("bonito", new int[]{1080, 2160, 400});
+        SCREEN_KNOWN.put("walleye", new int[]{1080, 1920, 420}); SCREEN_KNOWN.put("taimen", new int[]{1440, 2880, 560});
+        SCREEN_KNOWN.put("beyond1", new int[]{1440, 3040, 550}); SCREEN_KNOWN.put("beyond2", new int[]{1440, 3040, 526});
+        SCREEN_KNOWN.put("beyond0", new int[]{1080, 2280, 438}); SCREEN_KNOWN.put("o1s", new int[]{1080, 2400, 421});
+        SCREEN_KNOWN.put("t2s", new int[]{1080, 2400, 425}); SCREEN_KNOWN.put("p3s", new int[]{1440, 3200, 515});
+        SCREEN_KNOWN.put("a50", new int[]{1080, 2340, 403}); SCREEN_KNOWN.put("a50s", new int[]{1080, 2340, 403});
+        SCREEN_KNOWN.put("a70q", new int[]{1080, 2400, 393}); SCREEN_KNOWN.put("a30s", new int[]{720, 1560, 268});
+        SCREEN_KNOWN.put("a10", new int[]{720, 1520, 269}); SCREEN_KNOWN.put("a20", new int[]{720, 1560, 294});
+        SCREEN_KNOWN.put("m21", new int[]{1080, 2340, 411}); SCREEN_KNOWN.put("a51", new int[]{1080, 2400, 405});
+        SCREEN_KNOWN.put("a71", new int[]{1080, 2400, 393});
+    }
+    private static final int[][] SCREEN_POOL = {
+        {1080, 2340, 440}, {1080, 2400, 408}, {1080, 2280, 440}, {1080, 2340, 403},
+        {720, 1520, 295}, {720, 1560, 269}, {1080, 2160, 424}, {1440, 3040, 550},
+        {1080, 2400, 395}, {1080, 1920, 401},
+    };
+
+    /** FNV-1a 32-bit over the codename, kept positive. MUST match Python _codename_hash. */
+    static long codenameHash(String cn) {
+        long h = 2166136261L;
+        for (int i = 0; i < cn.length(); i++) {
+            h = (h ^ cn.charAt(i)) * 16777619L;
+            h &= 0xFFFFFFFFL;
+        }
+        return h;
+    }
+
+    public static int[] screenForDevice(String codename) {
+        String cn = codename == null ? "" : codename.toLowerCase();
+        int[] k = SCREEN_KNOWN.get(cn);
+        if (k != null) return k;
+        if (cn.isEmpty()) return SCREEN_POOL[0];
+        return SCREEN_POOL[(int) (codenameHash(cn) % SCREEN_POOL.length)];
+    }
+
     public static String factoryResetEpoch(Rng r, String securityPatch) {
         long base;
         if (securityPatch != null && securityPatch.length() >= 10) {

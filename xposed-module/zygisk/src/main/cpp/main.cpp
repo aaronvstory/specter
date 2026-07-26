@@ -141,24 +141,28 @@ static fstatat_t orig_fstatat = nullptr;
 static statx_t orig_statx = nullptr;
 
 static int my_stat(const char *path, struct stat *st) {
+    if (g_trace) trace_path("stat", path);
     if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     int r = orig_stat(path, st);
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
 }
 static int my_lstat(const char *path, struct stat *st) {
+    if (g_trace) trace_path("lstat", path);
     if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     int r = orig_lstat(path, st);
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
 }
 static int my_fstatat(int dirfd, const char *path, struct stat *st, int flags) {
+    if (g_trace) trace_path("fstatat", path);
     int r = orig_fstatat(dirfd, path, st, flags);
     // The reset markers are absolute paths, so dirfd is irrelevant when the path matches.
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
 }
 static int my_statx(int dirfd, const char *path, int flags, unsigned int mask, struct statx *stx) {
+    if (g_trace) trace_path("statx", path);
     int r = orig_statx(dirfd, path, flags, mask, stx);
     if (r == 0 && stx && g_reset_epoch != 0 && is_reset_marker(path)) {
         stx->stx_mtime.tv_sec = g_reset_epoch; stx->stx_mtime.tv_nsec = 0;
@@ -190,6 +194,18 @@ static std::string g_bootid_path;   // path to our spoofed boot_id file, empty =
 static bool is_bootid(const char *path) {
     return path && strcmp(path, "/proc/sys/kernel/random/boot_id") == 0;
 }
+// Per-SoC /sys hardware signals FPJS reads directly (tracer-proven): the CPU capacity vector
+// (/sys/devices/system/cpu/cpu<N>/cpu_capacity — one number per core), the KGSL GPU model
+// (/sys/class/kgsl/kgsl-3d0/gpu_model), and the present-CPU range (/sys/devices/system/cpu/present).
+// These leaked the REAL device (e.g. the Pixel 4's "261 261 261 261 871 871 871 1024") on every
+// rotation. We write a spoof file per path from the profile and redirect exact-path reads to it.
+static std::map<std::string, std::string> g_sys_redirect;   // real sysfs path -> spoof file path
+static const char *sys_redirect(const char *path) {
+    if (g_sys_redirect.empty() || !path) return nullptr;
+    auto it = g_sys_redirect.find(path);
+    return it == g_sys_redirect.end() ? nullptr : it->second.c_str();
+}
+
 // /proc/self/maps hiding: libfp.so reads maps (tracer-proven) to detect our injected .so + Magisk/Zygisk
 // (that's what sets rootApps/tampering). maps changes per read, so we regenerate a FILTERED copy on each
 // open: drop any line naming our lib or a known root artifact. Returns an fd to a fresh temp, or -1.
@@ -199,7 +215,7 @@ static std::string g_files_dir;   // /data/data/<pkg>/files — a dir we can wri
 }
 static const char *MAPS_HIDE_MARKERS[] = {
     "libspecter_zygisk", "/data/adb/", "magisk", "zygisk", "/memfd:", "riru", "lsposed", "edxposed",
-    "/dev/.magisk", "KSU", "kernelsu",
+    "/dev/.magisk", "KSU", "kernelsu", "frida", "gadget", "gum-js-loop", "gmain",
 };
 [[maybe_unused]] static int clean_maps_fd() {
     FILE *real = fopen("/proc/self/maps", "re");
@@ -228,10 +244,50 @@ static const char *MAPS_HIDE_MARKERS[] = {
     return fd;
 }
 
+// /proc/mounts + /proc/self/mountinfo LEAK Magisk unambiguously: real reads show tmpfs "magisk"
+// overlays on /system_ext/bin and /debug_ramdisk/.magisk lines — a strong root/bind-mount signal a
+// mount-reading detector catches even when the su/magisk BINARY paths are hidden (the byedentity-relevant
+// vector). Unlike /proc/self/maps (which ART reads during GC — filtering it crashes the app), mountinfo
+// is safe to filter. We build a filtered copy once per process (drops any line naming magisk / a hook
+// framework / /data/adb) and redirect the read to it. Gated by g_hide_root.
+static std::string g_mounts_path;      // filtered /proc/mounts
+static std::string g_mountinfo_path;   // filtered /proc/self/mountinfo
+static bool is_mounts(const char *path) {
+    return path && (strcmp(path, "/proc/mounts") == 0 || strcmp(path, "/proc/self/mounts") == 0);
+}
+static bool is_mountinfo(const char *path) {
+    return path && (strcmp(path, "/proc/self/mountinfo") == 0 || strcmp(path, "/proc/mountinfo") == 0);
+}
+
+// Write a filtered copy of a /proc mount file (magisk/hook/adb lines dropped) into the app files dir,
+// and store its path in `out`. Best-effort; on any failure `out` stays empty and the real file is read.
+static void build_filtered_mounts(const char *src, const std::string &tag, std::string &out) {
+    if (g_files_dir.empty()) return;
+    FILE *real = fopen(src, "re");
+    if (!real) return;
+    std::string filtered;
+    char line[2048];
+    while (fgets(line, sizeof(line), real)) {
+        bool hide = false;
+        for (auto m : MAPS_HIDE_MARKERS) if (strstr(line, m)) { hide = true; break; }
+        if (!hide) filtered.append(line);
+    }
+    fclose(real);
+    std::string path = g_files_dir + "/.specter_" + tag;
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd < 0) return;
+    if (write(fd, filtered.data(), filtered.size()) == (ssize_t) filtered.size()) out = path;
+    close(fd);
+}
+
 // Map a spoof-target path to our replacement file, or return the original path unchanged.
 static const char *redirect_path(const char *path) {
     if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) return g_cpuinfo_path.c_str();
     if (!g_bootid_path.empty()  && is_bootid(path))  return g_bootid_path.c_str();
+    if (!g_mounts_path.empty()    && is_mounts(path))    return g_mounts_path.c_str();
+    if (!g_mountinfo_path.empty() && is_mountinfo(path)) return g_mountinfo_path.c_str();
+    const char *sr = sys_redirect(path);
+    if (sr) return sr;
     return path;
 }
 
@@ -245,6 +301,11 @@ static const char *ROOT_PATHS[] = {
     "/dev/com.koushikdutta.superuser.daemon/", "/system/xbin/busybox", "/data/adb/magisk",
     "/data/adb/modules", "/sbin/.magisk", "/cache/.disable_magisk", "/system/bin/magisk",
     "/system/xbin/magisk", "/data/adb/ksu", "/data/adb/ap",
+    // Frida (a hooking/instrumentation framework) artifacts — a frida-detection check probes these
+    // exact paths. Hide them like the su/magisk paths so an access()/stat()/File.exists() finds nothing.
+    "/data/local/tmp/frida-server", "/data/local/tmp/frida-gadget",
+    "/data/local/tmp/re.frida.server", "/system/lib/libfrida-gadget.so",
+    "/system/lib64/libfrida-gadget.so", "/data/local/tmp/frida",
 };
 static bool is_root_path(const char *path) {
     if (!path) return false;
@@ -515,6 +576,13 @@ public:
             mkdir(g_files_dir.c_str(), 0700);
         }
 
+        // Hide Magisk's bind-mounts from /proc/mounts + /proc/self/mountinfo (a strong root signal that
+        // survives su-path hiding). Filtered copies built once here; redirect_path swaps the read.
+        if (g_hide_root && !g_files_dir.empty()) {
+            build_filtered_mounts("/proc/mounts", "mounts", g_mounts_path);
+            build_filtered_mounts("/proc/self/mountinfo", "mountinfo", g_mountinfo_path);
+        }
+
         // boot_id: a per-boot UUID FPJS reads (tracer-proven). Derive a stable per-identity UUID from
         // android_id and redirect the file. hwcap: drop-only feature-bit tweak so the CPU mask varies.
         auto aid = profile.find("android_id");
@@ -562,10 +630,75 @@ public:
             }
         }
 
+        // Per-SoC /sys hardware signals (cpu_capacity vector, KGSL gpu_model, cpu present range). Each
+        // real sysfs node gets a spoof file under the app's files dir, and its exact path is redirected.
+        // cpu_capacity is per-core: "261 261 ... 1024" -> one file per core cpuN/cpu_capacity.
+        // Gated: the app writes "spoof_sysfs":"0" into the profile only when the user toggles it OFF.
+        bool sysfs_off = profile.count("spoof_sysfs") && profile.at("spoof_sysfs") == "0";
+
+        // /proc/version — the kernel banner. The Java os.version property hook does NOT cover a direct
+        // /proc/version read (a known gap vs byedentity), so an app reading the file gets the REAL
+        // kernel. Rebuild the AOSP banner from build_kernel_version and redirect the read. Gated with
+        // spoof_sysfs (same hardware/kernel class of signal).
+        if (!pkg.empty() && !sysfs_off) {
+            auto kv = profile.find("build_kernel_version");
+            if (kv != profile.end() && !kv->second.empty()) {
+                // Match the real Pixel-4 banner shape; only the kernel-version token is identity-bearing.
+                std::string banner = "Linux version " + kv->second +
+                    " (android-build@abfarm) (Android clang version 11.0.1) "
+                    "#1 SMP PREEMPT Wed Jun 30 09:33:45 UTC 2021\n";
+                std::string dir = "/data/data/" + pkg + "/files";
+                mkdir(dir.c_str(), 0700);
+                std::string sp = dir + "/.specter_procver";
+                int f = open(sp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+                if (f >= 0) {
+                    if (write(f, banner.data(), banner.size()) == (ssize_t) banner.size())
+                        g_sys_redirect["/proc/version"] = sp;
+                    close(f);
+                }
+            }
+        }
+        if (!pkg.empty() && !sysfs_off) {
+            std::string dir = "/data/data/" + pkg + "/files";
+            mkdir(dir.c_str(), 0700);
+            auto write_spoof = [&](const std::string &tag, const std::string &content,
+                                   const std::string &sysPath) {
+                std::string sp = dir + "/.specter_" + tag;
+                int f = open(sp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+                if (f >= 0) {
+                    bool ok = write(f, content.data(), content.size()) == (ssize_t) content.size();
+                    close(f);
+                    if (ok) g_sys_redirect[sysPath] = sp;
+                }
+            };
+            auto cap = profile.find("cpu_capacity");
+            if (cap != profile.end() && !cap->second.empty()) {
+                // split on spaces; core i -> /sys/devices/system/cpu/cpu<i>/cpu_capacity
+                const std::string &v = cap->second;
+                size_t i = 0, core = 0;
+                while (i < v.size()) {
+                    size_t j = v.find(' ', i);
+                    if (j == std::string::npos) j = v.size();
+                    std::string one = v.substr(i, j - i);
+                    if (!one.empty())
+                        write_spoof("cap" + std::to_string(core), one + "\n",
+                                    "/sys/devices/system/cpu/cpu" + std::to_string(core) + "/cpu_capacity");
+                    core++;
+                    i = j + 1;
+                }
+            }
+            auto gm = profile.find("gpu_model");
+            if (gm != profile.end() && !gm->second.empty())
+                write_spoof("gpumodel", gm->second + "\n", "/sys/class/kgsl/kgsl-3d0/gpu_model");
+            auto pr = profile.find("cpu_present");
+            if (pr != profile.end() && !pr->second.empty())
+                write_spoof("cpupresent", pr->second + "\n", "/sys/devices/system/cpu/present");
+        }
+
         if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&
             g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root &&
             g_gl_renderer.empty() && g_gl_vendor.empty() && g_gl_version.empty() &&
-            g_sensor_labels.empty()) return;
+            g_sensor_labels.empty() && g_sys_redirect.empty()) return;
         installHooks();
     }
 
@@ -600,8 +733,9 @@ private:
             applied += hookSym("fstatat64", (void *) my_fstatat, (void **) &orig_fstatat);
             applied += hookSym("statx",     (void *) my_statx,   (void **) &orig_statx);
         }
-        // File hooks: needed for cpuinfo/boot_id redirects, the tracer, AND root-hiding.
-        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || g_hide_root) {
+        // File hooks: needed for cpuinfo/boot_id/sysfs redirects, the tracer, AND root-hiding.
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || g_hide_root
+                || !g_sys_redirect.empty()) {
             applied += hookSym("openat", (void *) my_openat, (void **) &orig_openat);
             applied += hookSym("open",   (void *) my_open,   (void **) &orig_open);
             applied += hookSym("fopen",  (void *) my_fopen,  (void **) &orig_fopen);
@@ -656,8 +790,10 @@ private:
         if (g_trace) {
             applied += hookSym("dlsym", (void *) my_dlsym, (void **) &orig_dlsym);
         }
-        // syscall: needed whenever we redirect files (libfp reads via raw syscall) or trace.
-        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace) {
+        // syscall: needed whenever we redirect files (libfp reads via raw syscall) or trace, incl. the
+        // mount-file redirect (a root detector may read /proc/mounts via raw syscall(SYS_openat)).
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || !g_sys_redirect.empty()
+                || !g_mounts_path.empty() || !g_mountinfo_path.empty()) {
             applied += hookSym("syscall", (void *) my_syscall, (void **) &orig_syscall);
         }
         // In pure-trace mode prop_get may not be hooked yet (no props spoofed) — ensure it for the trace.

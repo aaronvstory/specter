@@ -58,11 +58,9 @@ and `SystemProperties.get("ro.product.model")` are independent read paths; hooki
 prop returning the real `"Pixel 4"`. `HookEntry.PROP_ALIASES` now maps 30 prop keys to the same profile
 values. Any NEW spoofed Build field must be added there as well, or it leaks.
 
-**Xposed hooks are Java-only — native `__system_property_get` reads straight through them (PROVEN).**
-An in-process JNI read returns the REAL device value for ~10 `ro.*` props while the Java path returns the
-spoofed one. Closing that needs a root `resetprop` layer (not built yet — see `docs/IDEAS.md`). Corollary
-for testing: `getprop` via exec is a FALSE proxy (separate unhooked process, always shows real). The
-dual-read probe (`probe/src/main/cpp/native-probe.cpp`, NDK 27) is the correct instrument.
+**Xposed hooks are Java-only, BUT the Zygisk native layer now covers `__system_property_get` too (CLOSED 2026-07-26).** The probe's dual read confirms every aliased `ro.*` prop reads the SPOOFED value on BOTH the Java and native paths (`_java` == `_native` for model/hardware/serial/board/fingerprint/bootloader/baseband/etc.). The old ~10-prop native blind spot is closed — no root `resetprop` layer is needed; the per-app Zygisk `my_prop_get` inline hook handles it. EXCEPTION: `ro.build.version.sdk` / `ro.product.first_api_level` are deliberately Java-only (native intercept SIGSEGVs the zygote — see the note above), so a NATIVE read of those two still returns the real value; accept it. Corollary for testing: `getprop` via exec is a FALSE proxy (separate unhooked process, always shows real). The dual-read probe (`probe/src/main/cpp/native-probe.cpp`, NDK 27) is the correct instrument.
+
+**NEVER add `ro.build.version.sdk` / `ro.product.first_api_level` to the NATIVE PROP_ALIASES — it SIGSEGVs the zygote.** These props are read by ART/libc DURING process initialization, before our `__system_property_get` hook state is safe; intercepting them crashes every hooked app at startup (proven 2026-07-26: probe + FPJS demo both zygote64 SIGSEGV, `props=33`). Spoof the SDK via the Java layer ONLY (`Build.VERSION.SDK_INT` reflection + the `SystemProperties.get` Java hook), which runs after init. Corollary: an app that reads `ro.build.version.sdk` NATIVELY will still see the real value — accept that; do not chase it into the native prop layer.
 
 ## FPJS measurement — Server API (the ground-truth tool, set up 2026-07-26)
 The FPJS *demo* app's on-screen visitorId is a weak proxy; the **Server API** gives the raw server-side

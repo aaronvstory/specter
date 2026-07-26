@@ -85,6 +85,65 @@ public class ProbeActivity extends Activity {
             put(o, "build_incremental", Build.VERSION.INCREMENTAL);
             put(o, "build_security_patch", Build.VERSION.SECURITY_PATCH);
             put(o, "os_version", System.getProperty("os.version"));
+            // http.agent — the default HTTP User-Agent. PROVEN to be FPJS Pro's dominant visitorId
+            // anchor: it is built at zygote init from the REAL build fields, so it leaks the true
+            // device even when every Build.* field reads spoofed in-process.
+            put(o, "http_agent", System.getProperty("http.agent"));
+            try {
+                put(o, "webview_ua", android.webkit.WebSettings.getDefaultUserAgent(this));
+            } catch (Throwable t) { put(o, "webview_ua", "ERR:" + t); }
+
+            // Installed-app enumeration — a raw signal FPJS collects. Report whether any root/hooking/
+            // anti-fingerprint package leaks through (the module hides these), plus the total count.
+            try {
+                java.util.List<android.content.pm.ApplicationInfo> apps =
+                        getPackageManager().getInstalledApplications(0);
+                StringBuilder leaked = new StringBuilder();
+                String[] markers = {"com.specter", "magisk", "lsposed", "xposed", "hidemocklocation",
+                        "hidemyapplist", "riru", "zygisk", "shamiko"};
+                for (android.content.pm.ApplicationInfo ai : apps) {
+                    String n = ai.packageName == null ? "" : ai.packageName.toLowerCase();
+                    for (String mk : markers) if (n.contains(mk)) { leaked.append(ai.packageName).append(","); break; }
+                }
+                put(o, "installed_app_count", String.valueOf(apps.size()));
+                put(o, "installed_sensitive_leak", leaked.length() == 0 ? "none" : leaked.toString());
+            } catch (Throwable t) { put(o, "installed_sensitive_leak", "ERR:" + t); }
+
+            // Per-SoC /sys hardware signals FPJS reads directly — the native layer redirects these.
+            put(o, "sys_cpu_capacity0", readFileTrim("/sys/devices/system/cpu/cpu0/cpu_capacity"));
+            put(o, "sys_cpu_capacity7", readFileTrim("/sys/devices/system/cpu/cpu7/cpu_capacity"));
+            put(o, "sys_cpu_present", readFileTrim("/sys/devices/system/cpu/present"));
+            put(o, "sys_gpu_model", readFileTrim("/sys/class/kgsl/kgsl-3d0/gpu_model"));
+            put(o, "proc_version", readFileTrim("/proc/version"));
+            // /proc/mounts + mountinfo must NOT leak Magisk bind-mounts (root signal). Report whether any
+            // "magisk" line survives (should be "clean" when hide_root is on).
+            String mounts = readFileTrim("/proc/mounts");
+            put(o, "mounts_magisk_leak", mounts.toLowerCase().contains("magisk") ? "LEAK" : "clean");
+            String mountinfo = readFileTrim("/proc/self/mountinfo");
+            put(o, "mountinfo_magisk_leak", mountinfo.toLowerCase().contains("magisk") ? "LEAK" : "clean");
+            // frida-server artifact must be hidden from a File.exists()/access check (frida detection).
+            put(o, "frida_server_visible", new java.io.File("/data/local/tmp/frida-server").exists() ? "LEAK" : "clean");
+            // ro.boot.hardware / ro.boot.hardware.platform leaked the real device (flame/sm8150) — now aliased.
+            put(o, "prop_ro_boot_hardware", readProp("ro.boot.hardware"));
+            put(o, "prop_ro_boot_hardware_platform", readProp("ro.boot.hardware.platform"));
+            // Per-partition product props (Android 10+) — odm/product/system_ext must NOT leak the real device.
+            put(o, "prop_ro_product_odm_model", readProp("ro.product.odm.model"));
+            put(o, "prop_ro_product_product_model", readProp("ro.product.product.model"));
+            put(o, "prop_ro_product_build_fingerprint", readProp("ro.product.build.fingerprint"));
+            put(o, "prop_ro_build_product", readProp("ro.build.product"));
+            put(o, "prop_ro_build_flavor", readProp("ro.build.flavor"));
+            put(o, "prop_ro_build_description", readProp("ro.build.description"));
+            put(o, "prop_ro_bootimage_fp", readProp("ro.bootimage.build.fingerprint"));
+            put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
+            put(o, "prop_sdk", readProp("ro.build.version.sdk"));
+            put(o, "prop_first_api", readProp("ro.product.first_api_level"));
+            // Display metrics (getDisplayMetrics signal) — spoofed by the display hook.
+            try {
+                android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+                put(o, "screen_width", String.valueOf(dm.widthPixels));
+                put(o, "screen_height", String.valueOf(dm.heightPixels));
+                put(o, "screen_density", String.valueOf(dm.densityDpi));
+            } catch (Throwable t) { put(o, "screen_width", "ERR:" + t); }
 
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }
@@ -258,12 +317,17 @@ public class ProbeActivity extends Activity {
             android.hardware.SensorManager sm = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
             java.util.List<android.hardware.Sensor> list = sm.getSensorList(android.hardware.Sensor.TYPE_ALL);
             StringBuilder sb = new StringBuilder();
+            StringBuilder rmp = new StringBuilder();
             for (android.hardware.Sensor s : list) {
                 if (sb.length() > 0) sb.append(';');
                 sb.append(s.getName()).append('|').append(s.getVendor());
+                if (rmp.length() > 0) rmp.append(';');
+                rmp.append(s.getMaximumRange()).append('/').append(s.getResolution()).append('/').append(s.getPower());
             }
             put(o, "hw_sensors", sb.toString());
             put(o, "hw_sensor_count", String.valueOf(list.size()));
+            // resolution/maxRange/power — the high-entropy fields FPJS hashes (spoofed per type).
+            put(o, "hw_sensors_rmp", rmp.toString());
         } catch (Throwable t) { put(o, "hw_sensors", "ERR:" + t); }
         // Native sensor read (NDK ASensor path — what Specter's native ASensor_getName/getVendor hooks
         // target). Proves the native relabel engaged, independent of the Java SensorManager hook.
@@ -327,6 +391,27 @@ public class ProbeActivity extends Activity {
 
     private void put(JSONObject o, String k, String v) {
         try { o.put(k, v == null ? "null" : v); } catch (Throwable ignored) {}
+    }
+
+    // Read a system property via the Java SystemProperties.get (the hooked path).
+    private static String readProp(String key) {
+        try {
+            java.lang.reflect.Method get = Class.forName("android.os.SystemProperties")
+                    .getMethod("get", String.class);
+            return String.valueOf(get.invoke(null, key));
+        } catch (Throwable t) { return "ERR:" + t; }
+    }
+
+    // Read a small sysfs/procfs node and trim it. Routes through libc, so the native redirect applies.
+    // try-with-resources so the fd is released even if read() throws — sysfs nodes like gpu_model
+    // (absent on non-Adreno) or cpuN/cpu_capacity (absent on non-octa layouts) can EIO mid-read.
+    private static String readFileTrim(String path) {
+        try (java.io.FileInputStream in = new java.io.FileInputStream(path)) {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[512]; int n;
+            while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+            return new String(bos.toByteArray(), "UTF-8").trim();
+        } catch (Throwable t) { return "ERR:" + t; }
     }
 
     private void writeResult(String json) {

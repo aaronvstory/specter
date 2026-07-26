@@ -5,6 +5,59 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Added
+- **Hide Frida artifacts** (a hooking/instrumentation-framework detection vector). This device had a
+  leftover `/data/local/tmp/frida-server` binary that a `File.exists()`/`access()` frida check would
+  find. Added the frida artifact paths (frida-server, frida-gadget, re.frida.server, libfrida-gadget)
+  to the native root/hook-hiding path list so those reads return ENOENT for a hooked app, and added
+  frida/gadget/thread-name markers to the maps/mount filter. Gated by `hide_root`. Verified on the
+  probe: `frida_server_visible` reads `clean` while a non-hooked shell still sees the binary (per-app).
+- **Hide Magisk from `/proc/mounts` + `/proc/self/mountinfo`** (a byedentity-relevant root vector).
+  Real reads leak Magisk unambiguously — `tmpfs magisk` overlays on `/system_ext/bin`,
+  `/debug_ramdisk/.magisk` lines — which a mount-reading root detector catches even when the su/
+  magisk BINARY paths are already hidden. The Zygisk layer now builds a filtered per-process copy
+  (drops any line naming magisk / a hook framework / `/data/adb`) and redirects the read to it,
+  gated by `hide_root`. Unlike `/proc/self/maps` (which ART reads during GC — filtering crashes the
+  app), mountinfo is safe to filter. Verified on the probe: both files read `clean` (no magisk) in
+  the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
+
+### Fixed
+- **Remaining build props leaked the real device.** A full prop sweep found ro.build.product (=flame),
+  ro.build.flavor (=flame-user), ro.build.description (=flame-user 11 RQ3A...), and
+  ro.bootimage.build.fingerprint (=google/flame/...) all leaked the real Pixel 4. Aliased product/
+  bootimage-fingerprint to build_device/build_fingerprint, and added two computed profile fields
+  build_flavor (<device>-user) + build_description (<device>-user <release> <id> <incr> release-keys)
+  aliased to ro.build.flavor / ro.build.description. Verified on the probe: a moto g(7) profile
+  reports channel / channel-user / motorola/channel/... — no flame leak. 29 spoofed / 0 hard leaks.
+- **Per-partition product props leaked the real device (significant).** Android 10+ exposes
+  Build.MODEL/BRAND/DEVICE/MANUFACTURER/PRODUCT and the build fingerprint on multiple partitions
+  (system/vendor/odm/product/system_ext). Specter aliased only ro.product.* + ro.product.vendor.*,
+  so ro.product.odm.model / ro.product.product.model / ro.product.system_ext.model / and the
+  ro.{product,odm,system,system_ext}.build.fingerprint props all leaked the REAL Pixel 4
+  (ro.product.odm.model=Pixel 4, ro.product.build.fingerprint=google/flame/...). Added all the
+  partition variants to the Java + native PROP_ALIASES (lockstep test passes). Verified on the probe:
+  a Galaxy Note20 profile reports SM-N986U / samsung/c2qsqw/c2q on every partition, not the real device.
+- **`ro.boot.hardware` + `ro.boot.hardware.platform` leaked the real device.** These props read the
+  real Pixel 4 (`flame` / `sm8150`) while `ro.hardware` / `ro.board.platform` were spoofed — both a
+  leak AND an internal inconsistency (two hardware props disagreeing). Added them to the Java + native
+  PROP_ALIASES (`ro.boot.hardware`->build_hardware, `ro.boot.hardware.platform`->soc_platform);
+  lockstep test still passes. Verified on the probe: a Pixel 5 profile now reports
+  `ro.boot.hardware=redfin` / `.platform=lito`, not the real values, with no zygote crash (unlike the
+  init-time SDK props, these are safe to intercept natively).
+- **`build_sdk` was incoherent for pre-Lollipop devices** (code-review finding). Five release
+  strings present in `data/devices.json` (`4.2.2`/`4.3`/`4.4.2`/`4.4.4`/`5.0.2`) were missing from
+  the release->SDK map, so they fell through to the default SDK 30 — a KitKat device reporting
+  Android 11's API level, an internally inconsistent giveaway. Added the correct mappings (17/18/
+  19/19/21) to both the Python and Java maps, and added a coherence test asserting EVERY release in
+  the dataset has an explicit, era-plausible SDK (not just self-consistency with the buggy function).
+- **`getInstallerPackageName` was hooked to throw the wrong exception** (code-review finding). It was
+  in the installed-app-hiding `notFound` list that throws the checked `NameNotFoundException`, but
+  its real not-found contract returns `null` / throws the UNCHECKED `IllegalArgumentException`. A
+  caller catching `IllegalArgumentException` for a hidden package would be hit by an undeclared
+  checked exception. Now returns `null` (benign "unknown installer") for a hidden package instead.
+
+## [0.5.0] — 2026-07-26
+
 ### Investigation (2026-07-26) — root cause of "FPJS still wins" PROVEN
 - Wired up the Fingerprint **Server API** (user's Public key in the demo -> events in the user's own
   clean workspace; Secret key + AP/Mumbai region -> read raw signals back via curl). Ran the clean
@@ -17,7 +70,93 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   hook `WebSettings.getDefaultUserAgent()` + `System.getProperty("http.agent")` + close `rootApps`
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
+### Added
+- **Sensor resolution / maxRange / power spoofed (the high-entropy sensor fields).** The sensor-list hook
+  already relabeled name+vendor, but left `mResolution`/`mMaxRange`/`mPower`/`mVersion` REAL — which leak
+  the exact Pixel-4 sensor chip (what FingerprintJS actually hashes). Now set to coherent per-sensor-type
+  values (SpoofLogic.sensorRmp, pure + tested). Verified on the probe: the accelerometer reports
+  78.4532/0.0023928226/0.17, not the real device's values.
+- **Display metrics spoofed (`getDisplayMetrics`: width/height/densityDpi).** Decompiling the FPJS SDK
+  found it reads the screen via `getResources().getDisplayMetrics()` — a Java-API signal the native
+  tracer can't see, which leaked the real Pixel 4's `1080x2280@440` on every rotation. New
+  `screen_width`/`screen_height`/`screen_density` fields keyed on the device codename (known models use
+  their real spec; unknown codenames map deterministically into a pool of real configs via an FNV-1a
+  hash mirrored byte-for-byte in Java). `Resources.getDisplayMetrics` + `Display.getMetrics`/
+  `getRealMetrics` are hooked to return them. Gated by the CPU/GPU-/sys toggle. Verified on the probe: a
+  Galaxy A7 profile reports `720x1520@295`, real `1080x2280@440` gone.
+- **`Build.VERSION.SDK_INT` spoofed coherent with the Android release.** A profile claiming Android 9
+  used to still report SDK 30 (the real Pixel 4) via `Build.VERSION.SDK_INT` — a mismatch that is itself
+  a fingerprint. New `build_sdk` profile field (release -> API level, pure lookup, byte-parity mirrored
+  in Java's `sdkForRelease`) drives a reflection write to the int field. Verified: an Android-10 profile
+  reports SDK_INT 29. NOTE: `ro.build.version.sdk` is spoofed via Java only, NOT the native prop layer —
+  intercepting it natively SIGSEGVs the zygote (ART reads it during init); documented in CLAUDE.md.
+- **`/proc/version` kernel banner spoofed (closes a byedentity-comparison gap).** Specter spoofed the
+  `os.version` property but a direct `/proc/version` read got the REAL kernel (the Pixel 4's
+  `4.14.212-...`). The Zygisk layer now redirects `/proc/version` to a banner rebuilt from the profile's
+  `build_kernel_version`, so a file-reading collector sees the applied kernel. Gated by the CPU/GPU /sys
+  toggle. Verified on the probe: reports `5.15.294-android12-...`, real `4.14.212` no longer leaks.
+- **Protections UI — real toggles + live ON/OFF status for every anti-detection feature.** The app's
+  Settings tab now has a Protections section with a working switch for each of: Hide root, Hide
+  developer mode (ADB + dev options), Hide My AppList (installed-app filter), Spoof User-Agent, Spoof
+  install time (APK mtime), and Spoof CPU/GPU /sys. Each toggle is REAL — it writes a gate key
+  (`hide_root`/`hide_dev`/`hide_apps`/`spoof_ua`/`spoof_apktime`/`spoof_sysfs` = "0" when off) into the
+  applied profile, and the Java + native hooks read that key to skip the protection and leave the signal
+  real. No cosmetic switches. Every protection defaults ON, so existing behavior is unchanged.
+- **Per-SoC /sys hardware signals spoofed (cpu_capacity vector, KGSL gpu_model, cpu present range).**
+  On-device tracing of the FPJS demo showed it reads `/sys/devices/system/cpu/cpu<N>/cpu_capacity`,
+  `/sys/class/kgsl/kgsl-3d0/gpu_model`, and `/sys/devices/system/cpu/present` directly — a high-entropy,
+  stable, real-hardware signature (the Pixel 4's `261 261 261 261 871 871 871 1024`) that leaked on every
+  rotation. Added `data/soc_topology.json` (per-SoC capacity vectors + GPU model, mirrored in Java's
+  embedded `SOC_TOPOLOGY` with a byte-parity test) and three new profile fields (`cpu_capacity`,
+  `gpu_model`, `cpu_present`) keyed on the profile's SoC — pure constants, no RNG, byte-parity safe. The
+  Zygisk layer writes a spoof file per node and redirects the exact sysfs paths. Verified on the probe:
+  a Galaxy S21 (exynos2100) profile now reports `215...1024`, not the real Pixel 4's `261...1024`.
+- **Installed-app list filtering — hides the instrumentation from FPJS's app-enumeration signal.** The
+  installed-app list is a raw signal FingerprintJS collects (PackageManager enumeration); leaving
+  `com.specter`, the probe, Magisk/LSPosed managers, or a hide-my-app tool in it both raises the device's
+  entropy and is a direct "this device is instrumented" tell. `getInstalledApplications`/
+  `getInstalledPackages`/`getInstalledModules` (+ AsUser variants) now drop packages matching a
+  root/hooking/anti-fingerprint marker list, and a direct `getPackageInfo`/`getApplicationInfo` lookup of
+  a hidden package throws `NameNotFound` (as if not installed). Verified on the probe:
+  `installed_sensitive_leak: none` (was leaking 3 packages). The probe now reports the installed-app
+  count and any sensitive leak so a regression fails the check.
+- **APK install-time spoofing — closes FingerprintJS Pro's `FileTimestamps` raw signal.** Decompiling
+  the SDK showed a single raw-signal provider that reads three file timestamps; on-device tracing
+  proved they are the mtimes of the app's own `/data/app/.../base.apk` + `split_config.*.apk` — the
+  INSTALL time, constant across every rotation. `File.lastModified()` and `android.system.Os.stat/lstat`
+  are now hooked to return a per-identity install time derived from `factory_reset_epoch` (install ~5
+  weeks after the reset; base/split spread 0–12s) for the target's own APKs only. No new profile field,
+  no RNG — byte-parity safe.
+- **User-Agent spoofing — closes the PROVEN FingerprintJS visitorId anchor.** The default HTTP
+  User-Agent (`System.getProperty("http.agent")`) and the WebView UA
+  (`WebSettings.getDefaultUserAgent`) are now rebuilt from the profile's own
+  `build_release`/`build_model`/`build_id`, so they report the device the identity claims to be.
+  The framework builds both strings at zygote/WebView init from the REAL `Build.*` values, before any
+  in-app field hook runs — which is why two completely different profiles previously both reported
+  `Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)` to the FPJS Server API and
+  collapsed to one visitorId. Derived from existing fields: no new profile key, no RNG draw, so
+  Java<->Python byte-parity is unchanged. `System.getProperty` is now hooked once and dispatched from
+  a map (it also serves `os.version`) rather than per-key on a hot path. Verified on-device: the probe
+  reads the spoofed UA on both paths.
+- The probe reports `http_agent` and `webview_ua`, and `verify_on_device.py` checks the Dalvik UA
+  against the expectation derived from the applied profile — so a UA regression fails the table.
+
 ### Fixed
+- **`Build.MODEL` and `Build.DEVICE` were bound to the wrong dataset columns (coherence leak).**
+  Every generated profile reported the device CODENAME as the marketing model and vice-versa,
+  producing fingerprints like `google/bramble/Pixel 4a (5G):11/...` — a DEVICE slot containing spaces
+  and parentheses, which no real Android build emits, plus `Build.MODEL="flame"` where a real Pixel 4
+  says `"Pixel 4"`. Verified against the physical device (`MODEL="Pixel 4"`, `DEVICE=PRODUCT="flame"`,
+  `fp="google/flame/flame:11/..."`). Fixed identically in `profile.py` and `Profile.java`; the Samsung
+  bootloader base follows the marketing model as before. Java<->Python parity re-proven byte-for-byte
+  over 195 identity/build values. The bug survived because `ProfileTest`'s inline fixtures had the two
+  columns transposed relative to the real `data/devices.json` — the fixtures now mirror production
+  data, and both suites assert the fingerprint's DEVICE slot is a codename.
+- **`tests/test_jvm_logic.py` was silently skipping on every run** (it referenced the pre-rename
+  package `com/fleet/idrotate` and only searched a non-existent vendored JDK), so the Java logic was
+  never exercised from the Python suite. It now resolves the JDK from `JAVA_HOME`/PATH, asserts the
+  sources exist rather than skipping, and runs all four JVM test mains.
+
 - **UsedStore concurrency hardening (ban-critical no-reuse ledger).** Three real defects surfaced by
   a flaky concurrency test, all fixed at the root: (1) `_atomic_write_json` now `fsync`s before
   `os.replace`, so a concurrent reader that sees the renamed file can never read stale/empty content;

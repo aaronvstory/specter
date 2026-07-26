@@ -40,8 +40,9 @@ public class HookEntry implements IXposedHookLoadPackage {
         XposedBridge.log("[specter] active for " + pkg + " (" + p.size() + " fields)");
 
         hookBuildFields(p);
+        if (!gateOff(p, "spoof_ua")) hookUserAgent(lpparam, p);
         hookSettingsSecure(p);
-        hookSettingsGlobal(p);
+        if (!gateOff(p, "hide_dev")) hookSettingsGlobal(p);
         hookTelephony(lpparam, p);
         hookWifi(lpparam, p);
         hookBluetooth(lpparam, p);
@@ -52,7 +53,15 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookHardwareInfo(lpparam, p);
         hookHardwareSignals(lpparam, p);
         hookStorage(lpparam, p);
-        hookFactoryResetTime(p);
+        hookFactoryResetTime(pkg, p);
+        if (!gateOff(p, "hide_apps")) hookInstalledApps(lpparam);
+        if (!gateOff(p, "spoof_sysfs")) hookDisplayMetrics(lpparam, p);
+    }
+
+    // A protection gate: the profile carries "<key>":"0" only when the user toggled it OFF in the app.
+    // Absent/any-other value = ON (the default), so existing profiles keep full protection.
+    private static boolean gateOff(Map<String, String> p, String key) {
+        return "0".equals(p.get(key));
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -115,6 +124,18 @@ public class HookEntry implements IXposedHookLoadPackage {
         setVersion("RELEASE", p.get("build_release"));
         setVersion("INCREMENTAL", p.get("build_incremental"));
         setVersion("SECURITY_PATCH", p.get("build_security_patch"));
+        // Build.VERSION.SDK_INT is an int field — a claimed Android 9 must report SDK 28, not the real
+        // device's 30. setStaticObjectField can't set a primitive int, so use plain reflection.
+        String sdk = p.get("build_sdk");
+        if (sdk != null) {
+            try {
+                java.lang.reflect.Field f = Build.VERSION.class.getField("SDK_INT");
+                f.setAccessible(true);
+                f.setInt(null, Integer.parseInt(sdk));
+            } catch (Throwable ignored) {}
+            // SDK is also exposed as a String field/prop; cover the String field too.
+            setVersion("SDK", sdk);
+        }
     }
 
     private void setVersion(String field, String val) {
@@ -127,15 +148,91 @@ public class HookEntry implements IXposedHookLoadPackage {
     // ---- kernel version (os.version) — a high-entropy FingerprintJS signal ----
     private void hookKernelVersion(final String kernel) {
         if (kernel == null) return;
+        sysProps.put("os.version", kernel);
+        hookSystemGetProperty();
+    }
+
+    // Java system properties (System.getProperty), NOT android.os.SystemProperties. Both "os.version"
+    // and "http.agent" are read through here, and getProperty is hot — register ONE hook and dispatch
+    // from a map, the same pattern as hookSystemProperties below.
+    private final Map<String, String> sysProps = new HashMap<>();
+    private boolean sysPropsHooked = false;
+
+    private void hookSystemGetProperty() {
+        if (sysPropsHooked) return;
+        sysPropsHooked = true;
         // hookAllMethods over findAndHookMethod (the varargs overload NoSuchMethodErrors against
-        // LSPosed's obfuscated XposedHelpers). Cover System.getProperty AND the raw SystemProperties.
+        // LSPosed's obfuscated XposedHelpers).
         try {
             XposedBridge.hookAllMethods(System.class, "getProperty", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    if (mp.args.length > 0 && "os.version".equals(mp.args[0])) mp.setResult(kernel);
+                    if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
+                    String v = sysProps.get((String) mp.args[0]);
+                    if (v != null) mp.setResult(v);
                 }
             });
         } catch (Throwable ignored) {}
+    }
+
+    // ---- User-Agent — PROVEN to be FingerprintJS Pro's dominant visitorId anchor (2026-07-26).
+    // The framework builds the UA from Build.MODEL/VERSION.RELEASE/ID in a process that ran BEFORE
+    // our field hooks (libcore caches http.agent at zygote init; WebView builds its UA in the
+    // WebView provider). Result: two totally different profiles both reported
+    //   "Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RQ3A.211001.001)"
+    // to the FPJS Server API and collapsed to the SAME visitorId. So rebuild both UA strings from the
+    // profile's build_release/build_model/build_id and serve them on every read path.
+    // Coherent by construction (no new field, no RNG -> byte-parity safe).
+    // The two string builders live in SpoofLogic so the plain-JVM test suite covers their exact shape.
+    private void hookUserAgent(final XC_LoadPackage.LoadPackageParam lp, Map<String, String> p) {
+        final String release = p.get("build_release");
+        final String model = p.get("build_model");
+        final String id = p.get("build_id");
+        if (release == null || model == null || id == null) return;
+
+        // http.agent -> the Dalvik UA. This is what HttpURLConnection/OkHttp send by default and what
+        // the FPJS SDK's server-side browserDetails.userAgent came from.
+        sysProps.put("http.agent", SpoofLogic.dalvikUserAgent(release, model, id));
+        hookSystemGetProperty();
+
+        // WebView UA: keep the device's REAL Chrome version (that part isn't device-identifying and
+        // faking it would be incoherent with the installed WebView), only swap the device segment.
+        final String webUa = SpoofLogic.webViewUserAgent(release, model, id, chromeVersion());
+        try {
+            Class<?> ws = XposedHelpers.findClass("android.webkit.WebSettings", lp.classLoader);
+            // static WebSettings.getDefaultUserAgent(Context) and the instance
+            // WebSettings.getUserAgentString() (WebSettingsClassic/AwSettings subclass it, so hook
+            // the concrete provider class too via hookAllMethods on the returned object's class).
+            XposedBridge.hookAllMethods(ws, "getDefaultUserAgent", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(webUa); }
+            });
+        } catch (Throwable ignored) {}
+        try {
+            // The instance getter lives on the provider impl (WebSettingsWrapper -> AwSettings), not
+            // the abstract WebSettings. ponytail: rewrite unconditionally — an app that set a CUSTOM
+            // UA is not the leak we are closing, and detecting "custom" reliably needs the pre-hook
+            // default we no longer have.
+            Class<?> aw = XposedHelpers.findClass("android.webkit.WebSettingsWrapper", lp.classLoader);
+            XposedBridge.hookAllMethods(aw, "getUserAgentString", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(webUa); }
+            });
+        } catch (Throwable ignored) {}
+        XposedBridge.log("[specter] UA -> " + sysProps.get("http.agent"));
+    }
+
+    // Real installed WebView Chrome version, e.g. "120.0.6099.43". Falls back to a plausible constant
+    // if the package isn't queryable (some apps can't see the WebView provider).
+    private String chromeVersion() {
+        // Plain reflection, not XposedHelpers — the vendored Xposed stub only exposes
+        // setStaticObjectField/findClass/hookAllMethods (see CLAUDE.md).
+        try {
+            Class<?> wv = Class.forName("android.webkit.WebViewFactory");
+            Object info = wv.getMethod("getLoadedPackageInfo").invoke(null);
+            if (info != null) {
+                Object v = info.getClass().getField("versionName").get(info);
+                if (v instanceof String && ((String) v).length() > 0) return (String) v;
+            }
+        } catch (Throwable ignored) {}
+        return "120.0.6099.43";
     }
 
     // ---- baseband/radio — a confirmed FingerprintJS leak. DevInfo (and getRadioVersion itself)
@@ -278,6 +375,16 @@ public class HookEntry implements IXposedHookLoadPackage {
                                     nm.setAccessible(true); nm.set(sensor, parts[0]);
                                     Field vn = sensor.getClass().getDeclaredField("mVendor");
                                     vn.setAccessible(true); vn.set(sensor, parts[1]);
+                                    // The high-entropy fields FPJS hashes: resolution / maxRange / power /
+                                    // version. Leaving them REAL leaks the exact Pixel-4 sensor chip even
+                                    // after the name/vendor are relabeled. Set coherent per-type values
+                                    // derived from the sensor type (SpoofLogic — pure, testable).
+                                    int type = parts.length >= 3 ? parseIntSafe(parts[2]) : 0;
+                                    float[] rmp = SpoofLogic.sensorRmp(type, parts[0]);
+                                    setFloatFieldSafe(sensor, "mMaxRange", rmp[0]);
+                                    setFloatFieldSafe(sensor, "mResolution", rmp[1]);
+                                    setFloatFieldSafe(sensor, "mPower", rmp[2]);
+                                    setIntFieldSafe(sensor, "mVersion", 1);
                                 } catch (Throwable ignored) {}
                             }
                             out.add(sensor);
@@ -289,6 +396,18 @@ public class HookEntry implements IXposedHookLoadPackage {
                 });
             } catch (Throwable ignored) {}
         }
+    }
+
+    private static int parseIntSafe(String v) {
+        try { return Integer.parseInt(v.trim()); } catch (Throwable t) { return 0; }
+    }
+    private static void setFloatFieldSafe(Object o, String field, float val) {
+        try { Field f = o.getClass().getDeclaredField(field); f.setAccessible(true); f.setFloat(o, val); }
+        catch (Throwable ignored) {}
+    }
+    private static void setIntFieldSafe(Object o, String field, int val) {
+        try { Field f = o.getClass().getDeclaredField(field); f.setAccessible(true); f.setInt(o, val); }
+        catch (Throwable ignored) {}
     }
 
     // ---- StatFs total/available storage — a FingerprintJS hardware signal that was LEAKING ----
@@ -312,16 +431,22 @@ public class HookEntry implements IXposedHookLoadPackage {
             "/data/vendor", "/data/dalvik-cache", "/data/misc", "/data/system",
     };
 
-    private void hookFactoryResetTime(final Map<String, String> p) {
+    private void hookFactoryResetTime(final String pkg, final Map<String, String> p) {
         String v = p.get("factory_reset_epoch");
         if (v == null) return;
         final long millis;
         try { millis = Long.parseLong(v) * 1000L; } catch (Throwable t) { return; }
+        final long resetSecs = millis / 1000L;
         try {
             XposedBridge.hookAllMethods(File.class, "lastModified", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
                     if (!(mp.thisObject instanceof File)) return;
-                    if (isResetMarker(((File) mp.thisObject).getAbsolutePath())) mp.setResult(millis);
+                    String ap = ((File) mp.thisObject).getAbsolutePath();
+                    if ("1".equals(p.get("trace"))) XposedBridge.log("[specter][lastmod] " + ap);
+                    if (isResetMarker(ap)) { mp.setResult(millis); return; }
+                    // The app's own APK install-time — FPJS Pro's FileTimestamps visitorId anchor.
+                    if (!gateOff(p, "spoof_apktime") && SpoofLogic.isOwnApk(ap, pkg))
+                        mp.setResult(SpoofLogic.apkInstallSeconds(resetSecs, ap) * 1000L);
                 }
             });
         } catch (Throwable t) { XposedBridge.log("[specter] factory-reset File hook fail: " + t); }
@@ -334,10 +459,16 @@ public class HookEntry implements IXposedHookLoadPackage {
         final long secs = millis / 1000L;
         try {
             Class<?> os = XposedHelpers.findClass("android.system.Os", null);
+            final boolean trace = "1".equals(p.get("trace"));
             XC_MethodHook statHook = new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
                     if (mp.args.length == 0 || !(mp.args[0] instanceof String)) return;
-                    if (!isResetMarker((String) mp.args[0])) return;
+                    String path = (String) mp.args[0];
+                    if (trace) XposedBridge.log("[specter][osstat] " + path);
+                    long spoofSecs;
+                    if (isResetMarker(path)) spoofSecs = secs;
+                    else if (!gateOff(p, "spoof_apktime") && SpoofLogic.isOwnApk(path, pkg)) spoofSecs = SpoofLogic.apkInstallSeconds(secs, path);
+                    else return;
                     Object st = mp.getResult();
                     if (st == null) return;
                     // Rewrite ctime/atime alongside mtime: leaving them real would leak the true
@@ -348,7 +479,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                         try {
                             Field fl = st.getClass().getField(f);
                             fl.setAccessible(true);
-                            fl.setLong(st, secs);
+                            fl.setLong(st, spoofSecs);
                         } catch (Throwable ignored) {}
                     }
                 }
@@ -356,6 +487,121 @@ public class HookEntry implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(os, "stat", statHook);
             XposedBridge.hookAllMethods(os, "lstat", statHook);
         } catch (Throwable t) { XposedBridge.log("[specter] factory-reset Os.stat hook fail: " + t); }
+    }
+
+    // ---- display metrics — getResources().getDisplayMetrics() (widthPixels/heightPixels/densityDpi) ----
+    // A stable, high-entropy signal FingerprintJS reads via a Java API (invisible to the native tracer);
+    // it leaked the REAL device's screen (Pixel 4 = 1080x2280@440) on every rotation. Rewrite the
+    // DisplayMetrics fields to the profile's per-model screen. Hook Resources.getDisplayMetrics (the SDK's
+    // path) and, best-effort, the WindowManager/Display real-metrics path apps also use.
+    private void hookDisplayMetrics(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String w = p.get("screen_width"), h = p.get("screen_height"), d = p.get("screen_density");
+        if (w == null || h == null || d == null) return;
+        final int wi, hi, di;
+        try { wi = Integer.parseInt(w); hi = Integer.parseInt(h); di = Integer.parseInt(d); }
+        catch (Throwable t) { return; }
+        final XC_MethodHook rewrite = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                Object r = mp.getResult();
+                if (r instanceof android.util.DisplayMetrics) applyMetrics((android.util.DisplayMetrics) r, wi, hi, di);
+            }
+        };
+        // Also rewrite a DisplayMetrics passed BY REFERENCE into getMetrics(dm)/getRealMetrics(dm).
+        final XC_MethodHook rewriteArg = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                for (Object a : mp.args)
+                    if (a instanceof android.util.DisplayMetrics) applyMetrics((android.util.DisplayMetrics) a, wi, hi, di);
+            }
+        };
+        try {
+            Class<?> res = XposedHelpers.findClass("android.content.res.Resources", lp.classLoader);
+            XposedBridge.hookAllMethods(res, "getDisplayMetrics", rewrite);
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> disp = XposedHelpers.findClass("android.view.Display", lp.classLoader);
+            XposedBridge.hookAllMethods(disp, "getMetrics", rewriteArg);
+            XposedBridge.hookAllMethods(disp, "getRealMetrics", rewriteArg);
+        } catch (Throwable ignored) {}
+    }
+
+    private static void applyMetrics(android.util.DisplayMetrics m, int w, int h, int d) {
+        // Portrait: width is the shorter edge. Keep density fields coherent (dpi -> density scale).
+        m.widthPixels = w;
+        m.heightPixels = h;
+        m.densityDpi = d;
+        m.density = d / 160f;
+        m.scaledDensity = d / 160f;
+        m.xdpi = d;
+        m.ydpi = d;
+    }
+
+    // ---- installed-app list — hide root/hooking/anti-fingerprint packages ----
+    // The installed-app enumeration is a raw signal FingerprintJS collects (PackageManager). Leaving
+    // com.specter, the probe, Magisk/LSPosed managers, or a hide-my-app tool in the returned list both
+    // raises the device's entropy and is a direct "this device is instrumented" tell. Filter them out of
+    // getInstalledApplications/getInstalledPackages/getInstalledModules, and make a direct lookup of a
+    // hidden package throw NameNotFound (as if it were not installed).
+    @SuppressWarnings("unchecked")
+    private void hookInstalledApps(final XC_LoadPackage.LoadPackageParam lp) {
+        Class<?> pm = XposedHelpers.findClassIfExists("android.app.ApplicationPackageManager", lp.classLoader);
+        if (pm == null) return;
+        XC_MethodHook listFilter = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                Object res = mp.getResult();
+                if (!(res instanceof java.util.List)) return;
+                java.util.List<Object> in = (java.util.List<Object>) res;
+                java.util.List<Object> out = new java.util.ArrayList<>(in.size());
+                for (Object item : in) {
+                    String name = pkgNameOf(item);
+                    if (name != null && SpoofLogic.isSensitivePackage(name)) continue;
+                    out.add(item);
+                }
+                if (out.size() != in.size()) mp.setResult(out);
+            }
+        };
+        for (String m : new String[]{"getInstalledApplications", "getInstalledPackages",
+                "getInstalledApplicationsAsUser", "getInstalledPackagesAsUser", "getInstalledModules"}) {
+            try { XposedBridge.hookAllMethods(pm, m, listFilter); } catch (Throwable ignored) {}
+        }
+        // A direct lookup of a hidden package must look like "not installed".
+        XC_MethodHook notFound = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam mp) throws Throwable {
+                if (mp.args.length > 0 && mp.args[0] instanceof String
+                        && SpoofLogic.isSensitivePackage((String) mp.args[0])) {
+                    throw new android.content.pm.PackageManager.NameNotFoundException((String) mp.args[0]);
+                }
+            }
+        };
+        // These four DECLARE NameNotFoundException (checked) as their real not-installed contract, so
+        // throwing it is the correct simulated "not installed".
+        for (String m : new String[]{"getPackageInfo", "getApplicationInfo", "getPackageUid",
+                "getPackageGids"}) {
+            try { XposedBridge.hookAllMethods(pm, m, notFound); } catch (Throwable ignored) {}
+        }
+        // getInstallerPackageName does NOT throw NameNotFoundException (its real not-found behavior is
+        // to return null / throw the UNCHECKED IllegalArgumentException). Return null for a hidden
+        // package so a caller that catches IllegalArgumentException isn't hit by an undeclared checked
+        // exception. null == "installed by an unknown installer", a benign, common real value.
+        try {
+            XposedBridge.hookAllMethods(pm, "getInstallerPackageName", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && mp.args[0] instanceof String
+                            && SpoofLogic.isSensitivePackage((String) mp.args[0])) mp.setResult(null);
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    // ApplicationInfo / PackageInfo both expose the package name; ResolveInfo nests it. Pull it robustly.
+    private static String pkgNameOf(Object item) {
+        if (item == null) return null;
+        try {
+            if (item instanceof android.content.pm.PackageInfo) return ((android.content.pm.PackageInfo) item).packageName;
+            if (item instanceof android.content.pm.ApplicationInfo) return ((android.content.pm.ApplicationInfo) item).packageName;
+            java.lang.reflect.Field f = item.getClass().getField("packageName");
+            Object v = f.get(item);
+            return v instanceof String ? (String) v : null;
+        } catch (Throwable ignored) { return null; }
     }
 
     /** True only for the exact reset-marker dirs — never a prefix match, so app files are untouched. */
@@ -411,21 +657,46 @@ public class HookEntry implements IXposedHookLoadPackage {
         {"gsm.version.baseband", "build_radio"}, {"ril.baseband", "build_radio"},
         {"ro.board.platform", "soc_platform"}, {"ro.hardware.chipname", "soc_platform"},
         {"ro.soc.model", "soc_platform"},
+        // Build.MODEL & friends exist per-PARTITION on Android 10+ (system/vendor/odm/product/system_ext);
+        // aliasing only ro.product.model + .vendor.* left odm/product/system_ext leaking the REAL device.
         {"ro.product.model", "build_model"}, {"ro.product.vendor.model", "build_model"},
+        {"ro.product.odm.model", "build_model"}, {"ro.product.product.model", "build_model"},
+        {"ro.product.system_ext.model", "build_model"},
         {"ro.product.brand", "build_brand"}, {"ro.product.vendor.brand", "build_brand"},
+        {"ro.product.odm.brand", "build_brand"}, {"ro.product.product.brand", "build_brand"},
+        {"ro.product.system.brand", "build_brand"}, {"ro.product.system_ext.brand", "build_brand"},
         {"ro.product.manufacturer", "build_manufacturer"},
         {"ro.product.vendor.manufacturer", "build_manufacturer"},
+        {"ro.product.odm.manufacturer", "build_manufacturer"},
+        {"ro.product.product.manufacturer", "build_manufacturer"},
+        {"ro.product.system.manufacturer", "build_manufacturer"},
+        {"ro.product.system_ext.manufacturer", "build_manufacturer"},
         {"ro.product.device", "build_device"}, {"ro.product.vendor.device", "build_device"},
+        {"ro.product.odm.device", "build_device"}, {"ro.product.product.device", "build_device"},
+        {"ro.product.system_ext.device", "build_device"},
         {"ro.product.name", "build_product"}, {"ro.product.vendor.name", "build_product"},
+        {"ro.product.odm.name", "build_product"}, {"ro.product.product.name", "build_product"},
+        {"ro.product.system_ext.name", "build_product"},
         {"ro.build.id", "build_id"}, {"ro.build.display.id", "build_display"},
+        {"ro.product.build.id", "build_id"},
         {"ro.build.fingerprint", "build_fingerprint"},
         {"ro.vendor.build.fingerprint", "build_fingerprint"},
+        {"ro.product.build.fingerprint", "build_fingerprint"},
+        {"ro.odm.build.fingerprint", "build_fingerprint"},
+        {"ro.system.build.fingerprint", "build_fingerprint"},
+        {"ro.system_ext.build.fingerprint", "build_fingerprint"},
+        {"ro.bootimage.build.fingerprint", "build_fingerprint"},
+        {"ro.build.product", "build_device"},
+        {"ro.build.flavor", "build_flavor"}, {"ro.build.description", "build_description"},
         {"ro.build.version.incremental", "build_incremental"},
+        {"ro.product.build.version.incremental", "build_incremental"},
         {"ro.build.version.release", "build_release"},
+        {"ro.product.build.version.release", "build_release"},
         {"ro.build.version.security_patch", "build_security_patch"},
         {"ro.build.host", "build_host"},
         {"ro.bootloader", "build_bootloader"}, {"ro.boot.bootloader", "build_bootloader"},
-        {"ro.hardware", "build_hardware"},
+        {"ro.hardware", "build_hardware"}, {"ro.boot.hardware", "build_hardware"},
+        {"ro.boot.hardware.platform", "soc_platform"},
         {"ro.product.board", "build_board"},
         {"ro.serialno", "serial"}, {"ro.boot.serialno", "serial"},
     };
@@ -488,9 +759,15 @@ public class HookEntry implements IXposedHookLoadPackage {
                 if (argsContainAny(param.args, devTells)) param.setResult(0);
             }
         };
+        final boolean trace = "1".equals(p.get("trace"));
         XC_MethodHook getStr = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (argsContainAny(param.args, devTells)) param.setResult("0");
+                boolean hit = argsContainAny(param.args, devTells);
+                if (hit) param.setResult("0");
+                if (trace && param.args != null && param.args.length > 1 && param.args[1] instanceof String
+                        && ((String) param.args[1]).matches(".*(adb|develop|settings).*"))
+                    XposedBridge.log("[specter][global] getString " + param.args[1] + " hit=" + hit
+                            + " final=" + param.getResult());
             }
         };
         try { XposedBridge.hookAllMethods(Settings.Global.class, "getInt", getInt); } catch (Throwable ignored) {}
@@ -714,8 +991,11 @@ public class HookEntry implements IXposedHookLoadPackage {
         Class<?> md = XposedHelpers.findClassIfExists("android.media.MediaDrm", lp.classLoader);
         if (md == null) return;
         try {
+            final boolean drmTrace = "1".equals(p.get("trace"));
             XposedBridge.hookAllMethods(md, "getPropertyByteArray", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (drmTrace && param.args.length > 0)
+                        XposedBridge.log("[specter][drm] getPropertyByteArray " + param.args[0]);
                     if (param.args.length > 0 && "deviceUniqueId".equals(String.valueOf(param.args[0]))) {
                         XposedBridge.log("[specter][idtrace] MediaDrm deviceUniqueId -> " + drm);
                         param.setResult(hexToBytes(drm));
@@ -731,6 +1011,8 @@ public class HookEntry implements IXposedHookLoadPackage {
             try {
                 XposedBridge.hookAllMethods(md, "getPropertyString", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if ("1".equals(p.get("trace")) && param.args.length > 0)
+                            XposedBridge.log("[specter][drm] getPropertyString " + param.args[0]);
                         if (param.args.length > 0 && "securityLevel".equals(String.valueOf(param.args[0]))) {
                             param.setResult(drmLevel);
                         }
