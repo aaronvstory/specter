@@ -797,7 +797,12 @@ public class HookEntry implements IXposedHookLoadPackage {
         XC_MethodHook getStr = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 boolean hit = argsContainAny(param.args, devTells);
-                if (hit) param.setResult("0");
+                // Return null (setting ABSENT), not "0": a device where developer options were NEVER
+                // enabled has no row for these keys, so Settings.Global.getString returns null. "0"
+                // signals "explicitly set to 0" (i.e. was touched) — a subtly rooted-ish tell. null
+                // mimics a pristine consumer phone. (getInt still returns 0 via its own hook = the
+                // caller-supplied default, which is what a pristine device yields for getInt.)
+                if (hit) param.setResult(null);
                 if (trace && param.args != null && param.args.length > 1 && param.args[1] instanceof String
                         && ((String) param.args[1]).matches(".*(adb|develop|settings).*"))
                     XposedBridge.log("[specter][global] getString " + param.args[1] + " hit=" + hit
