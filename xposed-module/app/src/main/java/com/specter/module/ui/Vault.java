@@ -146,14 +146,18 @@ public final class Vault {
         try (FileOutputStream fos = new FileOutputStream(staged)) {
             fos.write(env.getBytes("UTF-8"));
         } catch (Throwable t) { return null; }
+        Process pr = null;
         try {
-            Process pr = Runtime.getRuntime().exec(new String[]{"su", "-c",
+            pr = Runtime.getRuntime().exec(new String[]{"su", "-c",
                     "cp '" + staged.getAbsolutePath() + "' '" + dest + "' && chmod 644 '" + dest + "'"});
             int code = pr.waitFor();
-            //noinspection ResultOfMethodCallIgnored
-            staged.delete();
             return code == 0 ? dest : null;
         } catch (Throwable t) { return null; }
+        finally {
+            if (pr != null) pr.destroy();
+            //noinspection ResultOfMethodCallIgnored
+            staged.delete();   // always remove the staged copy, success or fail
+        }
     }
 
     /** Import a portable envelope file into the vault under a fresh timestamp label. Validates format +
@@ -176,9 +180,13 @@ public final class Vault {
         return parsed.isOk() ? null : parsed.error;
     }
 
-    /** Read a file the app itself can't (no storage permission) via su. Returns null on failure. */
+    /** Read a file the app itself can't (no storage permission) via su. Returns null on failure. Restricted
+     *  to /sdcard/Download and shell-safe paths so a crafted filename can't inject or escape the directory. */
     private static String readViaSu(File src) {
-        if (src == null || !VaultChecksum.isShellSafePath(src.getAbsolutePath())) return null;
+        if (src == null) return null;
+        String path = src.getAbsolutePath();
+        if (!VaultChecksum.isShellSafePath(path)) return null;
+        if (!path.startsWith("/sdcard/Download/") || path.contains("..")) return null;
         Process pr = null;
         try {
             pr = Runtime.getRuntime().exec(new String[]{"su", "-c", "cat '" + src.getAbsolutePath() + "'"});

@@ -941,15 +941,18 @@ public class MainActivity extends Activity {
     private void promptImport() {
         new Thread(() -> {
             final java.util.List<String> names = new java.util.ArrayList<>();
+            Process pr = null;
             try {
-                Process pr = Runtime.getRuntime().exec(new String[]{"su", "-c",
+                pr = Runtime.getRuntime().exec(new String[]{"su", "-c",
                         "ls -1t /sdcard/Download/specter-profile-*.json 2>/dev/null"});
-                java.io.BufferedReader r = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(pr.getInputStream()));
-                String line;
-                while ((line = r.readLine()) != null) { line = line.trim(); if (!line.isEmpty()) names.add(line); }
+                try (java.io.BufferedReader r = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(pr.getInputStream()))) {
+                    String line;
+                    while ((line = r.readLine()) != null) { line = line.trim(); if (!line.isEmpty()) names.add(line); }
+                }
                 pr.waitFor();
             } catch (Throwable ignored) {}
+            finally { if (pr != null) pr.destroy(); }
             runOnUiThread(() -> {
                 if (names.isEmpty()) {
                     toast("No specter-profile-*.json in Download. Put a shared file there first.");

@@ -58,6 +58,8 @@ public final class VaultPortable {
         int ver = env.optInt("specter_profile", -1);
         if (ver == -1) return Parsed.fail("not a Specter profile file");
         if (ver > FORMAT_VERSION) return Parsed.fail("file is from a newer Specter — update the app");
+        // Require the EXACT supported version — a version of 0 or negative isn't valid.
+        if (ver != FORMAT_VERSION) return Parsed.fail("unsupported profile version " + ver);
         JSONObject prof = env.optJSONObject("profile");
         if (prof == null) return Parsed.fail("no profile in file");
         Map<String, String> m = new LinkedHashMap<>();
@@ -66,9 +68,11 @@ public final class VaultPortable {
             m.put(k, prof.optString(k));
         }
         if (m.isEmpty()) return Parsed.fail("profile is empty");
+        // Checksum is MANDATORY and must match — an absent/blank checksum can't be a way to bypass the
+        // integrity check. Require 64 hex chars, then compare unconditionally.
         String want = env.optString("checksum", "");
-        if (!want.isEmpty() && !want.equals(checksum(m)))
-            return Parsed.fail("checksum mismatch — file is corrupted");
+        if (want.length() != 64) return Parsed.fail("missing or malformed checksum");
+        if (!want.equals(checksum(m))) return Parsed.fail("checksum mismatch — file is corrupted");
         return Parsed.ok(m);
     }
 
