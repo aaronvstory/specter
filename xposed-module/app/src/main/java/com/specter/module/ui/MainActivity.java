@@ -236,11 +236,13 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    /** Profile with disabled ids removed (Build.* device bundle always kept if device_spoof on). */
+    /** Profile with disabled ids removed (Build.* device bundle always kept if device_spoof on), plus
+     *  the protection gate keys for any protection the user turned off (so the hooks skip it). */
     private Map<String, String> enabledProfile() {
         Map<String, String> out = new LinkedHashMap<>();
         for (Map.Entry<String, String> e : profile.entrySet())
             if (Toggles.isEnabled(prefs, e.getKey())) out.put(e.getKey(), e.getValue());
+        Protections.applyGates(prefs, out);
         return out;
     }
 
@@ -402,17 +404,80 @@ public class MainActivity extends Activity {
         // would just be "leak the real device" — never useful. (The dev's experimental
         // "device spoofing / anti-fingerprinting / make device legit" options are deliberately NOT
         // mirrored — he advised against them.)
+        // Core coherent-identity spoofing (Build/bootloader/radio/kernel/SoC/GPU/sensors) is ALWAYS on —
+        // it's the point. The toggles below control the ADDITIONAL anti-detection protections, each
+        // wired to a real gate key in the applied profile (turning one off leaves that signal real).
         content.addView(sectionLabel("Anti-fingerprinting"));
         LinearLayout info = cardBox();
-        info.addView(label("Always on"));
+        info.addView(label("Core spoofing — always on"));
         TextView desc = value("Coherent identity + deep signal spoofing (Build, bootloader, radio, "
-                + "kernel, HARDWARE/BOARD, SoC, GPU/GLES, /proc/cpuinfo, sensors) are applied "
-                + "automatically on every identity.");
+                + "kernel, HARDWARE/BOARD, SoC, GPU/GLES, /proc/cpuinfo, sensors) applies on every identity.");
         desc.setTextColor(Theme.DIM);
         info.addView(desc);
         content.addView(info);
+
+        content.addView(sectionLabel("Protections"));
+        for (Protections.P prot : Protections.ALL) content.addView(protectionRow(prot));
         // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
         // as a dead toggle until it actually works.
+    }
+
+    /** One protection: label + description + a real toggle that gates the corresponding hook, plus a
+     *  live ON/OFF status chip. No cosmetic switches — the state changes what the device reports. */
+    private View protectionRow(final Protections.P prot) {
+        LinearLayout card = cardBox();
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout txt = new LinearLayout(this);
+        txt.setOrientation(LinearLayout.VERTICAL);
+        txt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView lab = label(prot.label);
+        lab.setTextColor(Theme.INK);
+        lab.setTextSize(14);
+        titleRow.addView(lab);
+        final TextView chip = statusChip(Protections.isOn(prefs, prot));
+        titleRow.addView(chip);
+        txt.addView(titleRow);
+        TextView d = value(prot.desc);
+        d.setTextColor(Theme.DIM);
+        d.setTextSize(12);
+        d.setTextIsSelectable(false);
+        txt.addView(d);
+        head.addView(txt);
+
+        final Switch sw = new Switch(this);
+        sw.setChecked(Protections.isOn(prefs, prot));
+        sw.setOnCheckedChangeListener((v, on) -> {
+            Protections.set(prefs, prot, on);
+            styleChip(chip, on);
+            status.setText(prot.label + (on ? " enabled" : " disabled") + " — APPLY to push.");
+        });
+        head.addView(sw);
+        card.addView(head);
+        return card;
+    }
+
+    private TextView statusChip(boolean on) {
+        TextView chip = new TextView(this);
+        chip.setTextSize(10);
+        chip.setPadding(dp(6), dp(1), dp(6), dp(1));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(8), 0, 0, 0);
+        chip.setLayoutParams(lp);
+        styleChip(chip, on);
+        return chip;
+    }
+
+    private void styleChip(TextView chip, boolean on) {
+        chip.setText(on ? "ON" : "OFF");
+        chip.setTextColor(on ? Theme.ON_GOLD : Theme.SOFT);
+        chip.setBackground(pill(on ? Theme.GOLD : Theme.CARD2, on ? Theme.GOLD : Theme.LINE));
     }
 
     private void renderLocation() {

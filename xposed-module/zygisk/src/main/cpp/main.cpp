@@ -583,7 +583,9 @@ public:
         // Per-SoC /sys hardware signals (cpu_capacity vector, KGSL gpu_model, cpu present range). Each
         // real sysfs node gets a spoof file under the app's files dir, and its exact path is redirected.
         // cpu_capacity is per-core: "261 261 ... 1024" -> one file per core cpuN/cpu_capacity.
-        if (!pkg.empty()) {
+        // Gated: the app writes "spoof_sysfs":"0" into the profile only when the user toggles it OFF.
+        bool sysfs_off = profile.count("spoof_sysfs") && profile.at("spoof_sysfs") == "0";
+        if (!pkg.empty() && !sysfs_off) {
             std::string dir = "/data/data/" + pkg + "/files";
             mkdir(dir.c_str(), 0700);
             auto write_spoof = [&](const std::string &tag, const std::string &content,

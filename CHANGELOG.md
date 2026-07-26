@@ -18,6 +18,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
 ### Added
+- **Protections UI — real toggles + live ON/OFF status for every anti-detection feature.** The app's
+  Settings tab now has a Protections section with a working switch for each of: Hide root, Hide
+  developer mode (ADB + dev options), Hide My AppList (installed-app filter), Spoof User-Agent, Spoof
+  install time (APK mtime), and Spoof CPU/GPU /sys. Each toggle is REAL — it writes a gate key
+  (`hide_root`/`hide_dev`/`hide_apps`/`spoof_ua`/`spoof_apktime`/`spoof_sysfs` = "0" when off) into the
+  applied profile, and the Java + native hooks read that key to skip the protection and leave the signal
+  real. No cosmetic switches. Every protection defaults ON, so existing behavior is unchanged.
 - **Per-SoC /sys hardware signals spoofed (cpu_capacity vector, KGSL gpu_model, cpu present range).**
   On-device tracing of the FPJS demo showed it reads `/sys/devices/system/cpu/cpu<N>/cpu_capacity`,
   `/sys/class/kgsl/kgsl-3d0/gpu_model`, and `/sys/devices/system/cpu/present` directly — a high-entropy,

@@ -40,9 +40,9 @@ public class HookEntry implements IXposedHookLoadPackage {
         XposedBridge.log("[specter] active for " + pkg + " (" + p.size() + " fields)");
 
         hookBuildFields(p);
-        hookUserAgent(lpparam, p);
+        if (!gateOff(p, "spoof_ua")) hookUserAgent(lpparam, p);
         hookSettingsSecure(p);
-        hookSettingsGlobal(p);
+        if (!gateOff(p, "hide_dev")) hookSettingsGlobal(p);
         hookTelephony(lpparam, p);
         hookWifi(lpparam, p);
         hookBluetooth(lpparam, p);
@@ -54,7 +54,13 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookHardwareSignals(lpparam, p);
         hookStorage(lpparam, p);
         hookFactoryResetTime(pkg, p);
-        hookInstalledApps(lpparam);
+        if (!gateOff(p, "hide_apps")) hookInstalledApps(lpparam);
+    }
+
+    // A protection gate: the profile carries "<key>":"0" only when the user toggled it OFF in the app.
+    // Absent/any-other value = ON (the default), so existing profiles keep full protection.
+    private static boolean gateOff(Map<String, String> p, String key) {
+        return "0".equals(p.get(key));
     }
 
     // ---- profile loading: per-app file wins, else a shared default ----
@@ -404,7 +410,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                     if ("1".equals(p.get("trace"))) XposedBridge.log("[specter][lastmod] " + ap);
                     if (isResetMarker(ap)) { mp.setResult(millis); return; }
                     // The app's own APK install-time — FPJS Pro's FileTimestamps visitorId anchor.
-                    if (SpoofLogic.isOwnApk(ap, pkg))
+                    if (!gateOff(p, "spoof_apktime") && SpoofLogic.isOwnApk(ap, pkg))
                         mp.setResult(SpoofLogic.apkInstallSeconds(resetSecs, ap) * 1000L);
                 }
             });
@@ -426,7 +432,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                     if (trace) XposedBridge.log("[specter][osstat] " + path);
                     long spoofSecs;
                     if (isResetMarker(path)) spoofSecs = secs;
-                    else if (SpoofLogic.isOwnApk(path, pkg)) spoofSecs = SpoofLogic.apkInstallSeconds(secs, path);
+                    else if (!gateOff(p, "spoof_apktime") && SpoofLogic.isOwnApk(path, pkg)) spoofSecs = SpoofLogic.apkInstallSeconds(secs, path);
                     else return;
                     Object st = mp.getResult();
                     if (st == null) return;
