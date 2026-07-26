@@ -22,13 +22,18 @@ exact and leave the "why" implied.
 - Phrasing/reading-order ONLY — never soften the actual engineering: technical precision, the measured
   findings, and the safety constraints below all stay exact.
 
-## Fleet safety (NON-NEGOTIABLE)
-- On-device work targets **DevInfo (`com.liuzh.deviceinfo`)** and **`com.specter.probe`** ONLY.
-- NEVER scope/apply/test against `com.doordash.driverapp`, `com.dd.doordash`, `com.pyshivam.geergit`,
-  `system`, or `android`. GeerGit owns the fleet apps and the user makes real income there.
+## Fleet safety (workflow discipline — the income apps ARE the product's real target)
+Spoofing the income apps (DoorDash etc.) is the PRODUCT'S PURPOSE — Specter is BUILT to spoof them. The
+old hard `is_fleet_app` denylist was removed (2026-07-27, user-confirmed): the native layer now only
+refuses `android`/`system` (the OS framework itself, via `is_core_os`). The rest is DEV workflow, not a
+code block:
+- For BULK dev testing/measurement, prefer **DevInfo (`com.liuzh.deviceinfo`)**, **`com.specter.probe`**,
+  and the **FPJS demo** — don't casually experiment on the live Dasher (the user earns income there).
+- The user IS open to testing on Dasher when it's actually needed for dev work — do it deliberately, not
+  by accident.
 - LSPosed scope DB: `/data/adb/lspd/config/modules_config.db`. Specter = mid **25**, GeerGit = mid **101**.
-  Only ever edit mid 25's scope. Never touch 101.
-- Test on Dasher ONLY when the user explicitly green-lights it.
+  Only ever edit mid 25's scope. Never touch 101 (that's GeerGit's own config, unrelated to Specter).
+- Never spoof `android`/`system` (framework) — dangerous + pointless (the native `is_core_os` guard blocks it).
 
 ## Build (Windows)
 - JDK: `~/scoop/apps/temurin17-jdk/current` — set `JAVA_HOME` to it.

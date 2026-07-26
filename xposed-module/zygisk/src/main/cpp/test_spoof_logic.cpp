@@ -68,15 +68,15 @@ int main() {
     CHECK(!valid_pkg(""), "empty pkg rejected");
     CHECK(!valid_pkg(std::string(300, 'a')), "overlong pkg rejected");
 
-    // ---- is_fleet_app: the NON-NEGOTIABLE fleet denylist. Must reject GeerGit's apps even though they
-    // pass valid_pkg() and a stray profile file could exist for them. ----
-    CHECK(is_fleet_app("com.doordash.driverapp"), "doordash driver denied");
-    CHECK(is_fleet_app("com.dd.doordash"), "doordash consumer denied");
-    CHECK(is_fleet_app("com.pyshivam.geergit"), "geergit denied");
-    CHECK(valid_pkg("com.doordash.driverapp"), "doordash IS a valid pkg name (so denylist, not parser, guards it)");
-    CHECK(!is_fleet_app("com.fingerprintjs.android.fpjs_pro_demo"), "fpjs demo allowed");
-    CHECK(!is_fleet_app("com.liuzh.deviceinfo"), "devinfo allowed");
-    CHECK(!is_fleet_app("com.specter.probe"), "probe allowed");
+    // ---- is_core_os: OS-safety guard. Only the framework/system process is denied — spoofing the OS
+    // itself is dangerous+pointless. Every real APP (including the income apps) IS spoofable by design. ----
+    CHECK(is_core_os("android"), "android (framework) denied");
+    CHECK(is_core_os("system"), "system denied");
+    CHECK(!is_core_os("com.doordash.driverapp"), "doordash IS spoofable (product purpose)");
+    CHECK(!is_core_os("com.pyshivam.geergit"), "geergit IS spoofable");
+    CHECK(!is_core_os("com.fingerprintjs.android.fpjs_pro_demo"), "fpjs demo spoofable");
+    CHECK(!is_core_os("com.liuzh.deviceinfo"), "devinfo spoofable");
+    CHECK(!is_core_os("com.specter.probe"), "probe spoofable");
 
     if (fails == 0) printf("ALL PASS (spoof_logic)\n");
     else printf("%d FAILURE(S)\n", fails);

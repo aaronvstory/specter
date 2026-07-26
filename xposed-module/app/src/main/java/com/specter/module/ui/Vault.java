@@ -35,13 +35,16 @@ public final class Vault {
         dir.mkdirs();
     }
 
-    /** One saved entry: its label (== filename stem) and the device it represents, for the list UI. */
+    /** One saved entry: its label (== filename stem), the device it represents, and the apps it was
+     *  applied to (comma-separated package names) — shown in the list UI. */
     public static final class Entry {
         public final String label;
         public final String device;   // e.g. "Samsung SM-A505F" for the list row
         public final long savedAt;
-        Entry(String label, String device, long savedAt) {
+        public final String targets;  // packages this profile was applied to (comma-sep), "" if unknown
+        Entry(String label, String device, long savedAt, String targets) {
             this.label = label; this.device = device; this.savedAt = savedAt;
+            this.targets = targets == null ? "" : targets;
         }
     }
 
@@ -68,8 +71,10 @@ public final class Vault {
         return b.toString();
     }
 
-    /** Save {@code profile} under a label derived from {@code name}. Returns the label used. */
-    public String save(String name, Map<String, String> profile) {
+    /** Save {@code profile} (which was APPLIED to {@code targets}) under a label derived from {@code name}.
+     *  Returns the label used. Only applied profiles are saved (see the caller) — a vault entry always
+     *  represents an identity that actually reached at least one app. */
+    public String save(String name, Map<String, String> profile, String targets) {
         String base = makeLabel(name);
         // Disambiguate on collision: two saves in the same minute with no custom name share a label, and
         // would silently overwrite. Append -2, -3, ... until the filename is free.
@@ -80,6 +85,7 @@ public final class Vault {
             // Store as a STRING so it round-trips through the strict Map<String,String> readMap loop on
             // any org.json impl (Android's getString coerces numbers, but string keeps it portable).
             j.put("_saved_at", String.valueOf(System.currentTimeMillis()));
+            j.put("_targets", targets == null ? "" : targets);   // apps this profile was applied to
             File f = new File(dir, label + ".json");
             try (FileOutputStream out = new FileOutputStream(f)) {
                 out.write(j.toString().getBytes("UTF-8"));
@@ -101,17 +107,18 @@ public final class Vault {
                     + p.getOrDefault("build_model", "")).trim();
             long savedAt = 0;
             try { savedAt = Long.parseLong(p.getOrDefault("_saved_at", "0")); } catch (Throwable ignored) {}
-            out.add(new Entry(label, device.isEmpty() ? "(unknown device)" : device, savedAt));
+            String targets = p.getOrDefault("_targets", "");
+            out.add(new Entry(label, device.isEmpty() ? "(unknown device)" : device, savedAt, targets));
         }
         // newest first (by savedAt; label sorts reasonably too)
         out.sort((a, b) -> Long.compare(b.savedAt, a.savedAt));
         return out;
     }
 
-    /** Load a saved profile map by label (minus the _saved_at metadata), or null if missing/corrupt. */
+    /** Load a saved profile map by label (minus the _saved_at/_targets metadata), or null if missing. */
     public Map<String, String> load(String label) {
         Map<String, String> p = readMap(new File(dir, label + ".json"));
-        if (p != null) p.remove("_saved_at");
+        if (p != null) { p.remove("_saved_at"); p.remove("_targets"); }
         return p;
     }
 
