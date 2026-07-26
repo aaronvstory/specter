@@ -66,7 +66,7 @@ static const std::string *prop_spoof_lookup(const char *name) {
     if (!name) return nullptr;
     auto it = g_prop_spoof.find(name);
     if (it != g_prop_spoof.end()) return &it->second;
-    if (g_props_ready.load(std::memory_order_relaxed)) {
+    if (g_props_ready.load(std::memory_order_acquire)) {
         auto lit = g_prop_spoof_late.find(name);
         if (lit != g_prop_spoof_late.end()) return &lit->second;
     }
@@ -922,7 +922,7 @@ private:
         if (!g_prop_spoof_late.empty()) {
             std::thread([] {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-                g_props_ready.store(true, std::memory_order_relaxed);
+                g_props_ready.store(true, std::memory_order_release);
             }).detach();
         }
     }
