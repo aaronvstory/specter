@@ -524,7 +524,8 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   - Build as its own PR after the gmail/appsetid/codecs PR (#23) merges.
 
 - **2026-07-27 · Profile export/import + custom fields + non-root harvest (Specter-lite) — USER PRIORITY,
-  post-polish.** status: `planned-deep-dive`. User: "this needs a deep dive and be done deeply properly
+  post-polish.** status: `SHIPPED 2026-07-27` — all three done + proven on-device (0.8.0 vault export/
+  import + hardened, 0.8.1 custom field editing, 0.9.0 Specter Lite non-root harvester). User: "this needs a deep dive and be done deeply properly
   with care — very important functionality." Three linked capabilities:
   1. **Export / import saved profiles.** The vault (files/vault/*.json) should be shareable: export a saved
      profile to a file the user can send to another user, and import one received from someone else. So two
