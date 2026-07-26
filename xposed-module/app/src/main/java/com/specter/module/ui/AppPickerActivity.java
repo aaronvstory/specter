@@ -31,7 +31,7 @@ import java.util.TreeSet;
 /**
  * Target-app picker (GeerGit parity: "Target Apps", "Show system apps", multi-select, Select All).
  * Lists installed apps via PackageManager, splits system/user by FLAG_SYSTEM, persists the checked
- * set via {@link Targets}. Warns on system/income packages before adding them.
+ * set via {@link Targets}. Warns on core-OS packages before adding them.
  */
 public class AppPickerActivity extends Activity {
 
@@ -137,14 +137,7 @@ public class AppPickerActivity extends Activity {
         btns.setOrientation(LinearLayout.HORIZONTAL);
         btns.setPadding(dp(12), 0, dp(12), dp(4));
         btns.addView(smallBtn("Select all (shown)", () -> {
-            int skipped = 0;
-            for (Row r : visible()) {
-                if (Targets.isRisky(r.pkg)) { skipped++; continue; } // don't bulk-add system/income apps
-                selected.add(r.pkg);
-            }
-            if (skipped > 0) Toast.makeText(this, "Skipped " + skipped
-                    + " system/income app(s) — add those individually if you mean to.",
-                    Toast.LENGTH_LONG).show();
+            for (Row r : visible()) selected.add(r.pkg);
             rebuild();
         }));
         btns.addView(smallBtn("Deselect all", () -> { selected.clear(); rebuild(); }));
@@ -338,13 +331,7 @@ public class AppPickerActivity extends Activity {
         CheckBox cb = new CheckBox(this);
         cb.setChecked(selected.contains(r.pkg));
         cb.setOnCheckedChangeListener((v, on) -> {
-            if (on) {
-                if (Targets.isRisky(r.pkg)) {
-                    Toast.makeText(this, r.label + " is a system/income app — spoofing it can affect a real "
-                            + "account. Enable only if you mean to.", Toast.LENGTH_LONG).show();
-                }
-                selected.add(r.pkg);
-            } else selected.remove(r.pkg);
+            if (on) selected.add(r.pkg); else selected.remove(r.pkg);
             rebuild();   // re-pin to the Selected section immediately so the choice is visible
         });
         row.addView(cb);

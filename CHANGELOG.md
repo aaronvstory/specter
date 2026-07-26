@@ -56,6 +56,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
 
 ### Fixed
+- **Search box Enter submits** (dismisses keyboard) instead of inserting a newline.
+- **Income apps are now spoofable** — removed the native hard denylist that refused to serve profiles
+  to DoorDash/GeerGit (that was dev-only overcaution; spoofing target apps is the product's purpose).
+  The native layer now only blocks the OS framework itself (android/system) via is_core_os.
+- **Removed all in-app "fleet/system" warnings/limits** — the tester-vs-fleet distinction is a workflow
+  choice, not something to surface or restrict in the app. The only warning kept is the useful one:
+  “not enabled in LSPosed” when a selected target app isn't actually scoped.
+- **Target-app UX:** Identity tab shows each selected app as its own SEPARATED card (icon + name + red
+  square ✕), matching the picker; onResume re-renders so the selection is never stale.
+- **Vault: only APPLIED identities are saved** (saving un-applied profiles was pointless/misleading) —
+  the save prompt fires after APPLY, records which apps it reached, and the Saved row shows “Applied to:
+  <apps>”. Saved date-groups now COLLAPSE by default.
 - **Target-app selection UX** — fixed the Identity tab showing stale targets (it only re-rendered on
   the Settings tab, so after picking apps from the Identity "Change" button the card still showed the old
   selection). Now: onResume re-renders the current tab; the Identity card lists each selected app by NAME

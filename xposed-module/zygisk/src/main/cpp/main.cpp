@@ -37,7 +37,7 @@ using specter::PROP_ALIASES;
 using specter::parse_flat_json;
 using specter::is_reset_marker;
 using specter::valid_pkg;
-using specter::is_fleet_app;
+using specter::is_core_os;
 
 #define LOG_TAG "SpecterZygisk"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -948,8 +948,9 @@ static void companion_handler(int client) {
         got += (size_t) r;
     }
     if (!valid_pkg(pkg)) { uint32_t zero = 0; write(client, &zero, sizeof(zero)); return; }
-    // Fleet safety: never serve a profile for a GeerGit-owned app, even if a stray file exists.
-    if (is_fleet_app(pkg)) { uint32_t zero = 0; write(client, &zero, sizeof(zero)); return; }
+    // OS safety: never serve a profile for the framework/system process (spoofing the OS itself is
+    // dangerous + pointless). Target apps — including the income apps — ARE spoofable by design.
+    if (is_core_os(pkg)) { uint32_t zero = 0; write(client, &zero, sizeof(zero)); return; }
 
     std::string path = "/data/local/tmp/specter/" + pkg + ".json";
     std::string data;

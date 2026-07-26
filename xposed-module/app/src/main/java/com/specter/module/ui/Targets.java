@@ -5,7 +5,6 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
@@ -16,11 +15,6 @@ final class Targets {
 
     private static final String KEY = "target_pkgs";
 
-    /** Packages the operator earns real income on / core system — never auto-selected in bulk. */
-    static final Set<String> RISKY = new HashSet<>(Arrays.asList(
-            "com.doordash.driverapp", "com.dd.doordash", "com.pyshivam.geergit",
-            "android", "com.android.systemui"));
-
     /** Current targets; defaults to the DevInfo test app on first run. */
     static Set<String> get(SharedPreferences prefs) {
         Set<String> stored = prefs.getStringSet(KEY, null);
@@ -30,10 +24,6 @@ final class Targets {
 
     static void set(SharedPreferences prefs, Set<String> pkgs) {
         prefs.edit().putStringSet(KEY, new LinkedHashSet<>(pkgs)).apply();
-    }
-
-    static boolean isRisky(String pkg) {
-        return RISKY.contains(pkg) || pkg.startsWith("com.android.") || pkg.startsWith("android");
     }
 
     /** Human app label for a package (e.g. "Device Info HW"), or the package name if it can't resolve. */

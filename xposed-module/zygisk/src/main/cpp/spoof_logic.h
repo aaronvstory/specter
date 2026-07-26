@@ -119,18 +119,17 @@ inline bool valid_pkg(const std::string &p) {
     return true;
 }
 
-// Fleet-safety hard denylist (CLAUDE.md, NON-NEGOTIABLE): GeerGit owns these apps and the user makes
-// real income there. The companion refuses to serve a profile for any of them EVEN IF a stray
-// /data/local/tmp/specter/<pkg>.json exists, so this native module can never hook a fleet app —
-// device-wide Zygisk injection is gated by the companion, not by which files happen to be present.
-static const char *FLEET_DENYLIST[] = {
-    "com.doordash.driverapp", "com.dd.doordash", "com.pyshivam.geergit",
-    "android", "system",
-};
-static const int FLEET_DENYLIST_N = sizeof(FLEET_DENYLIST) / sizeof(FLEET_DENYLIST[0]);
+// Core-OS denylist: never serve a profile for the framework/system process itself — hooking `android`/
+// `system` would spoof device values for the OS and every app at once (dangerous, pointless, and can
+// destabilize the device). This is an OS-safety guard, NOT an app denylist: the income/target apps
+// (DoorDash, GeerGit, etc.) are SPOOFABLE — that's the product's whole purpose. The dev-time rule
+// "test on the FPJS demo / DevInfo, don't experiment on the live Dasher unless needed" is a workflow
+// discipline (see CLAUDE.md), not a hard code block.
+static const char *CORE_OS_DENYLIST[] = { "android", "system" };
+static const int CORE_OS_DENYLIST_N = sizeof(CORE_OS_DENYLIST) / sizeof(CORE_OS_DENYLIST[0]);
 
-inline bool is_fleet_app(const std::string &p) {
-    for (int j = 0; j < FLEET_DENYLIST_N; j++) if (p == FLEET_DENYLIST[j]) return true;
+inline bool is_core_os(const std::string &p) {
+    for (int j = 0; j < CORE_OS_DENYLIST_N; j++) if (p == CORE_OS_DENYLIST[j]) return true;
     return false;
 }
 

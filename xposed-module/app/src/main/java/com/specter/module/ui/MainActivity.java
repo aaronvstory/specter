@@ -51,7 +51,10 @@ public class MainActivity extends Activity {
     private Vault vault;
     private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
     private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
-    private final Set<String> collapsedGroups = new java.util.HashSet<>();  // date groups the user collapsed
+    private String appliedTargets = "";                 // comma-sep pkgs the CURRENT profile was applied to
+                                                        // ("" until Apply succeeds — vault saves only applied)
+    private final Set<String> expandedGroups = new java.util.HashSet<>();  // date groups the user EXPANDED
+                                                                          // (Saved profiles collapse by default)
 
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
@@ -148,10 +151,12 @@ public class MainActivity extends Activity {
         bar.addView(button("APPLY", true, v -> apply()));
         col.addView(bar);
 
-        // "Save to vault" checkbox: when checked, RANDOMIZE ALL prompts to save the new identity (with a
-        // unique date/time name prefilled) so it can be restored later from the Saved tab.
+        // "Save to vault" checkbox: when checked, a successful APPLY prompts to save the identity (name
+        // prefilled) so it can be restored later. We save on APPLY (not RANDOMIZE) so a vault entry always
+        // represents an identity that actually reached at least one app — saving un-applied profiles is
+        // pointless/misleading.
         saveOnRandomize = new android.widget.CheckBox(this);
-        saveOnRandomize.setText("Save to vault after RANDOMIZE ALL");
+        saveOnRandomize.setText("Save to vault after APPLY");
         saveOnRandomize.setTextColor(Theme.SOFT);
         saveOnRandomize.setTextSize(13);
         saveOnRandomize.setChecked(prefs.getBoolean("save_on_randomize", false));
@@ -258,10 +263,11 @@ public class MainActivity extends Activity {
                 final Map<String, String> p = svc.generateUnique();
                 runOnUiThread(() -> {
                     profile = p;
+                    appliedTargets = "";   // fresh identity — not applied to anything yet
                     status.setText("New identity ready — not yet applied.");
                     render();
-                    // If "save to vault" is checked, prompt to save this fresh identity (name prefilled).
-                    if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName();
+                    // NOTE: saving happens after APPLY (below), not here — a vault entry should only ever
+                    // represent an identity that was actually applied to an app.
                 });
             } catch (Throwable t) {
                 runOnUiThread(() -> status.setText("Generate failed: " + t.getMessage()));
@@ -293,6 +299,12 @@ public class MainActivity extends Activity {
                 String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
                         + (err != null ? " Last error: " + err + " (grant root in Magisk?)" : " Relaunch them to see it.");
                 status.setText(m); toast(m);
+                if (okN > 0) {
+                    appliedTargets = String.join(",", pkgs);   // this profile is now applied to these apps
+                    // Save to vault ONLY after a successful apply (a vault entry represents an applied
+                    // identity), recording which apps it reached.
+                    if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName(appliedTargets);
+                }
             });
         }).start();
     }
@@ -335,12 +347,16 @@ public class MainActivity extends Activity {
         for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
     }
 
-    /** Target-app card (Identity tab): a clear list of the selected apps (by name) each with a quick
-     *  remove (✕), an LSPosed-scope warning when an app isn't actually hooked, and a Change button. */
+    /** Target-app section (Identity tab): a header row (label + Change) followed by one SEPARATED card
+     *  per selected app — icon, name/package, an LSPosed-scope warning if not hooked, and a red ✕ remove.
+     *  Matches the picker's separated-card look (each app clearly distinct, not run-together rows). */
     private View targetHeader() {
-        LinearLayout card = cardBox();
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
         final Set<String> targets = Targets.get(prefs);
 
+        // Header row (label + Change) — its own card.
+        LinearLayout headCard = cardBox();
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
@@ -349,20 +365,31 @@ public class MainActivity extends Activity {
         head.addView(lbl);
         head.addView(compactButton("Change", false, v ->
                 startActivity(new Intent(this, AppPickerActivity.class))));
-        card.addView(head);
-
+        headCard.addView(head);
         if (targets.isEmpty()) {
             TextView none = value("None selected — tap Change to pick the app(s) to spoof.");
             none.setTextColor(Theme.DIM);
-            card.addView(none);
-            return card;
+            headCard.addView(none);
         }
-        // One row per selected app: app NAME (+ package small), a scope warning if not hooked, and ✕.
+        wrap.addView(headCard);
+
+        // One SEPARATED card per selected app.
         for (final String pkg : targets) {
+            LinearLayout appCard = cardBox();
             LinearLayout r = new LinearLayout(this);
             r.setOrientation(LinearLayout.HORIZONTAL);
             r.setGravity(Gravity.CENTER_VERTICAL);
-            r.setPadding(0, dp(6), 0, dp(6));
+
+            // App icon (small) for quick visual identification, same as the picker rows.
+            try {
+                android.graphics.drawable.Drawable ic = getPackageManager().getApplicationIcon(pkg);
+                ImageView iv = new ImageView(this);
+                iv.setImageDrawable(ic);
+                LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(30), dp(30));
+                ilp.setMargins(0, 0, dp(10), 0);
+                iv.setLayoutParams(ilp);
+                r.addView(iv);
+            } catch (Throwable ignored) {}
 
             LinearLayout col = new LinearLayout(this);
             col.setOrientation(LinearLayout.VERTICAL);
@@ -374,36 +401,32 @@ public class MainActivity extends Activity {
             sub.setTextColor(Theme.DIM);
             sub.setTextSize(11);
             col.addView(sub);
-            r.addView(col);
-
-            // "Not enabled in LSPosed" warning — checked off the UI thread (root grep), then shown.
+            // "Not enabled in LSPosed" warning — checked off the UI thread (memoized root grep).
             final TextView warn = new TextView(this);
             warn.setTextSize(11);
             warn.setTextColor(Theme.RED);
             warn.setVisibility(View.GONE);
-            warn.setPadding(0, 0, dp(8), 0);
-            r.addView(warn);
+            col.addView(warn);
             new Thread(() -> {
                 final boolean scoped = Targets.isScoped(pkg);
                 runOnUiThread(() -> {
                     if (!scoped) { warn.setText("⚠ not enabled in LSPosed"); warn.setVisibility(View.VISIBLE); }
                 });
             }).start();
+            r.addView(col);
 
-            // Small square ✕ remove — a tight red-tinted icon-button (destructive action), not a chunky
-            // full-width Button.
+            // Small square red-tinted ✕ remove.
             TextView rm = new TextView(this);
             rm.setText("✕");
             rm.setTextSize(13);
             rm.setTextColor(Theme.RED);
             rm.setGravity(Gravity.CENTER);
             GradientDrawable rmBg = new GradientDrawable();
-            rmBg.setColor(0x22EF8A8A);              // subtle red-tinted fill
-            rmBg.setStroke(dp(1), 0x55EF8A8A);      // red-tinted border
-            rmBg.setCornerRadius(dp(3));            // square-ish (matches the app's square corners)
+            rmBg.setColor(0x22EF8A8A);
+            rmBg.setStroke(dp(1), 0x55EF8A8A);
+            rmBg.setCornerRadius(dp(3));
             rm.setBackground(rmBg);
-            LinearLayout.LayoutParams rmlp = new LinearLayout.LayoutParams(dp(32), dp(32));
-            rm.setLayoutParams(rmlp);
+            rm.setLayoutParams(new LinearLayout.LayoutParams(dp(32), dp(32)));
             rm.setOnClickListener(v -> {
                 Set<String> cur = Targets.get(prefs);
                 cur.remove(pkg);
@@ -412,9 +435,10 @@ public class MainActivity extends Activity {
                 render();
             });
             r.addView(rm);
-            card.addView(r);
+            appCard.addView(r);
+            wrap.addView(appCard);
         }
-        return card;
+        return wrap;
     }
 
     private View sectionLabel(String s) {
@@ -501,8 +525,7 @@ public class MainActivity extends Activity {
         LinearLayout tcard = cardBox();
         tcard.addView(label(targets.isEmpty() ? "None selected" : targets.size() + " app(s):"));
         for (String pkg : targets) {
-            TextView t = value(pkg);
-            if (Targets.isRisky(pkg)) { t.setTextColor(Theme.RED); t.setText(pkg + "  ⚠ fleet/system"); }
+            TextView t = value(Targets.label(this, pkg) + "  (" + pkg + ")");
             tcard.addView(t);
         }
         content.addView(tcard);
@@ -619,13 +642,15 @@ public class MainActivity extends Activity {
     private void renderSaved() {
         content.addView(sectionLabel("Save current identity"));
         LinearLayout saveCard = cardBox();
-        saveCard.addView(value("Save the identity shown on the Identity tab so you can re-apply this exact "
-                + "device later. A unique name is prefilled from the date/time — edit it if you like."));
+        saveCard.addView(value("Save the currently-APPLIED identity so you can re-apply this exact device "
+                + "later. Only appears after you APPLY (saving an un-applied identity is pointless). A unique "
+                + "name is prefilled from the date/time — edit it if you like."));
         LinearLayout saveRow = new LinearLayout(this);
         saveRow.setOrientation(LinearLayout.HORIZONTAL);
         saveRow.addView(button("Save current to vault", true, v -> {
             if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL on the Identity tab first."); return; }
-            promptSaveName();
+            if (appliedTargets.isEmpty()) { toast("Apply this identity to an app first — the vault only stores applied profiles."); return; }
+            promptSaveName(appliedTargets);
         }));
         saveCard.addView(saveRow);
         content.addView(saveCard);
@@ -708,7 +733,9 @@ public class MainActivity extends Activity {
         }
         for (Map.Entry<String, java.util.List<Vault.Entry>> g : groups.entrySet()) {
             final String groupKey = g.getKey();
-            final boolean collapsed = collapsedGroups.contains(groupKey) && q.isEmpty();  // search always expands
+            // Collapsed BY DEFAULT — a group is open only if the user expanded it (or a search is active,
+            // which force-expands so matches are visible).
+            final boolean collapsed = !expandedGroups.contains(groupKey) && q.isEmpty();
             // Group header (tap to collapse/expand). Shows the date/day + count.
             TextView header = new TextView(this);
             header.setText((collapsed ? "▸  " : "▾  ") + prettyGroup(groupKey) + "   (" + g.getValue().size() + ")");
@@ -716,8 +743,8 @@ public class MainActivity extends Activity {
             header.setTextSize(13);
             header.setPadding(dp(4), dp(10), dp(4), dp(4));
             header.setOnClickListener(v -> {
-                if (collapsedGroups.contains(groupKey)) collapsedGroups.remove(groupKey);
-                else collapsedGroups.add(groupKey);
+                if (expandedGroups.contains(groupKey)) expandedGroups.remove(groupKey);
+                else expandedGroups.add(groupKey);
                 renderSavedList(all);
             });
             savedListHolder.addView(header);
@@ -742,6 +769,20 @@ public class MainActivity extends Activity {
         TextView dev = value(e.device);
         dev.setTextColor(Theme.SOFT);
         card.addView(dev);
+        // Subtly show which apps this profile was applied to (by name), so a saved entry documents its
+        // real scope. Empty for legacy entries saved before this was recorded.
+        if (!e.targets.isEmpty()) {
+            StringBuilder names = new StringBuilder("Applied to: ");
+            String[] pkgs = e.targets.split(",");
+            for (int i = 0; i < pkgs.length; i++) {
+                if (i > 0) names.append(", ");
+                names.append(Targets.label(this, pkgs[i].trim()));
+            }
+            TextView tv = value(names.toString());
+            tv.setTextColor(Theme.DIM);
+            tv.setTextSize(11);
+            card.addView(tv);
+        }
 
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
@@ -783,12 +824,15 @@ public class MainActivity extends Activity {
                 catch (Throwable t) { lastErr = t.getMessage(); }
             }
             final int okN = ok; final String err = lastErr;
-            runOnUiThread(() -> status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size()
-                    + " app(s)." + (err != null ? " Last error: " + err : " Relaunch them to see it.")));
+            runOnUiThread(() -> {
+                if (okN > 0) appliedTargets = String.join(",", pkgs);   // restored profile is now applied
+                status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size()
+                    + " app(s)." + (err != null ? " Last error: " + err : " Relaunch them to see it."));
+            });
         }).start();
     }
 
-    private void promptSaveName() {
+    private void promptSaveName(final String targets) {
         final EditText in = new EditText(this);
         in.setText(Vault.makeLabel(""));   // prefill with the unique date/time label
         in.setSelection(in.getText().length());
@@ -802,8 +846,8 @@ public class MainActivity extends Activity {
                     // If the user kept the prefilled label, save under it as-is; else treat their text as the name.
                     String typed = in.getText().toString().trim();
                     String label = typed.equals(Vault.makeLabel("")) || typed.isEmpty()
-                            ? vault.save("", profile)          // prefilled/empty -> pure timestamp label
-                            : vault.save(typed, profile);      // custom -> timestamp + sanitized name
+                            ? vault.save("", profile, targets)          // prefilled/empty -> pure timestamp label
+                            : vault.save(typed, profile, targets);      // custom -> timestamp + sanitized name
                     status.setText("Saved as " + label);
                     toast("Saved to vault: " + label);
                 })
