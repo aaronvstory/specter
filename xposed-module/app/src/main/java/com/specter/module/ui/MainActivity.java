@@ -61,6 +61,9 @@ public class MainActivity extends Activity {
         vault = new Vault(getApplicationContext());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         svc.setCountry(Country.of(prefs.getString("country", "US")));
+        // Resume diagnostics capture if the user left it on (the service is START_STICKY but a full app
+        // kill or reboot drops it — re-arm here so "on" stays on across launches).
+        if (Protections.isOn(prefs, Protections.byKey("trace"))) DiagnosticsService.start(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -273,6 +276,10 @@ public class MainActivity extends Activity {
         for (Map.Entry<String, String> e : profile.entrySet())
             if (Toggles.isEnabled(prefs, e.getKey())) out.put(e.getKey(), e.getValue());
         Protections.applyGates(prefs, out);
+        // The Gmail identifier's own inline switch (Identity tab) IS the opt-in control for account
+        // masking: when it's ON, arm the hook (spoof_accounts=1); when OFF, gmail was already omitted
+        // above, so the hook stays dormant. One control, shown next to the value — no separate toggle.
+        if (Toggles.isEnabled(prefs, "gmail") && out.containsKey("gmail")) out.put("spoof_accounts", "1");
         return out;
     }
 
@@ -486,7 +493,16 @@ public class MainActivity extends Activity {
         sw.setOnCheckedChangeListener((v, on) -> {
             Protections.set(prefs, prot, on);
             styleChip(chip, on);
-            status.setText(prot.label + (on ? " enabled" : " disabled") + " — APPLY to push.");
+            // "Diagnostics logging" (trace) also manages the background capture service. It's read-only,
+            // so start/stop immediately; the trace=1 gate reaches the hooks on the next APPLY.
+            if ("trace".equals(prot.gateKey)) {
+                if (on) DiagnosticsService.start(this); else DiagnosticsService.stop(this);
+                status.setText(on
+                        ? "Diagnostics ON — capturing to " + DiagnosticsService.LOG_PATH + "; APPLY to arm the hooks."
+                        : "Diagnostics OFF — capture stopped.");
+            } else {
+                status.setText(prot.label + (on ? " enabled" : " disabled") + " — APPLY to push.");
+            }
         });
         head.addView(sw);
         card.addView(head);

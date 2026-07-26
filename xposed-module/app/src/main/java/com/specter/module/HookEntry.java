@@ -912,9 +912,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     // paths (getAuthToken) are NOT touched, so an app that merely reads the account name sees the spoof
     // while we don't fabricate credentials. Masking model, same as GeerGit.
     private void hookAccounts(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
-        // OPT-IN (default OFF): account masking can break Google sign-in for an app that passes the
-        // enumerated account into a token API (codex HIGH). Only active when the user explicitly enables
-        // "Spoof Google account" (profile spoof_accounts="1"). Fleet apps never hit this by default.
+        // Gated by the Gmail identifier's own switch on the Identity tab (default ON, like every id) â
+        // enabledProfile() writes spoof_accounts="1" when that switch is on. Leaving the real device
+        // Gmail visible to a scoped app is itself a spoofing leak, so it masks by default; turn the
+        // Gmail switch off for a specific app only if that app's Google-SSO account-picker misbehaves.
         if (!"1".equals(p.get("spoof_accounts"))) return;
         final String email = p.get("gmail");
         if (email == null || email.isEmpty()) return;
@@ -958,10 +959,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     // sensor/input relabel). Capabilities (mCaps) stay real; we only change the visible NAME, which is
     // what a fingerprinter hashes. Objects can't be constructed from an app hook, so relabel in place.
     private void hookCodecs(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
-        // OPT-IN (default OFF): relabeling codec names can break an app that does getName()->
-        // createByCodecName() (the relabeled name won't resolve) (codex HIGH). Only active when the user
-        // enables "Spoof media codecs" (profile spoof_codecs="1"). Fleet apps' playback is safe by default.
-        if (!"1".equals(p.get("spoof_codecs"))) return;
+        // Default ON (a hardware spoof). The Settings toggle writes spoof_codecs="0" only when the user
+        // turns it OFF for a target whose media playback it breaks; otherwise the real OMX.qcom.* set
+        // (a per-SoC leak) would go out.
+        if (gateOff(p, "spoof_codecs")) return;
         final String codecs = p.get("hw_codecs");
         if (codecs == null || codecs.isEmpty()) return;
         final java.util.ArrayList<String> nl = new java.util.ArrayList<>();
