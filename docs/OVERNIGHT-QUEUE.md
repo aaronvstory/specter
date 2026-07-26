@@ -177,3 +177,7 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   proven, and coherent. Client-signal gate 100% blocked on user (run scripts/fpjs_split_test.py after
   re-entering demo keys). Autonomous work has covered: all client signals, native parity, breadth vs
   geergit/byedentity, UI toggles, coherence, clean-build, and the measurement tool.
+- [done] Persistence audit (8bdc1e2): SDK has NO surviving client id — internal cache (deleting doesn't
+  move id), external app data (empty), keystore (no FPJS alias), factory-reset mtimes (spoofed). With the
+  garbage test + native dual-read, the client-side investigation is 100% closed. The shared-workspace id
+  is not client-derived by ANY mechanism. Coherence re-verified across 500 profiles + DevInfo.
