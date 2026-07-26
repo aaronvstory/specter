@@ -21,6 +21,13 @@ public final class CoverageTest {
         eq(Coverage.of("prop", "ro.arch"), Coverage.State.REAL, "ro.arch (universal)");
         eq(Coverage.of("prop", "ro.product.cpu.abilist64"), Coverage.State.REAL, "abilist (universal)");
         eq(Coverage.of("prop", "sys.boot_completed"), Coverage.State.REAL, "sys.*");
+        // False-positive guards: props UNDER a spoofed prefix that we DON'T alias must read REAL, not
+        // "spoofed" (codex). ro.hardware.chipname IS aliased; ro.hardware.gralloc is NOT.
+        eq(Coverage.of("prop", "ro.hardware.gralloc"), Coverage.State.REAL, "ro.hardware.gralloc (not aliased)");
+        eq(Coverage.of("prop", "ro.hardware.chipname"), Coverage.State.SPOOFED, "ro.hardware.chipname (aliased)");
+        eq(Coverage.of("prop", "ro.hardware"), Coverage.State.SPOOFED, "ro.hardware (aliased)");
+        eq(Coverage.of("prop", "ro.build.version.codename"), Coverage.State.REAL, "codename (universal REL)");
+        eq(Coverage.of("prop", "ro.build.version.preview_sdk"), Coverage.State.REAL, "preview_sdk (universal 0)");
 
         // Spoofed files -> SPOOFED
         eq(Coverage.of("open", "/proc/cpuinfo"), Coverage.State.SPOOFED, "cpuinfo");

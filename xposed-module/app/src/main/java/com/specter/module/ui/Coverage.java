@@ -25,19 +25,37 @@ public final class Coverage {
      *  SoC, serial, bootloader, lock-state). Matches the domains in HookEntry.PROP_ALIASES + STATIC_PROPS. */
     private static final String[] SPOOFED_PROP_PREFIXES = {
         "ro.product.", "ro.build.", "ro.boot.", "ro.bootimage.", "ro.odm.build.", "ro.system.build.",
-        "ro.system_ext.build.", "ro.vendor.build.", "ro.bootloader", "ro.hardware", "ro.board.",
+        "ro.system_ext.build.", "ro.vendor.build.", "ro.bootloader", "ro.board.",
         "ro.serialno", "ro.soc.", "gsm.version.baseband", "ril.baseband", "os.version",
+    };
+    /** EXACT identity prop keys that would otherwise be missed by (or wrongly caught by) the prefixes.
+     *  ro.hardware and ro.hardware.chipname ARE aliased, but ro.hardware.gralloc etc. are NOT — so match
+     *  hardware exactly rather than by a "ro.hardware" prefix (which over-claims gralloc/egl/etc.). */
+    private static final String[] SPOOFED_PROP_EXACT = {
+        "ro.hardware", "ro.hardware.chipname",
+    };
+    /** Props under an otherwise-spoofed prefix that we DON'T actually alias (universal/generic) — these
+     *  must read REAL, not be caught by the prefix. */
+    private static final String[] REAL_PROP_EXACT = {
+        "ro.build.version.codename",     // "REL" — universal (but preview_sdk below is the real gap)
+        "ro.build.version.preview_sdk",  // 0 on release builds — universal
     };
 
     public static State of(String verb, String target) {
         if (target == null || target.isEmpty()) return State.UNKNOWN;
         if ("prop".equals(verb)) {
+            // Exact non-identity props that live UNDER a spoofed prefix but we DON'T alias (universal
+            // values) — checked FIRST so the prefix doesn't wrongly badge them "spoofed".
+            for (String r : REAL_PROP_EXACT) if (target.equals(r)) return State.REAL;
             // Generic/non-identity props (vendor debug, egl, cache keys, sys.*, ABI list, arch) — not
-            // device-identifying, so "real" is fine (we deliberately don't spoof them). Checked FIRST so a
-            // universal prop like ro.product.cpu.abilist64 isn't mis-flagged by the ro.product. prefix.
+            // device-identifying. Also ro.hardware.* OTHER than the two exact keys below (gralloc/egl/...).
             if (target.startsWith("vendor.") || target.startsWith("debug.") || target.startsWith("sys.")
                     || target.startsWith("cache_key.") || target.equals("ro.arch")
-                    || target.startsWith("ro.product.cpu.abilist")) return State.REAL;
+                    || target.startsWith("ro.product.cpu.abilist")
+                    || (target.startsWith("ro.hardware.") && !target.equals("ro.hardware.chipname")))
+                return State.REAL;
+            // Exact identity keys (ro.hardware, ro.hardware.chipname).
+            for (String e : SPOOFED_PROP_EXACT) if (target.equals(e)) return State.SPOOFED;
             for (String pre : SPOOFED_PROP_PREFIXES)
                 if (target.equals(pre) || target.startsWith(pre)) return State.SPOOFED;
             return State.UNKNOWN;
