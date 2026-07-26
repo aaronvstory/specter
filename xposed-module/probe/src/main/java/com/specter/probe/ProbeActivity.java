@@ -115,6 +115,12 @@ public class ProbeActivity extends Activity {
             put(o, "sys_cpu_present", readFileTrim("/sys/devices/system/cpu/present"));
             put(o, "sys_gpu_model", readFileTrim("/sys/class/kgsl/kgsl-3d0/gpu_model"));
             put(o, "proc_version", readFileTrim("/proc/version"));
+            // /proc/mounts + mountinfo must NOT leak Magisk bind-mounts (root signal). Report whether any
+            // "magisk" line survives (should be "clean" when hide_root is on).
+            String mounts = readFileTrim("/proc/mounts");
+            put(o, "mounts_magisk_leak", mounts.toLowerCase().contains("magisk") ? "LEAK" : "clean");
+            String mountinfo = readFileTrim("/proc/self/mountinfo");
+            put(o, "mountinfo_magisk_leak", mountinfo.toLowerCase().contains("magisk") ? "LEAK" : "clean");
             put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
             put(o, "prop_sdk", readProp("ro.build.version.sdk"));
             put(o, "prop_first_api", readProp("ro.product.first_api_level"));

@@ -244,10 +244,48 @@ static const char *MAPS_HIDE_MARKERS[] = {
     return fd;
 }
 
+// /proc/mounts + /proc/self/mountinfo LEAK Magisk unambiguously: real reads show tmpfs "magisk"
+// overlays on /system_ext/bin and /debug_ramdisk/.magisk lines — a strong root/bind-mount signal a
+// mount-reading detector catches even when the su/magisk BINARY paths are hidden (the byedentity-relevant
+// vector). Unlike /proc/self/maps (which ART reads during GC — filtering it crashes the app), mountinfo
+// is safe to filter. We build a filtered copy once per process (drops any line naming magisk / a hook
+// framework / /data/adb) and redirect the read to it. Gated by g_hide_root.
+static std::string g_mounts_path;      // filtered /proc/mounts
+static std::string g_mountinfo_path;   // filtered /proc/self/mountinfo
+static bool is_mounts(const char *path) {
+    return path && (strcmp(path, "/proc/mounts") == 0 || strcmp(path, "/proc/self/mounts") == 0);
+}
+static bool is_mountinfo(const char *path) {
+    return path && (strcmp(path, "/proc/self/mountinfo") == 0 || strcmp(path, "/proc/mountinfo") == 0);
+}
+
+// Write a filtered copy of a /proc mount file (magisk/hook/adb lines dropped) into the app files dir,
+// and store its path in `out`. Best-effort; on any failure `out` stays empty and the real file is read.
+static void build_filtered_mounts(const char *src, const std::string &tag, std::string &out) {
+    if (g_files_dir.empty()) return;
+    FILE *real = fopen(src, "re");
+    if (!real) return;
+    std::string filtered;
+    char line[2048];
+    while (fgets(line, sizeof(line), real)) {
+        bool hide = false;
+        for (auto m : MAPS_HIDE_MARKERS) if (strstr(line, m)) { hide = true; break; }
+        if (!hide) filtered.append(line);
+    }
+    fclose(real);
+    std::string path = g_files_dir + "/.specter_" + tag;
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd < 0) return;
+    if (write(fd, filtered.data(), filtered.size()) == (ssize_t) filtered.size()) out = path;
+    close(fd);
+}
+
 // Map a spoof-target path to our replacement file, or return the original path unchanged.
 static const char *redirect_path(const char *path) {
     if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) return g_cpuinfo_path.c_str();
     if (!g_bootid_path.empty()  && is_bootid(path))  return g_bootid_path.c_str();
+    if (!g_mounts_path.empty()    && is_mounts(path))    return g_mounts_path.c_str();
+    if (!g_mountinfo_path.empty() && is_mountinfo(path)) return g_mountinfo_path.c_str();
     const char *sr = sys_redirect(path);
     if (sr) return sr;
     return path;
@@ -533,6 +571,13 @@ public:
             mkdir(g_files_dir.c_str(), 0700);
         }
 
+        // Hide Magisk's bind-mounts from /proc/mounts + /proc/self/mountinfo (a strong root signal that
+        // survives su-path hiding). Filtered copies built once here; redirect_path swaps the read.
+        if (g_hide_root && !g_files_dir.empty()) {
+            build_filtered_mounts("/proc/mounts", "mounts", g_mounts_path);
+            build_filtered_mounts("/proc/self/mountinfo", "mountinfo", g_mountinfo_path);
+        }
+
         // boot_id: a per-boot UUID FPJS reads (tracer-proven). Derive a stable per-identity UUID from
         // android_id and redirect the file. hwcap: drop-only feature-bit tweak so the CPU mask varies.
         auto aid = profile.find("android_id");
@@ -740,8 +785,10 @@ private:
         if (g_trace) {
             applied += hookSym("dlsym", (void *) my_dlsym, (void **) &orig_dlsym);
         }
-        // syscall: needed whenever we redirect files (libfp reads via raw syscall) or trace.
-        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || !g_sys_redirect.empty()) {
+        // syscall: needed whenever we redirect files (libfp reads via raw syscall) or trace, incl. the
+        // mount-file redirect (a root detector may read /proc/mounts via raw syscall(SYS_openat)).
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || !g_sys_redirect.empty()
+                || !g_mounts_path.empty() || !g_mountinfo_path.empty()) {
             applied += hookSym("syscall", (void *) my_syscall, (void **) &orig_syscall);
         }
         // In pure-trace mode prop_get may not be hooked yet (no props spoofed) — ensure it for the trace.

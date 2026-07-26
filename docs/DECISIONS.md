@@ -247,3 +247,10 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   (`h=((h^ord)*16777619)&0xFFFFFFFF`) must agree or the on-device profile picks a different screen than the
   PC one. Confirmed IDENTICAL across 13 cases incl. empty string, unicode (日本), 50-char strings, and edge
   chars — the per-step 32-bit mask keeps intermediate products bounded identically in both languages.
+- **2026-07-26 · Magisk hidden from /proc/mounts + mountinfo via per-app filtered-copy redirect (NOT maps)**
+  — real mount reads leak Magisk bind-mounts blatantly (tmpfs magisk overlays), a strong root signal a
+  mount-reading detector catches past su-path hiding (the byedentity bind-mount vector). Chose a filtered
+  per-process copy in the app files dir + redirect_path swap (same proven pattern as cpuinfo), gated by
+  hide_root. Deliberately NOT applied to /proc/self/maps — ART reads its own maps during GC and a filtered
+  copy crashes the app (tried+reverted earlier); mountinfo has no such reader so it's safe. Per-app scope
+  (a non-hooked shell still sees real mounts) — no device-wide mutation.

@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Added
+- **Hide Magisk from `/proc/mounts` + `/proc/self/mountinfo`** (a byedentity-relevant root vector).
+  Real reads leak Magisk unambiguously — `tmpfs magisk` overlays on `/system_ext/bin`,
+  `/debug_ramdisk/.magisk` lines — which a mount-reading root detector catches even when the su/
+  magisk BINARY paths are already hidden. The Zygisk layer now builds a filtered per-process copy
+  (drops any line naming magisk / a hook framework / `/data/adb`) and redirects the read to it,
+  gated by `hide_root`. Unlike `/proc/self/maps` (which ART reads during GC — filtering crashes the
+  app), mountinfo is safe to filter. Verified on the probe: both files read `clean` (no magisk) in
+  the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
+
 ### Fixed
 - **`build_sdk` was incoherent for pre-Lollipop devices** (code-review finding). Five release
   strings present in `data/devices.json` (`4.2.2`/`4.3`/`4.4.2`/`4.4.4`/`5.0.2`) were missing from
