@@ -121,6 +121,8 @@ public class ProbeActivity extends Activity {
             put(o, "mounts_magisk_leak", mounts.toLowerCase().contains("magisk") ? "LEAK" : "clean");
             String mountinfo = readFileTrim("/proc/self/mountinfo");
             put(o, "mountinfo_magisk_leak", mountinfo.toLowerCase().contains("magisk") ? "LEAK" : "clean");
+            // frida-server artifact must be hidden from a File.exists()/access check (frida detection).
+            put(o, "frida_server_visible", new java.io.File("/data/local/tmp/frida-server").exists() ? "LEAK" : "clean");
             put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
             put(o, "prop_sdk", readProp("ro.build.version.sdk"));
             put(o, "prop_first_api", readProp("ro.product.first_api_level"));

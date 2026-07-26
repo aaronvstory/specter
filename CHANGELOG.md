@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Hide Frida artifacts** (a hooking/instrumentation-framework detection vector). This device had a
+  leftover `/data/local/tmp/frida-server` binary that a `File.exists()`/`access()` frida check would
+  find. Added the frida artifact paths (frida-server, frida-gadget, re.frida.server, libfrida-gadget)
+  to the native root/hook-hiding path list so those reads return ENOENT for a hooked app, and added
+  frida/gadget/thread-name markers to the maps/mount filter. Gated by `hide_root`. Verified on the
+  probe: `frida_server_visible` reads `clean` while a non-hooked shell still sees the binary (per-app).
 - **Hide Magisk from `/proc/mounts` + `/proc/self/mountinfo`** (a byedentity-relevant root vector).
   Real reads leak Magisk unambiguously — `tmpfs magisk` overlays on `/system_ext/bin`,
   `/debug_ramdisk/.magisk` lines — which a mount-reading root detector catches even when the su/

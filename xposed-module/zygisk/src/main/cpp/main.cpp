@@ -215,7 +215,7 @@ static std::string g_files_dir;   // /data/data/<pkg>/files — a dir we can wri
 }
 static const char *MAPS_HIDE_MARKERS[] = {
     "libspecter_zygisk", "/data/adb/", "magisk", "zygisk", "/memfd:", "riru", "lsposed", "edxposed",
-    "/dev/.magisk", "KSU", "kernelsu",
+    "/dev/.magisk", "KSU", "kernelsu", "frida", "gadget", "gum-js-loop", "gmain",
 };
 [[maybe_unused]] static int clean_maps_fd() {
     FILE *real = fopen("/proc/self/maps", "re");
@@ -301,6 +301,11 @@ static const char *ROOT_PATHS[] = {
     "/dev/com.koushikdutta.superuser.daemon/", "/system/xbin/busybox", "/data/adb/magisk",
     "/data/adb/modules", "/sbin/.magisk", "/cache/.disable_magisk", "/system/bin/magisk",
     "/system/xbin/magisk", "/data/adb/ksu", "/data/adb/ap",
+    // Frida (a hooking/instrumentation framework) artifacts — a frida-detection check probes these
+    // exact paths. Hide them like the su/magisk paths so an access()/stat()/File.exists() finds nothing.
+    "/data/local/tmp/frida-server", "/data/local/tmp/frida-gadget",
+    "/data/local/tmp/re.frida.server", "/system/lib/libfrida-gadget.so",
+    "/system/lib64/libfrida-gadget.so", "/data/local/tmp/frida",
 };
 static bool is_root_path(const char *path) {
     if (!path) return false;
