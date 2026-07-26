@@ -231,3 +231,16 @@ BOTTOM LINE for the id-split gate: no amount of client-side spoofing can move th
 workspace — proven with garbage input. The measurement is 100% blocked on the user's own workspace keys
 (manual UI re-entry, encrypted). Every client signal the demo reads is spoofed and per-identity; when the
 keys are present, the split will show there.
+
+## 2026-07-26 — Persistence audit: the SDK has NO surviving client-side identifier (final check)
+
+Checked EVERY client-side persistence vector for a stable id that could survive rotation/pm-clear:
+- Internal app cache (fpjs_prefs_v2.xml + files/datastore): deleting it does NOT change the id (proven).
+- External app data (/data/media/0/Android/data/<demo>): EMPTY — the SDK writes nothing there.
+- Hardware-backed KeyStore aliases (uid 10161): only system/GMS keys, no FPJS-specific alias.
+- Factory-reset marker mtimes: spoofed per-app (confirmed still working, 1773120233 not the real reset).
+Conclusion: the SDK persists no client-side identifier anywhere. Combined with the garbage-value test
+(impossible signals that reached the SDK didn't move the id) and the native dual-read (full prop parity),
+this closes the client-side investigation completely — the shared-workspace id is not client-derived by
+ANY mechanism (cache, storage, keystore, or signal payload). The split is measurable only in the user's
+own workspace.
