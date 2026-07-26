@@ -351,3 +351,18 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   field editable to an EXACT value (clone a specific device's android_id/gsf/imei/etc). Identifiers edit
   freely (format-validated); coupled device fields warn about coherence. On-device: set android_id to
   aaaa1111bbbb2222, status confirmed, edit persisted. NEXT: IDEAS (c) non-root harvest / specter-lite.
+
+- [2026-07-27 AFK] IDEAS BACKLOG COMPLETE (all 3, proven end-to-end): (a) vault export/import [0.8.0,
+  hardened], (b) custom field editing [0.8.1], (c) Specter Lite non-root harvester [0.9.0] — a separate
+  ~12KB APK that harvests a real device's identifiers without root and exports a profile the main app
+  imports (proven: harvested real Pixel 4 -> imported with matching android_id/model, cross-app checksum
+  validated). All user-priority features now built + proven. main @ v0.9.0.
+
+*** session snapshot #2 (AFK, 2026-07-27) ***
+- Shipped priorities 1 (polish) + 2 (FPJS breadth) + 3 (IDEAS backlog) — ALL complete.
+- 0.5.0 -> 0.9.0: live-trace viewer, verifiedboot props, SENSORID (flagship), locale/tz, mock-location,
+  UI polish (spec-sheet + compact cards + honest Location tab), vault export/import, custom fields, Lite.
+- Every unit proven on-device; codex gauntlet on risky changes (caught+fixed a vault injection, a parity
+  bug, 3 SENSORID issues, 2 verifiedboot coherence bugs). Tests green throughout.
+- NEXT (if run continues): more FPJS breadth (camera/battery/boot-time), or run Catched/AmIUniqueApp
+  oracles, or codex-review the newest merges. The core user asks are all delivered.
