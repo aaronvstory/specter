@@ -125,3 +125,12 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   entropy (48000 typical — skip). Sensors already spoofed (name+vendor, java+native).
 - [NEXT] Continue auditing Java-API reads in the SDK collector (C0460f2 + siblings): telecom/phone
   (SIM/carrier already spoofed — verify composite), connectivity, UserManager. Then keep UI polished.
+- [done] Sensor resolution/maxRange/power spoof (71b3f39) — the high-entropy sensor fields FPJS hashes
+  (name+vendor were already relabeled). Per-type coherent values. Probe verified.
+- [COVERAGE STATUS] Client signals now spoofed: UA, MODEL/DEVICE, APK-mtime, installed-apps, /sys
+  cpu_capacity+gpu_model+present, /proc/version, SDK_INT, display metrics (getDisplayMetrics), full sensor
+  tuple (name+vendor+resolution+maxRange+power), Build.*, bootloader/radio/kernel, SoC, GPU/GLES, cpuinfo,
+  storage, RAM, all IDs. That's the entire high-entropy client surface the SDK reads (traced + decompiled).
+- [NEXT] Diminishing returns on new signals. Focus: (a) polish/verify UI toggles for all protections,
+  (b) verify each protection's OFF state actually leaves the signal real (regression guard), (c) when the
+  user re-enters demo keys, run the two-rotation split in their workspace — the definitive gate.
