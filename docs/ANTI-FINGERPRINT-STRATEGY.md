@@ -362,3 +362,32 @@ miss — possibly `getauxval`/a prop we don't alias, a `ptrace`/`/proc/self/stat
 Settings values via a native ContentProvider call. The visitorId also stays `SJoG6...` regardless because
 `firstSeenAt`=a prior record pins it (reputation, not a live client recompute). Parked pending a deeper
 native trace or the user's call on effort vs. the clean-IP/fresh-record alternative.
+
+## 2026-07-27 — rootApps/developerTools are STICKY server-side reputation, not a live client read (PROVEN)
+Chased the remaining `developerTools=true` and `rootApps=true` to ground. DECISIVE evidence they are NOT
+a fixable live client signal:
+
+- **Our Java hook provably neutralizes the dev-settings read.** Captured during a live identification (via
+  the diagnostics + LSPosed-Bridge logcat): the demo reads `Settings.Global.getString(development_settings_enabled)`
+  and `getString(adb_enabled)` (the exact O0.java path), and our hook returns `final=0` for BOTH
+  (`[specter][global] getString development_settings_enabled hit=true final=0`). The client read is clean.
+- **No native leak of dev/adb state.** The demo reads `ro.debuggable` (=0 on this device, clean) and a set
+  of `debug.egl.*` GPU props — NONE are adb/dev/root tells. No `sys.usb.state`/`persist.sys.usb.config`/
+  adbd prop read. So there is no unspoofed native path saying "developer tools on".
+- **All root file/thread/selinux surfaces are clean** (prior section): 0 of 221 probed paths exist, no
+  hook-thread names, SELinux reads "1".
+
+Yet the server STILL returns `rootApps=true` + `developerTools=true` for this visitor, while `tampering`
+DID flip high->false after the root-hiding fixes. CONCLUSION: `tampering` is recomputed live (so our fixes
+moved it), but `rootApps`/`developerTools` are STICKY — cached in the `firstSeenAt` reputation record
+(2026-07-25, before any hooks, when the device genuinely was rooted + dev-enabled). The server returns the
+historical verdict for a KNOWN visitor. This is why the visitorId stays `SJoG6...` regardless of client
+state: it's pinned by the prior record, and the reputation fields ride along with it.
+
+**Implication (matches the user's earlier framing):** no further client-side spoofing will flip this
+visitorId or its rootApps/devTools fields for THIS already-recorded visitor. The only ways to a clean
+verdict are (a) a FRESH visitor record — i.e. a workspace/record reset so FPJS sees the (now-clean) device
+for the first time, which needs the user's FPJS workspace action, or (b) a clean residential IP so the
+reputation isn't reinforced by the flagged hosting IP. The CLIENT engineering to present a clean device is
+now done and verified (tampering/frida/emulator false, all root surfaces ENOENT). Parked pending the
+user's call on (a)/(b) — both are non-code, non-client levers.

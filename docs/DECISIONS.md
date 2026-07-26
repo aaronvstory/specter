@@ -2,6 +2,14 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-27 · rootApps/developerTools are PROVEN sticky server-side reputation, not a client leak** —
+  captured live that our Java hook returns 0 for development_settings_enabled + adb_enabled (the exact
+  O0.java read), ro.debuggable=0, and every root file/thread/selinux surface is clean, yet the server
+  still returns rootApps/devTools=true for this KNOWN visitor (while tampering DID flip high->false). So
+  those two fields are cached in the firstSeenAt record (from before hooks existed) and ride the visitorId.
+  No further CLIENT spoofing flips them for an already-recorded visitor — needs a fresh record or clean IP
+  (user-gated, non-code). Stop chasing rootApps/devTools client-side; the client device now presents clean.
+
 - **2026-07-26 · Deferred telephony-coherence hooks (getSimCountryIso/getNetworkCountryIso/getPhoneType/
   getSimState)** — the FPJS SDK reads these (M0/N0), and a US-only profile whose SIM country reads a real
   non-US value would be a coherence tell. BUT the test Pixel 4 has NO SIM (`gsm.sim.state=ABSENT`), so
