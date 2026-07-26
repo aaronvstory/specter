@@ -60,6 +60,8 @@ public final class Profile {
             "build_flavor", "build_description",
             // Settings.Global.BOOT_COUNT (derived from android_id) — matches profile.py order (before tz).
             "boot_count",
+            // Battery design capacity µAh (derived from codename) — matches profile.py order.
+            "battery_uah",
             // US timezone (derived from the phone area code) + locale — appended last, matches profile.py.
             "timezone", "locale",
     };
@@ -255,6 +257,9 @@ public final class Profile {
         // Settings.Global.BOOT_COUNT — per-device-stable integer FPJS/EXADPrinter hash; derived from the
         // android_id, so stable per profile but not the host's real count. Pure, no RNG (byte-parity).
         p.put("boot_count", String.valueOf(Generators.bootCountFor(p.get("android_id"))));
+        // Battery design capacity in µAh (BatteryManager full-capacity signal). Per-device-stable, derived
+        // from the codename. Pure, no RNG (byte-parity).
+        p.put("battery_uah", String.valueOf(Generators.batteryUahFor(device)));
         // US timezone derived from the phone's area code (US number = "1"+area(3)+exch(3)+sub(4)) so phone
         // + timezone + locale tell one coherent US-location story. Locale is always en-US (US-only build).
         // Pure lookup, no RNG (byte-parity with specter/profile.py). Keep in lockstep with the Python side.

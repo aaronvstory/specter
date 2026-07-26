@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.9.2] — 2026-07-27
+
+### Added
+- **Battery capacity spoofing.** BatteryManager.getIntProperty/getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER)
+  exposes the battery's full/design capacity (a stable per-model hardware signal FingerprintJS reads).
+  The profile now carries a battery_uah derived from the device codename (2800-4600 mAh, byte-parity), and
+  the battery hook returns it. PROVEN on-device: host real charge counter 1,777,000 µAh, scoped app
+  reads the spoofed 3,500,000 µAh (3500 mAh) for the moto g 5G profile. Live CAPACITY %% left real.
+
 ## [0.9.1] — 2026-07-27
 
 ### Added

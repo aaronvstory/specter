@@ -61,6 +61,35 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (!gateOff(p, "spoof_sysfs")) hookDisplayMetrics(lpparam, p);
         hookLocaleTimezone(p);
         if (!gateOff(p, "hide_root")) hookMockLocation(lpparam);
+        hookBattery(lpparam, p);
+    }
+
+    /** Battery full/design capacity (a FingerprintJS hardware signal). BatteryManager.getIntProperty/
+     *  getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER) exposes the current charge in µAh; at/near full
+     *  it's the device's real design capacity — a stable per-model hardware value. Return the profile's
+     *  per-device value so it doesn't leak the real host battery. Only the CHARGE_COUNTER property (id 1)
+     *  is rewritten; the live CAPACITY percentage etc. are left real (they're not device-identifying). */
+    private void hookBattery(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        long uah = 0;
+        try { uah = Long.parseLong(p.get("battery_uah")); } catch (Throwable ignored) {}
+        if (uah <= 0) return;
+        final long chargeUah = uah;
+        try {
+            Class<?> bm = XposedHelpers.findClass("android.os.BatteryManager", lp.classLoader);
+            final int CHARGE_COUNTER = 1;   // BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER
+            XC_MethodHook h = new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length >= 1 && mp.args[0] instanceof Integer
+                            && (Integer) mp.args[0] == CHARGE_COUNTER) {
+                        Object res = mp.getResult();
+                        if (res instanceof Integer) mp.setResult((int) chargeUah);
+                        else if (res instanceof Long) mp.setResult(chargeUah);
+                    }
+                }
+            };
+            try { XposedBridge.hookAllMethods(bm, "getIntProperty", h); } catch (Throwable ignored) {}
+            try { XposedBridge.hookAllMethods(bm, "getLongProperty", h); } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
     }
 
     /** Hide the "this location is mocked" flag. A driver/fraud SDK (Incognia/SEON — the exact income-app

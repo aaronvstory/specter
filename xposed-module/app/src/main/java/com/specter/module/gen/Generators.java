@@ -322,6 +322,16 @@ public final class Generators {
         return 40 + (int) (codenameHash(androidId == null ? "" : androidId) % 420L);
     }
 
+    /** A plausible, per-device-STABLE battery DESIGN capacity in µAh (what BatteryManager.
+     *  getIntProperty(BATTERY_PROPERTY_CHARGE_COUNTER)-style reads expose as full capacity). Derived from
+     *  the device codename so it's stable per model and coherent-ish (a real phone battery, 2800-4600 mAh
+     *  in 100mAh steps). Pure, no RNG. MUST match Python Generators.battery_uah_for (byte-parity). */
+    public static long batteryUahFor(String codename) {
+        String cn = codename == null ? "" : codename.toLowerCase();
+        long mah = 2800 + (codenameHash(cn) % 19) * 100L;   // 2800..4600 mAh
+        return mah * 1000L;                                  // -> µAh
+    }
+
     public static String factoryResetEpoch(Rng r, String securityPatch) {
         long base;
         if (securityPatch != null && securityPatch.length() >= 10) {

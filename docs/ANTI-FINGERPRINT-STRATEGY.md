@@ -485,3 +485,13 @@ byte-parity), and hookSettingsGlobal's getInt hook returns it for the "boot_coun
 host real boot_count=110, scoped app reads the spoofed 405 (per-identity, stable). Boot-TIME (wall-clock
 boot moment = currentTimeMillis - elapsedRealtime) is left real for now — it's session-varying and lower
 stable-entropy than the count; revisit if a target keys on it.
+
+### 2026-07-27 · Battery capacity SHIPPED (part of gap #4, proven)
+BatteryManager.getIntProperty/getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER) exposes the battery's
+full/design capacity — a stable per-model hardware value. Profile carries `battery_uah` derived from the
+codename (Generators.batteryUahFor / battery_uah_for: 2800-4600 mAh -> µAh, byte-parity); hookBattery
+rewrites the CHARGE_COUNTER property. PROVEN on-device: host real 1,777,000 µAh, scoped app reads spoofed
+3,500,000 (3500 mAh, moto g 5G). Only CHARGE_COUNTER is rewritten; the live CAPACITY %% is left real (not
+device-identifying). Camera getCameraCharacteristics (the other half of gap #4) is DEFERRED — the full
+characteristics object must match the claimed model EXACTLY or it's a stronger tell; the camera-id LIST is
+already hooked, and partial characteristics spoofing is higher-risk than its marginal value.

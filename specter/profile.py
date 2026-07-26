@@ -292,6 +292,9 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # Settings.Global.BOOT_COUNT — a per-device-stable integer FPJS/EXADPrinter hash. Derived from the
     # android_id so it's stable per profile but not the host's real count. Pure, no RNG (byte-parity safe).
     p["boot_count"] = str(G.boot_count_for(p.get("android_id", "")))
+    # Battery design capacity in µAh (BatteryManager full-capacity signal). Per-device-stable, derived
+    # from the codename. Pure, no RNG (byte-parity safe).
+    p["battery_uah"] = str(G.battery_uah_for(device))
     # US timezone derived from the phone's area code (US number = "1"+area(3)+exch(3)+sub(4)), so phone +
     # timezone + locale tell one coherent US-location story. Locale is always en-US (US-only build). Pure
     # lookup, no RNG (byte-parity safe). Gate on the NANP phone format ONLY (not the raw `country` arg,

@@ -174,6 +174,15 @@ def _codename_hash(cn):
     return h
 
 
+def battery_uah_for(codename):
+    """A plausible, per-device-STABLE battery DESIGN capacity in µAh (BatteryManager full-capacity read).
+    Derived from the codename so it's stable per model (2800-4600 mAh in 100mAh steps). Pure, no RNG ->
+    byte-parity safe. MUST match Java Generators.batteryUahFor."""
+    cn = (codename or "").lower()
+    mah = 2800 + (_codename_hash(cn) % 19) * 100
+    return mah * 1000
+
+
 def boot_count_for(android_id):
     """A plausible, per-device-STABLE boot count (Settings.Global.BOOT_COUNT). FingerprintJS/EXADPrinter
     read it as a high-entropy stable integer; leaving it real leaks the host device's true boot count. A
