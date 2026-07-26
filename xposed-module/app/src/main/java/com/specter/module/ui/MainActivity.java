@@ -46,14 +46,19 @@ public class MainActivity extends Activity {
 
     private LinearLayout content;   // swapped per tab
     private TextView status;
-    private final Button[] tabButtons = new Button[3];
-    private int tab = 0;            // 0=Identity 1=Settings 2=Location
+    private final Button[] tabButtons = new Button[4];
+    private int tab = 0;            // 0=Identity 1=Saved 2=Settings 3=Location
+    private Vault vault;
+    private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
+    private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
+    private final Set<String> collapsedGroups = new java.util.HashSet<>();  // date groups the user collapsed
 
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         svc = new IdentityService(getApplicationContext());
+        vault = new Vault(getApplicationContext());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         svc.setCountry(Country.of(prefs.getString("country", "US")));
 
@@ -86,7 +91,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (tab == 1) render(); // reflect target changes made in the app picker
+        if (tab == 2) render(); // reflect target changes made in the app picker (Settings tab)
     }
 
     // ---------- top chrome ----------
@@ -127,19 +132,38 @@ public class MainActivity extends Activity {
     }
 
     private View actionBar() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(dp(12), dp(4), dp(12), dp(4));
+        bar.setPadding(dp(12), dp(4), dp(12), dp(2));
         bar.addView(button("RANDOMIZE ALL", false, v -> regenerate()));
         bar.addView(button("APPLY", true, v -> apply()));
-        return bar;
+        col.addView(bar);
+
+        // "Save to vault" checkbox: when checked, RANDOMIZE ALL prompts to save the new identity (with a
+        // unique date/time name prefilled) so it can be restored later from the Saved tab.
+        saveOnRandomize = new android.widget.CheckBox(this);
+        saveOnRandomize.setText("Save to vault after RANDOMIZE ALL");
+        saveOnRandomize.setTextColor(Theme.SOFT);
+        saveOnRandomize.setTextSize(13);
+        saveOnRandomize.setChecked(prefs.getBoolean("save_on_randomize", false));
+        saveOnRandomize.setOnCheckedChangeListener((v, on) ->
+                prefs.edit().putBoolean("save_on_randomize", on).apply());
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cp.setMargins(dp(16), 0, dp(16), dp(4));
+        saveOnRandomize.setLayoutParams(cp);
+        col.addView(saveOnRandomize);
+        return col;
     }
 
     private View tabBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setPadding(dp(12), dp(2), dp(12), dp(6));
-        String[] names = {"Identity", "Settings", "Location"};
+        String[] names = {"Identity", "Saved", "Settings", "Location"};
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
             Button tb = tabButton(names[i], tab == i);
@@ -201,7 +225,13 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 final Map<String, String> p = svc.generateUnique();
-                runOnUiThread(() -> { profile = p; status.setText("New identity ready — not yet applied."); render(); });
+                runOnUiThread(() -> {
+                    profile = p;
+                    status.setText("New identity ready — not yet applied.");
+                    render();
+                    // If "save to vault" is checked, prompt to save this fresh identity (name prefilled).
+                    if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName();
+                });
             } catch (Throwable t) {
                 runOnUiThread(() -> status.setText("Generate failed: " + t.getMessage()));
             }
@@ -253,8 +283,9 @@ public class MainActivity extends Activity {
         content.removeAllViews();
         switch (tab) {
             case 0: renderIdentity(); break;
-            case 1: renderSettings(); break;
-            case 2: renderLocation(); break;
+            case 1: renderSaved(); break;
+            case 2: renderSettings(); break;
+            case 3: renderLocation(); break;
         }
     }
 
@@ -486,6 +517,194 @@ public class MainActivity extends Activity {
         card.addView(value("UI only — no location hook yet (planned). Lat/long fields will drive a "
                 + "LocationManager hook in a later build."));
         content.addView(card);
+    }
+
+    // ---------- Saved (profile vault): save current, list, restore, delete ----------
+    private void renderSaved() {
+        content.addView(sectionLabel("Save current identity"));
+        LinearLayout saveCard = cardBox();
+        saveCard.addView(value("Save the identity shown on the Identity tab so you can re-apply this exact "
+                + "device later. A unique name is prefilled from the date/time — edit it if you like."));
+        LinearLayout saveRow = new LinearLayout(this);
+        saveRow.setOrientation(LinearLayout.HORIZONTAL);
+        saveRow.addView(button("Save current to vault", true, v -> {
+            if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL on the Identity tab first."); return; }
+            promptSaveName();
+        }));
+        saveCard.addView(saveRow);
+        content.addView(saveCard);
+
+        content.addView(sectionLabel("Saved profiles"));
+        savedListHolder = null;   // fresh holder per full render (content was cleared by render())
+        java.util.List<Vault.Entry> all = vault.list();
+        if (all.isEmpty()) {
+            LinearLayout empty = cardBox();
+            TextView t = value("No saved profiles yet.");
+            t.setTextColor(Theme.DIM);
+            empty.addView(t);
+            content.addView(empty);
+            return;
+        }
+
+        // Search box — filters by label OR device (case-insensitive substring). Preserves the query and
+        // caret across re-renders so typing feels continuous.
+        final EditText search = new EditText(this);
+        search.setHint("Search saved (name or device)…");
+        search.setText(vaultQuery);
+        search.setSelection(vaultQuery.length());
+        search.setTextColor(Theme.INK);
+        search.setHintTextColor(Theme.DIM);
+        search.setSingleLine(true);
+        search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        search.setBackground(pill(Theme.CARD, Theme.LINE));
+        search.setPadding(dp(12), dp(8), dp(12), dp(8));
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        slp.setMargins(0, dp(2), 0, dp(6));
+        search.setLayoutParams(slp);
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                vaultQuery = s.toString();
+                renderSavedList(all);   // re-render just the list below the search box
+            }
+        });
+        content.addView(search);
+
+        renderSavedList(all);
+    }
+
+    /** Render the filtered, date-grouped, collapsible list of saved profiles (below the search box). */
+    private LinearLayout savedListHolder;
+    private void renderSavedList(java.util.List<Vault.Entry> all) {
+        if (savedListHolder == null) {
+            savedListHolder = new LinearLayout(this);
+            savedListHolder.setOrientation(LinearLayout.VERTICAL);
+            content.addView(savedListHolder);
+        }
+        savedListHolder.removeAllViews();
+
+        String q = vaultQuery.trim().toLowerCase();
+        // Group by the date+day prefix "MMDDYY-DayAbbr" (the label's first two dash-parts), newest first.
+        java.util.LinkedHashMap<String, java.util.List<Vault.Entry>> groups = new java.util.LinkedHashMap<>();
+        int shown = 0;
+        for (Vault.Entry e : all) {
+            if (!q.isEmpty() && !e.label.toLowerCase().contains(q) && !e.device.toLowerCase().contains(q)) continue;
+            shown++;
+            String[] parts = e.label.split("-");
+            String group = parts.length >= 2 ? parts[0] + "-" + parts[1] : e.label;   // "072626-Sun"
+            groups.computeIfAbsent(group, k -> new java.util.ArrayList<>()).add(e);
+        }
+        if (shown == 0) {
+            TextView none = value(q.isEmpty() ? "No saved profiles." : "No matches for \"" + vaultQuery + "\".");
+            none.setTextColor(Theme.DIM);
+            savedListHolder.addView(none);
+            return;
+        }
+        for (Map.Entry<String, java.util.List<Vault.Entry>> g : groups.entrySet()) {
+            final String groupKey = g.getKey();
+            final boolean collapsed = collapsedGroups.contains(groupKey) && q.isEmpty();  // search always expands
+            // Group header (tap to collapse/expand). Shows the date/day + count.
+            TextView header = new TextView(this);
+            header.setText((collapsed ? "▸  " : "▾  ") + prettyGroup(groupKey) + "   (" + g.getValue().size() + ")");
+            header.setTextColor(Theme.GOLD);
+            header.setTextSize(13);
+            header.setPadding(dp(4), dp(10), dp(4), dp(4));
+            header.setOnClickListener(v -> {
+                if (collapsedGroups.contains(groupKey)) collapsedGroups.remove(groupKey);
+                else collapsedGroups.add(groupKey);
+                renderSavedList(all);
+            });
+            savedListHolder.addView(header);
+            if (!collapsed) for (Vault.Entry e : g.getValue()) savedListHolder.addView(savedRow(e));
+        }
+    }
+
+    /** "072626-Sun" -> "Sun 07/26/26" for the group header. */
+    private String prettyGroup(String key) {
+        String[] p = key.split("-");
+        if (p.length >= 2 && p[0].length() == 6)
+            return p[1] + " " + p[0].substring(0, 2) + "/" + p[0].substring(2, 4) + "/" + p[0].substring(4, 6);
+        return key;
+    }
+
+    private View savedRow(final Vault.Entry e) {
+        LinearLayout card = cardBox();
+        TextView lab = label(e.label);
+        lab.setTextColor(Theme.INK);
+        lab.setTextSize(14);
+        card.addView(lab);
+        TextView dev = value(e.device);
+        dev.setTextColor(Theme.SOFT);
+        card.addView(dev);
+
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        btns.addView(button("RESTORE", true, v -> restoreSaved(e.label)));
+        btns.addView(button("DELETE", false, v -> {
+            new AlertDialog.Builder(this)
+                    .setTitle("Delete saved profile?")
+                    .setMessage(e.label)
+                    .setPositiveButton("Delete", (d, w) -> {
+                        vault.delete(e.label);
+                        status.setText("Deleted " + e.label);
+                        render();   // refresh the list
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        }));
+        card.addView(btns);
+        return card;
+    }
+
+    /** Load a saved profile into the current identity AND apply it to the selected target app(s). */
+    private void restoreSaved(final String labelStr) {
+        final Map<String, String> saved = vault.load(labelStr);
+        if (saved == null || saved.isEmpty()) { toast("Could not read that saved profile."); return; }
+        profile = new LinkedHashMap<>(saved);
+        Set<String> targets = Targets.get(prefs);
+        if (targets.isEmpty()) {
+            status.setText("Restored " + labelStr + " — pick a target app (Settings), then it will apply.");
+            toast("Restored into the current identity. Select a target app to apply.");
+            return;
+        }
+        final Map<String, String> toApply = enabledProfile();   // applies protection gates too
+        final List<String> pkgs = new ArrayList<>(targets);
+        status.setText("Restoring " + labelStr + " to " + pkgs.size() + " app(s)…");
+        new Thread(() -> {
+            int ok = 0; String lastErr = null;
+            for (String pkg : pkgs) {
+                try { svc.apply(pkg, toApply); ok++; }
+                catch (Throwable t) { lastErr = t.getMessage(); }
+            }
+            final int okN = ok; final String err = lastErr;
+            runOnUiThread(() -> status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size()
+                    + " app(s)." + (err != null ? " Last error: " + err : " Relaunch them to see it.")));
+        }).start();
+    }
+
+    private void promptSaveName() {
+        final EditText in = new EditText(this);
+        in.setText(Vault.makeLabel(""));   // prefill with the unique date/time label
+        in.setSelection(in.getText().length());
+        in.setTextColor(Theme.INK);
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        new AlertDialog.Builder(this)
+                .setTitle("Save identity as")
+                .setMessage("A unique date/time name is prefilled. Add or replace with your own if you like.")
+                .setView(in)
+                .setPositiveButton("Save", (d, w) -> {
+                    // If the user kept the prefilled label, save under it as-is; else treat their text as the name.
+                    String typed = in.getText().toString().trim();
+                    String label = typed.equals(Vault.makeLabel("")) || typed.isEmpty()
+                            ? vault.save("", profile)          // prefilled/empty -> pure timestamp label
+                            : vault.save(typed, profile);      // custom -> timestamp + sanitized name
+                    status.setText("Saved as " + label);
+                    toast("Saved to vault: " + label);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     // ---------- small view builders ----------

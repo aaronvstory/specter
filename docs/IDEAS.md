@@ -457,3 +457,18 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   "Vault"/"Saved" tab or section) with restore/delete. Byte-parity not affected (vault stores whole
   profiles verbatim). Keep the no-reuse ledger correct (restoring a saved profile re-applies existing
   unique IDs — that is intended, not a new draw).
+
+- **2026-07-26 · IDEA (user): in-app logging / "what does Dasher grab" instrumentation.** status: `idea`.
+  Two related asks: (a) general logging in the Specter app (an on-screen/exportable log of generate/apply
+  actions + errors, beyond the transient status line); (b) a DASHER-SPECIFIC signal log that auto-reports
+  which identifiers/signals the target app (e.g. the Dasher) actually READS at runtime. Feasibility: (b) is
+  very doable — Specter already has the trace machinery. When `"trace":"1"` is in a target's profile, the
+  Zygisk layer logs every stat/open/prop the app reads (SpecterTrace) and the Java hooks log
+  [osstat]/[lastmod]/[global]. So a "diagnostics" mode could: apply with trace on, let the target run,
+  then pull + summarize the SpecterTrace log into "the app read: android_id, Build.MODEL, /proc/cpuinfo,
+  ..." — showing exactly what to prioritize spoofing for THAT app. Build as a Specter "Diagnostics" screen
+  that toggles trace, captures logcat -s SpecterTrace for the target, and renders a grouped read-list.
+  IMPORTANT fleet-safety: tracing/reading is fine, but NEVER apply a spoof to the income apps — a
+  diagnostics/trace mode must be read-only w.r.t. those (the native companion already hard-denylists them).
+  Do AFTER the vault PR (#21). Research the cleanest on-device logcat capture (a foreground service reading
+  its own logcat, or a Shizuku/root logcat pull) via exa before building.
