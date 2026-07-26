@@ -242,3 +242,8 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   device slot. Verified on DevInfo (a real device-info reader): a Galaxy S10 profile is coherent end-to-end
   (device=beyond1, soc=exynos9820, screen=1440x3040@550, cpu=260..1024 tri-cluster, fp well-formed). Added
   test_build_sdk_matches_the_android_release as the SDK<->release coherence guard.
+- **2026-07-26 · FNV-1a codenameHash byte-parity Java<->Python STRESS-VERIFIED** — the screen-spec lookup
+  hashes the device codename to pick a pool entry; Java (`h=(h^c)*16777619L; h&=0xFFFFFFFFL`) and Python
+  (`h=((h^ord)*16777619)&0xFFFFFFFF`) must agree or the on-device profile picks a different screen than the
+  PC one. Confirmed IDENTICAL across 13 cases incl. empty string, unicode (日本), 50-char strings, and edge
+  chars — the per-step 32-bit mask keeps intermediate products bounded identically in both languages.
