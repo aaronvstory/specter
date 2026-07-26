@@ -126,6 +126,10 @@ public class ProbeActivity extends Activity {
             // ro.boot.hardware / ro.boot.hardware.platform leaked the real device (flame/sm8150) — now aliased.
             put(o, "prop_ro_boot_hardware", readProp("ro.boot.hardware"));
             put(o, "prop_ro_boot_hardware_platform", readProp("ro.boot.hardware.platform"));
+            // Per-partition product props (Android 10+) — odm/product/system_ext must NOT leak the real device.
+            put(o, "prop_ro_product_odm_model", readProp("ro.product.odm.model"));
+            put(o, "prop_ro_product_product_model", readProp("ro.product.product.model"));
+            put(o, "prop_ro_product_build_fingerprint", readProp("ro.product.build.fingerprint"));
             put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
             put(o, "prop_sdk", readProp("ro.build.version.sdk"));
             put(o, "prop_first_api", readProp("ro.product.first_api_level"));

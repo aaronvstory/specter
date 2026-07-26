@@ -22,6 +22,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
 
 ### Fixed
+- **Per-partition product props leaked the real device (significant).** Android 10+ exposes
+  Build.MODEL/BRAND/DEVICE/MANUFACTURER/PRODUCT and the build fingerprint on multiple partitions
+  (system/vendor/odm/product/system_ext). Specter aliased only ro.product.* + ro.product.vendor.*,
+  so ro.product.odm.model / ro.product.product.model / ro.product.system_ext.model / and the
+  ro.{product,odm,system,system_ext}.build.fingerprint props all leaked the REAL Pixel 4
+  (ro.product.odm.model=Pixel 4, ro.product.build.fingerprint=google/flame/...). Added all the
+  partition variants to the Java + native PROP_ALIASES (lockstep test passes). Verified on the probe:
+  a Galaxy Note20 profile reports SM-N986U / samsung/c2qsqw/c2q on every partition, not the real device.
 - **`ro.boot.hardware` + `ro.boot.hardware.platform` leaked the real device.** These props read the
   real Pixel 4 (`flame` / `sm8150`) while `ro.hardware` / `ro.board.platform` were spoofed — both a
   leak AND an internal inconsistency (two hardware props disagreeing). Added them to the Java + native
