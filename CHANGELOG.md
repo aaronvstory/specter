@@ -18,6 +18,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
 ### Added
+- **Display metrics spoofed (`getDisplayMetrics`: width/height/densityDpi).** Decompiling the FPJS SDK
+  found it reads the screen via `getResources().getDisplayMetrics()` — a Java-API signal the native
+  tracer can't see, which leaked the real Pixel 4's `1080x2280@440` on every rotation. New
+  `screen_width`/`screen_height`/`screen_density` fields keyed on the device codename (known models use
+  their real spec; unknown codenames map deterministically into a pool of real configs via an FNV-1a
+  hash mirrored byte-for-byte in Java). `Resources.getDisplayMetrics` + `Display.getMetrics`/
+  `getRealMetrics` are hooked to return them. Gated by the CPU/GPU-/sys toggle. Verified on the probe: a
+  Galaxy A7 profile reports `720x1520@295`, real `1080x2280@440` gone.
 - **`Build.VERSION.SDK_INT` spoofed coherent with the Android release.** A profile claiming Android 9
   used to still report SDK 30 (the real Pixel 4) via `Build.VERSION.SDK_INT` — a mismatch that is itself
   a fingerprint. New `build_sdk` profile field (release -> API level, pure lookup, byte-parity mirrored

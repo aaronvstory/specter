@@ -98,6 +98,18 @@ def test_soc_topology_signals_are_coherent():
         assert re.fullmatch(r"\d*", p["gpu_model"]), f"gpu_model must be numeric-or-empty: {p['gpu_model']!r}"
 
 
+def test_screen_metrics_are_plausible():
+    """screen_width/height/density (the getDisplayMetrics signal) must be plausible real values:
+    portrait (height > width), sane resolution + density ranges. Keyed on the device codename, so a
+    given identity always reports the same screen."""
+    for p in _profiles():
+        w, h, d = int(p["screen_width"]), int(p["screen_height"]), int(p["screen_density"])
+        assert 480 <= w <= 1600, f"implausible screen width {w}"
+        assert 800 <= h <= 3400, f"implausible screen height {h}"
+        assert h > w, f"screen must be portrait (h>w): {w}x{h}"
+        assert 120 <= d <= 640, f"implausible densityDpi {d}"
+
+
 def test_factory_reset_is_after_the_build_and_in_the_past():
     """A device cannot be factory-reset before its own OS was built, nor in the future.
 

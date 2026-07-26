@@ -118,6 +118,13 @@ public class ProbeActivity extends Activity {
             put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
             put(o, "prop_sdk", readProp("ro.build.version.sdk"));
             put(o, "prop_first_api", readProp("ro.product.first_api_level"));
+            // Display metrics (getDisplayMetrics signal) — spoofed by the display hook.
+            try {
+                android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+                put(o, "screen_width", String.valueOf(dm.widthPixels));
+                put(o, "screen_height", String.valueOf(dm.heightPixels));
+                put(o, "screen_density", String.valueOf(dm.densityDpi));
+            } catch (Throwable t) { put(o, "screen_width", "ERR:" + t); }
 
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }

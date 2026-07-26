@@ -141,6 +141,49 @@ def sdk_for_release(release):
     return _SDK_BY_RELEASE.get(major, 30)
 
 
+# Screen resolution + density (getResources().getDisplayMetrics(): widthPixels/heightPixels/densityDpi)
+# — a stable, high-entropy signal FingerprintJS reads via a Java API (invisible to the native tracer),
+# which leaked the REAL Pixel 4 (1080x2280@440) on every rotation. Known models use their real spec;
+# unknown codenames map DETERMINISTICALLY into a pool of real common configs via a tiny portable hash
+# (identical in Java) so the value is coherent, stable per identity, and byte-parity safe (no RNG).
+_SCREEN_KNOWN = {
+    "flame": (1080, 2280, 440), "coral": (1440, 3040, 560), "redfin": (1080, 2340, 440),
+    "bramble": (1080, 2400, 400), "sunfish": (1080, 2340, 440), "barbet": (1080, 2400, 400),
+    "oriole": (1080, 2400, 420), "raven": (1440, 3120, 560), "blueline": (1080, 2160, 440),
+    "crosshatch": (1440, 2960, 560), "sargo": (1080, 2220, 440), "bonito": (1080, 2160, 400),
+    "walleye": (1080, 1920, 420), "taimen": (1440, 2880, 560),
+    "beyond1": (1440, 3040, 550), "beyond2": (1440, 3040, 526), "beyond0": (1080, 2280, 438),
+    "o1s": (1080, 2400, 421), "t2s": (1080, 2400, 425), "p3s": (1440, 3200, 515),
+    "a50": (1080, 2340, 403), "a50s": (1080, 2340, 403), "a70q": (1080, 2400, 393),
+    "a30s": (720, 1560, 268), "a10": (720, 1520, 269), "a20": (720, 1560, 294),
+    "m21": (1080, 2340, 411), "a51": (1080, 2400, 405), "a71": (1080, 2400, 393),
+}
+_SCREEN_POOL = [
+    (1080, 2340, 440), (1080, 2400, 408), (1080, 2280, 440), (1080, 2340, 403),
+    (720, 1520, 295), (720, 1560, 269), (1080, 2160, 424), (1440, 3040, 550),
+    (1080, 2400, 395), (1080, 1920, 401),
+]
+
+
+def _codename_hash(cn):
+    """A tiny, portable, positive 32-bit hash of a codename. MUST match Java Generators.codenameHash."""
+    h = 2166136261
+    for ch in cn:
+        h = ((h ^ ord(ch)) * 16777619) & 0xFFFFFFFF   # FNV-1a, 32-bit
+    return h
+
+
+def screen_for_device(codename):
+    """(width, height, densityDpi) for a device codename. Known -> real spec; else a deterministic pool
+    pick. Never the real host device unless the profile legitimately claims it."""
+    cn = (codename or "").lower()
+    if cn in _SCREEN_KNOWN:
+        return _SCREEN_KNOWN[cn]
+    if not cn:
+        return _SCREEN_POOL[0]
+    return _SCREEN_POOL[_codename_hash(cn) % len(_SCREEN_POOL)]
+
+
 def factory_reset_epoch(r, security_patch=None):
     """Unix seconds of a plausible factory reset. Mirrors Java factoryResetEpoch.
 

@@ -52,6 +52,8 @@ public final class Profile {
             "cpu_capacity", "gpu_model", "cpu_present",
             // API level coherent with the Android release — appended last (matches profile.py).
             "build_sdk",
+            // Screen metrics (getDisplayMetrics signal) — appended last, matches profile.py.
+            "screen_width", "screen_height", "screen_density",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -230,6 +232,12 @@ public final class Profile {
         // API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
         // ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
         p.put("build_sdk", String.valueOf(Generators.sdkForRelease(release)));
+        // Screen resolution + density (getDisplayMetrics signal). Keyed on the device codename; pure
+        // lookup/hash, no RNG (byte-parity safe). Mirrors profile.py.
+        int[] scr = Generators.screenForDevice(device);
+        p.put("screen_width", String.valueOf(scr[0]));
+        p.put("screen_height", String.valueOf(scr[1]));
+        p.put("screen_density", String.valueOf(scr[2]));
         return p;
     }
 

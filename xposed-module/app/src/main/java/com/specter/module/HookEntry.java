@@ -55,6 +55,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookStorage(lpparam, p);
         hookFactoryResetTime(pkg, p);
         if (!gateOff(p, "hide_apps")) hookInstalledApps(lpparam);
+        if (!gateOff(p, "spoof_sysfs")) hookDisplayMetrics(lpparam, p);
     }
 
     // A protection gate: the profile carries "<key>":"0" only when the user toggled it OFF in the app.
@@ -464,6 +465,52 @@ public class HookEntry implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(os, "stat", statHook);
             XposedBridge.hookAllMethods(os, "lstat", statHook);
         } catch (Throwable t) { XposedBridge.log("[specter] factory-reset Os.stat hook fail: " + t); }
+    }
+
+    // ---- display metrics — getResources().getDisplayMetrics() (widthPixels/heightPixels/densityDpi) ----
+    // A stable, high-entropy signal FingerprintJS reads via a Java API (invisible to the native tracer);
+    // it leaked the REAL device's screen (Pixel 4 = 1080x2280@440) on every rotation. Rewrite the
+    // DisplayMetrics fields to the profile's per-model screen. Hook Resources.getDisplayMetrics (the SDK's
+    // path) and, best-effort, the WindowManager/Display real-metrics path apps also use.
+    private void hookDisplayMetrics(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String w = p.get("screen_width"), h = p.get("screen_height"), d = p.get("screen_density");
+        if (w == null || h == null || d == null) return;
+        final int wi, hi, di;
+        try { wi = Integer.parseInt(w); hi = Integer.parseInt(h); di = Integer.parseInt(d); }
+        catch (Throwable t) { return; }
+        final XC_MethodHook rewrite = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                Object r = mp.getResult();
+                if (r instanceof android.util.DisplayMetrics) applyMetrics((android.util.DisplayMetrics) r, wi, hi, di);
+            }
+        };
+        // Also rewrite a DisplayMetrics passed BY REFERENCE into getMetrics(dm)/getRealMetrics(dm).
+        final XC_MethodHook rewriteArg = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                for (Object a : mp.args)
+                    if (a instanceof android.util.DisplayMetrics) applyMetrics((android.util.DisplayMetrics) a, wi, hi, di);
+            }
+        };
+        try {
+            Class<?> res = XposedHelpers.findClass("android.content.res.Resources", lp.classLoader);
+            XposedBridge.hookAllMethods(res, "getDisplayMetrics", rewrite);
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> disp = XposedHelpers.findClass("android.view.Display", lp.classLoader);
+            XposedBridge.hookAllMethods(disp, "getMetrics", rewriteArg);
+            XposedBridge.hookAllMethods(disp, "getRealMetrics", rewriteArg);
+        } catch (Throwable ignored) {}
+    }
+
+    private static void applyMetrics(android.util.DisplayMetrics m, int w, int h, int d) {
+        // Portrait: width is the shorter edge. Keep density fields coherent (dpi -> density scale).
+        m.widthPixels = w;
+        m.heightPixels = h;
+        m.densityDpi = d;
+        m.density = d / 160f;
+        m.scaledDensity = d / 160f;
+        m.xdpi = d;
+        m.ydpi = d;
     }
 
     // ---- installed-app list — hide root/hooking/anti-fingerprint packages ----

@@ -274,6 +274,12 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
     # ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
     p["build_sdk"] = str(G.sdk_for_release(release))
+    # Screen resolution + density (getDisplayMetrics signal). Keyed on the device codename;
+    # pure lookup/hash, no RNG (byte-parity safe).
+    _sw, _sh, _sd = G.screen_for_device(device)
+    p["screen_width"] = str(_sw)
+    p["screen_height"] = str(_sh)
+    p["screen_density"] = str(_sd)
     return p
 
 
