@@ -952,8 +952,11 @@ public class HookEntry implements IXposedHookLoadPackage {
         Class<?> md = XposedHelpers.findClassIfExists("android.media.MediaDrm", lp.classLoader);
         if (md == null) return;
         try {
+            final boolean drmTrace = "1".equals(p.get("trace"));
             XposedBridge.hookAllMethods(md, "getPropertyByteArray", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (drmTrace && param.args.length > 0)
+                        XposedBridge.log("[specter][drm] getPropertyByteArray " + param.args[0]);
                     if (param.args.length > 0 && "deviceUniqueId".equals(String.valueOf(param.args[0]))) {
                         XposedBridge.log("[specter][idtrace] MediaDrm deviceUniqueId -> " + drm);
                         param.setResult(hexToBytes(drm));
@@ -969,6 +972,8 @@ public class HookEntry implements IXposedHookLoadPackage {
             try {
                 XposedBridge.hookAllMethods(md, "getPropertyString", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if ("1".equals(p.get("trace")) && param.args.length > 0)
+                            XposedBridge.log("[specter][drm] getPropertyString " + param.args[0]);
                         if (param.args.length > 0 && "securityLevel".equals(String.valueOf(param.args[0]))) {
                             param.setResult(drmLevel);
                         }

@@ -192,3 +192,20 @@ either (a) denying the server the corroborating evidence it correlates (installe
 probes the native layer still misses, mount/selinux state), or (b) accepting them as flags and competing
 on the visitorId itself. The dev-settings hook stays (it's correct and necessary), but it is not
 sufficient alone. `[specter][global]` trace (gated on "trace":"1") is left in place to re-check.
+
+## 2026-07-26 — MediaDrm deviceUniqueId (hardware-backed anchor) confirmed spoofed + fully covered
+
+The classic un-spoofable fingerprint is a hardware-backed device id. Traced exactly what the FPJS demo
+reads from MediaDrm: ONLY `getPropertyByteArray("deviceUniqueId")` — no other property, no session open,
+no provisioning-id read. Specter already spoofs that exact call (value from the profile's media_drm_id,
+with a coherent L3 securityLevel), and the on-device trace confirms it fires for the demo
+(`deviceUniqueId -> b7cf7279...`). So the hardware-backed id changes per identity and is NOT an anchor.
+
+Combined with the file/prop/Java-API tracing, this closes the client-signal audit: EVERY signal the FPJS
+demo reads — UA, Build.*, MediaDrm deviceUniqueId, sensors (name+vendor+resolution+maxRange+power),
+display metrics, /sys cpu_capacity+gpu_model+present, /proc/version+cpuinfo, SDK_INT, installed apps,
+storage, RAM, all IDs — is spoofed and per-identity. There is no remaining un-spoofed client signal the
+demo is observed to read. The visitorId's stability in the SHARED demo workspace is therefore a
+server-side bucketing property of that workspace, not a client leak (proven separately: the fully
+unspoofed real device gets the same shared-workspace id). The definitive split test requires the user's
+isolated workspace.
