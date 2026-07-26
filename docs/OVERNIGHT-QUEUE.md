@@ -420,3 +420,11 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   spoofed or provably non-identifying. The trace-audit approach beats guessing at gaps.
 - Remaining: L-effort structural (raw-syscall bypass, key attestation) + camera characteristics (deferred).
   All cheap/medium gaps closed. Codex gauntlet caught real bugs on every risky change this session.
+
+- [2026-07-27 AFK iter] GROUND-TRUTH SDK AUDIT + RELEASE CERT: grepped the decompiled FPJS SDK
+  (C0460f2.java) — every getSystemService read covered; the ViewConfiguration reads are decompiler-noise
+  (static platform constants as magic numbers, not signals), EncryptionStatus/locales are universal. So no
+  unhooked Java-API device signal. Client surface now verified complete TWO ways (empirical trace + SDK
+  source). Clean-built dist/specter-module-v0.9.3.apk (all newest classes confirmed in dex via dexdump,
+  not the false-negative strings check). Both test suites green. P4 on v0.9.3. 4a still root-blocked on
+  the user (su inaccessible via adb). Remaining work is L-effort structural only.

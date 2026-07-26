@@ -505,3 +505,14 @@ claimed ~11GB — a direct contradiction. FIX: the native layer redirects /proc/
 app reads 11,701,248 kB. Everything else the demo reads (props, /proc/cpuinfo, /proc/version, /sys
 cpu_capacity+gpu_model+present, mounts, maps) was already covered. This is the value of the trace-audit
 approach — a hook-list would not have thought to redirect the meminfo FILE separately from the RAM API.
+
+### 2026-07-27 · Ground-truth SDK-source audit (confirms client coverage complete)
+Grepped the decompiled FPJS SDK mega-collector (C0460f2.java) for every device-reading call. The 84
+getSystemService(...) reads (SensorManager/PackageManager/etc.) are all covered. The ViewConfiguration
+reads (getLongPressTimeout>>16, getEdgeSlop, getScrollFriction, getDoubleTapTimeout, …) are NOT signals —
+they're STATIC platform constants used as magic numbers in decompiler-obfuscated control flow (484 - x,
+52 - x arithmetic), identical on every device. EncryptionStatus/getAvailableLocales = universal/low-entropy
+(all modern devices encrypted; JVM built-in locale set). So no device-specific Java-API signal is unhooked.
+Combined with the empirical trace audit (every native prop/file read covered, incl the meminfo fix), the
+client-side signal surface is verified complete two independent ways (trace + source). Remaining gaps are
+all L-effort structural (raw-syscall bypass, key attestation) — documented ceilings, not quick wins.
