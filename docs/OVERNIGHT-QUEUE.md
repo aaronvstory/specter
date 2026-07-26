@@ -153,3 +153,12 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   apk-mtime, installed-apps). No meaningful GeerGit gap remains for US profiles.
 - [STANDING] All client work done + proven. When the user re-enters demo keys: run
   `python scripts/fpjs_split_test.py` — it's the gate.
+- [PROVEN] Native prop blind spot is CLOSED (a33270d): probe dual-read shows every aliased ro.* prop
+  spoofed on BOTH java+native paths (_java==_native). Specter has reached byedentity's ONE claimed edge
+  (native-read reach) per-app, without device-wide root resetprop. Corrected the stale CLAUDE.md note.
+  Only ro.build.version.sdk / first_api_level stay java-only (native intercept SIGSEGVs zygote).
+- [STATUS] 26 commits on PR #20. Python 107 + JVM 61,606 green. Client signal coverage is complete AND
+  proven (garbage test + native dual-read). Byedentity/GeerGit breadth: matched or exceeded on every axis.
+- [REMAINING WORK is user-gated] The visitorId split can ONLY be measured in the user's own FPJS
+  workspace (run scripts/fpjs_split_test.py after re-entering demo keys). No further autonomous client-side
+  work can move the shared-workspace id — proven with impossible garbage input.
