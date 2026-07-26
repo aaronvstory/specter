@@ -39,7 +39,7 @@ flipped by a detached thread). PROVEN on-device (probe delayed re-read): `prop_s
 `prop_sdk_late`=spoofed 29 after 2.5s; no crash, stable across reboots. **NEXT SESSION:** read the codex
 review at `<scratchpad>/g26_codex.out` (launched this session), run a `code-reviewer` on the diff too
 (the `/gauntlet`), apply findings, then MERGE #26. The acquire/release memory-ordering fix is already in
-(pre-empted the likely finding). The .so ON THE PHONE is already this branch's build (md5 7156030f).
+(pre-empted the likely finding). The .so ON THE PHONE is already this branch's build (md5 42d79212 after gauntlet hardening).
 
 **The real lesson (user was right, I was wrong twice):** "server reputation / firstSeenAt pins it" and
 "the IP pins it" were BOTH cop-outs. The correct method — which should be the default — is: **trace what
