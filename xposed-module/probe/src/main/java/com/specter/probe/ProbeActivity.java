@@ -298,12 +298,17 @@ public class ProbeActivity extends Activity {
             android.hardware.SensorManager sm = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
             java.util.List<android.hardware.Sensor> list = sm.getSensorList(android.hardware.Sensor.TYPE_ALL);
             StringBuilder sb = new StringBuilder();
+            StringBuilder rmp = new StringBuilder();
             for (android.hardware.Sensor s : list) {
                 if (sb.length() > 0) sb.append(';');
                 sb.append(s.getName()).append('|').append(s.getVendor());
+                if (rmp.length() > 0) rmp.append(';');
+                rmp.append(s.getMaximumRange()).append('/').append(s.getResolution()).append('/').append(s.getPower());
             }
             put(o, "hw_sensors", sb.toString());
             put(o, "hw_sensor_count", String.valueOf(list.size()));
+            // resolution/maxRange/power — the high-entropy fields FPJS hashes (spoofed per type).
+            put(o, "hw_sensors_rmp", rmp.toString());
         } catch (Throwable t) { put(o, "hw_sensors", "ERR:" + t); }
         // Native sensor read (NDK ASensor path — what Specter's native ASensor_getName/getVendor hooks
         // target). Proves the native relabel engaged, independent of the Java SensorManager hook.

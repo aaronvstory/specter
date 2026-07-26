@@ -91,6 +91,15 @@ public class SpoofLogicTest {
         check(SpoofLogic.isSensitivePackage("de.robv.android.xposed.installer"), "the real Xposed installer hidden");
         check(SpoofLogic.isSensitivePackage("moe.shizuku.privileged.api"), "Shizuku hidden");
 
+        // Sensor resolution/maxRange/power per type — must be positive, plausible, and stable per type.
+        float[] acc = SpoofLogic.sensorRmp(1, "BMI160 accelerometer");
+        check(acc.length == 3 && acc[0] > 0 && acc[1] > 0, "accelerometer rmp positive");
+        check(java.util.Arrays.equals(acc, SpoofLogic.sensorRmp(1, "x")), "rmp stable per type (name ignored)");
+        float[] prox = SpoofLogic.sensorRmp(8, "proximity");
+        check(prox[0] == 5.0f, "proximity maxRange 5cm");
+        float[] gen = SpoofLogic.sensorRmp(999, "unknown");
+        check(gen.length == 3 && gen[0] > 0, "unknown type gets a generic plausible rmp");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

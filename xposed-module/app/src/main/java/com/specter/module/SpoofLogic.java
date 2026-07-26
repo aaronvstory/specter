@@ -119,6 +119,28 @@ public final class SpoofLogic {
         "riru.momo", "com.zhufucdev", "moe.shizuku",   // detection-probe / instrumentation apps (specific)
     };
 
+    // Per-sensor-type {maxRange, resolution, power} — the high-entropy fields FingerprintJS hashes
+    // alongside a sensor's name/vendor. Leaving them REAL leaks the exact Pixel-4 sensor chip even after
+    // the name/vendor are relabeled. These are plausible real values for each Android sensor type
+    // (TYPE_ACCELEROMETER=1, MAGNETIC=2, GYROSCOPE=4, LIGHT=5, PRESSURE=6, PROXIMITY=8, ...). Pure +
+    // testable. maxRange/resolution are in the sensor's SI unit; power in mA.
+    public static float[] sensorRmp(int type, String name) {
+        switch (type) {
+            case 1:  return new float[]{78.4532f, 0.0023928226f, 0.17f};   // accelerometer (m/s^2)
+            case 2:  return new float[]{4912.0f, 0.15f, 5.0f};             // magnetometer (uT)
+            case 4:  return new float[]{34.906586f, 0.0010652645f, 6.1f};  // gyroscope (rad/s)
+            case 5:  return new float[]{60000.0f, 1.0f, 0.75f};            // light (lux)
+            case 6:  return new float[]{1100.0f, 0.005f, 0.0f};            // pressure (hPa)
+            case 8:  return new float[]{5.0f, 1.0f, 0.75f};                // proximity (cm)
+            case 9:  return new float[]{78.4532f, 0.0023928226f, 0.17f};   // gravity
+            case 10: return new float[]{78.4532f, 0.0023928226f, 0.17f};   // linear accel
+            case 11: return new float[]{1.0f, 5.9604645E-8f, 6.27f};       // rotation vector
+            case 13: return new float[]{85.0f, 0.01f, 0.0f};               // ambient temperature
+            case 12: return new float[]{100.0f, 1.0f, 0.5f};               // relative humidity
+            default: return new float[]{100.0f, 1.0f, 0.5f};               // generic plausible
+        }
+    }
+
     /** True if this package name should be HIDDEN from the target's installed-app enumeration. */
     public static boolean isSensitivePackage(String pkg) {
         if (pkg == null) return false;

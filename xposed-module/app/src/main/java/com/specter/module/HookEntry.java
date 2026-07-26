@@ -375,6 +375,16 @@ public class HookEntry implements IXposedHookLoadPackage {
                                     nm.setAccessible(true); nm.set(sensor, parts[0]);
                                     Field vn = sensor.getClass().getDeclaredField("mVendor");
                                     vn.setAccessible(true); vn.set(sensor, parts[1]);
+                                    // The high-entropy fields FPJS hashes: resolution / maxRange / power /
+                                    // version. Leaving them REAL leaks the exact Pixel-4 sensor chip even
+                                    // after the name/vendor are relabeled. Set coherent per-type values
+                                    // derived from the sensor type (SpoofLogic — pure, testable).
+                                    int type = parts.length >= 3 ? parseIntSafe(parts[2]) : 0;
+                                    float[] rmp = SpoofLogic.sensorRmp(type, parts[0]);
+                                    setFloatFieldSafe(sensor, "mMaxRange", rmp[0]);
+                                    setFloatFieldSafe(sensor, "mResolution", rmp[1]);
+                                    setFloatFieldSafe(sensor, "mPower", rmp[2]);
+                                    setIntFieldSafe(sensor, "mVersion", 1);
                                 } catch (Throwable ignored) {}
                             }
                             out.add(sensor);
@@ -386,6 +396,18 @@ public class HookEntry implements IXposedHookLoadPackage {
                 });
             } catch (Throwable ignored) {}
         }
+    }
+
+    private static int parseIntSafe(String v) {
+        try { return Integer.parseInt(v.trim()); } catch (Throwable t) { return 0; }
+    }
+    private static void setFloatFieldSafe(Object o, String field, float val) {
+        try { Field f = o.getClass().getDeclaredField(field); f.setAccessible(true); f.setFloat(o, val); }
+        catch (Throwable ignored) {}
+    }
+    private static void setIntFieldSafe(Object o, String field, int val) {
+        try { Field f = o.getClass().getDeclaredField(field); f.setAccessible(true); f.setInt(o, val); }
+        catch (Throwable ignored) {}
     }
 
     // ---- StatFs total/available storage — a FingerprintJS hardware signal that was LEAKING ----

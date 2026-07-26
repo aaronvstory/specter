@@ -18,6 +18,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
 ### Added
+- **Sensor resolution / maxRange / power spoofed (the high-entropy sensor fields).** The sensor-list hook
+  already relabeled name+vendor, but left `mResolution`/`mMaxRange`/`mPower`/`mVersion` REAL — which leak
+  the exact Pixel-4 sensor chip (what FingerprintJS actually hashes). Now set to coherent per-sensor-type
+  values (SpoofLogic.sensorRmp, pure + tested). Verified on the probe: the accelerometer reports
+  78.4532/0.0023928226/0.17, not the real device's values.
 - **Display metrics spoofed (`getDisplayMetrics`: width/height/densityDpi).** Decompiling the FPJS SDK
   found it reads the screen via `getResources().getDisplayMetrics()` — a Java-API signal the native
   tracer can't see, which leaked the real Pixel 4's `1080x2280@440` on every rotation. New
