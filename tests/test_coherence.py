@@ -80,6 +80,25 @@ def test_build_sdk_matches_the_android_release():
         assert p["build_sdk"].isdigit() and 19 <= int(p["build_sdk"]) <= 36, f"implausible SDK {p['build_sdk']}"
 
 
+def test_every_dataset_release_has_a_real_sdk_mapping():
+    """Guard against the self-consistency blind spot: a release NOT in the SDK map falls through to the
+    default (30), so a KitKat device would report API 30 — incoherent. Assert EVERY distinct release
+    string actually present in data/devices.json maps to a plausible, non-default SDK for that era.
+    """
+    from specter import generators as G
+    devices = P._load_devices()
+    releases = {row[5].split(":")[1] for row in devices if len(row) > 5 and ":" in row[5]}
+    # rough era check: major version N should map to an SDK in a sane band, never the default fallback.
+    era = {"4": (14, 20), "5": (21, 22), "6": (23, 23), "7": (24, 25), "8": (26, 27),
+           "9": (28, 28), "10": (29, 29), "11": (30, 30), "12": (31, 32)}
+    for rel in sorted(releases):
+        assert rel in G._SDK_BY_RELEASE, f"release {rel!r} in devices.json has no explicit SDK mapping"
+        sdk = G.sdk_for_release(rel)
+        major = rel.split(".")[0]
+        lo, hi = era.get(major, (1, 36))
+        assert lo <= sdk <= hi, f"release {rel} -> SDK {sdk} is out of the Android {major}.x band {lo}-{hi}"
+
+
 def test_soc_is_a_real_platform_codename():
     # SoC is always a real Qualcomm/Google platform token — never a made-up or space-containing string.
     for p in _profiles():

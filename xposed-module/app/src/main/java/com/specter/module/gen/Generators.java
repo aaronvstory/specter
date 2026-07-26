@@ -257,7 +257,9 @@ public final class Generators {
         SDK_BY_RELEASE.put("7.1.2", 25); SDK_BY_RELEASE.put("7.1.1", 25); SDK_BY_RELEASE.put("7.1", 25);
         SDK_BY_RELEASE.put("7.0", 24); SDK_BY_RELEASE.put("6.0.1", 23); SDK_BY_RELEASE.put("6.0", 23);
         SDK_BY_RELEASE.put("5.1.1", 22); SDK_BY_RELEASE.put("5.1", 22); SDK_BY_RELEASE.put("5.0.1", 21);
-        SDK_BY_RELEASE.put("5.0", 21);
+        SDK_BY_RELEASE.put("5.0.2", 21); SDK_BY_RELEASE.put("5.0", 21);
+        SDK_BY_RELEASE.put("4.4.4", 19); SDK_BY_RELEASE.put("4.4.2", 19); SDK_BY_RELEASE.put("4.4", 19);
+        SDK_BY_RELEASE.put("4.3", 18); SDK_BY_RELEASE.put("4.2.2", 17); SDK_BY_RELEASE.put("4.2", 17);
     }
 
     public static int sdkForRelease(String release) {

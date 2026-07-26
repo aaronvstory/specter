@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Fixed
+- **`build_sdk` was incoherent for pre-Lollipop devices** (code-review finding). Five release
+  strings present in `data/devices.json` (`4.2.2`/`4.3`/`4.4.2`/`4.4.4`/`5.0.2`) were missing from
+  the release->SDK map, so they fell through to the default SDK 30 — a KitKat device reporting
+  Android 11's API level, an internally inconsistent giveaway. Added the correct mappings (17/18/
+  19/19/21) to both the Python and Java maps, and added a coherence test asserting EVERY release in
+  the dataset has an explicit, era-plausible SDK (not just self-consistency with the buggy function).
+- **`getInstallerPackageName` was hooked to throw the wrong exception** (code-review finding). It was
+  in the installed-app-hiding `notFound` list that throws the checked `NameNotFoundException`, but
+  its real not-found contract returns `null` / throws the UNCHECKED `IllegalArgumentException`. A
+  caller catching `IllegalArgumentException` for a hidden package would be hit by an undeclared
+  checked exception. Now returns `null` (benign "unknown installer") for a hidden package instead.
+
 ## [0.5.0] — 2026-07-26
 
 ### Investigation (2026-07-26) — root cause of "FPJS still wins" PROVEN

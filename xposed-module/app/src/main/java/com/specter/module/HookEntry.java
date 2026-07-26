@@ -572,10 +572,24 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             }
         };
+        // These four DECLARE NameNotFoundException (checked) as their real not-installed contract, so
+        // throwing it is the correct simulated "not installed".
         for (String m : new String[]{"getPackageInfo", "getApplicationInfo", "getPackageUid",
-                "getPackageGids", "getInstallerPackageName"}) {
+                "getPackageGids"}) {
             try { XposedBridge.hookAllMethods(pm, m, notFound); } catch (Throwable ignored) {}
         }
+        // getInstallerPackageName does NOT throw NameNotFoundException (its real not-found behavior is
+        // to return null / throw the UNCHECKED IllegalArgumentException). Return null for a hidden
+        // package so a caller that catches IllegalArgumentException isn't hit by an undeclared checked
+        // exception. null == "installed by an unknown installer", a benign, common real value.
+        try {
+            XposedBridge.hookAllMethods(pm, "getInstallerPackageName", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length > 0 && mp.args[0] instanceof String
+                            && SpoofLogic.isSensitivePackage((String) mp.args[0])) mp.setResult(null);
+                }
+            });
+        } catch (Throwable ignored) {}
     }
 
     // ApplicationInfo / PackageInfo both expose the package name; ResolveInfo nests it. Pull it robustly.
