@@ -332,3 +332,17 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   share an exact device. End-to-end proven on-device: export SM-G970N -> import round-trips faithfully
   (android_id matches), metadata stripped, storage-permission-free via su. VaultChecksum JVM-tested.
   NEXT: IDEAS backlog (b) custom-field editing, then (c) non-root harvest/specter-lite.
+
+- [2026-07-27 AFK] Vault export/import HARDENED per codex (shell-injection guard + Download-only path +
+  mandatory 64-hex checksum + exact version + process cleanup) — re-proven end-to-end on-device, valid
+  files still round-trip. The gauntlet caught 3 real issues (1 critical injection I'd already pre-empted).
+
+*** session snapshot (AFK run, 2026-07-27) ***
+- Codebase: 9.7k LOC (5.3k Java, 2.9k Python, 1.4k C++) · 74 tracked source files
+- This run: +1699 / −31 LOC across 17 commits · 0.5.0 -> 0.8.0
+- Shipped: live-trace viewer (parsed/grouped/monospace/back+Export), verifiedboot props, SENSORID
+  sensor-calibration transform (flagship, proven), locale/tz coherence (proven), mock-location hide,
+  Identity spec-sheet + compact id cards, honest Location tab, VAULT EXPORT/IMPORT (proven+hardened).
+- State: all proven on-device (Pixel 4); codex gauntlet ran on every risky change, findings shipped.
+  Both test suites green throughout (Python 110 · JVM 61k+ byte-parity + SpoofLogic 76 + VaultPortable).
+- NEXT: IDEAS backlog (b) custom-field editing (clone a specific device), then (c) non-root harvest.
