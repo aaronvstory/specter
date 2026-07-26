@@ -226,3 +226,8 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   sticky shared-workspace history, NOT a live client signal flippable from here. Should read false in the
   user's clean workspace with hiding active from the first identification. (maps-cleaning was tried+reverted
   earlier: ART reads its own maps during GC and crashes on a filtered copy; unneeded — maps already clean.)
+- [done] NEW SPOOF: hide Magisk from /proc/mounts + /proc/self/mountinfo (694ed48). Traced that these
+  leak Magisk bind-mounts blatantly (tmpfs magisk overlays) — the byedentity bind-mount root vector,
+  catchable past su-path hiding. Per-app filtered-copy redirect (covers open/openat/fopen/syscall), gated
+  by hide_root, NOT applied to maps (ART-GC crash). Probe verified: both read "clean", non-hooked shell
+  still sees real mounts (per-app scope). This CLOSES the last real client-side root-detection gap.
