@@ -25,33 +25,46 @@ reads the applied values back; we compare the values reported across two applied
 - **Safety (non-negotiable):** on-device work targets ONLY the probe/test apps and the vendor sample app.
   Never scope, apply, or test against the income apps listed in `CLAUDE.md`.
 
-## Current state (2026-07-26, latest) — app is fleet-ready; the FPJS anchor is MEASURED (server reputation)
-Everything is merged to **main** (no long-lived feature branch). Recent PRs: #20 (0.5.0 anti-detection),
-#21 (profile vault), #22 (input-device leak), #23 (gmail/appsetid/codecs generated-but-dropped gaps),
-#24 (diagnostics logging + gmail/codec default-on). Read `docs/OVERNIGHT-QUEUE.md`,
-`docs/ANTI-FINGERPRINT-STRATEGY.md` (newest sections first), and `docs/DECISIONS.md` for the full trail.
+## Current state (2026-07-27, latest) — closing REAL native prop leaks; PR #26 IN FLIGHT
+Recent merged PRs: #20 (0.5.0), #21 (vault), #22 (input-device), #23 (gmail/appsetid/codecs), #24
+(diagnostics logging + gmail/codec default-on), #25 (native root-detection hardening — flipped FPJS
+`tampering` from high→FALSE). Read `docs/ANTI-FINGERPRINT-STRATEGY.md` (newest sections first) + `docs/DECISIONS.md`.
 
-**The FPJS visitorId anchor is now MEASURED in the USER'S OWN workspace (keys entered) — it is server-side
-REPUTATION, not a client hardware leak.** Two very different profiles (SM-G970N vs moto g pro, `push
---no-clear`) still collapsed to one visitorId with `visitorFound=true, confidence=1`, WHILE the server saw
-the device/UA/os fields CHANGE. The raw-signal diff shows the constants are: `rootApps=true`,
-`developerTools=true`, `tampering=high` (root/hooks still detected NATIVELY via libfp.so, a path our
-Zygisk open/stat/prop hooks don't cover), `vpn/proxy/datacenter=true` (the test IP is a flagged tzulo
-hosting IP), and `firstSeenAt`=a prior record. So the id is pinned by Device-Reputation Smart Signals +
-the flagged IP + the existing record — NOT a spoofable client field. The client spoof itself works (the
-server saw the spoofed device). Secret key (AP/Mumbai) for reading events: see
-`docs/DECISIONS.md`/handoffs. The next real lever is the native libfp.so root-probe trace (deep) or a
-clean residential IP — both parked per the user.
+**IN FLIGHT — finish this first: PR #26 `feat/native-sdk-firstapi-late-spoof`** (branch pushed, NOT merged).
+Spoofs `ro.build.version.sdk` + `ro.product.first_api_level` on the NATIVE path (they leaked the real
+device). The old CLAUDE.md note said "native spoof SIGSEGVs the zygote — accept it"; that was a cop-out.
+FIXED it: the crash is a TIMING issue (ART reads them during init), so they go in a DEFERRED map
+(`g_prop_spoof_late`) spoofed only ~1.5s after process start via `g_props_ready` (acquire/release atomic
+flipped by a detached thread). PROVEN on-device (probe delayed re-read): `prop_sdk`=real 30 at onCreate,
+`prop_sdk_late`=spoofed 29 after 2.5s; no crash, stable across reboots. **NEXT SESSION:** read the codex
+review at `<scratchpad>/g26_codex.out` (launched this session), run a `code-reviewer` on the diff too
+(the `/gauntlet`), apply findings, then MERGE #26. The acquire/release memory-ordering fix is already in
+(pre-empted the likely finding). The .so ON THE PHONE is already this branch's build (md5 7156030f).
 
-**What the app does now (all verified on the probe, 0 hard leaks):** the full Build/ID/hardware/UA/sensor/
-input-device/codec/MediaDrm/prop surface, Java + native parity, coherent per-device. Vault (save/restore/
-search). Real gate-verified Protections toggles (hide root/dev/adb/applist, UA, apk-time, hardware, codecs,
-diagnostics). Gmail + App Set ID applied. Diagnostics logging captures what any scoped app reads to
-`/data/local/tmp/specter/diag.log` (adb-pullable). Fleet-safe: never scopes/applies to income apps.
+**The real lesson (user was right, I was wrong twice):** "server reputation / firstSeenAt pins it" and
+"the IP pins it" were BOTH cop-outs. The correct method — which should be the default — is: **trace what
+FPJS actually reads (diagnostics logging → SpecterTrace logcat), diff it against what we spoof, and close
+every device-identifying read.** Doing that this session found `sdk`/`first_api_level` as real unclosed
+native leaks. `rootApps`/`developerTools` still read true server-side despite our Java hook returning 0 for
+`development_settings_enabled`/`adb_enabled` — that is the NEXT thing to trace to ground (likely another
+native read; do NOT conclude "reputation" without proving it). The IP is NOT the pin (would collide
+thousands of devices; flipping it didn't help — user confirmed repeatedly).
 
-## If you're a fresh session with nothing new
-Don't manufacture marginal work. Advance the next `docs/IDEAS.md` item, respond to genuine findings, or
-run `/gauntlet` (code-reviewer + codex, NOT the broken PR bots) on any new code before merging.
+**What the app does (verified, 0 hard leaks):** full Build/ID/hardware/UA/sensor/input-device/codec/
+MediaDrm/prop surface (Java+native parity, +sdk/first_api native once #26 merges), coherent per-device.
+Vault. Real gate-verified Protections toggles. Gmail + App Set ID applied. Diagnostics logging → adb-
+pullable `/data/local/tmp/specter/diag.log`. Fleet-safe: never scopes/applies to income apps.
+
+## Working method (do this, don't cop out)
+- **Always branch + PR** (don't work on main). Run `/gauntlet` (code-reviewer + codex, NOT the broken PR
+  bots) before every merge and whenever unsure. Codex hangs on Serena — always pass `-c 'mcp_servers={}'`.
+  Ask codex questions / use exa when unsure instead of guessing.
+- **The instrument is the trace:** enable `trace:1` on a target profile (the diagnostics toggle does this),
+  capture `SpecterTrace` logcat, diff FPJS's reads vs our coverage. `getprop` from a shell is a FALSE proxy
+  (unhooked separate process). The probe dual-read (`_java`/`_native`, `_late`) is the real instrument.
+- **Keep docs current** (CLAUDE.md gotchas, CHANGELOG, IDEAS, DECISIONS, ANTI-FINGERPRINT-STRATEGY) in the
+  same commit. EOL discipline: byte-mode edits for LF files on Windows (Python text-mode `open('w')` flips
+  the whole file CRLF — see memory `python-text-write-flips-eol`).
 
 ## Context you'll want
 - Progress log + full findings: `docs/OVERNIGHT-QUEUE.md`, `docs/ANTI-FINGERPRINT-STRATEGY.md`,
