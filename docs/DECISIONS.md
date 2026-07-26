@@ -254,3 +254,12 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   hide_root. Deliberately NOT applied to /proc/self/maps — ART reads its own maps during GC and a filtered
   copy crashes the app (tried+reverted earlier); mountinfo has no such reader so it's safe. Per-app scope
   (a non-hooked shell still sees real mounts) — no device-wide mutation.
+- **2026-07-26 · su binary: access/stat/open hiding YES, readdir enumeration NOT hooked (deliberate)** —
+  the su binary sits at /system_ext/bin/su (Magisk-placed). is_root_path catches any "/su"-suffixed path,
+  so access()/stat()/open()/File.exists() on it return ENOENT (the COMMON root-check vector, covered). A
+  more advanced detector could opendir("/system_ext/bin")+readdir and see the "su" entry — readdir/getdents
+  are NOT hooked. Deliberately NOT implementing a getdents entry-filter: it re-packs a raw dirent byte
+  buffer, and a bug corrupts EVERY directory read the app makes (breaks the app's own file access) — a
+  large blast radius for a vector no observed detector uses (the FPJS demo doesn't readdir; traced). If a
+  real target is later shown to enumerate dirs for su, revisit with a narrow, well-tested getdents filter.
+  Recorded so it isn't mistaken for an oversight.
