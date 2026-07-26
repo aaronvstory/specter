@@ -846,22 +846,42 @@ public:
             // total_ram. Other lines are plausible constants — only MemTotal is identity-bearing.
             auto ram = profile.find("total_ram");
             if (ram != profile.end() && !ram->second.empty()) {
-                long bytes = strtol(ram->second.c_str(), nullptr, 10);
-                if (bytes > 0) {
+                // Strict parse: reject trailing garbage / overflow (codex) — total_ram is always a clean
+                // generated integer, but don't build a bogus meminfo from a malformed value.
+                errno = 0;
+                char *endp = nullptr;
+                long bytes = strtol(ram->second.c_str(), &endp, 10);
+                if (errno == 0 && endp && *endp == '\0' && bytes > 0) {
                     long totalKb = bytes / 1024;
                     long freeKb = totalKb / 3;             // ~33% free — plausible for a running device
                     long availKb = totalKb / 2;            // ~50% available
-                    char buf[512];
+                    // A fuller field set than a bare MemTotal, so framework/SDK code that parses meminfo
+                    // for other fields (Cached/Shmem/Slab/…) still finds them (codex robustness note).
+                    char buf[1024];
                     int n = snprintf(buf, sizeof(buf),
                         "MemTotal:       %ld kB\n"
                         "MemFree:        %ld kB\n"
                         "MemAvailable:   %ld kB\n"
-                        "Buffers:           8192 kB\n"
-                        "Cached:          %ld kB\n"
-                        "SwapTotal:       %ld kB\n"
-                        "SwapFree:        %ld kB\n",
-                        totalKb, freeKb, availKb, totalKb / 4, totalKb / 2, totalKb / 2);
-                    if (n > 0) write_spoof("meminfo", std::string(buf, n), "/proc/meminfo");
+                        "Buffers:          65536 kB\n"
+                        "Cached:         %ld kB\n"
+                        "SwapCached:           0 kB\n"
+                        "Active:         %ld kB\n"
+                        "Inactive:       %ld kB\n"
+                        "SwapTotal:      %ld kB\n"
+                        "SwapFree:       %ld kB\n"
+                        "Dirty:              128 kB\n"
+                        "Writeback:            0 kB\n"
+                        "AnonPages:      %ld kB\n"
+                        "Mapped:          524288 kB\n"
+                        "Shmem:           131072 kB\n"
+                        "Slab:            262144 kB\n"
+                        "KernelStack:      32768 kB\n"
+                        "PageTables:       65536 kB\n"
+                        "VmallocTotal:  263061440 kB\n",
+                        totalKb, freeKb, availKb, totalKb / 4, totalKb / 3, totalKb / 4,
+                        totalKb / 2, totalKb / 2, totalKb / 5);
+                    if (n > 0 && n < (int) sizeof(buf))
+                        write_spoof("meminfo", std::string(buf, n), "/proc/meminfo");
                 }
             }
         }
