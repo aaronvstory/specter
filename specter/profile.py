@@ -291,9 +291,11 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     p["build_description"] = device + "-user " + release + " " + build_id + " " + incremental + " release-keys"
     # US timezone derived from the phone's area code (US number = "1"+area(3)+exch(3)+sub(4)), so phone +
     # timezone + locale tell one coherent US-location story. Locale is always en-US (US-only build). Pure
-    # lookup, no RNG (byte-parity safe). Only for US profiles with a NANP number.
+    # lookup, no RNG (byte-parity safe). Gate on the NANP phone format ONLY (not the raw `country` arg,
+    # which country_of() has already resolved to US for every input) so the condition byte-matches the Java
+    # side (Profile.java gates on the same phone format) and the fields are never silently dropped.
     _ph = p.get("mobile_number", "")
-    if country == "US" and len(_ph) == 11 and _ph.startswith("1"):
+    if len(_ph) == 11 and _ph.startswith("1"):
         p["timezone"] = G.tz_for_area_code(_ph[1:4])
         p["locale"] = "en-US"
     return p
