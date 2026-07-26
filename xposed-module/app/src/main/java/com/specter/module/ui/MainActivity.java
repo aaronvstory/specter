@@ -715,11 +715,37 @@ public class MainActivity extends Activity {
     }
 
     private void renderLocation() {
-        LinearLayout card = cardBox();
-        card.addView(label("Location spoofing"));
-        card.addView(value("UI only — no location hook yet (planned). Lat/long fields will drive a "
-                + "LocationManager hook in a later build."));
-        content.addView(card);
+        // Mock-location HIDING is real (gated with the Hide-root protection): a driver/fraud SDK reading
+        // Location.isFromMockProvider()/isMock() sees false. Show it as an active protection.
+        LinearLayout mockCard = cardBox();
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView lab = label("Hide mock-location flag");
+        lab.setTextColor(Theme.INK);
+        lab.setTextSize(14);
+        lab.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        head.addView(lab);
+        boolean on = Protections.isOn(prefs, Protections.byKey("hide_root"));
+        head.addView(statusChip(on));
+        mockCard.addView(head);
+        TextView d = value("Location.isFromMockProvider() / isMock() report false to scoped targets, so a "
+                + "driver/fraud SDK can't detect a mocked GPS. Tied to the Hide-root toggle (Settings).");
+        d.setTextColor(Theme.DIM);
+        d.setTextSize(12);
+        mockCard.addView(d);
+        content.addView(mockCard);
+
+        // Coordinate spoofing (lat/long -> LocationManager) is the planned next piece — marked clearly as
+        // not-yet-built so it never reads as a working control (no fake UI).
+        LinearLayout soon = cardBox();
+        soon.addView(label("Coordinate spoofing"));
+        TextView s = value("Planned — lat/long fields will drive a LocationManager/FusedLocation hook, "
+                + "coordinate-matched with the profile's US region. Not built yet.");
+        s.setTextColor(Theme.DIM);
+        s.setTextSize(12);
+        soon.addView(s);
+        content.addView(soon);
     }
 
     // ---------- Saved (profile vault): save current, list, restore, delete ----------
