@@ -444,3 +444,16 @@ Checked the generated profile for cross-field incoherence beyond what's already 
 - **`build_security_patch` vs `build_release` looks coherent** (both come from the same real device row,
   so patches track the OS era) — no action. IMSI/MCC-MNC and ICCID/IIN are already guarded and pass.
 - Deferred to keep the 2.1 PR single-concern. The area-code table is the one worth doing next in Phase 2.
+
+- **2026-07-26 · NEXT IMPORTANT JOB (user request): named/dated profile vault with restore + delete.**
+  status: `idea` — build after current prop-leak/coherence work lands. Requirements from the user:
+  - When generating/saving a profile, let the user attach a NAME, and prefill a unique timestamp label like
+    `072626-Sun-1924-Name` (MMDDYY-DayAbbr-HHMM-Name; Name optional/user-filled).
+  - Show a LIST of previously-generated profiles (the vault). From the list: RESTORE a past profile (re-apply
+    that exact known device to a target app) and DELETE entries.
+  - i.e. persist the full generated identity so a specific past device can be brought back on demand.
+  Notes for implementation: the CLI already has a --name save path (VAULT=profiles.json) and `cmd_list`/
+  `cmd_show`; extend that + add the timestamp-label scheme, and surface it in the Android app UI (a new
+  "Vault"/"Saved" tab or section) with restore/delete. Byte-parity not affected (vault stores whole
+  profiles verbatim). Keep the no-reuse ledger correct (restoring a saved profile re-applies existing
+  unique IDs — that is intended, not a new draw).
