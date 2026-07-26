@@ -54,7 +54,7 @@ static std::map<std::string, std::string> g_prop_spoof;  // prop name -> spoofed
 // after init is done: g_props_ready flips true ~1s post-specialize (a detached thread), long before any
 // user-triggered fingerprinting read. So init-time reads pass through REAL (no crash), runtime reads
 // (e.g. FingerprintJS at fingerprint time) get the spoofed value.
-static std::map<std::string, std::string> g_prop_spoof_late;
+static std::map<std::string, std::string, std::less<>> g_prop_spoof_late;
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -916,12 +916,15 @@ private:
              pkg.c_str(), applied, g_prop_spoof.size(), g_reset_epoch,
              !g_bootid_path.empty(), g_spoof_hwcap, g_trace);
 
-        // Arm the late (init-unsafe) prop spoof ~1.5s from now. By then ART/libc have finished the init
-        // reads of sdk/first_api_level that would SIGSEGV if spoofed, and any real fingerprinting read is
-        // user-triggered far later. A detached thread flips the flag; the hooks read it lock-free.
+        // Arm the late (init-unsafe) prop spoof ~3s from now. HEURISTIC (not a hard readiness proof):
+        // ART/libc finish the init reads of sdk/first_api_level well within this window on a real device,
+        // and any real fingerprinting read is user-triggered far later. A late dlopen/lazy-ctor on a very
+        // slow/loaded device could theoretically read after the window (codex-flagged) — 3s is generous
+        // margin; if a real crash ever recurs, gate on a concrete lifecycle event instead of time.
+        // release store pairs with the acquire load in prop_spoof_lookup to publish the map writes.
         if (!g_prop_spoof_late.empty()) {
             std::thread([] {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+                std::this_thread::sleep_for(std::chrono::milliseconds(3000));
                 g_props_ready.store(true, std::memory_order_release);
             }).detach();
         }

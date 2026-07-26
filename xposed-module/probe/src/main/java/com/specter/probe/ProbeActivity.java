@@ -144,7 +144,7 @@ public class ProbeActivity extends Activity {
             final org.json.JSONObject oo = o;
             new Thread(() -> {
                 try {
-                    Thread.sleep(2500);
+                    Thread.sleep(4000);
                     oo.put("prop_sdk_late", readProp("ro.build.version.sdk"));
                     oo.put("prop_first_api_late", readProp("ro.product.first_api_level"));
                     writeResult(oo.toString());   // overwrite with the post-readiness values included
