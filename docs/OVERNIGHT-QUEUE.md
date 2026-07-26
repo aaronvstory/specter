@@ -197,3 +197,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   persistence audit, native parity, no in-app reset). Next iterations: only respond to NEW findings or
   re-verify; do not manufacture marginal work. The user action (re-enter demo keys -> run
   scripts/fpjs_split_test.py) is the sole remaining step. UI is polished; breadth exceeds geergit+byedentity.
+- [done] Code-reviewer subagent on the full ~2000-line PR diff found 2 REAL bugs, both fixed (8a31a91):
+  (1) build_sdk fell back to SDK 30 for 5 pre-Lollipop release strings in devices.json (KitKat reporting
+  Android 11 = incoherent) — added correct mappings both sides + a dataset-exhaustiveness test; latent
+  (US-bias rarely picks these) but fixed defense-in-depth (forced KitKat -> SDK 19 confirmed).
+  (2) getInstallerPackageName threw the checked NameNotFoundException it doesn't declare — now returns
+  null (its real not-found value). FNV hash / KEYS / SOC_TOPOLOGY / MODEL-DEVICE / sysfs / display / gates
+  all reviewed + confirmed correct. Kilo bot FAILURE = infra error ("Assistant request failed"), not code.
