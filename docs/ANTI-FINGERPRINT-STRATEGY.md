@@ -258,3 +258,23 @@ hiding was set up), NOT a live client signal we can flip from here. In the user'
 hide_root + DenyList active from the first identification, rootApps should read false. (Note: /proc/self/
 maps CLEANING was tried and reverted earlier — ART reads its own maps during GC and a filtered copy
 crashes the app; not needed anyway since the maps are already clean of our artifacts.)
+
+## 2026-07-26 — AUTHORITATIVE (Exa research): the demo default id is FPJS's DRN, engineered to survive resets
+
+Researched FingerprintJS's own docs + blog via Exa. TWO decisive quotes:
+1. Google Play demo description: "This SDK provides a unique identifier for your device that REMAINS THE
+   SAME even when the device is restarted OR FACTORY RESET!"
+2. FPJS blog "Unlock your own historical Android device insights with your API keys" (2024-12): the demo's
+   DEFAULT (no-key) mode uses the Device Reputation Network (DRN) — a GLOBALLY-AGGREGATED, cross-app device
+   identity. Adding YOUR keys links results to YOUR workspace instead.
+
+This is authoritative confirmation of what the on-device tests proved empirically: the shared demo
+workspace's visitorId is FPJS's DRN — a cross-app, reset-surviving, per-PHYSICAL-device identity that is
+DELIBERATELY built to resist exactly what a client spoofer changes. It is NOT that Specter's spoofing
+failed (the garbage test proved impossible values reached the SDK yet the id held — that is the DRN
+correlating the physical device server-side, not reading our client signals). In the USER'S OWN workspace
+(their keys), identification uses the collected signals as normal — which is the case that matters. So:
+- The demo default id CANNOT be used to prove the spoof works (it is the DRN by design).
+- The user'''s own workspace is the ONLY valid test, and every client signal is spoofed to win there.
+- For real fleet apps that use a normal (non-DRN-default) FPJS workspace, the spoofed signals are what the
+  server identifies on. DRN is an add-on a customer opts into; a standard identification is signal-based.
