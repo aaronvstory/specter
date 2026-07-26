@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-26
+
 ### Investigation (2026-07-26) — root cause of "FPJS still wins" PROVEN
 - Wired up the Fingerprint **Server API** (user's Public key in the demo -> events in the user's own
   clean workspace; Secret key + AP/Mumbai region -> read raw signals back via curl). Ran the clean
