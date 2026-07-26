@@ -310,3 +310,11 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   (c288430). (2) Identifier cards compacted: label+toggle row + value with inline Edit/⟳ (was full-width
   button row), disabled toggle dims value — ~half height across 15 ids (4fa0da4). Identity tab now much
   tighter. NEXT: Settings/Location tab consistency, then FPJS breadth (locale/tz), then IDEAS backlog.
+
+- [2026-07-27 AFK] FPJS BREADTH: (1) Locale/timezone coherence SHIPPED + PROVEN (0.7.1): profile carries a
+  US IANA timezone derived from the phone area code (786/Miami->America/New_York etc, byte-parity, all 77
+  area codes mapped) + locale en-US; hooks TimeZone/Locale.getDefault. On-device: host America/Chicago,
+  app reads spoofed America/New_York+en_US. (2) Mock-location hiding SHIPPED (0.7.2): Location.
+  isFromMockProvider/isMock -> false for scoped targets (Incognia/SEON driver-fraud tell), gated hide_root.
+  NEXT: make the Location tab honest (mock-hide is now real), then boot-time/uptime + camera/battery breadth,
+  then the IDEAS backlog.
