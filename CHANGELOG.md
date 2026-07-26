@@ -3,6 +3,14 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.7.2] — 2026-07-27
+
+### Added
+- **Hide mock-location flag.** A driver/fraud SDK (Incognia/SEON — the exact income-app case)
+  reads Location.isFromMockProvider() / isMock() to detect a spoofed GPS. Both now report false for
+  scoped targets (gated with the other anti-tamper protections). Full GPS-coordinate spoofing is a
+  planned separate feature; this closes the cheap mock-detection tell in the meantime.
+
 ## [0.7.1] — 2026-07-27
 
 ### Added
