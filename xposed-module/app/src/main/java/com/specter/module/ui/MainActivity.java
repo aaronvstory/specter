@@ -649,8 +649,10 @@ public class MainActivity extends Activity {
         content.addView(sectionLabel("Anti-fingerprinting"));
         LinearLayout info = cardBox();
         info.addView(label("Core spoofing — always on"));
-        TextView desc = value("Coherent identity + deep signal spoofing (Build, bootloader, radio, "
-                + "kernel, HARDWARE/BOARD, SoC, GPU/GLES, /proc/cpuinfo, sensors) applies on every identity.");
+        TextView desc = value("Coherent identity + deep signal spoofing applies on every identity: Build.* + "
+                + "props, bootloader/radio/kernel, HARDWARE/BOARD, SoC, GPU/GLES, /proc/cpuinfo, sensor list "
+                + "AND raw calibration values, verified-boot / lock state, US timezone + locale, boot count, "
+                + "and battery capacity — all aligned to the applied device.");
         desc.setTextColor(Theme.DIM);
         info.addView(desc);
         content.addView(info);
