@@ -80,3 +80,21 @@ Two profiles → two different visitorIds in a valid workspace (documented + scr
 precisely-identified, evidenced remaining anchor with the exact code change needed and why it's blocked.
 Plus: polished UI with working toggles/status, more spoofs, all tests green, everything committed &
 pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
+
+## PROGRESS LOG (append-only; newest last)
+- [done] UA leak fix (commit 4af4041) — PROVEN closed via Server API.
+- [done] MODEL/DEVICE column swap (4af4041) — impossible fingerprints fixed.
+- [done] APK install-mtime / FileTimestamps signal (a0f638b).
+- [done] Installed-app filtering / Hide My AppList (c042dfb) — probe leak=none.
+- [done] Per-SoC /sys cpu_capacity + gpu_model + present spoof (6ec7de1) — probe verified.
+- [done] Protections UI: real toggles + ON/OFF status for all 6 protections (3ea977f) — gates verified
+  end-to-end (spoof_ua=0 skips the UA hook on-device).
+- [done] /proc/version kernel banner redirect (df94d57) — probe verified, real 4.14.212 gone.
+- [FINDING] The demo's on-screen visitorId (18uu8...) is in FPJS's SHARED public-demo workspace and does
+  NOT move even after wiping the SDK's entire local cache — so it is server-computed from the payload AND
+  the shared workspace is a coarse bucket. A valid split test needs the USER's own workspace (keys), which
+  pm clear wipes and only the UI can restore (encrypted). This is the one true blocker for the id-split GATE.
+- [NEXT] Keep eliminating client signals the demo still reads truthfully (trace=1 the demo, diff). Candidates
+  not yet closed: SELinux enforce (/sys/fs/selinux/enforce reads 1 — a tamper hint), display metrics,
+  system features (PackageManager.getSystemAvailableFeatures), fonts, and any Settings.Secure/Global stable
+  values C0460f2 reads. Then more breadth spoofs (frida/clonedApp/vm hardening) to surpass geergit/byedentity.
