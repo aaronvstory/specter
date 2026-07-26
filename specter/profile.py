@@ -280,6 +280,11 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     p["screen_width"] = str(_sw)
     p["screen_height"] = str(_sh)
     p["screen_density"] = str(_sd)
+    # ro.build.flavor / ro.build.description composites (they leak the real device otherwise).
+    # flavor = "<device>-<type>"; description = "<device>-<type> <release> <id> <incr> <tags>".
+    # release-keys/user by construction. Pure (no RNG), byte-parity safe.
+    p["build_flavor"] = device + "-user"
+    p["build_description"] = device + "-user " + release + " " + build_id + " " + incremental + " release-keys"
     return p
 
 

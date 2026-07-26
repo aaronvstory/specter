@@ -130,6 +130,10 @@ public class ProbeActivity extends Activity {
             put(o, "prop_ro_product_odm_model", readProp("ro.product.odm.model"));
             put(o, "prop_ro_product_product_model", readProp("ro.product.product.model"));
             put(o, "prop_ro_product_build_fingerprint", readProp("ro.product.build.fingerprint"));
+            put(o, "prop_ro_build_product", readProp("ro.build.product"));
+            put(o, "prop_ro_build_flavor", readProp("ro.build.flavor"));
+            put(o, "prop_ro_build_description", readProp("ro.build.description"));
+            put(o, "prop_ro_bootimage_fp", readProp("ro.bootimage.build.fingerprint"));
             put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
             put(o, "prop_sdk", readProp("ro.build.version.sdk"));
             put(o, "prop_first_api", readProp("ro.product.first_api_level"));

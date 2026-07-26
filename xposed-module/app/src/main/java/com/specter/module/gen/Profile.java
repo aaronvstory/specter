@@ -54,6 +54,8 @@ public final class Profile {
             "build_sdk",
             // Screen metrics (getDisplayMetrics signal) — appended last, matches profile.py.
             "screen_width", "screen_height", "screen_density",
+            // ro.build.flavor / ro.build.description composites — appended last, matches profile.py.
+            "build_flavor", "build_description",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -238,6 +240,10 @@ public final class Profile {
         p.put("screen_width", String.valueOf(scr[0]));
         p.put("screen_height", String.valueOf(scr[1]));
         p.put("screen_density", String.valueOf(scr[2]));
+        // ro.build.flavor / ro.build.description composites (they leak the real device otherwise). Pure,
+        // no RNG (byte-parity safe). Mirrors profile.py.
+        p.put("build_flavor", device + "-user");
+        p.put("build_description", device + "-user " + release + " " + buildId + " " + incremental + " release-keys");
         return p;
     }
 

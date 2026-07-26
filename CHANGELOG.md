@@ -22,6 +22,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
 
 ### Fixed
+- **Remaining build props leaked the real device.** A full prop sweep found ro.build.product (=flame),
+  ro.build.flavor (=flame-user), ro.build.description (=flame-user 11 RQ3A...), and
+  ro.bootimage.build.fingerprint (=google/flame/...) all leaked the real Pixel 4. Aliased product/
+  bootimage-fingerprint to build_device/build_fingerprint, and added two computed profile fields
+  build_flavor (<device>-user) + build_description (<device>-user <release> <id> <incr> release-keys)
+  aliased to ro.build.flavor / ro.build.description. Verified on the probe: a moto g(7) profile
+  reports channel / channel-user / motorola/channel/... — no flame leak. 29 spoofed / 0 hard leaks.
 - **Per-partition product props leaked the real device (significant).** Android 10+ exposes
   Build.MODEL/BRAND/DEVICE/MANUFACTURER/PRODUCT and the build fingerprint on multiple partitions
   (system/vendor/odm/product/system_ext). Specter aliased only ro.product.* + ro.product.vendor.*,
