@@ -2,6 +2,13 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-26 · Deferred telephony-coherence hooks (getSimCountryIso/getNetworkCountryIso/getPhoneType/
+  getSimState)** — the FPJS SDK reads these (M0/N0), and a US-only profile whose SIM country reads a real
+  non-US value would be a coherence tell. BUT the test Pixel 4 has NO SIM (`gsm.sim.state=ABSENT`), so
+  every telephony country/operator signal reads empty (probe confirms `sim_operator=""`), not a constant —
+  they are NOT the visitorId anchor and can't be validated on this device. Decision: defer until there's a
+  real fleet SIM to test against; existing operator/IMEI hooks already cover the with-SIM case. Not chasing
+  empty signals on a SIM-less bench device.
 - **2026-07-26 · Input-device hook now relabels names, not just the count** — the SDK reads
   `InputDevice.getName()`+`getVendorId()` per id (decompiled `C0465h` case 4), so faking only
   `getInputDeviceIds` (the count) let the real Pixel-4 `fts`/`qpnp_pon` device names leak — a stable

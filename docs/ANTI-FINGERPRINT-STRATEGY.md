@@ -278,3 +278,20 @@ correlating the physical device server-side, not reading our client signals). In
 - The user'''s own workspace is the ONLY valid test, and every client signal is spoofed to win there.
 - For real fleet apps that use a normal (non-DRN-default) FPJS workspace, the spoofed signals are what the
   server identifies on. DRN is an add-on a customer opts into; a standard identification is signal-based.
+
+## 2026-07-26 — Input-device NAMES were leaking (fixed); count/name mismatch is an open hypothesis
+FPJS reads `InputDevice.getName()`+`getVendorId()` for every id (decompiled `C0465h` case 4) — a stable
+per-device hardware anchor. Specter's hook faked only the device COUNT (`getInputDeviceIds`→`0..n-1`), so
+the real Pixel-4 touchscreen (`fts`) and PMIC (`qpnp_pon`) names still went out on every read.
+**FIXED** (commit 8caab90): `getInputDevice(int)` is now hooked and relabels each returned InputDevice's
+`mName` from the profile's `hw_input_devices` list, zeroing `mVendorId`/`mProductId`. PROVEN on-device:
+the probe (extended to read names as FPJS does) shows `uinput-fpc|0;synaptics_dsx|0;sec_touchscreen|0`
+(the spoofed Samsung set), NOT the real Pixel-4 names. AOSP-verified the field names are correct for API 30.
+
+- **HYPOTHESIS (open, low-confidence):** `getInputDeviceIds` returns `0..n-1` (n=5 from the profile) but
+  the real Pixel 4 resolves only ~3 of those ids to non-null devices, so FPJS sees a COUNT of 5 but only
+  3 names. Whether that count/name mismatch is itself a distinguishable tell is UNPROVEN (code-review put
+  exploitability <80%). NOT fixed — a "cap ids to real resolvable count" fix would re-leak the real device
+  COUNT (arguably worse), and fabricating InputDevice objects to fill the gap is high-effort/low-payoff
+  (the count is low-entropy; the NAMES were the anchor and those are closed). Revisit only if a live flag
+  correlates with it.
