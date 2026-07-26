@@ -366,3 +366,7 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   bug, 3 SENSORID issues, 2 verifiedboot coherence bugs). Tests green throughout.
 - NEXT (if run continues): more FPJS breadth (camera/battery/boot-time), or run Catched/AmIUniqueApp
   oracles, or codex-review the newest merges. The core user asks are all delivered.
+
+- [2026-07-27 AFK iter] FPJS BREADTH: boot-count SHIPPED + PROVEN (0.9.1) — Settings.Global.BOOT_COUNT
+  derived from android_id (byte-parity), settings-global hook returns it. On-device: host 110 -> app reads
+  spoofed 405. Closes gap #5. NEXT: gap #4 (camera getCameraCharacteristics + battery capacity coherence).
