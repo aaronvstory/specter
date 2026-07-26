@@ -102,21 +102,29 @@ public final class SpoofLogic {
     // Package-name substrings that betray root / a hooking framework / an anti-fingerprint tool. The
     // installed-app list is a raw signal FPJS collects (PackageManager enumeration); any of these in it
     // both raises entropy and is a direct "this device is instrumented" tell. Hidden from enumeration.
+    // Substrings distinctive enough that a real consumer app is very unlikely to contain them. Kept
+    // narrow on purpose: broad tokens like "momo"/"xposed"/"riru" alone would false-positive on
+    // legitimate apps (e.g. a dating app "com.momo.*"), so those are matched only in their real
+    // root/hook package forms below, never as a bare substring.
     static final String[] SENSITIVE_PKG_MARKERS = {
         "com.specter",                 // this module + its probe
         "magisk", "com.topjohnwu",     // Magisk (+ manager)
-        "lsposed", "xposed", "edxposed", "riru", "zygisk", "shamiko",
-        "hidemocklocation",            // the mock-location hider on this device
-        "kingroot", "kingouser", "supersu", "superuser", "com.koushikdutta.superuser",
-        "com.noshufou.android.su", "me.weishu.kernelsu", "kernelsu",
+        "lsposed", "edxposed", "zygisk", "shamiko",
+        "de.robv.android.xposed", "org.lsposed", "io.github.lsposed",   // Xposed frameworks (specific)
+        "riru.core", "riru.momo", "com.rifsxd", "eu.faircode.xlua",
+        "auag0.hidemocklocation",      // the mock-location hider on this device (specific)
+        "kingroot", "kingouser", "supersu", ".superuser", "com.koushikdutta.superuser",
+        "com.noshufou.android.su", "me.weishu.kernelsu", "kernelsu", "com.rifsxd.ksunext",
         "io.github.vvb2060", "hidemyapplist", "com.tsng.hidemyapplist",
-        "momo", "riru.momo", "com.zhufucdev",   // detection-probe apps
+        "riru.momo", "com.zhufucdev", "moe.shizuku",   // detection-probe / instrumentation apps (specific)
     };
 
     /** True if this package name should be HIDDEN from the target's installed-app enumeration. */
     public static boolean isSensitivePackage(String pkg) {
         if (pkg == null) return false;
         String p = pkg.toLowerCase();
+        // exact-equals fast path for the module itself + a couple of common exact ids
+        if (p.equals("com.specter") || p.equals("com.specter.probe")) return true;
         for (String m : SENSITIVE_PKG_MARKERS) if (p.contains(m)) return true;
         return false;
     }

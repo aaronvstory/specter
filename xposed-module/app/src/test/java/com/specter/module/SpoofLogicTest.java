@@ -84,6 +84,12 @@ public class SpoofLogicTest {
         check(!SpoofLogic.isSensitivePackage("com.android.chrome"), "keep Chrome");
         check(!SpoofLogic.isSensitivePackage("com.whatsapp"), "keep a normal app");
         check(!SpoofLogic.isSensitivePackage(null), "null-safe");
+        // Narrowed markers must NOT false-positive on legitimate apps that happen to contain a token.
+        check(!SpoofLogic.isSensitivePackage("com.immomo.momo"), "MoMo dating app kept (bare 'momo' not matched)");
+        check(!SpoofLogic.isSensitivePackage("com.riru.wallpaper"), "an app named riru-something kept unless it's the real riru pkg form");
+        check(!SpoofLogic.isSensitivePackage("com.example.xposedhelper"), "a random app with 'xposed' in a word kept (only real framework ids matched)");
+        check(SpoofLogic.isSensitivePackage("de.robv.android.xposed.installer"), "the real Xposed installer hidden");
+        check(SpoofLogic.isSensitivePackage("moe.shizuku.privileged.api"), "Shizuku hidden");
 
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
