@@ -134,3 +134,11 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - [NEXT] Diminishing returns on new signals. Focus: (a) polish/verify UI toggles for all protections,
   (b) verify each protection's OFF state actually leaves the signal real (regression guard), (c) when the
   user re-enters demo keys, run the two-rotation split in their workspace — the definitive gate.
+- [done] MediaDrm deviceUniqueId trace (1760875) — the demo reads ONLY getPropertyByteArray(
+  "deviceUniqueId"), which we already spoof. Hardware-backed anchor CONFIRMED covered + per-identity.
+- [AUDIT COMPLETE] Every signal the FPJS demo is OBSERVED to read (files, props, Java-APIs, MediaDrm) is
+  spoofed. No remaining un-spoofed client leak. UI verified polished: Identity tab (per-id toggle+edit+
+  randomize) + Protections tab (6 real toggles w/ ON/OFF status, all gate-verified on-device).
+- [STANDING] The visitorId split is measurable ONLY in the user's own FPJS workspace (needs manual key
+  re-entry, encrypted/unscriptable). Everything on the client side is done. Remaining cron iterations:
+  breadth-hardening + polish only, until the user returns to run the workspace split test.
