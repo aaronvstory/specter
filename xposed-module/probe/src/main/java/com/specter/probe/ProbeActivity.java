@@ -384,13 +384,13 @@ public class ProbeActivity extends Activity {
     }
 
     // Read a small sysfs/procfs node and trim it. Routes through libc, so the native redirect applies.
+    // try-with-resources so the fd is released even if read() throws — sysfs nodes like gpu_model
+    // (absent on non-Adreno) or cpuN/cpu_capacity (absent on non-octa layouts) can EIO mid-read.
     private static String readFileTrim(String path) {
-        try {
-            java.io.FileInputStream in = new java.io.FileInputStream(path);
+        try (java.io.FileInputStream in = new java.io.FileInputStream(path)) {
             java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
             byte[] buf = new byte[512]; int n;
             while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
-            in.close();
             return new String(bos.toByteArray(), "UTF-8").trim();
         } catch (Throwable t) { return "ERR:" + t; }
     }
