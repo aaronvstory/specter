@@ -906,7 +906,8 @@ public class HookEntry implements IXposedHookLoadPackage {
     // ---- Google account (AccountManager) â the real Gmail links accounts across apps ----
     // A fingerprinter reads AccountManager.getAccountsByType("com.google")/getAccounts() to see the
     // device's Google account(s). Left real, that email is a strong cross-app/cross-account linker.
-    // We rewrite the RETURNED Account list to a single synthetic Google account = the profile's gmail.
+    // We rewrite the com.google entries in the RETURNED Account list to the profile's gmail (keeping
+    // any other account types intact), and answer getAccountsByType("com.google") with just it.
     // Scope note: this is per-app (LSPosed scope) and only rewrites the ENUMERATION result â auth-token
     // paths (getAuthToken) are NOT touched, so an app that merely reads the account name sees the spoof
     // while we don't fabricate credentials. Masking model, same as GeerGit.
@@ -920,23 +921,47 @@ public class HookEntry implements IXposedHookLoadPackage {
         try {
             googleAcct = acct.getConstructor(String.class, String.class).newInstance(email, "com.google");
         } catch (Throwable t) { return; }
-        XC_MethodHook rewrite = new XC_MethodHook() {
+        // Type-based queries (getAccountsByType(type,...), getAccountsByTypeForPackage(type,pkg,...)):
+        // arg[0] is ALWAYS the account type. Rewrite ONLY when the app asked for com.google â checking
+        // every String arg was wrong (the package-name arg of ...ForPackage is never "com.google", which
+        // silently neutered that hook and leaked the real account).
+        XC_MethodHook byTypeRewrite = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam mp) {
-                Object res = mp.getResult();
-                if (!(res instanceof Object[])) return;
-                // Only rewrite Google-account queries. getAccountsByType(type): check the arg; getAccounts():
-                // rewrite the whole list (real device typically has one Google account).
-                boolean googleQuery = true;
-                for (Object a : mp.args) if (a instanceof String && !"com.google".equals(a)) googleQuery = false;
-                if (!googleQuery) return;   // a non-Google type query â leave it alone
+                if (!(mp.getResult() instanceof Object[])) return;
+                if (mp.args.length == 0 || !"com.google".equals(mp.args[0])) return;   // not a google query
                 Object[] arr = (Object[]) java.lang.reflect.Array.newInstance(acct, 1);
                 arr[0] = googleAcct;
                 mp.setResult(arr);
             }
         };
-        try { XposedBridge.hookAllMethods(am, "getAccountsByType", rewrite); } catch (Throwable ignored) {}
-        try { XposedBridge.hookAllMethods(am, "getAccounts", rewrite); } catch (Throwable ignored) {}
-        try { XposedBridge.hookAllMethods(am, "getAccountsByTypeForPackage", rewrite); } catch (Throwable ignored) {}
+        // getAccounts() returns ALL account types. Filter IN PLACE: swap the com.google entries for our
+        // synthetic one, KEEP every other account (Exchange/Samsung/etc.) â replacing the whole array
+        // would drop real non-Google accounts and break apps enumerating them. If the device has NO
+        // google account, leave the list untouched (don't invent one where there is none).
+        XC_MethodHook allRewrite = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                Object res = mp.getResult();
+                if (!(res instanceof Object[])) return;
+                Object[] real = (Object[]) res;
+                java.util.ArrayList<Object> out = new java.util.ArrayList<>(real.length);
+                boolean replaced = false;
+                for (Object a : real) {
+                    String type = null;
+                    try { type = (String) acct.getField("type").get(a); } catch (Throwable ignored) {}
+                    if ("com.google".equals(type)) {
+                        if (!replaced) { out.add(googleAcct); replaced = true; }   // one google acct, coherent
+                    } else {
+                        out.add(a);
+                    }
+                }
+                if (!replaced) return;   // no google account on device -> don't fabricate one
+                Object[] arr = (Object[]) java.lang.reflect.Array.newInstance(acct, out.size());
+                mp.setResult(out.toArray(arr));
+            }
+        };
+        try { XposedBridge.hookAllMethods(am, "getAccountsByType", byTypeRewrite); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccountsByTypeForPackage", byTypeRewrite); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccounts", allRewrite); } catch (Throwable ignored) {}
     }
 
     // ---- Media codecs (MediaCodecInfo.getName) â the codec-name SET leaks the SoC vendor ----
