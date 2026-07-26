@@ -392,3 +392,11 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   Catched/AmIUniqueApp oracles) — camera characteristics deferred (coherence-risky).
 - Codex gauntlet ran on every risky change; caught+fixed real bugs each time (battery quantity, boot_count
   getString, vault injection, locale parity, SENSORID x3, verifiedboot coherence x2). Tests green throughout.
+
+- [2026-07-27 AFK iter] REGRESSION AUDIT: fresh profile -> 29 spoofed / 0 hard leaks (verify_on_device),
+  AND all 6 new session signals verified coherent on a fresh SM-A505F profile: boot_count=165 (host 110),
+  battery_uah=2.07M (=3.7M*live%, tracks discharge), timezone=America/Chicago (profile's own 972/Dallas
+  number -> Central, coincidentally matches host), locale=en_US, verifiedboot=green, sensor calib applied.
+  NOTE: caught a stale-profile-read artifact — a rotate's file wasn't what the probe first read (the OLD
+  A715F w/o the new fields); a second rotate wrote correctly. All new signals confirmed working. NEXT:
+  empirical audit — run FPJS demo (scoped) with trace, check every read is covered.
