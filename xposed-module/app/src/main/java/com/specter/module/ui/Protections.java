@@ -36,7 +36,7 @@ public final class Protections {
 
     // Order = display order in the Settings "Protections" section.
     public static final P[] ALL = {
-        new P("hide_root",     "Hide root",          "Makes su / Magisk / Zygisk paths read as absent, so a root check finds nothing."),
+        new P("hide_root",     "Hide root",          "Makes su / Magisk / Zygisk / Frida paths read as absent AND filters Magisk out of /proc/mounts + mountinfo, so a root or bind-mount check finds nothing."),
         new P("hide_dev",      "Hide developer mode","Reports ADB and Developer Options as OFF (adb_enabled / development_settings_enabled = 0)."),
         new P("hide_apps",     "Hide My AppList",    "Drops Specter, root managers, and anti-fingerprint tools from the installed-app list an app can enumerate."),
         new P("spoof_ua",      "Spoof User-Agent",   "Rebuilds the HTTP + WebView User-Agent from the applied device, so the UA no longer leaks the real phone."),
