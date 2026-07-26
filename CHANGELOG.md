@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.8.0] — 2026-07-27
+
+### Added
+- **Vault export / import (share profiles between users).** Any saved profile can be exported (Share button) to /sdcard/Download as a portable, checksummed envelope (specter-profile-*.json:
+  format-version + SHA-256 + the flat identity). Another user drops that file in their Download and
+  imports it (validated + checksum-verified, corruption rejected) into their own vault to apply. So two
+  users can share an exact device profile. PROVEN end-to-end on-device: export -> import round-trips the
+  identity faithfully (android_id matches), metadata stripped, checksum guards integrity. Storage-
+  permission-free (routed through su, like the diagnostics export).
+
 ## [0.7.2] — 2026-07-27
 
 ### Added

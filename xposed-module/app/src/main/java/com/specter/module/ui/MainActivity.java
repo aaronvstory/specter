@@ -765,6 +765,20 @@ public class MainActivity extends Activity {
         saveCard.addView(saveRow);
         content.addView(saveCard);
 
+        // Import a profile shared by another user (a specter-profile-*.json in /sdcard/Download).
+        content.addView(sectionLabel("Import a shared profile"));
+        LinearLayout importCard = cardBox();
+        TextView idesc = value("Import a profile someone shared with you (a specter-profile-*.json in "
+                + "Download). It's validated + checksummed, then added to your vault to apply.");
+        idesc.setTextColor(Theme.DIM);
+        idesc.setTextSize(12);
+        importCard.addView(idesc);
+        LinearLayout importRow = new LinearLayout(this);
+        importRow.setOrientation(LinearLayout.HORIZONTAL);
+        importRow.addView(button("Import from Download", false, v -> promptImport()));
+        importCard.addView(importRow);
+        content.addView(importCard);
+
         content.addView(sectionLabel("Saved profiles"));
         savedListHolder = null;   // fresh holder per full render (content was cleared by render())
         java.util.List<Vault.Entry> all = vault.list();
@@ -897,7 +911,16 @@ public class MainActivity extends Activity {
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
         btns.addView(button("RESTORE", true, v -> restoreSaved(e.label)));
-        btns.addView(button("DELETE", false, v -> {
+        btns.addView(compactButton("Share", false, v -> {
+            new Thread(() -> {
+                final String path = vault.exportToDownloads(e.label);
+                runOnUiThread(() -> {
+                    if (path != null) { toast("Exported to " + path); status.setText("Shared " + e.label + " -> " + path); }
+                    else toast("Export failed.");
+                });
+            }).start();
+        }));
+        btns.addView(compactButton("Delete", false, v -> {
             new AlertDialog.Builder(this)
                     .setTitle("Delete saved profile?")
                     .setMessage(e.label)
@@ -911,6 +934,50 @@ public class MainActivity extends Activity {
         }));
         card.addView(btns);
         return card;
+    }
+
+    /** Scan /sdcard/Download (via su — no storage permission) for shared specter-profile-*.json files and
+     *  let the user pick one to import. Runs the listing off the UI thread, then shows a picker. */
+    private void promptImport() {
+        new Thread(() -> {
+            final java.util.List<String> names = new java.util.ArrayList<>();
+            try {
+                Process pr = Runtime.getRuntime().exec(new String[]{"su", "-c",
+                        "ls -1t /sdcard/Download/specter-profile-*.json 2>/dev/null"});
+                java.io.BufferedReader r = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(pr.getInputStream()));
+                String line;
+                while ((line = r.readLine()) != null) { line = line.trim(); if (!line.isEmpty()) names.add(line); }
+                pr.waitFor();
+            } catch (Throwable ignored) {}
+            runOnUiThread(() -> {
+                if (names.isEmpty()) {
+                    toast("No specter-profile-*.json in Download. Put a shared file there first.");
+                    return;
+                }
+                final String[] labels = new String[names.size()];
+                for (int i = 0; i < names.size(); i++) {
+                    String full = names.get(i);
+                    labels[i] = full.substring(full.lastIndexOf('/') + 1);   // basename for display
+                }
+                new AlertDialog.Builder(this)
+                        .setTitle("Import which file?")
+                        .setItems(labels, (d, which) -> {
+                            java.io.File src = new java.io.File(names.get(which));
+                            String err = vault.importError(src);
+                            if (err != null) { toast("Import failed: " + err); return; }
+                            String stem = labels[which].replace("specter-profile-", "").replace(".json", "");
+                            String label = vault.importFromFile(src, "imported-" + stem);
+                            if (label != null) {
+                                status.setText("Imported " + label + " — restore it to apply.");
+                                toast("Imported into vault as " + label);
+                                render();
+                            } else toast("Import failed.");
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            });
+        }).start();
     }
 
     /** Load a saved profile into the current identity AND apply it to the selected target app(s). */

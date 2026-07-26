@@ -127,6 +127,69 @@ public final class Vault {
         return new File(dir, label + ".json").delete();
     }
 
+    /** Export a saved profile as a portable, checksummed envelope written to /sdcard/Download so it can be
+     *  shared with another user. Returns the destination path, or null on failure (missing entry / no write).
+     *  The file is named specter-profile-&lt;label&gt;.json. Vault-local metadata is stripped by the envelope. */
+    public String exportToDownloads(String label) {
+        Map<String, String> p = readMap(new File(dir, label + ".json"));
+        if (p == null) return null;
+        String env = VaultPortable.buildEnvelope(p);
+        if (env == null) return null;
+        String destName = "specter-profile-" + sanitize(label) + ".json";
+        String dest = "/sdcard/Download/" + destName;
+        // The app has no storage permission, so a direct write to /sdcard/Download is DENIED. Stage the
+        // file in our own (always-writable) files dir, then su-copy it into Download + make it readable.
+        File staged = new File(dir.getParentFile(), destName);
+        try (FileOutputStream fos = new FileOutputStream(staged)) {
+            fos.write(env.getBytes("UTF-8"));
+        } catch (Throwable t) { return null; }
+        try {
+            Process pr = Runtime.getRuntime().exec(new String[]{"su", "-c",
+                    "cp '" + staged.getAbsolutePath() + "' '" + dest + "' && chmod 644 '" + dest + "'"});
+            int code = pr.waitFor();
+            //noinspection ResultOfMethodCallIgnored
+            staged.delete();
+            return code == 0 ? dest : null;
+        } catch (Throwable t) { return null; }
+    }
+
+    /** Import a portable envelope file into the vault under a fresh timestamp label. Validates format +
+     *  checksum. Returns the new label on success, or null if the file is missing/invalid/corrupted. The
+     *  imported identity is saved with NO _targets (the recipient hasn't applied it anywhere yet). */
+    public String importFromFile(File src, String name) {
+        String text = readViaSu(src);
+        if (text == null) return null;
+        VaultPortable.Parsed parsed = VaultPortable.parseEnvelope(text);
+        if (!parsed.isOk()) return null;
+        // Save under a fresh label; no targets (not applied yet by this user).
+        return save(name, parsed.profile, "");
+    }
+
+    /** Same as importFromFile but surfaces WHY it failed (for a clear toast). Returns null error on success. */
+    public String importError(File src) {
+        String text = readViaSu(src);
+        if (text == null) return "could not read file (grant root?)";
+        VaultPortable.Parsed parsed = VaultPortable.parseEnvelope(text);
+        return parsed.isOk() ? null : parsed.error;
+    }
+
+    /** Read a file the app itself can't (no storage permission) via su. Returns null on failure. */
+    private static String readViaSu(File src) {
+        if (src == null) return null;
+        Process pr = null;
+        try {
+            pr = Runtime.getRuntime().exec(new String[]{"su", "-c", "cat '" + src.getAbsolutePath() + "'"});
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            java.io.InputStream is = pr.getInputStream();
+            byte[] buf = new byte[4096]; int n;
+            while ((n = is.read(buf)) != -1) bos.write(buf, 0, n);
+            pr.waitFor();
+            String s = new String(bos.toByteArray(), "UTF-8");
+            return s.isEmpty() ? null : s;
+        } catch (Throwable t) { return null; }
+        finally { if (pr != null) pr.destroy(); }
+    }
+
     private static Map<String, String> readMap(File f) {
         if (f == null || !f.exists()) return null;
         try (FileInputStream in = new FileInputStream(f)) {
