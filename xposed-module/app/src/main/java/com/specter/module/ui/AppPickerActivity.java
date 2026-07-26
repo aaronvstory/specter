@@ -358,7 +358,7 @@ public class AppPickerActivity extends Activity {
 
     private GradientDrawable pill(int fill, int stroke) {
         GradientDrawable g = new GradientDrawable();
-        g.setColor(fill); g.setCornerRadius(dp(10)); g.setStroke(dp(1), stroke);
+        g.setColor(fill); g.setCornerRadius(dp(3)); g.setStroke(dp(1), stroke);
         return g;
     }
 }

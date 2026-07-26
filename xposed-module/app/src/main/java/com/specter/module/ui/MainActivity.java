@@ -245,7 +245,7 @@ public class MainActivity extends Activity {
     private GradientDrawable pill(int fill, int stroke) {
         GradientDrawable g = new GradientDrawable();
         g.setColor(fill);
-        g.setCornerRadius(dp(10));   // rounder = more modern/polished than the old 3dp
+        g.setCornerRadius(dp(3));    // square-ish corners (user preference)
         g.setStroke(dp(1), stroke);
         return g;
     }
@@ -390,14 +390,17 @@ public class MainActivity extends Activity {
                 });
             }).start();
 
-            // Small circular ✕ remove — a tight icon-button, not a full-width chunky Button.
+            // Small square ✕ remove — a tight red-tinted icon-button (destructive action), not a chunky
+            // full-width Button.
             TextView rm = new TextView(this);
             rm.setText("✕");
             rm.setTextSize(13);
-            rm.setTextColor(Theme.SOFT);
+            rm.setTextColor(Theme.RED);
             rm.setGravity(Gravity.CENTER);
             GradientDrawable rmBg = new GradientDrawable();
-            rmBg.setColor(Theme.CARD2); rmBg.setStroke(dp(1), Theme.LINE); rmBg.setCornerRadius(dp(16));
+            rmBg.setColor(0x22EF8A8A);              // subtle red-tinted fill
+            rmBg.setStroke(dp(1), 0x55EF8A8A);      // red-tinted border
+            rmBg.setCornerRadius(dp(3));            // square-ish (matches the app's square corners)
             rm.setBackground(rmBg);
             LinearLayout.LayoutParams rmlp = new LinearLayout.LayoutParams(dp(32), dp(32));
             rm.setLayoutParams(rmlp);
