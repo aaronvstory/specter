@@ -345,7 +345,14 @@ static const char *ROOT_PREFIXES[] = {
 static bool is_root_path(const char *path) {
     if (!path) return false;
     for (auto p : ROOT_PATHS) if (strcmp(path, p) == 0) return true;
-    for (auto pre : ROOT_PREFIXES) { size_t l = strlen(pre); if (strncmp(path, pre, l) == 0) return true; }
+    for (auto pre : ROOT_PREFIXES) {
+        size_t l = strlen(pre);
+        if (strncmp(path, pre, l) != 0) continue;
+        // Require a path-component boundary so "/data/data/com.topjohnwu.magisk" doesn't match a
+        // legit "...magisker": the match must end the string, be followed by '/', or the prefix
+        // itself already ends in '/' (e.g. "/data/adb/").
+        if (path[l] == '\0' || path[l] == '/' || pre[l - 1] == '/') return true;
+    }
     // "which su" style: any path ending in "/su"
     size_t n = strlen(path);
     if (n >= 3 && strcmp(path + n - 3, "/su") == 0) return true;
