@@ -453,3 +453,19 @@ tells), AmIUniqueApp/EXADPrinter (entropy-ranked attribute map — finds what a 
 **Order of attack:** verifiedboot props (S) → SENSORID sensor-value transform (M, the flagship) → locale
 (S). Then run Catched + AmIUniqueApp in-scope to find the next tier. Attestation + GPU-output = documented
 ceilings unless a target forces them.
+
+### 2026-07-27 · SENSORID SHIPPED + PROVEN (was the #1 flagship gap)
+The sensor-value calibration transform is live. Hook: SystemSensorManager$SensorEventQueue.
+dispatchSensorEvent(int handle, float[] values, int acc, long ts) — the choke point every listener's
+data flows through. Type resolved from the handle via BaseEventQueue.mManager.mHandleToSensor (GOTCHA:
+mManager is on the SUPERCLASS BaseEventQueue, not SensorEventQueue — must walk the class hierarchy; a
+declaredField-only lookup returned type=-1 and silently no-op'd the transform until fixed). For motion
+sensors (accel/gyro/mag + gravity/linear-accel) values[0..2] are rewritten v' = scale*v + bias with
+SpoofLogic.sensorCalib(type, android_id) — scale ±2%, bias sized to the sensor's noise floor, deterministic
+per profile (a jittering fingerprint would itself be a tell).
+PROVEN on-device (phone held still, only the seed rotated): mean accel vector moved 0.04–0.20 per axis
+between profiles vs a ~0.003 same-profile noise floor (50–70×), gravity magnitude stayed ~9.8. So the raw
+sensor fingerprint now MOVES per profile — no longer a physical-device constant. This was the strongest
+remaining candidate for the constant-visitorId anchor; the client-side sensor surface is now covered.
+NOTE (hypothesis until measured against FPJS): whether this specifically moves the FPJS visitorId is
+unconfirmed — the split test in the user's workspace is still the gate. But the constancy is objectively gone.

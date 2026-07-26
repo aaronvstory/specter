@@ -156,6 +156,10 @@ public class ProbeActivity extends Activity {
                             "ro.boot.flash.locked", "ro.build.tags", "ro.build.type", "ro.debuggable"}) {
                         vb.put(k, nativeGetprop(k));
                     }
+                    // SENSORID: capture the averaged resting accelerometer vector. With the value-transform
+                    // active it reads a per-profile-shifted calibration (magnitude still ~9.81); across two
+                    // profiles the mean vector differs — that's the fingerprint moving.
+                    vb.put("accel_mean", captureAccelMean());
                     appendLateProps(sdkLate, apiLate, vb);
                 } catch (Throwable ignored) {}
             }).start();
@@ -478,6 +482,35 @@ public class ProbeActivity extends Activity {
     /** Re-read the already-written result file, add the post-readiness late-prop values, and rewrite it.
      *  Runs on a background thread AFTER onCreate's own writeResult() has completed, and shares no mutable
      *  state with the main thread (it re-parses a fresh JSONObject) — so there's no cross-thread race. */
+    /** Register the accelerometer, average ~20 samples, and return "x,y,z|mag" — the calibration
+     *  fingerprint the SENSORID transform shifts per profile. Blocks up to ~1.5s for samples. */
+    private String captureAccelMean() {
+        try {
+            android.hardware.SensorManager sm =
+                    (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
+            android.hardware.Sensor accel = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
+            if (accel == null) return "no-accel";
+            final double[] sum = new double[3];
+            final int[] n = new int[1];
+            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(20);
+            android.hardware.SensorEventListener l = new android.hardware.SensorEventListener() {
+                @Override public void onSensorChanged(android.hardware.SensorEvent e) {
+                    if (n[0] >= 20) return;
+                    sum[0] += e.values[0]; sum[1] += e.values[1]; sum[2] += e.values[2];
+                    n[0]++; latch.countDown();
+                }
+                @Override public void onAccuracyChanged(android.hardware.Sensor s, int a) {}
+            };
+            sm.registerListener(l, accel, android.hardware.SensorManager.SENSOR_DELAY_GAME);
+            latch.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS);
+            sm.unregisterListener(l);
+            if (n[0] == 0) return "no-samples";
+            double x = sum[0] / n[0], y = sum[1] / n[0], z = sum[2] / n[0];
+            double mag = Math.sqrt(x * x + y * y + z * z);
+            return String.format(java.util.Locale.US, "%.5f,%.5f,%.5f|mag=%.5f", x, y, z, mag);
+        } catch (Throwable t) { return "ERR:" + t; }
+    }
+
     private void appendLateProps(String sdkLate, String apiLate, java.util.Map<String, String> vbNativeLate) {
         String[] paths = {"/data/local/tmp/specter/probe_result.json", getFilesDir() + "/probe_result.json"};
         for (String p : paths) {

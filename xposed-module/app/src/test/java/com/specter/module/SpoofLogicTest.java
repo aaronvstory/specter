@@ -100,6 +100,48 @@ public class SpoofLogicTest {
         float[] gen = SpoofLogic.sensorRmp(999, "unknown");
         check(gen.length == 3 && gen[0] > 0, "unknown type gets a generic plausible rmp");
 
+        // ---- SENSORID calibration transform ----
+        // Motion sensors incl. UNCALIBRATED variants (14/16/35) get a real transform; others get identity.
+        for (int t : new int[]{1, 2, 4, 9, 10, 14, 16, 35}) check(SpoofLogic.isMotionSensor(t), "motion sensor type " + t);
+        for (int t : new int[]{5, 6, 8, 11, 999}) check(!SpoofLogic.isMotionSensor(t), "non-motion type " + t);
+
+        // Derived/uncalibrated streams share their base sensor's calibration (gravity/linear-accel/accel-
+        // uncal all use the accelerometer's coeffs; mag-uncal <- mag; gyro-uncal <- gyro).
+        check(SpoofLogic.baseMotionType(9) == 1 && SpoofLogic.baseMotionType(10) == 1
+                && SpoofLogic.baseMotionType(35) == 1, "gravity/linear/accel-uncal -> accel base");
+        check(SpoofLogic.baseMotionType(14) == 2, "mag-uncal -> mag base");
+        check(SpoofLogic.baseMotionType(16) == 4, "gyro-uncal -> gyro base");
+        float[] accelC = SpoofLogic.sensorCalib(1, "seedA");
+        float[] gravC = SpoofLogic.sensorCalib(9, "seedA");
+        check(accelC[0] == gravC[0] && accelC[1] == gravC[1] && accelC[2] == gravC[2],
+                "gravity shares the accelerometer's SCALE (same base+seed)");
+        float[] linC = SpoofLogic.sensorCalib(10, "seedA");
+        check(linC[0] == accelC[0] && linC[3] == 0f && linC[4] == 0f && linC[5] == 0f,
+                "linear-accel: shared scale, NO bias (preserves linear = accel - gravity)");
+
+        float[] idc = SpoofLogic.sensorCalib(5, "seedA");   // light -> identity
+        check(idc[0] == 1f && idc[1] == 1f && idc[2] == 1f && idc[3] == 0f && idc[4] == 0f && idc[5] == 0f,
+                "non-motion sensor -> identity transform");
+
+        float[] a1 = SpoofLogic.sensorCalib(1, "seedA");
+        float[] a2 = SpoofLogic.sensorCalib(1, "seedA");
+        check(java.util.Arrays.equals(a1, a2), "sensorCalib deterministic (same seed+type -> same coeffs)");
+        float[] b = SpoofLogic.sensorCalib(1, "seedB");
+        check(!java.util.Arrays.equals(a1, b), "different seed -> different calibration (the whole point)");
+
+        // Bounds: scale within ±2% of 1.0; accel bias within its ±0.06 m/s^2 window (gravity stays ~9.81).
+        check(a1[0] >= 0.98f && a1[0] <= 1.02f, "scale sx within ±2%");
+        check(a1[1] >= 0.98f && a1[1] <= 1.02f, "scale sy within ±2%");
+        check(a1[2] >= 0.98f && a1[2] <= 1.02f, "scale sz within ±2%");
+        check(Math.abs(a1[3]) <= 0.06f && Math.abs(a1[4]) <= 0.06f && Math.abs(a1[5]) <= 0.06f,
+                "accel bias within ±0.06 m/s^2 (gravity magnitude preserved)");
+        // Gravity/linear-accel inherit the accelerometer calibration (baseMotionType maps them to 1).
+        check(java.util.Arrays.equals(SpoofLogic.sensorCalib(9, "seedA"), SpoofLogic.sensorCalib(9, "seedA")),
+                "gravity calib deterministic");
+        // A resting accelerometer (0,0,9.81) stays within ~1% of 9.81 after transform.
+        float gz = 9.81f * a1[2] + a1[5];
+        check(gz > 9.6f && gz < 10.0f, "gravity magnitude stays plausible after transform (" + gz + ")");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.7.0] — 2026-07-27
+
+### Added
+- **SENSORID — per-profile sensor calibration transform (flagship anti-fingerprint win).** The raw
+  accelerometer/gyroscope/magnetometer value stream carries each phone's factory-calibration error, a
+  stable ~57-bit fingerprint that SURVIVES factory reset and was IDENTICAL across every profile on the
+  one physical device (relabeling the sensor LIST never touched it). Now a profile-seeded affine
+  transform (per-axis scale within ±2%, small bias) is applied to SensorEvent.values[] at the dispatch
+  choke point, so each profile presents a different, physically-plausible calibration. PROVEN on-device
+  (phone held still, seed rotated): the averaged accel vector shifted by 0.04–0.20 per axis between
+  profiles — ~50-70x the same-profile noise floor — while gravity magnitude stayed ~9.8 (physics intact).
+
 ## [0.6.0] — 2026-07-27
 
 ### Added

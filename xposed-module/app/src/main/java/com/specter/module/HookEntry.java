@@ -426,6 +426,90 @@ public class HookEntry implements IXposedHookLoadPackage {
                 });
             } catch (Throwable ignored) {}
         }
+
+        // SENSORID: transform the raw sensor VALUE stream (not just the list metadata). See
+        // SpoofLogic.sensorCalib — the per-device factory calibration of accel/gyro/mag is a stable
+        // ~57-bit fingerprint that would otherwise be identical across every profile on this one phone.
+        hookSensorValues(lp, p);
+    }
+
+    /**
+     * Apply a profile-seeded affine calibration transform to the raw SensorEvent value stream. Hooks
+     * SystemSensorManager$SensorEventQueue.dispatchSensorEvent(int handle, float[] values, int acc, long ts)
+     * — the single choke point every listener's data flows through (called from native, then arraycopy'd
+     * into the delivered SensorEvent). We resolve the sensor TYPE from the handle via the queue's outer
+     * SystemSensorManager.mHandleToSensor, and for motion sensors rewrite values[0..2] in place BEFORE the
+     * copy. Transform is small (scale ±2%, tiny bias) so physics still holds; deterministic per profile so
+     * the fingerprint is stable, not jittering (which would itself be a tell).
+     */
+    /** Cache sentinel meaning "this handle is a non-motion sensor — never transform it". */
+    private static final float[] NO_CALIB = new float[0];
+
+    private void hookSensorValues(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String seed = p.get("android_id");
+        if (seed == null || seed.isEmpty()) return;
+        try {
+            Class<?> queueCls = XposedHelpers.findClass(
+                    "android.hardware.SystemSensorManager$SensorEventQueue", lp.classLoader);
+            // dispatchSensorEvent runs on the sensor thread at up to ~200 Hz, so keep the per-sample path to
+            // a handle lookup + 3 multiply-adds. Resolve type + calibration ONCE per handle and cache it
+            // (a null-coeffs entry marks a non-motion handle so we skip it without recomputing). Sensor
+            // handles are process-stable, so the cache never goes stale.
+            final java.util.concurrent.ConcurrentHashMap<Integer, float[]> calibCache =
+                    new java.util.concurrent.ConcurrentHashMap<>();
+            XposedBridge.hookAllMethods(queueCls, "dispatchSensorEvent", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam mp) {
+                    try {
+                        if (mp.args.length < 2 || !(mp.args[1] instanceof float[])) return;
+                        int handle = (Integer) mp.args[0];
+                        float[] values = (float[]) mp.args[1];
+                        if (values.length < 3) return;
+                        float[] c = calibCache.get(handle);
+                        if (c == null) {
+                            int type = sensorTypeForHandle(mp.thisObject, handle);
+                            c = SpoofLogic.isMotionSensor(type)
+                                    ? SpoofLogic.sensorCalib(type, seed)
+                                    : NO_CALIB;                       // sentinel: non-motion, never transform
+                            calibCache.put(handle, c);
+                        }
+                        if (c == NO_CALIB) return;
+                        values[0] = values[0] * c[0] + c[3];
+                        values[1] = values[1] * c[1] + c[4];
+                        values[2] = values[2] * c[2] + c[5];
+                    } catch (Throwable ignored) {}
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    /** Resolve a sensor's type from its handle via the event queue's outer SystemSensorManager. The queue
+     *  (SystemSensorManager$SensorEventQueue) holds a reference to its manager whose mHandleToSensor maps
+     *  handle -> Sensor. Field names differ across API levels, so probe a few. Returns -1 if unresolved. */
+    private static int sensorTypeForHandle(Object queue, int handle) {
+        try {
+            // mManager lives on the SUPERCLASS (BaseEventQueue), not SensorEventQueue — walk the hierarchy.
+            Object mgr = getFieldUp(queue, "mManager");
+            if (mgr == null) mgr = getFieldUp(queue, "this$0");   // older builds: inner class outer ref
+            if (mgr == null) return -1;
+            Object map = getFieldUp(mgr, "mHandleToSensor");
+            if (map == null) map = getFieldUp(mgr, "sHandleToSensor");
+            if (map == null) return -1;
+            Object sensor;
+            if (map instanceof java.util.Map) sensor = ((java.util.Map<?, ?>) map).get(handle);
+            else sensor = map.getClass().getMethod("get", int.class).invoke(map, handle);   // SparseArray
+            if (sensor == null) return -1;
+            return (Integer) sensor.getClass().getMethod("getType").invoke(sensor);
+        } catch (Throwable t) { return -1; }
+    }
+
+    /** Read a field by name, searching the object's class and every superclass (fields can be inherited). */
+    private static Object getFieldUp(Object obj, String name) {
+        for (Class<?> c = obj.getClass(); c != null; c = c.getSuperclass()) {
+            try { Field f = c.getDeclaredField(name); f.setAccessible(true); return f.get(obj); }
+            catch (NoSuchFieldException ignored) { /* try superclass */ }
+            catch (Throwable t) { return null; }
+        }
+        return null;
     }
 
     private static int parseIntSafe(String v) {

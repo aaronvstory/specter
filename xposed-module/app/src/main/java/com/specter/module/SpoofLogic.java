@@ -141,6 +141,95 @@ public final class SpoofLogic {
         }
     }
 
+    // ---- SENSORID: per-profile sensor calibration transform --------------------------------------
+    // Every physical accel/gyro/mag has a per-device FACTORY CALIBRATION — tiny per-axis scale, bias and
+    // cross-axis error unique to the chip. FingerprintJS reads the raw SensorEvent.values[] stream and the
+    // statistics of that error are a stable ~57-bit fingerprint that SURVIVES factory reset (Cambridge
+    // TIFS-2020). Relabeling the sensor LIST does NOT change it — so across every Specter profile on the
+    // one physical Pixel 4 it stays IDENTICAL, a constant that can collapse all profiles to one device.
+    // We apply a profile-seeded affine transform v' = scale*v + bias (per axis) to the value stream so each
+    // profile presents a different, physically-plausible calibration. Coefficients are SMALL: scale within
+    // ~±2% of 1.0, bias a small fraction of the sensor's noise floor, so gravity magnitude stays ~9.81 and
+    // a gyro at rest stays ~0 — the app's motion logic is unaffected, only the micro-fingerprint moves.
+    //
+    // Returns {sx, sy, sz, bx, by, bz}. Pure + deterministic from (type, seed) for Java/Python byte-parity
+    // and so the SAME profile always yields the SAME calibration (a fingerprint that jittered per-read
+    // would itself be a tell). Only the motion sensors (accel/gyro/mag + their derived variants) carry the
+    // calibration fingerprint; other types return identity (no transform).
+    public static float[] sensorCalib(int type, String seed) {
+        // Identity for non-motion sensors (light/pressure/proximity/etc. — no calibration fingerprint).
+        if (!isMotionSensor(type)) return new float[]{1f, 1f, 1f, 0f, 0f, 0f};
+        // Bias magnitude scaled to the sensor's unit so it stays within the real noise floor.
+        float biasMax;
+        switch (baseMotionType(type)) {
+            case 1:  biasMax = 0.06f;   break;  // accelerometer m/s^2 (gravity 9.81 -> ~0.6% max)
+            case 4:  biasMax = 0.012f;  break;  // gyroscope rad/s (small rest bias)
+            case 2:  biasMax = 1.5f;    break;  // magnetometer uT
+            default: biasMax = 0.05f;   break;
+        }
+        // Seed the draws by the BASE motion type, not the raw type, so every stream derived from the same
+        // physical chip shares ONE calibration: gravity/linear-accel/accel-uncal all use the accelerometer's
+        // coefficients (a fingerprinter that reads gravity vs accel would otherwise see two unrelated
+        // calibrations — itself a tell — and the linear = accel - gravity identity would break).
+        int base = baseMotionType(type);
+        float sx = 1f + scaleDraw(seed, base, 0);
+        float sy = 1f + scaleDraw(seed, base, 1);
+        float sz = 1f + scaleDraw(seed, base, 2);
+        // Linear-acceleration is gravity-subtracted (rests near 0), so a constant bias there is spurious —
+        // scale it but don't bias it, preserving linear = accel - gravity under the shared scale.
+        boolean linearAccel = (type == 10);
+        float bx = linearAccel ? 0f : biasDraw(seed, base, 3) * biasMax;
+        float by = linearAccel ? 0f : biasDraw(seed, base, 4) * biasMax;
+        float bz = linearAccel ? 0f : biasDraw(seed, base, 5) * biasMax;
+        return new float[]{sx, sy, sz, bx, by, bz};
+    }
+
+    /** Motion sensors whose raw axes carry the factory-calibration fingerprint — including the UNCALIBRATED
+     *  variants (14/16/35), which expose the raw stream WITHOUT the runtime bias-compensation and would
+     *  otherwise leak the untransformed fingerprint an app can read directly. */
+    public static boolean isMotionSensor(int type) {
+        switch (type) {
+            case 1: case 2: case 4: case 9: case 10:  // accel, mag, gyro, gravity, linear-accel
+            case 14: case 16: case 35:                // mag-uncal, gyro-uncal, accel-uncal
+                return true;
+            default: return false;
+        }
+    }
+
+    /** Map every derived/uncalibrated stream to the base sensor whose physical calibration it shares, so
+     *  they all get identical coefficients (gravity/linear-accel/accel-uncal <- accel; mag-uncal <- mag;
+     *  gyro-uncal <- gyro). */
+    static int baseMotionType(int type) {
+        switch (type) {
+            case 9: case 10: case 35: return 1;   // gravity, linear-accel, accel-uncalibrated <- accelerometer
+            case 14: return 2;                    // magnetic-field-uncalibrated <- magnetometer
+            case 16: return 4;                    // gyroscope-uncalibrated <- gyroscope
+            default: return type;
+        }
+    }
+
+    // FNV-1a 32-bit over (seed | type | channel), matches Generators.fnv1a style — MUST byte-match Python.
+    static long calibHash(String seed, int type, int channel) {
+        String s = seed + "|" + type + "|" + channel;
+        long h = 2166136261L;
+        for (int i = 0; i < s.length(); i++) { h = (h ^ (s.charAt(i) & 0xff)) * 16777619L; h &= 0xffffffffL; }
+        return h;
+    }
+
+    /** Scale offset in [-0.02, +0.02] (±2%), 1e-4 quantized so Java/Python floats agree exactly. */
+    static float scaleDraw(String seed, int type, int channel) {
+        long h = calibHash(seed, type, channel);
+        int q = (int) (h % 401L);            // 0..400
+        return (q - 200) / 10000f;           // -0.0200 .. +0.0200 in 1e-4 steps
+    }
+
+    /** Signed unit bias in [-1, +1], 1e-3 quantized (caller multiplies by the per-sensor biasMax). */
+    static float biasDraw(String seed, int type, int channel) {
+        long h = calibHash(seed, type, channel);
+        int q = (int) (h % 2001L);           // 0..2000
+        return (q - 1000) / 1000f;           // -1.000 .. +1.000 in 1e-3 steps
+    }
+
     /** True if this package name should be HIDDEN from the target's installed-app enumeration. */
     public static boolean isSensitivePackage(String pkg) {
         if (pkg == null) return false;

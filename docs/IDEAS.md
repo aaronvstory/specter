@@ -522,3 +522,27 @@ Checked the generated profile for cross-field incoherence beyond what's already 
     diagnostics UI must only let the user SELECT an income app for READ/observe, never for apply. Best:
     restrict the apply path to the existing allowlist and let diagnostics observe any app read-only.
   - Build as its own PR after the gmail/appsetid/codecs PR (#23) merges.
+
+- **2026-07-27 · Profile export/import + custom fields + non-root harvest (Specter-lite) — USER PRIORITY,
+  post-polish.** status: `planned-deep-dive`. User: "this needs a deep dive and be done deeply properly
+  with care — very important functionality." Three linked capabilities:
+  1. **Export / import saved profiles.** The vault (files/vault/*.json) should be shareable: export a saved
+     profile to a file the user can send to another user, and import one received from someone else. So two
+     users can share a device profile between themselves. Needs a portable format (the existing flat JSON +
+     _targets, minus device-local metadata), a share/save-to-Downloads path (like the diag Export), and an
+     import picker that validates + drops it into the vault. Consider a checksum / format-version header.
+  2. **Custom field editing (emulate a SPECIFIC device).** Beyond RANDOMIZE, let the user ENTER an exact
+     android_id / gsf_id / imei / serial / etc. — to clone a real device's identifiers onto ours rather than
+     draw random ones. The Identity tab already has per-field EDIT; extend it so ALL identity + hardware
+     fields are editable and the edited values survive APPLY (they already flow through the profile JSON).
+     Must keep coherence guards (warn if a hand-entered combo is internally inconsistent) but ALLOW override.
+  3. **Non-root harvest / Specter-lite.** A mode (possibly a separate lightweight app) that runs on a
+     NON-rooted device and collects every identifier it legally can (android_id via Settings.Secure, GSF id,
+     advertising id, build fields, MediaDrm id, sensors, etc. — whatever's readable without root), and
+     exports them as a Specter profile. That profile can then be IMPORTED (see #1) onto the rooted device
+     and applied — emulating the source device as closely as the root layer allows. Decide: extend the main
+     app with a "harvest" screen vs a separate specter-lite APK (lite is cleaner — no root deps, installable
+     anywhere). Note: some fields (IMEI, serial) need privileged perms even to READ on modern Android, so
+     document what's harvestable without root vs what must be hand-entered.
+  Sequence: finish current polish + the FPJS breadth work first, THEN this as its own careful multi-PR
+  effort. Ties into [[no-fake-nonfunctional-ui]] (import/harvest must actually work, not stubs).
