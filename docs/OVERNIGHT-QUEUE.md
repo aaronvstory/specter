@@ -407,3 +407,16 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   FIXED (0.9.3): native /proc/meminfo redirect to a spoof file (MemTotal from total_ram, reusing
   g_sys_redirect). PROVEN: real 5,596,800 kB -> app reads 11,701,248 kB. Everything else the demo reads
   was already covered. This is the value of trace-driven auditing vs a static hook list.
+
+- [2026-07-27 AFK iter] meminfo redirect HARDENED per codex (0.9.3): strict total_ram parse (reject
+  garbage/overflow) + fuller ~19-line meminfo (so framework parsers find Cached/Shmem/Slab/etc). Re-proven
+  on-device, no crash. P4 rebuilt+installed to v0.9.3 (app + newest .so). Codex confirmed the redirect is
+  crash-safe (file swap, not prop-init) + perms correct (0600/0700).
+
+*** session snapshot #4 (AFK, 2026-07-27) ***
+- 0.9.2 -> 0.9.3. This iter: regression audit (0 leaks, all 6 new signals coherent), empirical FPJS-demo
+  trace audit -> found + fixed the /proc/meminfo RAM leak (the one thing 6 iters of hook-list work missed).
+- Client-signal coverage is now empirically verified complete: every prop + device-file the demo reads is
+  spoofed or provably non-identifying. The trace-audit approach beats guessing at gaps.
+- Remaining: L-effort structural (raw-syscall bypass, key attestation) + camera characteristics (deferred).
+  All cheap/medium gaps closed. Codex gauntlet caught real bugs on every risky change this session.
