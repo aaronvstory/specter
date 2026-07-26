@@ -281,3 +281,8 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   was REAL: two same-minute saves overwrote silently → fixed (append -2/-3, verified two distinct files
   on-device: 072626-Sun-0737 + -0737-2). Also stored _saved_at as string for portability. (4bbb7b9)
 - [PENDING USER] Merge PR #21 (vault)? And start the Dasher trace-diagnostics idea (docs/IDEAS.md)?
+
+- [VERIFIED — the exact sequence the user required] save A -> generate+save B -> generate C + apply C ->
+  RESTORE A -> target has A's EXACT identity back (android_id a9052abe, device r3q), NOT C's (b5dc83c5).
+  Proven on-device with distinct android_ids. Vault save/restore is correct end-to-end. Opt-in confirmed:
+  the save checkbox is OFF by default, so users can just RANDOMIZE->APPLY and never touch profiles.
