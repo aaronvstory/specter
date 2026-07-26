@@ -370,3 +370,9 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - [2026-07-27 AFK iter] FPJS BREADTH: boot-count SHIPPED + PROVEN (0.9.1) — Settings.Global.BOOT_COUNT
   derived from android_id (byte-parity), settings-global hook returns it. On-device: host 110 -> app reads
   spoofed 405. Closes gap #5. NEXT: gap #4 (camera getCameraCharacteristics + battery capacity coherence).
+
+- [2026-07-27 AFK iter] FPJS BREADTH: battery capacity SHIPPED + PROVEN (0.9.2) — BatteryManager
+  CHARGE_COUNTER (full/design capacity) spoofed to a per-codename value (battery_uah, byte-parity). On-
+  device: host 1.777M µAh -> app reads spoofed 3.5M µAh (moto g 5G). Camera characteristics DEFERRED
+  (coherence-risky, low marginal value). gaps #4a + #5 now closed. Remaining: L-effort structural items
+  (raw-syscall bypass, key attestation) + running Catched/AmIUniqueApp oracles.
