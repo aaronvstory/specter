@@ -325,3 +325,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   a country-arg parity bug post-merge). Both test suites green throughout, EOL clean, byte-parity intact.
   Priorities 1 (polish) + 2 (FPJS breadth) substantially done. NEXT: priority 3 = IDEAS backlog, starting
   with vault export/import (most contained), then custom-field editing, then non-root harvest/specter-lite.
+
+- [2026-07-27 AFK] IDEAS BACKLOG (a) VAULT EXPORT/IMPORT SHIPPED + PROVEN (0.8.0): Share a saved profile
+  to /sdcard/Download as a checksummed envelope (format-version + SHA-256 + flat identity); Import lists
+  specter-profile-*.json, validates+verifies checksum (rejects corruption), adds to vault. Two users can
+  share an exact device. End-to-end proven on-device: export SM-G970N -> import round-trips faithfully
+  (android_id matches), metadata stripped, storage-permission-free via su. VaultChecksum JVM-tested.
+  NEXT: IDEAS backlog (b) custom-field editing, then (c) non-root harvest/specter-lite.
