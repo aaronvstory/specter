@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Diagnostics logging** — a Settings toggle (default OFF) that continuously captures what each
+  Specter-scoped app READS (props/files/IDs, via the SpecterTrace trace) and the value returned, to
+  /data/local/tmp/specter/diag.log (rotating, 32MB cap). A background foreground-service runs
+  `logcat -f`; the file is adb-pullable so you can verify spoofs are landing as you use it — no manual
+  export. READ-ONLY (applies nothing; safe on any scoped app).
 - **Google-account + media-codec spoofing are OPT-IN (default OFF)** — both can break the target app
   (a fabricated Google account fails sign-in; a relabeled codec name fails createByCodecName), so they
   are now Settings protections the user enables knowingly, never on by default. Account masking also no
