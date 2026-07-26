@@ -263,3 +263,12 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   large blast radius for a vector no observed detector uses (the FPJS demo doesn't readdir; traced). If a
   real target is later shown to enumerate dirs for su, revisit with a narrow, well-tested getdents filter.
   Recorded so it isn't mistaken for an oversight.
+
+- [AUDIT] Surveyed all ro.boot.* props (via in-app hooked read, not exec getprop which is a false proxy).
+  Many low-level ones leak the real Pixel 4 to a hooked app (ro.boot.hardware.sku=G020I, ro.boot.ddr_info=
+  Micron, ro.boot.hardware.ufs=64GB SKHynix, bootdevice, cdt_hwid, revision, color, baseband). DECISION:
+  NOT spoofing them now — (a) the FPJS demo reads NONE of them (traced: only ro.arch/ro.hardware/
+  ro.board.platform, all covered); (b) no per-device coherent values exist in the dataset (a wrong SKU/DDR
+  vendor is a worse tell than a real one). The two that HAD spoofed counterparts (ro.boot.hardware /
+  ro.boot.hardware.platform, inconsistent with ro.hardware/ro.board.platform) are already fixed (c9e558d).
+  Revisit only if a real target is shown to read ro.boot.* — then add per-device SKU/DDR/UFS data first.
