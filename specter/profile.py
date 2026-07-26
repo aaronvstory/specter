@@ -262,6 +262,10 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
         # (a device can't be reset before its own OS was built). LAST in the dict, so the draw is
         # appended to the end of the RNG order and every existing field's value is unchanged.
         "factory_reset_epoch": G.factory_reset_epoch(r, patch),
+        # App Set ID (com.google.android.gms.appset) — a per-app-scoped install id apps read for
+        # analytics. A UUID like the advertising id. LAST RNG draw so existing fields' draw order
+        # (and Java byte-parity) is unchanged.
+        "app_set_id": G.uuid(r),
     }
     # Per-model hardware descriptors (GPU/GLES, sensors, cameras, codecs, input, core count,
     # /proc/cpuinfo) — a coherent bundle for the device model this identity claims to be. Constant

@@ -6,6 +6,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Gmail account spoofing is now actually APPLIED** (was generated-but-dropped). Every profile
+  generated a coherent Gmail and the UI showed it as spoofed, but NO `AccountManager` hook existed â
+  so an app reading `getAccountsByType("com.google")`/`getAccounts()` got the REAL Google account (a
+  strong cross-account linker). New `hookAccounts` rewrites the enumeration result to the profile's
+  Gmail (a synthetic `com.google` Account); auth-token paths untouched (masking model, like GeerGit).
+  Proven on-device: the probe reads `google_accounts` == the profile gmail. Closes a false-coverage gap.
+- **App Set ID spoofing** (`com.google.android.gms.appset.AppSetIdInfo.getId`). A per-app-scoped install
+  id apps read for analytics â now generated (a UUID, byte-parity JavaâPython) and hooked to return the
+  profile value. Closes a breadth gap vs HideMyAndroid.
 - **On-device profile vault** — save a generated identity under a date/time label and re-apply that
   EXACT device later (same unique IDs), or delete it. New **Saved** tab: an opt-in "Save to vault
   after RANDOMIZE ALL" checkbox (default off — profiles are entirely skippable), a "Save current to

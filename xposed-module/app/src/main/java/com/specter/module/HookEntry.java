@@ -47,6 +47,8 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookWifi(lpparam, p);
         hookBluetooth(lpparam, p);
         hookAdvertisingId(lpparam, p);
+        hookAppSetId(lpparam, p);
+        hookAccounts(lpparam, p);
         hookGsf(lpparam, p);
         hookMediaDrm(lpparam, p);
         hookSystemProperties(p);
@@ -886,6 +888,54 @@ public class HookEntry implements IXposedHookLoadPackage {
         }
         // Belt-and-suspenders: also force Info.getId to our value.
         if (info != null) rc(info, "getId", adid);
+    }
+
+    // ---- App Set ID (com.google.android.gms.appset.AppSetIdInfo.getId) ----
+    // A per-app-scoped install id apps read for analytics. The value comes from an async Task, but the
+    // final read is AppSetIdInfo.getId() â hook it to return the profile's app_set_id. (No dedicated
+    // factory hook needed: unlike the ad-id Info, getId() here is the single value accessor.)
+    private void hookAppSetId(XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String asid = p.get("app_set_id");
+        if (asid == null) return;
+        Class<?> info = XposedHelpers.findClassIfExists(
+            "com.google.android.gms.appset.AppSetIdInfo", lp.classLoader);
+        if (info != null) rc(info, "getId", asid);
+    }
+
+    // ---- Google account (AccountManager) â the real Gmail links accounts across apps ----
+    // A fingerprinter reads AccountManager.getAccountsByType("com.google")/getAccounts() to see the
+    // device's Google account(s). Left real, that email is a strong cross-app/cross-account linker.
+    // We rewrite the RETURNED Account list to a single synthetic Google account = the profile's gmail.
+    // Scope note: this is per-app (LSPosed scope) and only rewrites the ENUMERATION result â auth-token
+    // paths (getAuthToken) are NOT touched, so an app that merely reads the account name sees the spoof
+    // while we don't fabricate credentials. Masking model, same as GeerGit.
+    private void hookAccounts(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String email = p.get("gmail");
+        if (email == null || email.isEmpty()) return;
+        final Class<?> am = XposedHelpers.findClassIfExists("android.accounts.AccountManager", lp.classLoader);
+        final Class<?> acct = XposedHelpers.findClassIfExists("android.accounts.Account", lp.classLoader);
+        if (am == null || acct == null) return;
+        final Object googleAcct;
+        try {
+            googleAcct = acct.getConstructor(String.class, String.class).newInstance(email, "com.google");
+        } catch (Throwable t) { return; }
+        XC_MethodHook rewrite = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                Object res = mp.getResult();
+                if (!(res instanceof Object[])) return;
+                // Only rewrite Google-account queries. getAccountsByType(type): check the arg; getAccounts():
+                // rewrite the whole list (real device typically has one Google account).
+                boolean googleQuery = true;
+                for (Object a : mp.args) if (a instanceof String && !"com.google".equals(a)) googleQuery = false;
+                if (!googleQuery) return;   // a non-Google type query â leave it alone
+                Object[] arr = (Object[]) java.lang.reflect.Array.newInstance(acct, 1);
+                arr[0] = googleAcct;
+                mp.setResult(arr);
+            }
+        };
+        try { XposedBridge.hookAllMethods(am, "getAccountsByType", rewrite); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccounts", rewrite); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccountsByTypeForPackage", rewrite); } catch (Throwable ignored) {}
     }
 
     // ---- GSF id: content query to com.google.android.gsf.gservices returning android_id ----

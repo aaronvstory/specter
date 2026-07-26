@@ -342,6 +342,21 @@ public class ProbeActivity extends Activity {
             put(o, "hw_cameras", android.text.TextUtils.join(",", ids));
         } catch (Throwable t) { put(o, "hw_cameras", "ERR:" + t); }
 
+        // --- Google account (AccountManager) — self-check for the Gmail hook. A fingerprinter reads
+        // getAccountsByType("com.google"); on a spoofed device this must show the profile gmail, not
+        // the real account. May be empty/perm-gated by the OS (not a leak); ERR:SecurityException is
+        // the OS gate, not a hook failure. ---
+        try {
+            android.accounts.Account[] accts =
+                    android.accounts.AccountManager.get(this).getAccountsByType("com.google");
+            StringBuilder sb = new StringBuilder();
+            for (android.accounts.Account a : accts) {
+                if (sb.length() > 0) sb.append(",");
+                sb.append(a.name);
+            }
+            put(o, "google_accounts", sb.toString());
+        } catch (Throwable t) { put(o, "google_accounts", "ERR:" + t); }
+
         // --- Input device count ---
         try {
             android.hardware.input.InputManager im =

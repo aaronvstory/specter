@@ -43,6 +43,8 @@ public final class Profile {
             "build_hardware", "build_board", "build_kernel_version", "build_radio",
             "total_ram", "total_storage", "build_host", "build_display", "soc_platform",
             "factory_reset_epoch",
+            // App Set ID (com.google.android.gms.appset) — a UUID; LAST RNG draw, mirrors profile.py.
+            "app_set_id",
             // Per-model hardware descriptors — appended LAST, same order as specter/profile.py's
             // _hw_fields(), so the flat-JSON key order and byte-parity draw order stay in lockstep.
             "hw_gpu_renderer", "hw_gpu_vendor", "hw_gles_version", "hw_cores", "hw_sensors",
@@ -221,6 +223,8 @@ public final class Profile {
         // LAST — appended to the end of the RNG order so every existing field is unchanged. Mirrors
         // profile.py, which passes the same security patch so the pair stays coherent.
         p.put("factory_reset_epoch", Generators.factoryResetEpoch(r, patch));
+        // App Set ID — a UUID, LAST RNG draw so the byte-parity draw order matches profile.py exactly.
+        p.put("app_set_id", Generators.uuid(r));
         // Per-model hardware descriptors — a coherent bundle for the device this identity claims to
         // be. Constant lookup keyed on the codename; consumes no RNG (byte-parity safe). LAST, so the
         // draw order of every field above is unchanged. Mirrors profile.py's _hw_fields().
