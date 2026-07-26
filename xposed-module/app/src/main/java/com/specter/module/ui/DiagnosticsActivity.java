@@ -130,15 +130,18 @@ public final class DiagnosticsActivity extends Activity {
                     + "scoped target and open it.");
             return;
         }
-        int props = 0, files = 0, stat = 0, hits = 0;
+        int props = 0, files = 0, stat = 0, hits = 0, spoofed = 0, real = 0;
         for (TraceParser.Row r : rows) {
             hits += r.count;
             if (r.kind == TraceParser.Kind.PROP) props++;
             else if (r.kind == TraceParser.Kind.FILE) files++;
             else if (r.kind == TraceParser.Kind.STAT) stat++;
+            Coverage.State c = Coverage.of(r.verb, r.target);
+            if (c == Coverage.State.SPOOFED) spoofed++;
+            else if (c == Coverage.State.REAL) real++;
         }
-        summary.setText(rows.size() + " distinct signals · " + hits + " reads   ("
-                + props + " props, " + files + " files, " + stat + " stat/access)"
+        summary.setText(rows.size() + " signals · " + spoofed + " spoofed · " + real + " real (non-ID) · "
+                + hits + " reads   (" + props + " props, " + files + " files, " + stat + " stat)"
                 + (rows.size() >= MAX_ROWS ? "  — capped" : ""));
 
         addGroup("Properties", TraceParser.Kind.PROP, rows);
@@ -210,6 +213,24 @@ public final class DiagnosticsActivity extends Activity {
             tgt.setTypeface(android.graphics.Typeface.MONOSPACE);   // paths/keys read far better monospace
             tgt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             row.addView(tgt);
+
+            // Coverage badge: is this signal SPOOFED by Specter, left REAL (non-identifying), or UNKNOWN?
+            // (UNKNOWN gets no badge — never over-claim.) This is the flagship "what's protected" readout.
+            Coverage.State cov = Coverage.of(r.verb, r.target);
+            if (cov != Coverage.State.UNKNOWN) {
+                TextView cb = new TextView(this);
+                boolean spoofed = cov == Coverage.State.SPOOFED;
+                cb.setText(spoofed ? "spoofed" : "real");
+                cb.setTextColor(spoofed ? Theme.ON_GOLD : Theme.DIM);
+                cb.setTextSize(10);
+                cb.setPadding(dp(7), dp(1), dp(7), dp(2));
+                cb.setBackground(roundRect(spoofed ? Theme.SAGE : Theme.BG2, spoofed ? Theme.SAGE : Theme.LINE, dp(8)));
+                LinearLayout.LayoutParams cbl = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                cbl.setMargins(dp(8), 0, 0, 0);
+                cb.setLayoutParams(cbl);
+                row.addView(cb);
+            }
 
             // Count pill — only when read more than once (a single read needs no ×1 clutter).
             if (r.count > 1) {

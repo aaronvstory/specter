@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.10.0] — 2026-07-27
+
+### Added
+- **Live-trace viewer: spoofed/real coverage badges (flagship).** Every signal a scoped app reads now
+  shows whether Specter SPOOFS it (green "spoofed"), leaves it REAL because it's non-identifying (gray
+  "real"), or is UNKNOWN (no badge — never over-claims). The summary shows an at-a-glance protection
+  score: e.g. "79 signals · 43 spoofed · 15 real (non-ID)". So a user SEES exactly which device signals
+  FingerprintJS reads are protected — the differentiator vs GeerGit. Coverage is a pure, tested heuristic
+  over the families Specter actually covers (Build/prop/SoC/serial identity props, /proc+/sys redirects).
+
 ## [0.9.3] — 2026-07-27
 
 ### Fixed

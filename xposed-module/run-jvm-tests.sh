@@ -22,13 +22,15 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
     app/src/main/java/com/specter/module/ui/DiagnosticsCmd.java \
     app/src/main/java/com/specter/module/ui/TraceParser.java \
     app/src/main/java/com/specter/module/ui/VaultChecksum.java \
+    app/src/main/java/com/specter/module/ui/Coverage.java \
     app/src/test/java/com/specter/module/SpoofLogicTest.java \
     app/src/test/java/com/specter/module/gen/GeneratorsTest.java \
     app/src/test/java/com/specter/module/gen/ProfileTest.java \
     app/src/test/java/com/specter/module/gen/RootWriterTest.java \
     app/src/test/java/com/specter/module/ui/DiagnosticsCmdTest.java \
     app/src/test/java/com/specter/module/ui/TraceParserTest.java \
-    app/src/test/java/com/specter/module/ui/VaultPortableTest.java
+    app/src/test/java/com/specter/module/ui/VaultPortableTest.java \
+    app/src/test/java/com/specter/module/ui/CoverageTest.java
 "$JAVA" -cp "$OUT" com.specter.module.SpoofLogicTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.GeneratorsTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.ProfileTest
@@ -36,3 +38,4 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
 "$JAVA" -cp "$OUT" com.specter.module.ui.DiagnosticsCmdTest
 "$JAVA" -cp "$OUT" com.specter.module.ui.TraceParserTest
 "$JAVA" -cp "$OUT" com.specter.module.ui.VaultPortableTest
+"$JAVA" -cp "$OUT" com.specter.module.ui.CoverageTest
