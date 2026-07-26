@@ -270,3 +270,14 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   ALL -> APPLY -> relaunch target) is fully functional. NOTE: the app needs Magisk root granted once
   (it prompts; grant Forever). Fleet artifacts (module APK + zygisk zip) rebuilt fresh with all prop-leak
   fixes.
+
+- [MERGED] PR #20 (Specter 0.5.0, all FPJS work) squash-merged to main (77c41a9). Phone has the shipped
+  version + newest .so; verified 29 spoofed/0 hard leaks. User can unplug for fleet use.
+- [PR #21 open] Profile vault (feat/profile-vault): Saved tab + "save to vault after RANDOMIZE" checkbox
+  with prefilled unique date/time name, restore/delete. Verified end-to-end on-device.
+- [done] Code-reviewed the vault PR. Its "CRITICAL: getString on _saved_at long breaks the whole feature"
+  finding was a FALSE POSITIVE — Android's org.json getString COERCES numbers to strings (confirmed via
+  Exa research of Android docs + the feature demonstrably worked on-device). Its label-collision finding
+  was REAL: two same-minute saves overwrote silently → fixed (append -2/-3, verified two distinct files
+  on-device: 072626-Sun-0737 + -0737-2). Also stored _saved_at as string for portability. (4bbb7b9)
+- [PENDING USER] Merge PR #21 (vault)? And start the Dasher trace-diagnostics idea (docs/IDEAS.md)?
