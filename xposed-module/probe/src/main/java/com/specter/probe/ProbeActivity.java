@@ -137,6 +137,19 @@ public class ProbeActivity extends Activity {
             put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
             put(o, "prop_sdk", readProp("ro.build.version.sdk"));
             put(o, "prop_first_api", readProp("ro.product.first_api_level"));
+            // These two are spoofed LATE by the native layer (init-time spoofing SIGSEGVs the zygote), so
+            // a read here at onCreate (< the ~1.5s readiness window) still shows REAL. Re-read them after a
+            // 2.5s delay on a background thread and rewrite the result file, so prop_sdk_late/first_api_late
+            // prove the deferred native spoof actually lands (what a fingerprinter reads at runtime).
+            final org.json.JSONObject oo = o;
+            new Thread(() -> {
+                try {
+                    Thread.sleep(2500);
+                    oo.put("prop_sdk_late", readProp("ro.build.version.sdk"));
+                    oo.put("prop_first_api_late", readProp("ro.product.first_api_level"));
+                    writeResult(oo.toString());   // overwrite with the post-readiness values included
+                } catch (Throwable ignored) {}
+            }).start();
             // Display metrics (getDisplayMetrics signal) — spoofed by the display hook.
             try {
                 android.util.DisplayMetrics dm = getResources().getDisplayMetrics();

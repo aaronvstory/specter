@@ -56,6 +56,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
 
 ### Fixed
+- **ro.build.version.sdk / ro.product.first_api_level now spoofed on the NATIVE path** (they leaked the
+  real device to a native fingerprinter like FingerprintJS). Adding them to the always-on native prop map
+  SIGSEGVs the zygote (ART reads them during init); fixed by a DEFERRED map that only spoofs them ~1.5s
+  after process start — past the dangerous init window, before any runtime fingerprint read. Proven
+  on-device: an early read returns real, a post-1.5s read returns the profile value; no crash.
 - **Native root/tamper detection hardened** — traced what FingerprintJS's libfp.so actually probes and
   closed the gaps a native check used to bypass the libc-function hooks: now also hook `faccessat` and
   raw `syscall(faccessat/faccessat2/newfstatat/statx)` for root paths; `is_root_path` PREFIX-matches
