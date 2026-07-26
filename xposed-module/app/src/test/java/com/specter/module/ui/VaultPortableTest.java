@@ -46,6 +46,15 @@ public final class VaultPortableTest {
         metaOnly.put("_saved_at", "99999");
         check(c1.equals(VaultChecksum.of(metaOnly)), "metadata-only change keeps the checksum");
 
+        // isShellSafePath: legit paths pass; anything with a shell metacharacter is refused (injection guard).
+        check(VaultChecksum.isShellSafePath("/sdcard/Download/specter-profile-072626_Sun_1021.json"), "normal path safe");
+        check(!VaultChecksum.isShellSafePath("/sdcard/Download/x'; rm -rf /;'.json"), "single-quote path refused");
+        check(!VaultChecksum.isShellSafePath("/sdcard/Download/$(reboot).json"), "command-subst path refused");
+        check(!VaultChecksum.isShellSafePath("/sdcard/Download/a`id`.json"), "backtick path refused");
+        check(!VaultChecksum.isShellSafePath("/sdcard/Download/a;b.json"), "semicolon path refused");
+        check(!VaultChecksum.isShellSafePath(""), "empty path refused");
+        check(!VaultChecksum.isShellSafePath(null), "null path refused");
+
         if (fails == 0) System.out.println("ALL PASS (VaultPortable)");
         else { System.out.println(fails + " FAILURE(S)"); System.exit(1); }
     }

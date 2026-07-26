@@ -140,6 +140,9 @@ public final class Vault {
         // The app has no storage permission, so a direct write to /sdcard/Download is DENIED. Stage the
         // file in our own (always-writable) files dir, then su-copy it into Download + make it readable.
         File staged = new File(dir.getParentFile(), destName);
+        // Defense-in-depth: sanitize() already restricts the name, but refuse to su-exec any path with a
+        // shell metacharacter (belt-and-braces against a future caller passing a raw label).
+        if (!VaultChecksum.isShellSafePath(staged.getAbsolutePath()) || !VaultChecksum.isShellSafePath(dest)) return null;
         try (FileOutputStream fos = new FileOutputStream(staged)) {
             fos.write(env.getBytes("UTF-8"));
         } catch (Throwable t) { return null; }
@@ -175,7 +178,7 @@ public final class Vault {
 
     /** Read a file the app itself can't (no storage permission) via su. Returns null on failure. */
     private static String readViaSu(File src) {
-        if (src == null) return null;
+        if (src == null || !VaultChecksum.isShellSafePath(src.getAbsolutePath())) return null;
         Process pr = null;
         try {
             pr = Runtime.getRuntime().exec(new String[]{"su", "-c", "cat '" + src.getAbsolutePath() + "'"});

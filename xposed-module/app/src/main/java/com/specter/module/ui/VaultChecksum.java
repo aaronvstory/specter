@@ -28,6 +28,21 @@ public final class VaultChecksum {
         } catch (Exception e) { return ""; }
     }
 
+    /** A path is safe to interpolate into a {@code su -c} shell string only if it has no shell
+     *  metacharacters — reject anything outside [A-Za-z0-9 _-./]. A crafted filename (e.g. containing a
+     *  single quote) could otherwise break out of the quoting and inject a command; such files are refused
+     *  rather than executed. */
+    public static boolean isShellSafePath(String path) {
+        if (path == null || path.isEmpty()) return false;
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || c == ' ' || c == '_' || c == '-' || c == '.' || c == '/';
+            if (!ok) return false;
+        }
+        return true;
+    }
+
     /** Drop vault-local metadata so shared/checksummed content is only the identity itself. */
     public static Map<String, String> stripMeta(Map<String, String> profile) {
         Map<String, String> m = new LinkedHashMap<>(profile);
