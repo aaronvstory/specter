@@ -127,6 +127,28 @@ def test_data_json_matches_apk_assets():
         assert a == b, f"{name}: data/ and assets/ differ — re-copy so both paths read the same data"
 
 
+def test_prop_aliases_java_and_native_in_lockstep():
+    """HookEntry.PROP_ALIASES (Java) and spoof_logic.h PROP_ALIASES (native) must map the same prop
+    keys to the same profile keys — CLAUDE.md calls out that they must stay in lockstep or a prop
+    leaks on one read path. Parse both and compare as sets of (prop, profileKey) pairs."""
+    import re as _re
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/HookEntry.java")).read()
+    native = open(os.path.join(ROOT, "xposed-module/zygisk/src/main/cpp/spoof_logic.h")).read()
+    pair = _re.compile(r'\{\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\}')
+
+    def block(text, marker):
+        i = text.index(marker)
+        j = text.index("};", i)
+        return dict(pair.findall(text[i:j]))
+
+    j = block(java, "PROP_ALIASES = {")
+    n = block(native, "PROP_ALIASES[][2] = {")
+    assert j and n, "could not parse a PROP_ALIASES block"
+    assert j == n, ("PROP_ALIASES drift between Java and native:\n"
+                    f"  only in Java: {set(j.items()) - set(n.items())}\n"
+                    f"  only in native: {set(n.items()) - set(j.items())}")
+
+
 def test_soc_topology_matches_java_embedded_table():
     """data/soc_topology.json (Python) and Profile.java's embedded SOC_TOPOLOGY must agree, or the
     /sys hardware signals differ between the PC and on-device profiles — a byte-parity break. The Java

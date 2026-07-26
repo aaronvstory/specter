@@ -119,6 +119,28 @@ FACTORY_RESET_MAX_DAYS_AFTER_PATCH = 540   # ~18 months: a plausible ownership w
 SECONDS_PER_DAY = 86400
 
 
+# Android release -> API level (Build.VERSION.SDK_INT / ro.build.version.sdk). A profile that claims
+# Android 9 must not report SDK 30 (the real Pixel 4) — that mismatch is itself a fingerprint. Pure
+# function of the release string (no RNG), so Java mirrors it byte-for-byte. Handles "10"/"11" and
+# older "9"/"8.1.0" forms; unknown -> a safe modern default.
+_SDK_BY_RELEASE = {
+    "15": 35, "14": 34, "13": 33, "12L": 32, "12": 31, "11": 30, "10": 29,
+    "9": 28, "8.1.0": 27, "8.1": 27, "8.0.0": 26, "8.0": 26, "7.1.2": 25,
+    "7.1.1": 25, "7.1": 25, "7.0": 24, "6.0.1": 23, "6.0": 23, "5.1.1": 22,
+    "5.1": 22, "5.0.1": 21, "5.0": 21,
+}
+
+
+def sdk_for_release(release):
+    """API level for an Android release string. Falls back on the major version, then 30."""
+    if not release:
+        return 30
+    if release in _SDK_BY_RELEASE:
+        return _SDK_BY_RELEASE[release]
+    major = release.split(".")[0]
+    return _SDK_BY_RELEASE.get(major, 30)
+
+
 def factory_reset_epoch(r, security_patch=None):
     """Unix seconds of a plausible factory reset. Mirrors Java factoryResetEpoch.
 

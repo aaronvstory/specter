@@ -123,6 +123,18 @@ public class HookEntry implements IXposedHookLoadPackage {
         setVersion("RELEASE", p.get("build_release"));
         setVersion("INCREMENTAL", p.get("build_incremental"));
         setVersion("SECURITY_PATCH", p.get("build_security_patch"));
+        // Build.VERSION.SDK_INT is an int field — a claimed Android 9 must report SDK 28, not the real
+        // device's 30. setStaticObjectField can't set a primitive int, so use plain reflection.
+        String sdk = p.get("build_sdk");
+        if (sdk != null) {
+            try {
+                java.lang.reflect.Field f = Build.VERSION.class.getField("SDK_INT");
+                f.setAccessible(true);
+                f.setInt(null, Integer.parseInt(sdk));
+            } catch (Throwable ignored) {}
+            // SDK is also exposed as a String field/prop; cover the String field too.
+            setVersion("SDK", sdk);
+        }
     }
 
     private void setVersion(String field, String val) {

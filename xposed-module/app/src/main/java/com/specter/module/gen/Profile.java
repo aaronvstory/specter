@@ -50,6 +50,8 @@ public final class Profile {
             // Per-SoC /sys signals (cpu_capacity vector, KGSL gpu_model, cpu present range) — appended
             // LAST, same order as profile.py's _soc_topology_fields(), byte-parity in lockstep.
             "cpu_capacity", "gpu_model", "cpu_present",
+            // API level coherent with the Android release — appended last (matches profile.py).
+            "build_sdk",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -225,6 +227,9 @@ public final class Profile {
         // profile.py _soc_topology_fields(). Embedded table (SOC_TOPOLOGY) — same values as
         // data/soc_topology.json — so no extra asset load and both sides stay in lockstep.
         p.putAll(socTopologyFields(p.get("soc_platform")));
+        // API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
+        // ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
+        p.put("build_sdk", String.valueOf(Generators.sdkForRelease(release)));
         return p;
     }
 

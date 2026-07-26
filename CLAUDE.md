@@ -64,6 +64,8 @@ spoofed one. Closing that needs a root `resetprop` layer (not built yet — see 
 for testing: `getprop` via exec is a FALSE proxy (separate unhooked process, always shows real). The
 dual-read probe (`probe/src/main/cpp/native-probe.cpp`, NDK 27) is the correct instrument.
 
+**NEVER add `ro.build.version.sdk` / `ro.product.first_api_level` to the NATIVE PROP_ALIASES — it SIGSEGVs the zygote.** These props are read by ART/libc DURING process initialization, before our `__system_property_get` hook state is safe; intercepting them crashes every hooked app at startup (proven 2026-07-26: probe + FPJS demo both zygote64 SIGSEGV, `props=33`). Spoof the SDK via the Java layer ONLY (`Build.VERSION.SDK_INT` reflection + the `SystemProperties.get` Java hook), which runs after init. Corollary: an app that reads `ro.build.version.sdk` NATIVELY will still see the real value — accept that; do not chase it into the native prop layer.
+
 ## FPJS measurement — Server API (the ground-truth tool, set up 2026-07-26)
 The FPJS *demo* app's on-screen visitorId is a weak proxy; the **Server API** gives the raw server-side
 signals (what FPJS actually saw), which is how the UA-leak root cause was found. Setup already done:

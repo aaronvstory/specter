@@ -115,6 +115,9 @@ public class ProbeActivity extends Activity {
             put(o, "sys_cpu_present", readFileTrim("/sys/devices/system/cpu/present"));
             put(o, "sys_gpu_model", readFileTrim("/sys/class/kgsl/kgsl-3d0/gpu_model"));
             put(o, "proc_version", readFileTrim("/proc/version"));
+            put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
+            put(o, "prop_sdk", readProp("ro.build.version.sdk"));
+            put(o, "prop_first_api", readProp("ro.product.first_api_level"));
 
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }
@@ -357,6 +360,15 @@ public class ProbeActivity extends Activity {
 
     private void put(JSONObject o, String k, String v) {
         try { o.put(k, v == null ? "null" : v); } catch (Throwable ignored) {}
+    }
+
+    // Read a system property via the Java SystemProperties.get (the hooked path).
+    private static String readProp(String key) {
+        try {
+            java.lang.reflect.Method get = Class.forName("android.os.SystemProperties")
+                    .getMethod("get", String.class);
+            return String.valueOf(get.invoke(null, key));
+        } catch (Throwable t) { return "ERR:" + t; }
     }
 
     // Read a small sysfs/procfs node and trim it. Routes through libc, so the native redirect applies.

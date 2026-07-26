@@ -217,3 +217,9 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   no new RNG draw and byte-parity holds. Java embeds the table (not an asset) to avoid an extra asset
   load; a parity test asserts the JSON and the embedded map agree. gpu_model empty for Exynos is correct
   (no KGSL node). The probe reads these back (native redirect applies to its libc reads) as the gate.
+- **2026-07-26 · SDK level spoofed via Java Build.VERSION.SDK_INT ONLY, never the native prop layer** —
+  adding ro.build.version.sdk / ro.product.first_api_level to the native PROP_ALIASES SIGSEGVs the
+  zygote (ART/libc read these during process init, before the __system_property_get hook is safe;
+  proven on-device: probe + demo both crash, props=33). The Java field hook runs after init and is safe.
+  Accepted limitation: an app reading ro.build.version.sdk NATIVELY still sees the real value — not
+  worth chasing into the crash. build_sdk is a pure release->API lookup (byte-parity mirrored in Java).

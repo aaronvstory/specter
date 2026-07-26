@@ -271,6 +271,9 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # Per-SoC CPU-capacity vector + GPU model — the /sys hardware signals FPJS reads directly.
     # Keyed on the already-computed soc_platform; pure constant, no RNG (byte-parity safe).
     p.update(_soc_topology_fields(p["soc_platform"]))
+    # API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
+    # ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
+    p["build_sdk"] = str(G.sdk_for_release(release))
     return p
 
 

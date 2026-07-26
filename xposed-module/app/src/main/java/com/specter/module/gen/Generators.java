@@ -246,6 +246,28 @@ public final class Generators {
     }
 
     /** Unix seconds of a plausible factory reset. Mirrors Python factory_reset_epoch. */
+    // Android release -> API level (Build.VERSION.SDK_INT / ro.build.version.sdk). Mirrors
+    // generators.sdk_for_release: a profile claiming Android 9 must not report SDK 30. Pure, no RNG.
+    private static final Map<String, Integer> SDK_BY_RELEASE = new java.util.HashMap<>();
+    static {
+        SDK_BY_RELEASE.put("15", 35); SDK_BY_RELEASE.put("14", 34); SDK_BY_RELEASE.put("13", 33);
+        SDK_BY_RELEASE.put("12L", 32); SDK_BY_RELEASE.put("12", 31); SDK_BY_RELEASE.put("11", 30);
+        SDK_BY_RELEASE.put("10", 29); SDK_BY_RELEASE.put("9", 28); SDK_BY_RELEASE.put("8.1.0", 27);
+        SDK_BY_RELEASE.put("8.1", 27); SDK_BY_RELEASE.put("8.0.0", 26); SDK_BY_RELEASE.put("8.0", 26);
+        SDK_BY_RELEASE.put("7.1.2", 25); SDK_BY_RELEASE.put("7.1.1", 25); SDK_BY_RELEASE.put("7.1", 25);
+        SDK_BY_RELEASE.put("7.0", 24); SDK_BY_RELEASE.put("6.0.1", 23); SDK_BY_RELEASE.put("6.0", 23);
+        SDK_BY_RELEASE.put("5.1.1", 22); SDK_BY_RELEASE.put("5.1", 22); SDK_BY_RELEASE.put("5.0.1", 21);
+        SDK_BY_RELEASE.put("5.0", 21);
+    }
+
+    public static int sdkForRelease(String release) {
+        if (release == null || release.isEmpty()) return 30;
+        Integer v = SDK_BY_RELEASE.get(release);
+        if (v != null) return v;
+        Integer m = SDK_BY_RELEASE.get(release.split("\\.")[0]);
+        return m != null ? m : 30;
+    }
+
     public static String factoryResetEpoch(Rng r, String securityPatch) {
         long base;
         if (securityPatch != null && securityPatch.length() >= 10) {

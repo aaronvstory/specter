@@ -18,6 +18,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
 ### Added
+- **`Build.VERSION.SDK_INT` spoofed coherent with the Android release.** A profile claiming Android 9
+  used to still report SDK 30 (the real Pixel 4) via `Build.VERSION.SDK_INT` — a mismatch that is itself
+  a fingerprint. New `build_sdk` profile field (release -> API level, pure lookup, byte-parity mirrored
+  in Java's `sdkForRelease`) drives a reflection write to the int field. Verified: an Android-10 profile
+  reports SDK_INT 29. NOTE: `ro.build.version.sdk` is spoofed via Java only, NOT the native prop layer —
+  intercepting it natively SIGSEGVs the zygote (ART reads it during init); documented in CLAUDE.md.
 - **`/proc/version` kernel banner spoofed (closes a byedentity-comparison gap).** Specter spoofed the
   `os.version` property but a direct `/proc/version` read got the REAL kernel (the Pixel 4's
   `4.14.212-...`). The Zygisk layer now redirects `/proc/version` to a banner rebuilt from the profile's
