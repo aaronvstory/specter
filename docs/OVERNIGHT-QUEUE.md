@@ -220,3 +220,9 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   code-review fixes — so the user can review + decide merge with full context.
 - [VERIFIED] Profiles persist across reboot (/data/local/tmp/specter survives; hooks re-read on each app
   launch) — accounts don't leak the real device after a restart. Already proven by many reboots this run.
+- [FINDING] Traced rootApps=True (aa71828): the demo probes ONLY /proc/self/maps for root (no su/magisk
+  path checks), and the demo's LIVE maps are CLEAN — no magisk/zygisk/lsposed/specter (DenyList hides our
+  libs), only standard ART jit-cache memfd mappings. So rootApps=True is server-side classification /
+  sticky shared-workspace history, NOT a live client signal flippable from here. Should read false in the
+  user's clean workspace with hiding active from the first identification. (maps-cleaning was tried+reverted
+  earlier: ART reads its own maps during GC and crashes on a filtered copy; unneeded — maps already clean.)
