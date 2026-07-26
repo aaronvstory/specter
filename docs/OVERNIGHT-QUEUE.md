@@ -204,3 +204,8 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   (2) getInstallerPackageName threw the checked NameNotFoundException it doesn't declare — now returns
   null (its real not-found value). FNV hash / KEYS / SOC_TOPOLOGY / MODEL-DEVICE / sysfs / display / gates
   all reviewed + confirmed correct. Kilo bot FAILURE = infra error ("Assistant request failed"), not code.
+- [done] 2nd code review (UI/probe/native) found 1 real bug, fixed (15eebbc): probe readFileTrim leaked
+  the FileInputStream on a read error (sysfs gpu_model/cpu_capacity can EIO mid-read) — try-with-resources.
+  Reviewer confirmed the Protections UI (toggles/chips/applyGates), main.cpp gate+redirect, and split-test
+  script all correct. TWO review passes total: 3 real bugs found+fixed (SDK coherence, installer exception,
+  fd leak), everything else verified correct. PR #20 is thoroughly vetted + merge-ready.
