@@ -6,11 +6,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
-- **Google-account + media-codec spoofing are OPT-IN (default OFF)** — both can break the target app
-  (a fabricated Google account fails sign-in; a relabeled codec name fails createByCodecName), so they
-  are now Settings protections the user enables knowingly, never on by default. Account masking also no
-  longer FABRICATES an account — it relabels the REAL com.google account's name in place (auth paths keep
-  resolving a genuine account) and invents nothing when the device has none. Fleet apps are safe by default.
+- **Diagnostics logging** — a Settings toggle (default OFF) that continuously captures what each
+  Specter-scoped app READS (props/files/IDs, via the SpecterTrace trace) and the value returned, to
+  /data/local/tmp/specter/diag.log (rotating, 32MB cap). A background foreground-service runs
+  `logcat -f`; the file is adb-pullable so you can verify spoofs are landing as you use it — no manual
+  export. READ-ONLY (applies nothing; safe on any scoped app).
+- **Google-account + media-codec spoofing default ON, individually toggleable.** Leaving the REAL device
+  Gmail / real OMX.qcom.* codec set visible to a scoped app is itself a spoofing leak, so both mask by
+  default like every other signal. Gmail's control is its inline switch on the Identity tab (next to its
+  value); codecs' toggle is in Settings. Account masking relabels the REAL com.google account's name in
+  place (never fabricates — so app logins with their own credentials are unaffected; only a Google-SSO
+  account-picker would notice). Turn either off for a specific target only if that app misbehaves.
 - **Media-codec list spoofing** (`MediaCodecList.getCodecInfos`). The codec-name set (e.g.
   `OMX.qcom.video.decoder.avc` reveals Qualcomm) is a stable per-SoC signal that was GENERATED into
   every profile (`hw_codecs`) but never applied â the real ~40-codec device list leaked (the probe only

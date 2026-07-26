@@ -12,6 +12,9 @@ final class Toggles {
 
     static boolean isEnabled(SharedPreferences prefs, String key) {
         if (key.startsWith("build_")) key = "build_manufacturer"; // one switch for the device bundle
+        // Everything defaults ON — leaking a REAL value (e.g. the device Gmail) to a scoped app is itself
+        // a spoofing failure, so we mask by default. Each identifier stays individually toggleable if a
+        // specific target app misbehaves.
         return prefs.getBoolean("id_on_" + key, true);
     }
 

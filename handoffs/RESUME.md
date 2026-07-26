@@ -25,38 +25,33 @@ reads the applied values back; we compare the values reported across two applied
 - **Safety (non-negotiable):** on-device work targets ONLY the probe/test apps and the vendor sample app.
   Never scope, apply, or test against the income apps listed in `CLAUDE.md`.
 
-## Current state (2026-07-26, updated) — client work COMPLETE, one user-gated step remains
-**FIRST READ `docs/OVERNIGHT-QUEUE.md` (progress log at the bottom) and
-`handoffs/2026-07-26_signal-coverage-complete-server-bucket-blocker.md`.** Everything below is on branch
-`feat/ua-spoof` / PR #20 (mergeable, all tests green, two code-review passes done).
+## Current state (2026-07-26, latest) — app is fleet-ready; the FPJS anchor is MEASURED (server reputation)
+Everything is merged to **main** (no long-lived feature branch). Recent PRs: #20 (0.5.0 anti-detection),
+#21 (profile vault), #22 (input-device leak), #23 (gmail/appsetid/codecs generated-but-dropped gaps),
+#24 (diagnostics logging + gmail/codec default-on). Read `docs/OVERNIGHT-QUEUE.md`,
+`docs/ANTI-FINGERPRINT-STRATEGY.md` (newest sections first), and `docs/DECISIONS.md` for the full trail.
 
-**What shipped (all verified on the probe):** UA spoof (the proven anchor), the inverted MODEL/DEVICE
-column fix, APK install-mtime (FileTimestamps), installed-app hiding, per-SoC /sys cpu_capacity+gpu_model+
-present, /proc/version kernel banner, Build.VERSION.SDK_INT, display metrics (getDisplayMetrics), the full
-sensor tuple (name+vendor+resolution+maxRange+power), MediaDrm deviceUniqueId — plus a polished Protections
-UI with REAL gate-verified toggles. Native `__system_property_get` parity is CLOSED (probe dual-read shows
-_java==_native for every aliased prop) — Specter now matches byedentity's one former edge.
+**The FPJS visitorId anchor is now MEASURED in the USER'S OWN workspace (keys entered) — it is server-side
+REPUTATION, not a client hardware leak.** Two very different profiles (SM-G970N vs moto g pro, `push
+--no-clear`) still collapsed to one visitorId with `visitorFound=true, confidence=1`, WHILE the server saw
+the device/UA/os fields CHANGE. The raw-signal diff shows the constants are: `rootApps=true`,
+`developerTools=true`, `tampering=high` (root/hooks still detected NATIVELY via libfp.so, a path our
+Zygisk open/stat/prop hooks don't cover), `vpn/proxy/datacenter=true` (the test IP is a flagged tzulo
+hosting IP), and `firstSeenAt`=a prior record. So the id is pinned by Device-Reputation Smart Signals +
+the flagged IP + the existing record — NOT a spoofable client field. The client spoof itself works (the
+server saw the spoofed device). Secret key (AP/Mumbai) for reading events: see
+`docs/DECISIONS.md`/handoffs. The next real lever is the native libfp.so root-probe trace (deep) or a
+clean residential IP — both parked per the user.
 
-**The FPJS visitorId does NOT split in the demo's SHARED public workspace — and that is PROVEN not to be a
-client leak.** The definitive test: pushed IMPOSSIBLE-garbage device values that VERIFIABLY reached the SDK
-(the demo rebuilt its UA as "EXTREME-TEST-9000") — the id did not move. Also: the fully UNSPOOFED real
-device gets the same id; deleting the SDK's entire cache/keystore/external-data doesn't change it. So the
-shared demo workspace ignores client device signals entirely (it's a coarse per-IP/per-device bucket). Do
-NOT keep attacking it — that's settled.
+**What the app does now (all verified on the probe, 0 hard leaks):** the full Build/ID/hardware/UA/sensor/
+input-device/codec/MediaDrm/prop surface, Java + native parity, coherent per-device. Vault (save/restore/
+search). Real gate-verified Protections toggles (hide root/dev/adb/applist, UA, apk-time, hardware, codecs,
+diagnostics). Gmail + App Set ID applied. Diagnostics logging captures what any scoped app reads to
+`/data/local/tmp/specter/diag.log` (adb-pullable). Fleet-safe: never scopes/applies to income apps.
 
-**THE ONE REMAINING STEP (user-gated, unscriptable):** a valid split test needs the USER's own FPJS
-workspace. `pm clear`/`rotate` wipes the demo's user API keys (encrypted, device-bound prefs), dropping
-into the shared workspace. The user must, ONCE, open the demo -> Settings -> "Use your API keys" = ON ->
-paste the Public key. THEN run: **`python scripts/fpjs_split_test.py`** — it applies two different profiles
-with `push --no-clear`, identifies each, and reports WIN (ids differ) or SAME. Every client signal is
-already spoofed to make the split succeed in a real workspace.
-
-## If you're a fresh session with NOTHING new to do on the gate
-The client-side engineering is complete and exhaustively verified (3 independent proofs: garbage test,
-native dual-read, persistence audit). Don't manufacture marginal work. Useful things you CAN do: respond
-to genuine new findings, run more adversarial `code-reviewer` passes on any new code, keep the UI polished,
-or — only if the user asks — squash-merge PR #20 (it's a large FPJS-research PR; the user should review it
-first, so do NOT auto-merge without their go-ahead).
+## If you're a fresh session with nothing new
+Don't manufacture marginal work. Advance the next `docs/IDEAS.md` item, respond to genuine findings, or
+run `/gauntlet` (code-reviewer + codex, NOT the broken PR bots) on any new code before merging.
 
 ## Context you'll want
 - Progress log + full findings: `docs/OVERNIGHT-QUEUE.md`, `docs/ANTI-FINGERPRINT-STRATEGY.md`,

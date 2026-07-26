@@ -47,13 +47,27 @@ public final class Protections {
         new P("spoof_ua",      "Spoof User-Agent",   "Rebuilds the HTTP + WebView User-Agent from the applied device, so the UA no longer leaks the real phone."),
         new P("spoof_apktime", "Spoof install time", "Rewrites the app's own APK install timestamps to a per-identity value (the FingerprintJS FileTimestamps signal)."),
         new P("spoof_sysfs",   "Spoof hardware profile", "Aligns the deep hardware signature with the applied device: /sys cpu_capacity, gpu_model and present, plus /proc/version and the screen resolution/density (getDisplayMetrics)."),
-        // OPT-IN (default OFF) — these can break the target app, so the user must enable them knowingly.
-        new P("spoof_accounts", "Spoof Google account", "Masks the Google account email a target app reads from AccountManager. OFF by default: an app that signs in with the Google account may fail, so enable only for apps that just read the account for tracking.", false),
-        new P("spoof_codecs",   "Spoof media codecs", "Relabels the media-codec list (a per-SoC signal). OFF by default: an app that creates a codec by name may fail playback, so enable only when the target doesn't rely on media codecs.", false),
+        // Media codecs have no single identity value, so their toggle lives here (not in the Identity
+        // list). Default ON like the other hardware spoofs — leaving the real OMX.qcom.* codec set is a
+        // per-SoC leak. Toggleable per-app: the only apps this could affect are ones that create a codec
+        // by its (now-relabeled) name, so turn it off for a specific target only if media playback breaks.
+        // (Google-account masking's toggle lives on the Gmail row in the Identity tab, next to its value.)
+        new P("spoof_codecs",   "Spoof media codecs", "Relabels the media-codec list (a per-SoC signal that otherwise leaks the real SoC). On by default. If a specific app's media playback breaks, turn it off just for that app.", true),
+        // OPT-IN diagnostics (default OFF). READ-ONLY — makes the hooks LOG what each scoped app reads +
+        // what value we returned, to /data/local/tmp/specter/diag.log (via a background logcat capture).
+        // Changes NOTHING the app sees, so it's safe; a slight perf/log cost is why it's off by default.
+        new P("trace",          "Diagnostics logging", "Logs what each Specter-scoped app READS (props, files, IDs) and the value returned, to /data/local/tmp/specter/diag.log — so you can verify spoofs are landing. Read-only: applies nothing. Off by default (perf/log cost).", false),
     };
+
+    /** Look up a protection by its gate key (e.g. "trace"). Returns null if unknown. */
+    public static P byKey(String gateKey) {
+        for (P p : ALL) if (p.gateKey.equals(gateKey)) return p;
+        return null;
+    }
 
     /** The toggle's current state — defaults to the protection's defaultOn. */
     public static boolean isOn(SharedPreferences prefs, P p) {
+        if (p == null) return false;
         return prefs.getBoolean(p.prefKey, p.defaultOn);
     }
 

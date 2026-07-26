@@ -36,11 +36,13 @@ final class IdentityFields {
             new Field("mobile_number", "Phone number", true),
             new Field("sim_subscriber_imsi", "IMSI", true),
             new Field("sim_serial_iccid", "SIM serial (ICCID)", true),
-            new Field("app_set_id", "App Set ID", true)
-            // NOTE: "gmail" is intentionally NOT here — Google-account masking is an OPT-IN protection
-            // (Settings → "Spoof Google account", default OFF) because it can break app sign-in. It is
-            // still generated into every profile, but only APPLIED when that protection is enabled. Keeping
-            // it out of this always-applied identifier list is what makes the UI honest (no false coverage).
+            new Field("app_set_id", "App Set ID", true),
+            // Gmail shows its generated value here (see/edit/randomize it) with an inline switch that,
+            // like every identifier, defaults ON — leaving the REAL device Gmail visible to a scoped app
+            // is itself a spoofing leak, so we mask by default. Turn the switch OFF for a specific app
+            // only if that app's Google-SSO account-picker misbehaves (app logins with their own
+            // credentials are unaffected).
+            new Field("gmail", "Gmail", true)
     );
 
     /** Device-simulation (Build.*) fields — shown read-only, rotated as a coherent bundle. */

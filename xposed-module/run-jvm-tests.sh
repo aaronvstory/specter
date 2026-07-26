@@ -19,11 +19,14 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
     app/src/main/java/com/specter/module/gen/Profile.java \
     app/src/main/java/com/specter/module/gen/UsedStore.java \
     app/src/main/java/com/specter/module/gen/RootWriter.java \
+    app/src/main/java/com/specter/module/ui/DiagnosticsCmd.java \
     app/src/test/java/com/specter/module/SpoofLogicTest.java \
     app/src/test/java/com/specter/module/gen/GeneratorsTest.java \
     app/src/test/java/com/specter/module/gen/ProfileTest.java \
-    app/src/test/java/com/specter/module/gen/RootWriterTest.java
+    app/src/test/java/com/specter/module/gen/RootWriterTest.java \
+    app/src/test/java/com/specter/module/ui/DiagnosticsCmdTest.java
 "$JAVA" -cp "$OUT" com.specter.module.SpoofLogicTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.GeneratorsTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.ProfileTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.RootWriterTest
+"$JAVA" -cp "$OUT" com.specter.module.ui.DiagnosticsCmdTest
