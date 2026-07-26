@@ -181,3 +181,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   move id), external app data (empty), keystore (no FPJS alias), factory-reset mtimes (spoofed). With the
   garbage test + native dual-read, the client-side investigation is 100% closed. The shared-workspace id
   is not client-derived by ANY mechanism. Coherence re-verified across 500 profiles + DevInfo.
+- [done] Cut 0.5.0 release in CHANGELOG (147ffb4) + full merge-readiness verification: 32 commits, tests
+  green (Python 108 / JVM 61,606), clean tree, 0 nul files, EOL intact on all CRLF+LF files, PR #20
+  mergeable, clean-build confirmed on-device. The PR is production-ready.
+- [COMPLETE] The autonomous engineering work is DONE. Every client signal spoofed+proven (garbage test,
+  native dual-read, persistence audit — 3 independent proofs), coherence verified (500 profiles + DevInfo),
+  breadth matches/exceeds geergit+byedentity, UI polished w/ gate-verified toggles, split-test tool ready.
+  The ONLY open item is user-gated: re-enter demo keys, run scripts/fpjs_split_test.py.
