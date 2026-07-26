@@ -318,3 +318,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   isFromMockProvider/isMock -> false for scoped targets (Incognia/SEON driver-fraud tell), gated hide_root.
   NEXT: make the Location tab honest (mock-hide is now real), then boot-time/uptime + camera/battery breadth,
   then the IDEAS backlog.
+
+- [2026-07-27 AFK STATUS] Shipped this session (main, 0.5.0->0.7.2): live-trace viewer + verifiedboot props
+  + SENSORID (flagship, proven) + locale/tz coherence (proven) + mock-location hide + Identity spec-sheet
+  + compact id cards + honest Location tab. Codex gauntlet ran on each risky change (locale/tz: found+fixed
+  a country-arg parity bug post-merge). Both test suites green throughout, EOL clean, byte-parity intact.
+  Priorities 1 (polish) + 2 (FPJS breadth) substantially done. NEXT: priority 3 = IDEAS backlog, starting
+  with vault export/import (most contained), then custom-field editing, then non-root harvest/specter-lite.
