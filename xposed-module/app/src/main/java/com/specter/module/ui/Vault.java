@@ -70,10 +70,16 @@ public final class Vault {
 
     /** Save {@code profile} under a label derived from {@code name}. Returns the label used. */
     public String save(String name, Map<String, String> profile) {
-        String label = makeLabel(name);
+        String base = makeLabel(name);
+        // Disambiguate on collision: two saves in the same minute with no custom name share a label, and
+        // would silently overwrite. Append -2, -3, ... until the filename is free.
+        String label = base;
+        for (int i = 2; new File(dir, label + ".json").exists() && i < 1000; i++) label = base + "-" + i;
         try {
             JSONObject j = new JSONObject(IdentityService.toJson(profile));
-            j.put("_saved_at", System.currentTimeMillis());
+            // Store as a STRING so it round-trips through the strict Map<String,String> readMap loop on
+            // any org.json impl (Android's getString coerces numbers, but string keeps it portable).
+            j.put("_saved_at", String.valueOf(System.currentTimeMillis()));
             File f = new File(dir, label + ".json");
             try (FileOutputStream out = new FileOutputStream(f)) {
                 out.write(j.toString().getBytes("UTF-8"));
