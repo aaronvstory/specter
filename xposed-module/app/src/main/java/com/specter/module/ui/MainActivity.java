@@ -349,9 +349,65 @@ public class MainActivity extends Activity {
         // spoofing is always in view alongside its identifiers.
         content.addView(targetHeader());
         content.addView(sectionLabel("Device simulation"));
-        for (IdentityFields.Field f : IdentityFields.DEVICE) content.addView(deviceRow(f));
+        content.addView(deviceSpecCard());
         content.addView(sectionLabel("Identifiers"));
         for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
+    }
+
+    /** The device fields (manufacturer/model/brand/device/fingerprint/carrier) as ONE compact spec-sheet
+     *  card: a tight label-left / value-right row per field with hairline separators, instead of a bulky
+     *  full card each. Reads like a real device-info panel and cuts the scroll dramatically. Long values
+     *  (the fingerprint) wrap under a full-width value line. Tapping a row opens the field editor (custom
+     *  values — you can clone a specific device, not just randomize). */
+    private View deviceSpecCard() {
+        LinearLayout card = cardBox();
+        card.setPadding(dp(12), dp(4), dp(12), dp(4));
+        List<IdentityFields.Field> fields = IdentityFields.DEVICE;
+        for (int i = 0; i < fields.size(); i++) {
+            final IdentityFields.Field f = fields.get(i);
+            final String v = profile.get(f.key);
+            boolean longValue = v != null && v.length() > 24;   // fingerprint etc. -> stacked, full width
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(longValue ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+            if (!longValue) row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(9), 0, dp(9));
+
+            TextView lab = new TextView(this);
+            lab.setText(f.label);
+            lab.setTextColor(Theme.DIM);
+            lab.setTextSize(13);
+            final TextView val = new TextView(this);
+            val.setText(v == null ? "—" : v);
+            val.setTextColor(Theme.INK);
+            val.setTextSize(14);
+            val.setTextIsSelectable(true);
+            if (longValue) {
+                val.setTypeface(android.graphics.Typeface.MONOSPACE);
+                val.setTextSize(12);
+                val.setPadding(0, dp(3), 0, 0);
+                row.addView(lab); row.addView(val);
+            } else {
+                lab.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                val.setGravity(Gravity.END);
+                row.addView(lab); row.addView(val);
+            }
+            row.setOnClickListener(x -> {
+                if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
+                editField(f, val);
+            });
+            card.addView(row);
+            if (i < fields.size() - 1) card.addView(hairline());
+        }
+        return card;
+    }
+
+    /** A 1px separator line in the theme's hairline color, for spec-sheet rows. */
+    private View hairline() {
+        View v = new View(this);
+        v.setBackgroundColor(Theme.LINE);
+        v.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        return v;
     }
 
     /** Target-app section (Identity tab): a header row (label + Change) followed by one SEPARATED card
@@ -456,13 +512,6 @@ public class MainActivity extends Activity {
         t.setLetterSpacing(0.12f);
         t.setPadding(dp(4), dp(14), dp(4), dp(4));
         return t;
-    }
-
-    private View deviceRow(IdentityFields.Field f) {
-        LinearLayout card = cardBox();
-        card.addView(label(f.label));
-        card.addView(value(profile.get(f.key)));
-        return card;
     }
 
     private View identifierCard(final IdentityFields.Field f) {
