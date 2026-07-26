@@ -400,3 +400,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   NOTE: caught a stale-profile-read artifact — a rotate's file wasn't what the probe first read (the OLD
   A715F w/o the new fields); a second rotate wrote correctly. All new signals confirmed working. NEXT:
   empirical audit — run FPJS demo (scoped) with trace, check every read is covered.
+
+- [2026-07-27 AFK iter] EMPIRICAL AUDIT WIN: ran the FPJS demo scoped with trace=1 (90k-line trace),
+  cross-checked every prop + file read vs our hooks. Found the demo reads /proc/meminfo DIRECTLY — its
+  MemTotal leaked the real 5.6GB Pixel 4 RAM (ActivityManager.totalMem was spoofed but the FILE wasn't).
+  FIXED (0.9.3): native /proc/meminfo redirect to a spoof file (MemTotal from total_ram, reusing
+  g_sys_redirect). PROVEN: real 5,596,800 kB -> app reads 11,701,248 kB. Everything else the demo reads
+  was already covered. This is the value of trace-driven auditing vs a static hook list.
