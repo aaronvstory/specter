@@ -249,3 +249,7 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   filter confirmed NOT over-filtering (no legit mount line matches the frida/gadget markers; 112 mounts,
   only ~5 magisk dropped). Both remaining server smart-signals (rootApps, developerTools) are fully handled
   on the client read path; any True is server-side history in the shared demo workspace.
+
+- [done] UI (9e5e92b): Hide root description now accurately reflects the new mount-filtering + Frida hiding
+  (both were already gated by the toggle; the description was stale). Verified rendering on-device — all 6
+  Protections toggles render cleanly with accurate descriptions + ON status chips.
