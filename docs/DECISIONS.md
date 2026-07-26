@@ -223,3 +223,8 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   proven on-device: probe + demo both crash, props=33). The Java field hook runs after init and is safe.
   Accepted limitation: an app reading ro.build.version.sdk NATIVELY still sees the real value — not
   worth chasing into the crash. build_sdk is a pure release->API lookup (byte-parity mirrored in Java).
+- **2026-07-26 · Protection toggles verified REAL end-to-end (no-fake-UI invariant)** — on-device matrix:
+  spoof_ua=0 -> UA hook skipped (no [specter] UA log); hide_apps=0 -> installed_sensitive_leak shows
+  com.specter.probe (leaks); spoof_sysfs=0 -> sys_cpu_capacity0 reads the REAL 261. Each toggle's OFF
+  state leaves the corresponding signal REAL, proving the switch changes what the device reports (the gate
+  key flows profile -> Java/native hook -> skipped). Default is ON for every protection.
