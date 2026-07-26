@@ -98,3 +98,7 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   not yet closed: SELinux enforce (/sys/fs/selinux/enforce reads 1 — a tamper hint), display metrics,
   system features (PackageManager.getSystemAvailableFeatures), fonts, and any Settings.Secure/Global stable
   values C0460f2 reads. Then more breadth spoofs (frida/clonedApp/vm hardening) to surpass geergit/byedentity.
+- [done] Build.VERSION.SDK_INT spoof coherent w/ release (03adb94) — probe: Android-10 -> SDK 29.
+  HARD GOTCHA found+documented: ro.build.version.sdk in NATIVE PROP_ALIASES SIGSEGVs the zygote (ART
+  reads it at init). SDK spoofed via Java only. Added Java<->native PROP_ALIASES lockstep test.
+- [done] /proc/version kernel banner redirect verified (real 4.14.212 gone).
