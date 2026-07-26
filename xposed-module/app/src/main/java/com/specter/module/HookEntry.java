@@ -47,6 +47,9 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookWifi(lpparam, p);
         hookBluetooth(lpparam, p);
         hookAdvertisingId(lpparam, p);
+        hookAppSetId(lpparam, p);
+        hookAccounts(lpparam, p);
+        hookCodecs(lpparam, p);
         hookGsf(lpparam, p);
         hookMediaDrm(lpparam, p);
         hookSystemProperties(p);
@@ -886,6 +889,108 @@ public class HookEntry implements IXposedHookLoadPackage {
         }
         // Belt-and-suspenders: also force Info.getId to our value.
         if (info != null) rc(info, "getId", adid);
+    }
+
+    // ---- App Set ID (com.google.android.gms.appset.AppSetIdInfo.getId) ----
+    // A per-app-scoped install id apps read for analytics. The value comes from an async Task, but the
+    // final read is AppSetIdInfo.getId() â hook it to return the profile's app_set_id. (No dedicated
+    // factory hook needed: unlike the ad-id Info, getId() here is the single value accessor.)
+    private void hookAppSetId(XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String asid = p.get("app_set_id");
+        if (asid == null) return;
+        Class<?> info = XposedHelpers.findClassIfExists(
+            "com.google.android.gms.appset.AppSetIdInfo", lp.classLoader);
+        if (info != null) rc(info, "getId", asid);
+    }
+
+    // ---- Google account (AccountManager) â the real Gmail links accounts across apps ----
+    // A fingerprinter reads AccountManager.getAccountsByType("com.google")/getAccounts() to see the
+    // device's Google account(s). Left real, that email is a strong cross-app/cross-account linker.
+    // We rewrite the com.google entries in the RETURNED Account list to the profile's gmail (keeping
+    // any other account types intact), and answer getAccountsByType("com.google") with just it.
+    // Scope note: this is per-app (LSPosed scope) and only rewrites the ENUMERATION result â auth-token
+    // paths (getAuthToken) are NOT touched, so an app that merely reads the account name sees the spoof
+    // while we don't fabricate credentials. Masking model, same as GeerGit.
+    private void hookAccounts(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        // OPT-IN (default OFF): account masking can break Google sign-in for an app that passes the
+        // enumerated account into a token API (codex HIGH). Only active when the user explicitly enables
+        // "Spoof Google account" (profile spoof_accounts="1"). Fleet apps never hit this by default.
+        if (!"1".equals(p.get("spoof_accounts"))) return;
+        final String email = p.get("gmail");
+        if (email == null || email.isEmpty()) return;
+        final Class<?> am = XposedHelpers.findClassIfExists("android.accounts.AccountManager", lp.classLoader);
+        final Class<?> acct = XposedHelpers.findClassIfExists("android.accounts.Account", lp.classLoader);
+        if (am == null || acct == null) return;
+        // FLEET-SAFE approach (codex HIGH): do NOT fabricate a fake Account â an app that passes the
+        // enumerated Account into a token/credential API would get a rejection (fake account isn't in
+        // AccountManager), which can break Google sign-in. Instead we relabel the NAME field of the
+        // REAL com.google account in place (Account.name is final; set via reflection). The object stays
+        // a genuine registered account â auth paths still resolve it â only the visible email (the
+        // fingerprinting signal) is masked. If the device has NO google account, we invent NOTHING.
+        final java.lang.reflect.Field nameField;
+        try { nameField = acct.getField("name"); } catch (Throwable t) { return; }
+        final java.lang.reflect.Field typeField;
+        try { typeField = acct.getField("type"); } catch (Throwable t) { return; }
+        // Relabel every com.google account object we see, in place. Idempotent (setting name to email
+        // again is harmless), and shared across all enumeration methods so the value is consistent.
+        XC_MethodHook maskNames = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                Object res = mp.getResult();
+                if (!(res instanceof Object[])) return;
+                for (Object a : (Object[]) res) {
+                    if (a == null) continue;
+                    try {
+                        if ("com.google".equals(typeField.get(a))) nameField.set(a, email);
+                    } catch (Throwable ignored) {}
+                }
+                // no array rewrite â real objects, real count, other account types untouched
+            }
+        };
+        try { XposedBridge.hookAllMethods(am, "getAccountsByType", maskNames); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccountsByTypeForPackage", maskNames); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(am, "getAccounts", maskNames); } catch (Throwable ignored) {}
+    }
+
+    // ---- Media codecs (MediaCodecInfo.getName) â the codec-name SET leaks the SoC vendor ----
+    // MediaCodecList.getCodecInfos() -> each MediaCodecInfo.getName() (e.g. "OMX.qcom.video.decoder.avc"
+    // reveals Qualcomm). Left real, the name set is a stable per-SoC signal. We relabel mName in place
+    // to the profile's hw_codecs list (positional, capped to the real count â same technique as the
+    // sensor/input relabel). Capabilities (mCaps) stay real; we only change the visible NAME, which is
+    // what a fingerprinter hashes. Objects can't be constructed from an app hook, so relabel in place.
+    private void hookCodecs(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        // OPT-IN (default OFF): relabeling codec names can break an app that does getName()->
+        // createByCodecName() (the relabeled name won't resolve) (codex HIGH). Only active when the user
+        // enables "Spoof media codecs" (profile spoof_codecs="1"). Fleet apps' playback is safe by default.
+        if (!"1".equals(p.get("spoof_codecs"))) return;
+        final String codecs = p.get("hw_codecs");
+        if (codecs == null || codecs.isEmpty()) return;
+        final java.util.ArrayList<String> nl = new java.util.ArrayList<>();
+        for (String s : codecs.split(",")) { String t = s.trim(); if (!t.isEmpty()) nl.add(t); }
+        if (nl.isEmpty()) return;
+        final String[] names = nl.toArray(new String[0]);
+        final Class<?> mcl = XposedHelpers.findClassIfExists("android.media.MediaCodecList", lp.classLoader);
+        final Class<?> mci = XposedHelpers.findClassIfExists("android.media.MediaCodecInfo", lp.classLoader);
+        if (mcl == null || mci == null) return;
+        // Rewrite getCodecInfos() to return the real infos CAPPED to the profile codec count, each
+        // 1:1 relabeled to a distinct profile codec name (no duplicate names, count == names). We keep
+        // the real MediaCodecInfo objects (their capabilities stay valid) and only change mName â the
+        // codec-NAME set is what a fingerprinter hashes. Same in-place-relabel technique as sensors.
+        try {
+            XposedBridge.hookAllMethods(mcl, "getCodecInfos", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    Object res = mp.getResult();
+                    if (!(res instanceof Object[])) return;
+                    Object[] real = (Object[]) res;
+                    int cap = Math.min(names.length, real.length);
+                    Object[] out = (Object[]) java.lang.reflect.Array.newInstance(mci, cap);
+                    for (int i = 0; i < cap; i++) {
+                        setStringFieldSafe(real[i], "mName", names[i]);
+                        out[i] = real[i];
+                    }
+                    mp.setResult(out);
+                }
+            });
+        } catch (Throwable ignored) {}
     }
 
     // ---- GSF id: content query to com.google.android.gsf.gservices returning android_id ----

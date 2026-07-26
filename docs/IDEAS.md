@@ -496,3 +496,22 @@ Checked the generated profile for cross-field incoherence beyond what's already 
      technique; trace libfp.so's actual root-probe syscalls. Multi-hour, higher risk.
   Priority: (1) and (2) are contained, real, mergeable wins that genuinely close breadth gaps vs the
   competition. (3) is the thing holding back the FPJS visitorId but is a large native effort.
+
+- **2026-07-26 · Live logging / "what does the target grab" — DESIGN (researched, ready to build)** —
+  status: `building-next`. Requirement (user, repeated): a diagnostics mode showing, live, what a target
+  app (e.g. Dasher) actually READS + what Specter APPLIED, so we can tell what's working AS WE USE IT.
+  RESEARCH FINDING (exa): on a non-rooted device an app can only read its OWN logcat (Android 4.1+). But
+  THIS device is ROOTED, so we read the target's trace via `su -c logcat`. Design:
+  - The trace already exists: with `"trace":"1"` in a target's profile, the Zygisk layer logs every
+    stat/open/prop the app reads (tag `SpecterTrace`) and the Java hooks log [osstat]/[lastmod]/[global].
+  - A "Diagnostics" screen (new tab or in Settings) that: (1) toggles trace on for the selected target,
+    (2) runs `su -c "logcat -c"` then `su -c "logcat -s SpecterTrace:*"` in a background thread reading the
+    stream, (3) parses each line into "app read <signal> -> returned <spoofed|real> value", (4) renders a
+    live grouped list (Build.* / IDs / files / props) + a running count per signal, (5) an EXPORT button
+    (write the captured log to Downloads). Also a general app-action log (generate/apply/errors) persisted
+    to a file (beyond the transient status line).
+  - FLEET SAFETY (non-negotiable): tracing/reading is READ-ONLY and fine, but a diagnostics/trace mode
+    must NEVER apply a spoof to the income apps. The native companion already hard-denylists them; the
+    diagnostics UI must only let the user SELECT an income app for READ/observe, never for apply. Best:
+    restrict the apply path to the existing allowlist and let diagnostics observe any app read-only.
+  - Build as its own PR after the gmail/appsetid/codecs PR (#23) merges.

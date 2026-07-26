@@ -342,6 +342,21 @@ public class ProbeActivity extends Activity {
             put(o, "hw_cameras", android.text.TextUtils.join(",", ids));
         } catch (Throwable t) { put(o, "hw_cameras", "ERR:" + t); }
 
+        // --- Google account (AccountManager) — self-check for the Gmail hook. A fingerprinter reads
+        // getAccountsByType("com.google"); on a spoofed device this must show the profile gmail, not
+        // the real account. May be empty/perm-gated by the OS (not a leak); ERR:SecurityException is
+        // the OS gate, not a hook failure. ---
+        try {
+            android.accounts.Account[] accts =
+                    android.accounts.AccountManager.get(this).getAccountsByType("com.google");
+            StringBuilder sb = new StringBuilder();
+            for (android.accounts.Account a : accts) {
+                if (sb.length() > 0) sb.append(",");
+                sb.append(a.name);
+            }
+            put(o, "google_accounts", sb.toString());
+        } catch (Throwable t) { put(o, "google_accounts", "ERR:" + t); }
+
         // --- Input device count ---
         try {
             android.hardware.input.InputManager im =
@@ -384,6 +399,14 @@ public class ProbeActivity extends Activity {
             android.media.MediaCodecList mcl = new android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS);
             android.media.MediaCodecInfo[] infos = mcl.getCodecInfos();
             put(o, "hw_codec_count", String.valueOf(infos.length));
+            // Read the codec NAMES a fingerprinter hashes. On a spoofed device these must be the
+            // profile's hw_codecs, NOT the real OMX.qcom.* set. Self-check for the codec relabel hook.
+            StringBuilder cn = new StringBuilder();
+            for (android.media.MediaCodecInfo ci : infos) {
+                if (cn.length() > 0) cn.append(",");
+                cn.append(ci.getName());
+            }
+            put(o, "hw_codecs", cn.toString());
         } catch (Throwable t) { put(o, "hw_codec_count", "ERR:" + t); }
     }
 

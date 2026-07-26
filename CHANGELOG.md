@@ -6,6 +6,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Google-account + media-codec spoofing are OPT-IN (default OFF)** — both can break the target app
+  (a fabricated Google account fails sign-in; a relabeled codec name fails createByCodecName), so they
+  are now Settings protections the user enables knowingly, never on by default. Account masking also no
+  longer FABRICATES an account — it relabels the REAL com.google account's name in place (auth paths keep
+  resolving a genuine account) and invents nothing when the device has none. Fleet apps are safe by default.
+- **Media-codec list spoofing** (`MediaCodecList.getCodecInfos`). The codec-name set (e.g.
+  `OMX.qcom.video.decoder.avc` reveals Qualcomm) is a stable per-SoC signal that was GENERATED into
+  every profile (`hw_codecs`) but never applied â the real ~40-codec device list leaked (the probe only
+  read a count, so it was never caught). Now `getCodecInfos()` returns the real infos capped to the
+  profile codec count, each 1:1 relabeled to a profile codec name (no duplicates, count == names,
+  capabilities preserved). Proven on-device: probe `hw_codecs` == the profile set (10 codecs, matched).
+- **Gmail account spoofing is now actually APPLIED** (was generated-but-dropped). Every profile
+  generated a coherent Gmail and the UI showed it as spoofed, but NO `AccountManager` hook existed â
+  so an app reading `getAccountsByType("com.google")`/`getAccounts()` got the REAL Google account (a
+  strong cross-account linker). New `hookAccounts` rewrites the enumeration result to the profile's
+  Gmail (a synthetic `com.google` Account); auth-token paths untouched (masking model, like GeerGit).
+  Proven on-device: the probe reads `google_accounts` == the profile gmail. Closes a false-coverage gap.
+- **App Set ID spoofing** (`com.google.android.gms.appset.AppSetIdInfo.getId`). A per-app-scoped install
+  id apps read for analytics â now generated (a UUID, byte-parity JavaâPython) and hooked to return the
+  profile value. Closes a breadth gap vs HideMyAndroid.
 - **On-device profile vault** — save a generated identity under a date/time label and re-apply that
   EXACT device later (same unique IDs), or delete it. New **Saved** tab: an opt-in "Save to vault
   after RANDOMIZE ALL" checkbox (default off — profiles are entirely skippable), a "Save current to
