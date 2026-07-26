@@ -958,9 +958,16 @@ public class HookEntry implements IXposedHookLoadPackage {
     private void hookSettingsGlobal(final Map<String, String> p) {
         final java.util.Set<String> devTells = new java.util.HashSet<>(java.util.Arrays.asList(
                 "adb_enabled", "development_settings_enabled"));
+        // Settings.Global.BOOT_COUNT — a per-device-stable integer FPJS/EXADPrinter hash; return the
+        // profile's derived value (stable per identity) instead of the host's real boot count.
+        int bc = 0;
+        try { bc = Integer.parseInt(p.get("boot_count")); } catch (Throwable ignored) {}
+        final int bootCount = bc;
         XC_MethodHook getInt = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (argsContainAny(param.args, devTells)) param.setResult(0);
+                if (argsContainAny(param.args, devTells)) { param.setResult(0); return; }
+                if (bootCount > 0 && SpoofLogic.argsContainKey(param.args, "boot_count"))
+                    param.setResult(bootCount);
             }
         };
         final boolean trace = "1".equals(p.get("trace"));

@@ -315,6 +315,13 @@ public final class Generators {
         return SCREEN_POOL[(int) (codenameHash(cn) % SCREEN_POOL.length)];
     }
 
+    /** A plausible, per-device-STABLE boot count (Settings.Global.BOOT_COUNT) derived from the android_id.
+     *  A real used phone has booted tens-to-hundreds of times. Pure, no RNG. MUST match Python
+     *  Generators.boot_count_for (byte-parity). */
+    public static int bootCountFor(String androidId) {
+        return 40 + (int) (codenameHash(androidId == null ? "" : androidId) % 420L);
+    }
+
     public static String factoryResetEpoch(Rng r, String securityPatch) {
         long base;
         if (securityPatch != null && securityPatch.length() >= 10) {

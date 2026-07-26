@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.9.1] — 2026-07-27
+
+### Added
+- **Boot-count spoofing.** Settings.Global.BOOT_COUNT is a per-device-stable integer that FingerprintJS/
+  EXADPrinter hash; leaving it real leaks the host's true boot count. Now the profile carries a
+  boot_count derived from the android_id (stable per identity, plausible 40-460 range) and the settings-
+  global hook returns it. PROVEN on-device: host real boot_count 110, scoped app reads spoofed 405.
+  Byte-parity Java<->Python (pure lookup, no RNG).
+
 ## [0.9.0] — 2026-07-27
 
 ### Added

@@ -174,6 +174,14 @@ def _codename_hash(cn):
     return h
 
 
+def boot_count_for(android_id):
+    """A plausible, per-device-STABLE boot count (Settings.Global.BOOT_COUNT). FingerprintJS/EXADPrinter
+    read it as a high-entropy stable integer; leaving it real leaks the host device's true boot count. A
+    real used phone has booted tens-to-hundreds of times, so map the android_id hash into [40, 460). Pure
+    (no RNG) -> byte-parity safe. MUST match Java Generators.bootCountFor."""
+    return 40 + (_codename_hash(android_id or "") % 420)
+
+
 def screen_for_device(codename):
     """(width, height, densityDpi) for a device codename. Known -> real spec; else a deterministic pool
     pick. Never the real host device unless the profile legitimately claims it."""

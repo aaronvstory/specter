@@ -177,6 +177,12 @@ public class ProbeActivity extends Activity {
                 put(o, "locale", java.util.Locale.getDefault().toString());
             } catch (Throwable t) { put(o, "timezone", "ERR:" + t); }
 
+            // Settings.Global.BOOT_COUNT — spoofed by the settings-global hook (per-profile stable int).
+            try {
+                put(o, "boot_count", String.valueOf(android.provider.Settings.Global.getInt(
+                        getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, -1)));
+            } catch (Throwable t) { put(o, "boot_count", "ERR:" + t); }
+
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }
 

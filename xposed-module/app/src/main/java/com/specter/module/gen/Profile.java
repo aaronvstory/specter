@@ -58,6 +58,8 @@ public final class Profile {
             "screen_width", "screen_height", "screen_density",
             // ro.build.flavor / ro.build.description composites — appended last, matches profile.py.
             "build_flavor", "build_description",
+            // Settings.Global.BOOT_COUNT (derived from android_id) — matches profile.py order (before tz).
+            "boot_count",
             // US timezone (derived from the phone area code) + locale — appended last, matches profile.py.
             "timezone", "locale",
     };
@@ -250,6 +252,9 @@ public final class Profile {
         // no RNG (byte-parity safe). Mirrors profile.py.
         p.put("build_flavor", device + "-user");
         p.put("build_description", device + "-user " + release + " " + buildId + " " + incremental + " release-keys");
+        // Settings.Global.BOOT_COUNT — per-device-stable integer FPJS/EXADPrinter hash; derived from the
+        // android_id, so stable per profile but not the host's real count. Pure, no RNG (byte-parity).
+        p.put("boot_count", String.valueOf(Generators.bootCountFor(p.get("android_id"))));
         // US timezone derived from the phone's area code (US number = "1"+area(3)+exch(3)+sub(4)) so phone
         // + timezone + locale tell one coherent US-location story. Locale is always en-US (US-only build).
         // Pure lookup, no RNG (byte-parity with specter/profile.py). Keep in lockstep with the Python side.

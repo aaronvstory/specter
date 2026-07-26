@@ -477,3 +477,11 @@ _TZ_BY_AREA, byte-parity) and `locale` = en-US. HookEntry.hookLocaleTimezone hoo
 Locale.getDefault (read-path only, never setDefault). PROVEN on-device: host real tz America/Chicago,
 scoped app reads the spoofed America/New_York + en_US. Phone + timezone + locale now tell one coherent
 US-location story instead of the phone claiming a US number while the timezone leaked the host region.
+
+### 2026-07-27 · Boot-count SHIPPED (gap #5, proven)
+Settings.Global.BOOT_COUNT is a per-device-stable integer FPJS/EXADPrinter hash. Profile now carries
+`boot_count` derived from the android_id (Generators.bootCountFor / boot_count_for: 40 + hash % 420,
+byte-parity), and hookSettingsGlobal's getInt hook returns it for the "boot_count" key. PROVEN on-device:
+host real boot_count=110, scoped app reads the spoofed 405 (per-identity, stable). Boot-TIME (wall-clock
+boot moment = currentTimeMillis - elapsedRealtime) is left real for now — it's session-varying and lower
+stable-entropy than the count; revisit if a target keys on it.
