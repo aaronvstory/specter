@@ -49,6 +49,29 @@ using zygisk::ServerSpecializeArgs;
 
 // -------- per-process spoof state (populated once in postAppSpecialize) --------
 static std::map<std::string, std::string> g_prop_spoof;  // prop name -> spoofed value
+// Props that CRASH the zygote if spoofed during process init (ART/libc read them before our hook state
+// is safe — proven SIGSEGV for ro.product.first_api_level / ro.build.version.sdk). We spoof them ONLY
+// after init is done: g_props_ready flips true ~1s post-specialize (a detached thread), long before any
+// user-triggered fingerprinting read. So init-time reads pass through REAL (no crash), runtime reads
+// (e.g. FingerprintJS at fingerprint time) get the spoofed value.
+static std::map<std::string, std::string, std::less<>> g_prop_spoof_late;
+#include <atomic>
+#include <thread>
+#include <chrono>
+static std::atomic<bool> g_props_ready{false};
+
+// Look up a spoofed prop value: the always-safe map first, then the init-unsafe map ONLY once ready.
+// Returns nullptr if not spoofed. Kept tiny + branch-light — it's on the hot __system_property_get path.
+static const std::string *prop_spoof_lookup(const char *name) {
+    if (!name) return nullptr;
+    auto it = g_prop_spoof.find(name);
+    if (it != g_prop_spoof.end()) return &it->second;
+    if (g_props_ready.load(std::memory_order_acquire)) {
+        auto lit = g_prop_spoof_late.find(name);
+        if (lit != g_prop_spoof_late.end()) return &lit->second;
+    }
+    return nullptr;
+}
 static long g_reset_epoch = 0;                            // factory_reset_epoch (seconds), 0 = unset
 static bool g_hide_root = false;                          // hide root-indicator paths (ENOENT)
 static bool is_root_path(const char *path);              // defined below with the file hooks
@@ -83,9 +106,9 @@ struct cb_ctx {
 static void tramp_cb(void *cookie, const char *name, const char *value, uint32_t serial) {
     auto *ctx = reinterpret_cast<cb_ctx *>(cookie);
     if (name) {
-        auto it = g_prop_spoof.find(name);
-        if (it != g_prop_spoof.end()) {
-            ctx->real_cb(ctx->real_cookie, name, it->second.c_str(), serial);
+        const std::string *sv = prop_spoof_lookup(name);
+        if (sv) {
+            ctx->real_cb(ctx->real_cookie, name, sv->c_str(), serial);
             return;
         }
     }
@@ -93,7 +116,7 @@ static void tramp_cb(void *cookie, const char *name, const char *value, uint32_t
 }
 
 static void my_prop_read(const prop_info *pi, prop_read_cb_t callback, void *cookie) {
-    if (g_prop_spoof.empty()) { orig_prop_read(pi, callback, cookie); return; }
+    if (g_prop_spoof.empty() && g_prop_spoof_late.empty()) { orig_prop_read(pi, callback, cookie); return; }
     cb_ctx ctx{callback, cookie};
     orig_prop_read(pi, tramp_cb, &ctx);
 }
@@ -108,12 +131,10 @@ static int my_prop_get(const char *name, char *value) {
     if (g_trace && name)
         __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "prop %s", name);
     if (name && value) {
-        auto it = g_prop_spoof.find(name);
-        if (it != g_prop_spoof.end()) {
-            size_t n = it->second.size();
-            if (n >= PROP_VALUE_MAX) n = PROP_VALUE_MAX - 1;
-            memcpy(value, it->second.c_str(), n);
-            value[n] = '\0';
+        const std::string *v = prop_spoof_lookup(name);
+        if (v) {
+            size_t n = v->size(); if (n >= PROP_VALUE_MAX) n = PROP_VALUE_MAX - 1;
+            memcpy(value, v->c_str(), n); value[n] = '\0';
             return (int) n;
         }
     }
@@ -607,6 +628,16 @@ public:
             auto it = profile.find(a[1]);
             if (it != profile.end()) g_prop_spoof[a[0]] = it->second;
         }
+        // ro.build.version.sdk / ro.product.first_api_level leak the REAL device on the NATIVE path
+        // (FingerprintJS reads both — proven via the trace). They can't go in the always-on map: ART/libc
+        // read them during process init and spoofing then SIGSEGVs the zygote. So spoof them LATE — only
+        // after g_props_ready flips (a detached ~1s timer below), which is long after init but well before
+        // any user-triggered fingerprint read. Value = the profile's build_sdk (the claimed Android API).
+        auto sdk = profile.find("build_sdk");
+        if (sdk != profile.end() && !sdk->second.empty()) {
+            g_prop_spoof_late["ro.build.version.sdk"] = sdk->second;
+            g_prop_spoof_late["ro.product.first_api_level"] = sdk->second;
+        }
         auto ep = profile.find("factory_reset_epoch");
         if (ep != profile.end()) g_reset_epoch = strtol(ep->second.c_str(), nullptr, 10);
 
@@ -884,6 +915,19 @@ private:
         LOGD("hooks installed for %s (%d syms, props=%zu reset=%ld bootid=%d hwcap=%d trace=%d)",
              pkg.c_str(), applied, g_prop_spoof.size(), g_reset_epoch,
              !g_bootid_path.empty(), g_spoof_hwcap, g_trace);
+
+        // Arm the late (init-unsafe) prop spoof ~3s from now. HEURISTIC (not a hard readiness proof):
+        // ART/libc finish the init reads of sdk/first_api_level well within this window on a real device,
+        // and any real fingerprinting read is user-triggered far later. A late dlopen/lazy-ctor on a very
+        // slow/loaded device could theoretically read after the window (codex-flagged) — 3s is generous
+        // margin; if a real crash ever recurs, gate on a concrete lifecycle event instead of time.
+        // release store pairs with the acquire load in prop_spoof_lookup to publish the map writes.
+        if (!g_prop_spoof_late.empty()) {
+            std::thread([] {
+                std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+                g_props_ready.store(true, std::memory_order_release);
+            }).detach();
+        }
     }
 };
 

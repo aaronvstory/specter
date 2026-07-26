@@ -391,3 +391,16 @@ for the first time, which needs the user's FPJS workspace action, or (b) a clean
 reputation isn't reinforced by the flagged hosting IP. The CLIENT engineering to present a clean device is
 now done and verified (tampering/frida/emulator false, all root surfaces ENOENT). Parked pending the
 user's call on (a)/(b) — both are non-code, non-client levers.
+
+## 2026-07-27 — SOLVED the "SIGSEGV cop-out": sdk + first_api_level now spoofed natively (deferred)
+The trace showed FPJS reads ~26 props; a systematic "what-FPJS-reads vs what-we-spoof" diff (which should
+have been done from day one) found most unaliased ones return EMPTY (harmless), but TWO leaked the real
+device on the NATIVE path: `ro.build.version.sdk` (=30) and `ro.product.first_api_level` (=29). These had
+been left real, citing a note that spoofing them natively SIGSEGVs the zygote. That was avoidance, not a
+fix. ROOT CAUSE of the crash: ART/libc read these DURING process init, before the hook state is safe.
+FIX (timing, not avoidance): a `g_prop_spoof_late` map + `g_props_ready` atomic flag; a detached thread
+flips ready ~1.5s after postAppSpecialize. `prop_spoof_lookup` returns the late values only once ready.
+Init-time reads pass real (no crash); runtime reads (FPJS fingerprints on user tap, far later) get spoofed.
+PROVEN on-device (probe dual-read): `prop_sdk`=30 at onCreate (<1.5s), `prop_sdk_late`=29 after 2.5s — the
+spoof lands and the device is stable across reboots. This closes the last two native prop leaks; every prop
+FPJS reads that is device-identifying is now either spoofed or empty.

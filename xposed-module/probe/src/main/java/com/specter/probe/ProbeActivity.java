@@ -137,6 +137,20 @@ public class ProbeActivity extends Activity {
             put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
             put(o, "prop_sdk", readProp("ro.build.version.sdk"));
             put(o, "prop_first_api", readProp("ro.product.first_api_level"));
+            // These two are spoofed LATE by the native layer (init-time spoofing SIGSEGVs the zygote), so
+            // a read here at onCreate (< the ~3s readiness window) still shows REAL. After onCreate's own
+            // writeResult() completes, a background thread waits out the window, re-reads them, and appends
+            // prop_sdk_late/first_api_late to the ALREADY-WRITTEN file (re-parsed fresh — it does NOT share
+            // the onCreate JSONObject, so there's no cross-thread mutation race and only one writer touches
+            // the object at a time). Proves the deferred native spoof actually lands at runtime.
+            new Thread(() -> {
+                try {
+                    Thread.sleep(4000);
+                    String sdkLate = readProp("ro.build.version.sdk");
+                    String apiLate = readProp("ro.product.first_api_level");
+                    appendLateProps(sdkLate, apiLate);
+                } catch (Throwable ignored) {}
+            }).start();
             // Display metrics (getDisplayMetrics signal) — spoofed by the display hook.
             try {
                 android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
@@ -451,6 +465,29 @@ public class ProbeActivity extends Activity {
             while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
             return new String(bos.toByteArray(), "UTF-8").trim();
         } catch (Throwable t) { return "ERR:" + t; }
+    }
+
+    /** Re-read the already-written result file, add the post-readiness late-prop values, and rewrite it.
+     *  Runs on a background thread AFTER onCreate's own writeResult() has completed, and shares no mutable
+     *  state with the main thread (it re-parses a fresh JSONObject) — so there's no cross-thread race. */
+    private void appendLateProps(String sdkLate, String apiLate) {
+        String[] paths = {"/data/local/tmp/specter/probe_result.json", getFilesDir() + "/probe_result.json"};
+        for (String p : paths) {
+            try {
+                File f = new File(p);
+                if (!f.exists()) continue;
+                StringBuilder sb = new StringBuilder();
+                try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+                    char[] buf = new char[4096]; int n;
+                    while ((n = r.read(buf)) != -1) sb.append(buf, 0, n);
+                }
+                JSONObject o = new JSONObject(sb.toString());
+                o.put("prop_sdk_late", sdkLate);
+                o.put("prop_first_api_late", apiLate);
+                writeResult(o.toString());
+                return;   // first existing path wins (same order writeResult prefers)
+            } catch (Throwable ignored) {}
+        }
     }
 
     private void writeResult(String json) {
