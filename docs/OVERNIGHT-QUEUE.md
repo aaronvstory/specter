@@ -434,3 +434,17 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   ("79 signals · 43 spoofed · 15 real"). Users SEE which FPJS-read signals are protected (the differentiator
   vs GeerGit). New Coverage class (pure, JVM-tested). Verified on-device vs a real demo trace: every
   ro.product/ro.build/ro.boot identity prop + cpu_capacity files badged spoofed; fonts/abilist/arch real.
+
+- [2026-07-27 AFK iter] Coverage badge false-positives fixed (ro.hardware.gralloc/preview_sdk/codename now
+  correctly REAL not spoofed — pre-empted codex). dist/specter-module-v0.10.0.apk built. P4 on v0.10.0.
+
+*** session snapshot #5 (AFK, 2026-07-27) ***
+- 0.9.3 -> 0.10.0. This iter: ground-truth SDK-source audit (confirmed no unhooked Java-API signal — the
+  ViewConfiguration reads are decompiler-noise), release-certified (clean build, classes in dex via
+  dexdump), and shipped the FLAGSHIP coverage-badge viewer: every read shows spoofed/real/unknown + a
+  protection score. This is the "users see what's protected" differentiator the user asked for.
+- Full session (0.5.0 -> 0.10.0, 39 commits): live-trace viewer + coverage badges, SENSORID (flagship),
+  verifiedboot, locale/tz, mock-location, boot-count, battery, /proc/meminfo fix, UI polish throughout,
+  IDEAS backlog ALL shipped (vault export/import, custom fields, Specter Lite harvester).
+- Client signal coverage verified complete THREE ways (empirical trace, SDK source, coverage badges).
+  Remaining: L-effort structural (raw-syscall, attestation) + 4a provisioning (user-blocked on root).
