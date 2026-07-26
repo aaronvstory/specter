@@ -329,3 +329,36 @@ syscalls (faccessat/statx/direct syscall()) — the real next engineering step, 
 a perfect client spoof won't flip the visitorId while the IP reads as a known hosting/VPN AND the prior
 reputation record exists. A clean residential IP + a fresh workspace record would isolate whether the
 client spoof alone suffices.
+
+## 2026-07-27 — Native root-detection: traced the ACTUAL probes; tampering flipped FALSE; rootApps still native
+Used the diagnostics trace (now logging faccessat + raw-syscall paths) to capture what FPJS's libfp.so
+ACTUALLY probes during an identification (2292 trace lines). Findings + fixes:
+
+**What FPJS probes (the decrypted native root list, ~221 distinct paths seen):** overwhelmingly EMULATOR
+detection — `/dev/vboxguest`, `/dev/qemu_pipe`, `/dev/goldfish_pipe`, `/dev/socket/genyd`, bst/memu/nox
+device nodes, `/system/xbin/mount.vboxsf`, `/dev/com.genymotion.superuser.daemon` — plus a
+`/proc/self/task/*/comm` thread-name scan (Frida/hook-thread detection) and `fopen /sys/fs/selinux/enforce`.
+Notably almost NO magisk/su paths in the list this run.
+
+**Fixes shipped (all verified on-device):**
+- Hook `faccessat` + raw `syscall(faccessat/faccessat2/newfstatat/statx)` for root paths — a native check
+  via these bypassed the libc-function hooks (and our trace couldn't even SEE them before).
+- `is_root_path` now PREFIX-matches root-owned trees (`/data/adb/`, `/sbin/.magisk`, `/dev/.magisk`,
+  root-app data dirs) — an exact 24-path denylist loses to FPJS's ~200-entry list; prefix covers the family.
+- Redirect `/sys/fs/selinux/enforce` -> a spoof file "1" (ENFORCING) so a Magisk device's permissive/
+  patched SELinux reads clean. (On THIS device SELinux is already Enforcing, so it's defensive here.)
+
+**MEASURED RESULT (user's workspace, Server API):** `tampering.result` FLIPPED from `high` to **FALSE**
+(anomalyScore 0, mlScore 0); `frida=false`, `emulator=false`. Real win. BUT `rootApps=true` and
+`developerTools=true` STILL fire. On-device: every path FPJS probed now returns ENOENT (0 of 221 exist),
+no hook-thread names leak, SELinux reads "1" — so these two are NOT coming from the file/thread/selinux
+surface. They are computed either in the native `da.component9()`/`da.setPivotYN16904()` return that we
+can't see, or via a path not yet traced. `developerTools=true` is suspicious: `development_settings_enabled`
+and `adb_enabled` are BOTH 1 on the device, and our `hide_dev` hook is JAVA-only (Settings.Global) — a
+NATIVE read of those settings (or a related check) would bypass it (the recurring native-blind-spot theme).
+
+**HYPOTHESIS (next):** rootApps/developerTools are read natively by libfp.so via a path our current hooks
+miss — possibly `getauxval`/a prop we don't alias, a `ptrace`/`/proc/self/status` TracerPid read, or the
+Settings values via a native ContentProvider call. The visitorId also stays `SJoG6...` regardless because
+`firstSeenAt`=a prior record pins it (reputation, not a live client recompute). Parked pending a deeper
+native trace or the user's call on effort vs. the clean-IP/fresh-record alternative.

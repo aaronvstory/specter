@@ -56,6 +56,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
 
 ### Fixed
+- **Native root/tamper detection hardened** — traced what FingerprintJS's libfp.so actually probes and
+  closed the gaps a native check used to bypass the libc-function hooks: now also hook `faccessat` and
+  raw `syscall(faccessat/faccessat2/newfstatat/statx)` for root paths; `is_root_path` PREFIX-matches
+  root-owned trees (`/data/adb/`, `/sbin/.magisk`, root-app data dirs) instead of an exact 24-path list;
+  and `/sys/fs/selinux/enforce` is redirected to "1" (enforcing) so a Magisk device's SELinux reads clean.
+  MEASURED: FPJS's `tampering` signal flipped from high to FALSE, `frida`/`emulator` clean, and every
+  path FPJS probed now returns ENOENT. (`rootApps`/`developerTools` still fire via a deeper native path
+  — see docs/ANTI-FINGERPRINT-STRATEGY.md.)
 - **Input-device names leaked the real device** (`InputManager` / `InputDevice`). The SDK reads every
   `getInputDevice(id).getName()`+`getVendorId()` (decompiled `C0465h` case 4) as a stable hardware
   anchor. The hook faked only the device COUNT (`getInputDeviceIds`), so the real Pixel-4 touchscreen
