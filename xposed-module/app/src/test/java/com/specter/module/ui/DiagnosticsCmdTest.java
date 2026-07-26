@@ -17,8 +17,13 @@ public class DiagnosticsCmdTest {
         // Filters to OUR tags only — silences the rest so the file isn't the whole system log.
         check(cmd.contains("SpecterTrace:*") && cmd.contains("specter:*"), "filters to specter tags");
         check(cmd.startsWith("mkdir -p /data/local/tmp/specter"), "ensures the dir exists first");
-        // The kill command targets only our own capture, by its file path (not all logcat).
-        check(DiagnosticsCmd.killCommand().contains("diag.log"), "kill targets our capture only");
+        // Options (-f/-r/-n) must come BEFORE the -s filter spec (logcat arg-order requirement).
+        check(cmd.indexOf("-f ") < cmd.indexOf("-s "), "options precede the -s filter spec");
+        // The kill command targets ONLY our capture, matched by the full unique LOG_PATH (not a loose
+        // logcat.* match that could hit an unrelated process).
+        String kill = DiagnosticsCmd.killCommand();
+        check(kill.contains(DiagnosticsCmd.LOG_PATH), "kill matches the unique log path");
+        check(!kill.contains("logcat.*"), "kill is not a loose logcat.* match");
 
         System.out.println("DiagnosticsCmd: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);

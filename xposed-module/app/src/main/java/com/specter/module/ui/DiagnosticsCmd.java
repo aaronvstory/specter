@@ -11,15 +11,18 @@ public final class DiagnosticsCmd {
 
     public static final String LOG_PATH = "/data/local/tmp/specter/diag.log";
 
-    /** Rotate every 8 MB, keep 4 files (32 MB cap), silence every other tag. */
+    /** Options FIRST (buffer, file, rotation), then the tag filter spec last — logcat wants that order.
+     *  Rotate every 8 MB, keep 4 files (32 MB cap), silence every other tag. */
     public static String captureCommand() {
         return "mkdir -p /data/local/tmp/specter; "
-                + "exec logcat -b main -s SpecterTrace:* specter:* -f " + LOG_PATH
-                + " -r 8192 -n 4";
+                + "exec logcat -b main -f " + LOG_PATH + " -r 8192 -n 4 -s SpecterTrace:* specter:*";
     }
 
-    /** Best-effort kill of a lingering capture we spawned (su -c destroy only kills the wrapper). */
+    /** Best-effort kill of the capture we spawned (proc.destroy() only kills the su wrapper, not the
+     *  logcat child). Matches on the full unique LOG_PATH — the only process with that exact path on its
+     *  cmdline is our own `logcat -f <LOG_PATH>` capture. (toybox pkill mis-parses a leading `-f ` in the
+     *  pattern after `--`, so match the bare path, which is already unique.) */
     public static String killCommand() {
-        return "pkill -f 'logcat.*" + LOG_PATH + "'";
+        return "pkill -f '" + LOG_PATH + "'";
     }
 }

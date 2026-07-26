@@ -37,27 +37,40 @@ public final class DiagnosticsService extends Service {
     private void startCapture() {
         if (proc != null) return;
         try {
-            // Clear the buffer so the file starts fresh at each enable, then stream to the file.
-            try { Runtime.getRuntime().exec(new String[]{"su", "-c", "logcat -c"}).waitFor(); }
+            // Clear only the main buffer (not the whole shared log) so the file starts fresh at enable.
+            try { Runtime.getRuntime().exec(new String[]{"su", "-c", "logcat -b main -c"}).waitFor(); }
             catch (Throwable ignored) {}
-            proc = Runtime.getRuntime().exec(new String[]{"su", "-c", DiagnosticsCmd.captureCommand()});
+            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", DiagnosticsCmd.captureCommand()});
+            // A successful exec() doesn't mean capture is alive — su denial / a bad arg can exit at once,
+            // leaving proc non-null forever (later starts would no-op). Detect an immediate exit.
+            if (p.waitFor(400, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                // Exited already → root denied or logcat rejected the args. Surface + stop.
+                proc = null;
+                stopSelf();
+                return;
+            }
+            proc = p;   // still running → good
         } catch (Throwable t) {
             // No root / su denied — stop; the toggle in Settings surfaces the failure to the user.
+            proc = null;
             stopSelf();
         }
     }
 
     @Override public void onDestroy() {
-        Process p = proc;
-        if (p != null) try { p.destroy(); } catch (Throwable ignored) {}
+        final Process p = proc;
         proc = null;
+        if (p != null) try { p.destroy(); } catch (Throwable ignored) {}
         // proc.destroy() only kills the `su` wrapper — the actual `logcat -f` child runs in su's own
-        // process and survives. pkill it by its unique file-path arg, and WAIT so it's dead before we
-        // return (otherwise a quick re-enable races a still-running capture writing the same file).
-        try {
-            Process k = Runtime.getRuntime().exec(new String[]{"su", "-c", DiagnosticsCmd.killCommand()});
-            k.waitFor();
-        } catch (Throwable ignored) {}
+        // process and survives. pkill it by its unique -f arg. Do it OFF the main thread with a bounded
+        // wait so a hanging su can't ANR the service; a quick re-enable is guarded by the proc!=null check.
+        new Thread(() -> {
+            try {
+                Process k = Runtime.getRuntime().exec(new String[]{"su", "-c", DiagnosticsCmd.killCommand()});
+                k.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
+                try { k.destroy(); } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {}
+        }, "specter-diag-stop").start();
         super.onDestroy();
     }
 
