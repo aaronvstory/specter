@@ -71,6 +71,8 @@ public class AppPickerActivity extends Activity {
         back.setText("‹ Back");
         back.setAllCaps(false);
         back.setTextColor(Theme.INK);
+        back.setMinWidth(0); back.setMinHeight(0); back.setMinimumWidth(0); back.setMinimumHeight(0);
+        back.setPadding(dp(14), dp(7), dp(14), dp(7)); back.setTextSize(14); back.setStateListAnimator(null);
         back.setBackground(pill(Theme.CARD2, Theme.BTN_EDGE));
         back.setOnClickListener(v -> finish());
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
@@ -149,6 +151,8 @@ public class AppPickerActivity extends Activity {
         save.setText("Save");
         save.setAllCaps(false);
         save.setTextColor(Theme.ON_GOLD);
+        save.setMinWidth(0); save.setMinHeight(0); save.setMinimumWidth(0); save.setMinimumHeight(0);
+        save.setPadding(dp(16), dp(11), dp(16), dp(11)); save.setTextSize(15); save.setStateListAnimator(null);
         save.setBackground(pill(Theme.GOLD, Theme.GOLD));
         LinearLayout.LayoutParams savp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -339,7 +343,10 @@ public class AppPickerActivity extends Activity {
         Button b = new Button(this);
         b.setText(text);
         b.setAllCaps(false);
-        b.setTextSize(12);
+        b.setTextSize(13);
+        b.setMinWidth(0); b.setMinHeight(0); b.setMinimumWidth(0); b.setMinimumHeight(0);
+        b.setPadding(dp(12), dp(8), dp(12), dp(8));
+        b.setStateListAnimator(null);
         b.setTextColor(Theme.INK);
         b.setBackground(pill(Theme.CARD2, Theme.BTN_EDGE));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -351,7 +358,7 @@ public class AppPickerActivity extends Activity {
 
     private GradientDrawable pill(int fill, int stroke) {
         GradientDrawable g = new GradientDrawable();
-        g.setColor(fill); g.setCornerRadius(dp(3)); g.setStroke(dp(1), stroke);
+        g.setColor(fill); g.setCornerRadius(dp(10)); g.setStroke(dp(1), stroke);
         return g;
     }
 }

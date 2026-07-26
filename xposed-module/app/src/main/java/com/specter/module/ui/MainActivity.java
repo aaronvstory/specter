@@ -207,6 +207,12 @@ public class MainActivity extends Activity {
         Button btn = new Button(this);
         btn.setText(text);
         btn.setAllCaps(false);
+        btn.setTextSize(14);
+        // Kill the default Button's chunky min-size + padding so it's a tight, modern pill.
+        btn.setMinWidth(0); btn.setMinHeight(0);
+        btn.setMinimumWidth(0); btn.setMinimumHeight(0);
+        btn.setPadding(dp(16), dp(9), dp(16), dp(9));
+        btn.setStateListAnimator(null);   // no elevation/shadow jump
         btn.setBackground(pill(primary ? Theme.GOLD : Theme.CARD2, primary ? Theme.GOLD : Theme.BTN_EDGE));
         btn.setTextColor(primary ? Theme.ON_GOLD : Theme.INK);
         btn.setOnClickListener(onClick);
@@ -217,10 +223,29 @@ public class MainActivity extends Activity {
         return btn;
     }
 
+    /** A compact, wrap-content pill button for inline/secondary actions (Change, ✕, small chips) — no
+     *  forced weight, no chunky default padding. Keeps buttons consistent + small across the whole app. */
+    private Button compactButton(String text, boolean primary, View.OnClickListener onClick) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setAllCaps(false);
+        btn.setTextSize(13);
+        btn.setMinWidth(0); btn.setMinHeight(0);
+        btn.setMinimumWidth(0); btn.setMinimumHeight(0);
+        btn.setPadding(dp(13), dp(6), dp(13), dp(6));
+        btn.setStateListAnimator(null);
+        btn.setBackground(pill(primary ? Theme.GOLD : Theme.CARD2, primary ? Theme.GOLD : Theme.BTN_EDGE));
+        btn.setTextColor(primary ? Theme.ON_GOLD : Theme.SOFT);
+        btn.setOnClickListener(onClick);
+        btn.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return btn;
+    }
+
     private GradientDrawable pill(int fill, int stroke) {
         GradientDrawable g = new GradientDrawable();
         g.setColor(fill);
-        g.setCornerRadius(dp(3));
+        g.setCornerRadius(dp(10));   // rounder = more modern/polished than the old 3dp
         g.setStroke(dp(1), stroke);
         return g;
     }
@@ -322,7 +347,7 @@ public class MainActivity extends Activity {
         TextView lbl = label(targets.isEmpty() ? "Target apps" : "Target apps (" + targets.size() + ")");
         lbl.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         head.addView(lbl);
-        head.addView(button("Change", false, v ->
+        head.addView(compactButton("Change", false, v ->
                 startActivity(new Intent(this, AppPickerActivity.class))));
         card.addView(head);
 
@@ -365,11 +390,17 @@ public class MainActivity extends Activity {
                 });
             }).start();
 
-            Button rm = new Button(this);
+            // Small circular ✕ remove — a tight icon-button, not a full-width chunky Button.
+            TextView rm = new TextView(this);
             rm.setText("✕");
-            rm.setAllCaps(false);
-            rm.setTextColor(Theme.DIM);
-            rm.setBackground(pill(Theme.CARD2, Theme.LINE));
+            rm.setTextSize(13);
+            rm.setTextColor(Theme.SOFT);
+            rm.setGravity(Gravity.CENTER);
+            GradientDrawable rmBg = new GradientDrawable();
+            rmBg.setColor(Theme.CARD2); rmBg.setStroke(dp(1), Theme.LINE); rmBg.setCornerRadius(dp(16));
+            rm.setBackground(rmBg);
+            LinearLayout.LayoutParams rmlp = new LinearLayout.LayoutParams(dp(32), dp(32));
+            rm.setLayoutParams(rmlp);
             rm.setOnClickListener(v -> {
                 Set<String> cur = Targets.get(prefs);
                 cur.remove(pkg);
