@@ -6,6 +6,9 @@
          default; this app is a root/LSPosed tool whose whole job is to target arbitrary apps. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!-- Diagnostics logging runs as a foreground service (continuous logcat capture to a file). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="Specter"
@@ -31,6 +34,11 @@
         <activity
             android:name=".ui.AppPickerActivity"
             android:exported="false" />
+        <!-- Diagnostics logging: continuous logcat capture while the Settings toggle is ON. -->
+        <service
+            android:name=".ui.DiagnosticsService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Xposed / LSPosed module markers -->
         <meta-data
