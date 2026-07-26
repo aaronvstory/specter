@@ -244,3 +244,17 @@ Conclusion: the SDK persists no client-side identifier anywhere. Combined with t
 this closes the client-side investigation completely — the shared-workspace id is not client-derived by
 ANY mechanism (cache, storage, keystore, or signal payload). The split is measurable only in the user's
 own workspace.
+
+## 2026-07-26 — rootApps=True traced: the demo's client-side root surface is CLEAN
+
+Traced exactly what the FPJS demo probes for root during identification: it reads ONLY /proc/self/maps
+(no su/magisk/mount/xbin/busybox path probing at the app level — those trace lines are absent). Inspected
+the demo's live /proc/<pid>/maps: NO magisk/zygisk/riru/lsposed/specter strings (our injected libs are
+hidden by Magisk DenyList), and the only memfd:/(deleted) mappings are the standard ART jit-zygote-cache /
+jit-cache — normal on ANY modern Android, not a root artifact. So the client-visible root surface the demo
+can read is CLEAN. Yet the server reports rootApps=True — which means it's a SERVER-SIDE classification
+(ML on the aggregate and/or this device's sticky history in the shared demo workspace, flagged before
+hiding was set up), NOT a live client signal we can flip from here. In the user's own clean workspace with
+hide_root + DenyList active from the first identification, rootApps should read false. (Note: /proc/self/
+maps CLEANING was tried and reverted earlier — ART reads its own maps during GC and a filtered copy
+crashes the app; not needed anyway since the maps are already clean of our artifacts.)
