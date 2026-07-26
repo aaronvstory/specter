@@ -295,3 +295,37 @@ the probe (extended to read names as FPJS does) shows `uinput-fpc|0;synaptics_ds
   The count is low-entropy (~4, typical for a phone) — leaking it is far less than a count/name disagreement.
   Also guarded `n==0` (empty/malformed `hw_input_devices` → div-by-zero) and switched to `Math.floorMod`.
   PROVEN on-device: `hw_input_count == hw_input_resolved == 4`, names all spoofed, no real Pixel-4 leak.
+
+## 2026-07-26 — MEASURED IN THE USER'S OWN WORKSPACE: the anchor is server-side reputation, not a client hardware leak
+FINALLY ran the definitive two-rotation test in the USER's own FPJS workspace (public key
+`4I2a5GaXgzwc27TmMMGk`, secret `zTZsBALjWuvpfyMI3Kvm`, AP/Mumbai). Applied SM-G970N then moto g pro with
+`push --no-clear`; pulled BOTH events' raw server signals and diffed them.
+
+**RESULT: visitorId CONSTANT (`SJoG6...`) — but NOT from a hardware leak.** The device signals DID change
+server-side (osVersion 10→11, device SM-G970N→"Generic Smartphone", full UA different). Yet
+`visitorFound=True, confidence=1` both times. FPJS is **re-matching to an existing reputation record**, not
+recomputing from the (now-spoofed) device fields. Proof — the constant signals across both events:
+- `identification.firstSeenAt.global/subscription = 2026-07-25T21:04:44` (SAME) → FPJS already knows this
+  visitor from yesterday and re-links to it.
+- `rootApps.result = True` (SAME) — root STILL detected server-side.
+- `developerTools.result = True`, `tampering.confidence = high` (SAME) — Xposed/hooks detected.
+- `vpn.result = True`, `proxy.confidence = high`, `ipInfo.v4.datacenter.result = True`,
+  `asn.type = hosting` ("tzulo, inc."), `ip = 23.234.72.101` (SAME) — the IP is a flagged hosting/VPN.
+- `suspectScore = 34`, `highActivity.result = True` (SAME).
+The device/UA/os fields were the ONLY things that differed — and they did NOT move the id.
+
+**INTERPRETATION (evidence-based):** the visitorId is pinned by FPJS's server-side **Device Reputation /
+Smart Signals**, dominated by (1) root/dev/tampering STILL being detected, and (2) the IP being a flagged
+datacenter/VPN, plus (3) the `firstSeenAt` record persisting. This is NOT a client hardware-fingerprint
+leak we can spoof away field-by-field — it's a reputation lock.
+
+**Why root/tampering still show True despite hide_root being ON** (native default g_hide_root=true,
+verified main.cpp:569): the FPJS SDK collects root/tamper evidence through its OWN native lib (`libfp.so`)
+via a syscall/path our Zygisk `open/openat/stat/fopen` hooks do NOT cover (matches the
+`fpjs-pro-native-libfp` finding). Closing this needs a native trace of libfp.so's actual root-probe
+syscalls (faccessat/statx/direct syscall()) — the real next engineering step, HYPOTHESIS until traced.
+
+**Corollary the user already stated:** the IP matters a lot to FPJS (vpn/proxy/datacenter all True). Even
+a perfect client spoof won't flip the visitorId while the IP reads as a known hosting/VPN AND the prior
+reputation record exists. A clean residential IP + a fresh workspace record would isolate whether the
+client spoof alone suffices.
