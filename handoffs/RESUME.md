@@ -25,7 +25,33 @@ reads the applied values back; we compare the values reported across two applied
 - **Safety (non-negotiable):** on-device work targets ONLY the probe/test apps and the vendor sample app.
   Never scope, apply, or test against the income apps listed in `CLAUDE.md`.
 
-## Current state (2026-07-27, latest) — closing REAL native prop leaks; PR #26 IN FLIGHT
+## >>> NEXT SESSION START HERE (2026-07-27, freshest) <<<
+**THE PHONE IS USABLE NOW.** App is fleet-ready (29 spoofed, 0 hard leaks, all merged). The FPJS-visitorId
+chase is a SEPARATE research track — it does NOT block fleet use. Tell the user this if they ask "how long".
+
+**Two open threads for next session:**
+1. **THE GENIUS NEXT MOVE — intercept the SDK's OUTBOUND payload.** We've PROVEN (by trace, not assumption)
+   that every CLIENT read is now clean: dev-settings getString→null, adb/dev getInt→0, ro.debuggable=0, all
+   root paths ENOENT, SELinux=1, tampering flipped FALSE. YET the server returns rootApps=true +
+   developerTools=true with visitorFound=true/confidence=1/firstSeenAt=2026-07-25. The events API only shows
+   the PARSED result, not the raw hash inputs. So: **set up an HTTPS MITM (mitmproxy + a user cert / or a
+   Frida hook on the SDK's OkHttp/HttpURLConnection send) to capture the exact JSON payload the fpjs demo
+   POSTs to `*.fpjs.io`.** That payload IS the signal set that gets hashed → find which value is still
+   constant/real across two rotations = the actual pin. This is the definitive instrument we should have
+   built long ago (user agreed). Branch `investigate/devtools-rootapps-native` (PUSHED, not merged) has the
+   getString=null hardening — merge it or build on it.
+2. **Provision the user's Pixel 4a** (they'll plug it in). It's newly rooted w/ Magisk but missing our
+   stack: install the Specter LSPosed module + scope it, deploy the Zygisk .so (base64 route + reboot),
+   install the probe + DevInfo + FPJS demo, run scripts/scope_probe.py, verify with verify_on_device.py.
+   Mirror what the Pixel 4 (9B151FFAZ00FPF) has. Get its serial first (`adb devices`).
+
+**Session stats (this session):** +556/−62 LOC, 17 files, PRs #25 (native root-hardening, flipped
+tampering→false) + #26 (native sdk/first_api late-spoof, FIXED the SIGSEGV that was cited as impossible)
+merged; investigate branch pushed. Codebase ~8.6k LOC (Java 4130, Python 2915, C++ 1324, hdr 110).
+
+---
+
+## Current state (2026-07-27) — native prop leaks closed; #26 merged
 Recent merged PRs: #20 (0.5.0), #21 (vault), #22 (input-device), #23 (gmail/appsetid/codecs), #24
 (diagnostics logging + gmail/codec default-on), #25 (native root-detection hardening — flipped FPJS
 `tampering` from high→FALSE). Read `docs/ANTI-FINGERPRINT-STRATEGY.md` (newest sections first) + `docs/DECISIONS.md`.
