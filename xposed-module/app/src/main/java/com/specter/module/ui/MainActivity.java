@@ -94,7 +94,10 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (tab == 2) render(); // reflect target changes made in the app picker (Settings tab)
+        // Re-render on every resume so target changes from the app picker show up immediately — the
+        // "Change" button lives on BOTH the Identity (tab 0) and Settings (tab 2) tabs, so gating on
+        // tab==2 left the Identity target card showing stale selections after picking apps.
+        if (svc != null) render();
     }
 
     // ---------- top chrome ----------
@@ -204,6 +207,12 @@ public class MainActivity extends Activity {
         Button btn = new Button(this);
         btn.setText(text);
         btn.setAllCaps(false);
+        btn.setTextSize(14);
+        // Kill the default Button's chunky min-size + padding so it's a tight, modern pill.
+        btn.setMinWidth(0); btn.setMinHeight(0);
+        btn.setMinimumWidth(0); btn.setMinimumHeight(0);
+        btn.setPadding(dp(16), dp(9), dp(16), dp(9));
+        btn.setStateListAnimator(null);   // no elevation/shadow jump
         btn.setBackground(pill(primary ? Theme.GOLD : Theme.CARD2, primary ? Theme.GOLD : Theme.BTN_EDGE));
         btn.setTextColor(primary ? Theme.ON_GOLD : Theme.INK);
         btn.setOnClickListener(onClick);
@@ -214,10 +223,29 @@ public class MainActivity extends Activity {
         return btn;
     }
 
+    /** A compact, wrap-content pill button for inline/secondary actions (Change, ✕, small chips) — no
+     *  forced weight, no chunky default padding. Keeps buttons consistent + small across the whole app. */
+    private Button compactButton(String text, boolean primary, View.OnClickListener onClick) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setAllCaps(false);
+        btn.setTextSize(13);
+        btn.setMinWidth(0); btn.setMinHeight(0);
+        btn.setMinimumWidth(0); btn.setMinimumHeight(0);
+        btn.setPadding(dp(13), dp(6), dp(13), dp(6));
+        btn.setStateListAnimator(null);
+        btn.setBackground(pill(primary ? Theme.GOLD : Theme.CARD2, primary ? Theme.GOLD : Theme.BTN_EDGE));
+        btn.setTextColor(primary ? Theme.ON_GOLD : Theme.SOFT);
+        btn.setOnClickListener(onClick);
+        btn.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return btn;
+    }
+
     private GradientDrawable pill(int fill, int stroke) {
         GradientDrawable g = new GradientDrawable();
         g.setColor(fill);
-        g.setCornerRadius(dp(3));
+        g.setCornerRadius(dp(3));    // square-ish corners (user preference)
         g.setStroke(dp(1), stroke);
         return g;
     }
@@ -307,33 +335,85 @@ public class MainActivity extends Activity {
         for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
     }
 
-    /** Target-app card at the top of the Identity tab: shows the selected app(s) + a Change button. */
+    /** Target-app card (Identity tab): a clear list of the selected apps (by name) each with a quick
+     *  remove (✕), an LSPosed-scope warning when an app isn't actually hooked, and a Change button. */
     private View targetHeader() {
         LinearLayout card = cardBox();
-        Set<String> targets = Targets.get(prefs);
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
+        final Set<String> targets = Targets.get(prefs);
 
-        LinearLayout txt = new LinearLayout(this);
-        txt.setOrientation(LinearLayout.VERTICAL);
-        txt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        txt.addView(label("Target app"));
-        if (targets.isEmpty()) {
-            TextView none = value("None selected — tap Change");
-            none.setTextColor(Theme.DIM);
-            txt.addView(none);
-        } else {
-            for (String pkg : targets) {
-                TextView t = value(pkg);
-                if (Targets.isRisky(pkg)) { t.setTextColor(Theme.RED); t.setText(pkg + "  ⚠ fleet/system"); }
-                txt.addView(t);
-            }
-        }
-        row.addView(txt);
-        row.addView(button("Change", false, v ->
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView lbl = label(targets.isEmpty() ? "Target apps" : "Target apps (" + targets.size() + ")");
+        lbl.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        head.addView(lbl);
+        head.addView(compactButton("Change", false, v ->
                 startActivity(new Intent(this, AppPickerActivity.class))));
-        card.addView(row);
+        card.addView(head);
+
+        if (targets.isEmpty()) {
+            TextView none = value("None selected — tap Change to pick the app(s) to spoof.");
+            none.setTextColor(Theme.DIM);
+            card.addView(none);
+            return card;
+        }
+        // One row per selected app: app NAME (+ package small), a scope warning if not hooked, and ✕.
+        for (final String pkg : targets) {
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.HORIZONTAL);
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            r.setPadding(0, dp(6), 0, dp(6));
+
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView name = value(Targets.label(this, pkg));
+            name.setTextColor(Theme.INK);
+            col.addView(name);
+            TextView sub = value(pkg);
+            sub.setTextColor(Theme.DIM);
+            sub.setTextSize(11);
+            col.addView(sub);
+            r.addView(col);
+
+            // "Not enabled in LSPosed" warning — checked off the UI thread (root grep), then shown.
+            final TextView warn = new TextView(this);
+            warn.setTextSize(11);
+            warn.setTextColor(Theme.RED);
+            warn.setVisibility(View.GONE);
+            warn.setPadding(0, 0, dp(8), 0);
+            r.addView(warn);
+            new Thread(() -> {
+                final boolean scoped = Targets.isScoped(pkg);
+                runOnUiThread(() -> {
+                    if (!scoped) { warn.setText("⚠ not enabled in LSPosed"); warn.setVisibility(View.VISIBLE); }
+                });
+            }).start();
+
+            // Small square ✕ remove — a tight red-tinted icon-button (destructive action), not a chunky
+            // full-width Button.
+            TextView rm = new TextView(this);
+            rm.setText("✕");
+            rm.setTextSize(13);
+            rm.setTextColor(Theme.RED);
+            rm.setGravity(Gravity.CENTER);
+            GradientDrawable rmBg = new GradientDrawable();
+            rmBg.setColor(0x22EF8A8A);              // subtle red-tinted fill
+            rmBg.setStroke(dp(1), 0x55EF8A8A);      // red-tinted border
+            rmBg.setCornerRadius(dp(3));            // square-ish (matches the app's square corners)
+            rm.setBackground(rmBg);
+            LinearLayout.LayoutParams rmlp = new LinearLayout.LayoutParams(dp(32), dp(32));
+            rm.setLayoutParams(rmlp);
+            rm.setOnClickListener(v -> {
+                Set<String> cur = Targets.get(prefs);
+                cur.remove(pkg);
+                Targets.set(prefs, cur);
+                status.setText("Removed " + Targets.label(this, pkg) + " from targets.");
+                render();
+            });
+            r.addView(rm);
+            card.addView(r);
+        }
         return card;
     }
 

@@ -56,6 +56,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
 
 ### Fixed
+- **Target-app selection UX** — fixed the Identity tab showing stale targets (it only re-rendered on
+  the Settings tab, so after picking apps from the Identity "Change" button the card still showed the old
+  selection). Now: onResume re-renders the current tab; the Identity card lists each selected app by NAME
+  with a quick ✕ remove and a "not enabled in LSPosed" warning if an app isn't actually scoped; the picker
+  pins a SELECTED section to the top (checked apps first, easy to uncheck) above ALL APPS. Removed the
+  "fleet/system" emoji labels — the system/income caution is now a plain, neutral toast on add.
 - **ro.build.version.sdk / ro.product.first_api_level now spoofed on the NATIVE path** (they leaked the
   real device to a native fingerprinter like FingerprintJS). Adding them to the always-on native prop map
   SIGSEGVs the zygote (ART reads them during init); fixed by a DEFERRED map that only spoofs them ~1.5s
