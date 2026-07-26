@@ -228,3 +228,11 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   com.specter.probe (leaks); spoof_sysfs=0 -> sys_cpu_capacity0 reads the REAL 261. Each toggle's OFF
   state leaves the corresponding signal REAL, proving the switch changes what the device reports (the gate
   key flows profile -> Java/native hook -> skipped). Default is ON for every protection.
+- **2026-07-26 · The native `__system_property_get` blind spot is CLOSED (byedentity parity reached)** —
+  the probe's dual read proves every aliased ro.* prop reads the SPOOFED value on BOTH the Java and native
+  paths (model/hardware/serial/board/fingerprint/bootloader/baseband/soc, _java == _native). Byedentity's
+  one claimed edge over Specter was "native-read reach" via a device-wide root resetprop; Specter reaches
+  the same depth per-app via the Zygisk my_prop_get inline hook — no device-wide mutation, no root
+  resetprop needed. Only ro.build.version.sdk / ro.product.first_api_level are Java-only by necessity
+  (native intercept SIGSEGVs the zygote); a native read of those two still returns real. The old CLAUDE.md
+  "resetprop layer not built yet" note was stale and is now corrected.
