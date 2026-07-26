@@ -142,3 +142,14 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - [STANDING] The visitorId split is measurable ONLY in the user's own FPJS workspace (needs manual key
   re-entry, encrypted/unscriptable). Everything on the client side is done. Remaining cron iterations:
   breadth-hardening + polish only, until the user returns to run the workspace split test.
+- [DEFINITIVE] Garbage-value test (8b12fb0): pushed IMPOSSIBLE device values that VERIFIABLY reached the
+  SDK (UA rebuilt as EXTREME-TEST-9000) — visitorId UNCHANGED. The shared demo workspace does not key on
+  client device signals AT ALL. No client-side change can move that id. Gate is 100% on the user's keys.
+- [done] scripts/fpjs_split_test.py (797b280) — one command runs the two-rotation gate (layout-robust UI
+  read of visitorId; auto-diffs server signals if FPJS_SECRET_KEY set). Verified on shared workspace.
+- [BREADTH audit vs GeerGit] GeerGit spoofs: IDs (all covered), device_spoof (covered+deeper), language/
+  locale (US en-US already coherent — low value), hide_mock_location (separate location PR). Specter
+  EXCEEDS GeerGit on hardware depth (sensors full tuple, /sys, /proc, cpuinfo, GPU, display, SDK, UA,
+  apk-mtime, installed-apps). No meaningful GeerGit gap remains for US profiles.
+- [STANDING] All client work done + proven. When the user re-enters demo keys: run
+  `python scripts/fpjs_split_test.py` — it's the gate.
