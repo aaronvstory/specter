@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.8.1] — 2026-07-27
+
+### Added
+- **Custom field editing (clone a specific device).** Every identity + device field is editable to an
+  EXACT value (not just RANDOMIZE) — so you can clone a real device's android_id / gsf / imei / serial /
+  etc. onto a profile. Identifiers edit freely (independent, format-validated). Device fields (model/
+  brand/device/fingerprint/carrier) are coupled, so editing one shows a coherence warning that the
+  others won't auto-update — allowed, but flagged. Edited values survive APPLY (same path as randomize).
+
 ## [0.8.0] — 2026-07-27
 
 ### Added

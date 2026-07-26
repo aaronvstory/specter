@@ -573,19 +573,44 @@ public class MainActivity extends Activity {
         return card;
     }
 
+    // Device fields are COUPLED — model/brand/device/fingerprint/carrier must all describe ONE real
+    // device. Editing one alone (to clone a specific handset) is allowed, but we warn that the others
+    // won't auto-update, so an inconsistent combo is itself a fingerprint. Identifiers (android_id/imei/
+    // gsf/serial/MACs…) are independent and edit freely — exactly the "clone this id from another device"
+    // case, with no coherence caveat.
+    private static final java.util.Set<String> COUPLED_DEVICE_FIELDS = new java.util.HashSet<>(
+            java.util.Arrays.asList("build_manufacturer", "build_model", "build_brand", "build_device",
+                    "build_fingerprint", "sim_operator_name"));
+
     private void editField(final IdentityFields.Field f, final TextView val) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
         final EditText in = new EditText(this);
         in.setText(profile.get(f.key));
         in.setTextColor(Theme.INK);
         in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        box.addView(in);
+        if (COUPLED_DEVICE_FIELDS.contains(f.key)) {
+            TextView warn = new TextView(this);
+            warn.setText("⚠ Device fields are coupled — changing only this one may not match the others "
+                    + "(model/brand/device/fingerprint). To clone a whole device coherently, edit them all "
+                    + "to the same real handset.");
+            warn.setTextColor(Theme.AMBER);
+            warn.setTextSize(11);
+            warn.setPadding(0, dp(8), 0, 0);
+            box.addView(warn);
+        }
         new AlertDialog.Builder(this)
                 .setTitle("Edit " + f.label)
-                .setView(in)
+                .setView(box)
                 .setPositiveButton("Save", (d, w) -> {
                     String nv = in.getText().toString().trim();
+                    // Format validation applies to identifiers (android_id/imei/…); device fields have no
+                    // strict format (validate() returns true) so a hand-entered device value is allowed.
                     if (!Generators.validate(f.key, nv)) { toast("Invalid " + f.label + " format — not saved."); return; }
                     profile.put(f.key, nv); val.setText(nv);
-                    status.setText(f.label + " edited — APPLY to push.");
+                    status.setText(f.label + " set to a custom value — APPLY to push.");
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
