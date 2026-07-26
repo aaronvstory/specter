@@ -93,6 +93,18 @@ public class AppPickerActivity extends Activity {
         search.setTextColor(Theme.INK);
         search.setHintTextColor(Theme.DIM);
         search.setPadding(dp(12), dp(8), dp(12), dp(8));
+        // Single-line with a "search" IME action — otherwise Enter inserts a newline instead of the
+        // expected submit/dismiss. Filtering is live via the TextWatcher, so the action just hides the kbd.
+        search.setSingleLine(true);
+        search.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        search.setOnEditorActionListener((v, actionId, ev) -> {
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+            v.clearFocus();
+            return true;
+        });
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         slp.setMargins(dp(12), 0, dp(12), dp(4));

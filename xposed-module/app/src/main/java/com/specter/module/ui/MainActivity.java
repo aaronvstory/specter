@@ -652,6 +652,14 @@ public class MainActivity extends Activity {
         search.setHintTextColor(Theme.DIM);
         search.setSingleLine(true);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        search.setOnEditorActionListener((v, actionId, ev) -> {
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+            v.clearFocus();
+            return true;
+        });
         search.setBackground(pill(Theme.CARD, Theme.LINE));
         search.setPadding(dp(12), dp(8), dp(12), dp(8));
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
