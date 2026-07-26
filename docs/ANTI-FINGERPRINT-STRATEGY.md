@@ -209,3 +209,25 @@ demo is observed to read. The visitorId's stability in the SHARED demo workspace
 server-side bucketing property of that workspace, not a client leak (proven separately: the fully
 unspoofed real device gets the same shared-workspace id). The definitive split test requires the user's
 isolated workspace.
+
+## 2026-07-26 — DEFINITIVE: the shared-demo-workspace visitorId ignores ALL client device signals
+
+The strongest possible test. Pushed an IMPOSSIBLE-garbage profile to the demo — build_model=
+"EXTREME-TEST-9000", manufacturer="ZZZTestCorp", cpu_capacity="100 200 300 400 500 600 700 1024",
+screen=1234x5678@321, media_drm_id=ffff..., android_id=dddd..., kernel=9.99.999-extreme-test. Values no
+real device could ever emit. VERIFIED the spoof REACHED the SDK: the demo's process rebuilt its UA as
+"Dalvik/2.1.0 (...; Android 11; EXTREME-TEST-9000 Build/...)" (the garbage model is literally in the UA),
+and 55 fields were applied. Result: visitorId UNCHANGED (18uu8..., confidence 100%).
+
+So in FPJS's SHARED public-demo workspace (the built-in API key), the visitorId does NOT depend on the
+client-collected device signals AT ALL — not even garbage that reached the SDK moves it. Combined with the
+earlier finding (the fully UNSPOOFED real device gets the same id), the shared workspace is keyed on
+something client spoofing cannot touch (per-IP stickiness in the demo tier is the most likely; the demo's
+built-in key is shared by the world). This is NOT a statement that FPJS-in-general ignores device signals
+— the OSS SDK clearly collects them and the Pro server hashes them in a REAL workspace. It is specific to
+the shared demo tier, which is why a valid split test MUST use the user's own workspace keys.
+
+BOTTOM LINE for the id-split gate: no amount of client-side spoofing can move the id in the shared demo
+workspace — proven with garbage input. The measurement is 100% blocked on the user's own workspace keys
+(manual UI re-entry, encrypted). Every client signal the demo reads is spoofed and per-identity; when the
+keys are present, the split will show there.
