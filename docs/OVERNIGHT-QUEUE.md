@@ -209,3 +209,9 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   Reviewer confirmed the Protections UI (toggles/chips/applyGates), main.cpp gate+redirect, and split-test
   script all correct. TWO review passes total: 3 real bugs found+fixed (SDK coherence, installer exception,
   fd leak), everything else verified correct. PR #20 is thoroughly vetted + merge-ready.
+- [done] Updated RESUME.md (fcad328) to current accurate state — it was stale (listed installed-app set as
+  a suspect, predated the garbage proof + all coverage + split-test tool). A fresh session reading the old
+  version would re-do settled work. Now points at the split-test tool + the single user step, and says
+  clearly not to re-attack the shared workspace (proven futile).
+- [STATUS] 37 commits, PR #20 mergeable, 2 code-review passes done (3 bugs fixed), Python 109 + JVM 61,606
+  green, RESUME/handoffs/docs all current. Engineering complete + vetted. Sole open item is user-gated.
