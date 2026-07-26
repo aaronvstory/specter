@@ -183,6 +183,14 @@ public class ProbeActivity extends Activity {
                         getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, -1)));
             } catch (Throwable t) { put(o, "boot_count", "ERR:" + t); }
 
+            // /proc/meminfo MemTotal — a direct file read that must match total_ram (spoofed by the native
+            // meminfo redirect), not leak the real device RAM.
+            try {
+                java.io.BufferedReader mr = new java.io.BufferedReader(new java.io.FileReader("/proc/meminfo"));
+                String first = mr.readLine(); mr.close();
+                put(o, "meminfo_memtotal", first == null ? "?" : first.trim());
+            } catch (Throwable t) { put(o, "meminfo_memtotal", "ERR:" + t); }
+
             // BatteryManager CHARGE_COUNTER (µAh full/design capacity) — spoofed by the battery hook.
             try {
                 android.os.BatteryManager bm = (android.os.BatteryManager) getSystemService(BATTERY_SERVICE);

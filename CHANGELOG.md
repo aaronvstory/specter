@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.9.3] — 2026-07-27
+
+### Fixed
+- **/proc/meminfo RAM leak.** ActivityManager.totalMem (the Java path) was spoofed, but a DIRECT read
+  of /proc/meminfo's MemTotal leaked the real device RAM — a contradiction with the claimed device.
+  Found by an empirical audit of the FPJS demo's trace (it reads /proc/meminfo directly). The native
+  layer now redirects /proc/meminfo to a spoof file whose MemTotal (+ coherent Free/Available) matches
+  the profile's total_ram. PROVEN on-device: real 5,596,800 kB, scoped app now reads 11,701,248 kB
+  (matching an ~11.4 GB profile). Reuses the existing sysfs-redirect mechanism.
+
 ## [0.9.2] — 2026-07-27
 
 ### Added

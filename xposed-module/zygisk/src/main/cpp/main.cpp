@@ -838,6 +838,32 @@ public:
             auto pr = profile.find("cpu_present");
             if (pr != profile.end() && !pr->second.empty())
                 write_spoof("cpupresent", pr->second + "\n", "/sys/devices/system/cpu/present");
+
+            // /proc/meminfo — its MemTotal line leaks the REAL device RAM even though ActivityManager.
+            // totalMem (the Java path) is spoofed. FingerprintJS's demo reads /proc/meminfo directly
+            // (tracer-proven), so a direct parse of MemTotal contradicts the claimed device's RAM. Redirect
+            // it to a spoof file whose MemTotal (+ a coherent MemFree/MemAvailable) matches the profile's
+            // total_ram. Other lines are plausible constants — only MemTotal is identity-bearing.
+            auto ram = profile.find("total_ram");
+            if (ram != profile.end() && !ram->second.empty()) {
+                long bytes = strtol(ram->second.c_str(), nullptr, 10);
+                if (bytes > 0) {
+                    long totalKb = bytes / 1024;
+                    long freeKb = totalKb / 3;             // ~33% free — plausible for a running device
+                    long availKb = totalKb / 2;            // ~50% available
+                    char buf[512];
+                    int n = snprintf(buf, sizeof(buf),
+                        "MemTotal:       %ld kB\n"
+                        "MemFree:        %ld kB\n"
+                        "MemAvailable:   %ld kB\n"
+                        "Buffers:           8192 kB\n"
+                        "Cached:          %ld kB\n"
+                        "SwapTotal:       %ld kB\n"
+                        "SwapFree:        %ld kB\n",
+                        totalKb, freeKb, availKb, totalKb / 4, totalKb / 2, totalKb / 2);
+                    if (n > 0) write_spoof("meminfo", std::string(buf, n), "/proc/meminfo");
+                }
+            }
         }
 
         if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&

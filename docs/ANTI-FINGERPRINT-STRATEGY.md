@@ -495,3 +495,13 @@ rewrites the CHARGE_COUNTER property. PROVEN on-device: host real 1,777,000 µAh
 device-identifying). Camera getCameraCharacteristics (the other half of gap #4) is DEFERRED — the full
 characteristics object must match the claimed model EXACTLY or it's a stronger tell; the camera-id LIST is
 already hooked, and partial characteristics spoofing is higher-risk than its marginal value.
+
+### 2026-07-27 · /proc/meminfo RAM leak CLOSED (found by empirical demo-trace audit)
+An empirical audit (ran the FPJS demo scoped with trace=1, parsed its 90k-line trace) confirmed every
+prop + device-file read is covered EXCEPT one: the demo reads /proc/meminfo DIRECTLY. ActivityManager.
+totalMem was spoofed but the meminfo MemTotal line leaked the real 5.6GB Pixel 4 RAM vs the profile's
+claimed ~11GB — a direct contradiction. FIX: the native layer redirects /proc/meminfo to a spoof file
+(MemTotal from total_ram + coherent Free/Available), reusing g_sys_redirect. PROVEN: real 5,596,800 kB ->
+app reads 11,701,248 kB. Everything else the demo reads (props, /proc/cpuinfo, /proc/version, /sys
+cpu_capacity+gpu_model+present, mounts, maps) was already covered. This is the value of the trace-audit
+approach — a hook-list would not have thought to redirect the meminfo FILE separately from the RAM API.
