@@ -30,6 +30,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
 
 ### Fixed
+- **Input-device names leaked the real device** (`InputManager` / `InputDevice`). The SDK reads every
+  `getInputDevice(id).getName()`+`getVendorId()` (decompiled `C0465h` case 4) as a stable hardware
+  anchor. The hook faked only the device COUNT (`getInputDeviceIds`), so the real Pixel-4 touchscreen
+  (`fts`) and PMIC (`qpnp_pon`) names still went out on every read. Now `getInputDevice(int)` is also
+  hooked: each returned InputDevice's `mName` is relabeled to the profile's input-device list and
+  `mVendorId`/`mProductId` zeroed (what internal touchscreens report). Fixes a stable per-device signal.
 - **Remaining build props leaked the real device.** A full prop sweep found ro.build.product (=flame),
   ro.build.flavor (=flame-user), ro.build.description (=flame-user 11 RQ3A...), and
   ro.bootimage.build.fingerprint (=google/flame/...) all leaked the real Pixel 4. Aliased product/

@@ -334,10 +334,15 @@ public class HookEntry implements IXposedHookLoadPackage {
                 });
             } catch (Throwable ignored) {}
         }
-        // Input devices — the COUNT is the signal; size an int[] from the profile's input-device list.
+        // Input devices — FPJS reads InputDevice.getName()+getVendorId() for every id (decompiled
+        // C0465h, case 4). Faking only the COUNT left the real touchscreen/PMIC names (fts, qpnp_pon on
+        // a Pixel 4) leaking — a stable per-device anchor. Return 0..n-1 ids AND relabel each returned
+        // InputDevice's mName to the profile's device name, zeroing mVendorId/mProductId (internal
+        // touchscreens report 0). getInputDevice() returns the real object, so relabel it in place.
         final String inputs = p.get("hw_input_devices");
         if (inputs != null && !inputs.isEmpty()) {
-            final int n = inputs.split(",").length;
+            final String[] inNames = inputs.split(",");
+            final int n = inNames.length;
             try {
                 Class<?> im = XposedHelpers.findClass("android.hardware.input.InputManager", lp.classLoader);
                 XposedBridge.hookAllMethods(im, "getInputDeviceIds", new XC_MethodHook() {
@@ -345,6 +350,18 @@ public class HookEntry implements IXposedHookLoadPackage {
                         int[] ids = new int[n];
                         for (int k = 0; k < n; k++) ids[k] = k;   // stable 0..n-1
                         mp.setResult(ids);
+                    }
+                });
+                XposedBridge.hookAllMethods(im, "getInputDevice", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        Object dev = mp.getResult();
+                        if (dev == null) return;
+                        int id = 0;
+                        try { id = (Integer) mp.args[0]; } catch (Throwable ignored) {}
+                        String name = inNames[((id % n) + n) % n].trim();
+                        setStringFieldSafe(dev, "mName", name);
+                        setIntFieldSafe(dev, "mVendorId", 0);
+                        setIntFieldSafe(dev, "mProductId", 0);
                     }
                 });
             } catch (Throwable ignored) {}
@@ -407,6 +424,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
     private static void setIntFieldSafe(Object o, String field, int val) {
         try { Field f = o.getClass().getDeclaredField(field); f.setAccessible(true); f.setInt(o, val); }
+        catch (Throwable ignored) {}
+    }
+    private static void setStringFieldSafe(Object o, String field, String val) {
+        try { Field f = o.getClass().getDeclaredField(field); f.setAccessible(true); f.set(o, val); }
         catch (Throwable ignored) {}
     }
 
