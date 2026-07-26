@@ -609,6 +609,17 @@ public class MainActivity extends Activity {
         });
         head.addView(sw);
         card.addView(head);
+        // The Diagnostics-logging protection gets a "View live trace" button that opens the live viewer
+        // (reads the capture file this toggle writes). Only shown for that row — the others have no log.
+        if ("trace".equals(prot.gateKey)) {
+            Button view = button("View live trace", false, v ->
+                    startActivity(new Intent(this, DiagnosticsActivity.class)));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, dp(8), 0, 0);
+            view.setLayoutParams(lp);
+            card.addView(view);
+        }
         return card;
     }
 

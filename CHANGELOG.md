@@ -11,6 +11,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   /data/local/tmp/specter/diag.log (rotating, 32MB cap). A background foreground-service runs
   `logcat -f`; the file is adb-pullable so you can verify spoofs are landing as you use it — no manual
   export. READ-ONLY (applies nothing; safe on any scoped app).
+- **Live trace viewer** — a "View live trace" button next to the Diagnostics-logging toggle opens a
+  full-screen viewer that parses diag.log into a deduped, counted, grouped list (Properties / Files /
+  Stat-access) of the device signals a scoped target actually read — e.g. `ro.product.model ×4`,
+  `/proc/cpuinfo`, `ro.build.fingerprint`. Loader/linker noise (getauxval/dlsym, lib/jar/ART loads,
+  self-`/proc/<pid>`) is filtered so only fingerprint-relevant reads show. Auto-refreshes every 2s,
+  with Live/Pause, Refresh, and Clear-log. READ-ONLY.
 - **Google-account + media-codec spoofing default ON, individually toggleable.** Leaving the REAL device
   Gmail / real OMX.qcom.* codec set visible to a scoped app is itself a spoofing leak, so both mask by
   default like every other signal. Gmail's control is its inline switch on the Identity tab (next to its

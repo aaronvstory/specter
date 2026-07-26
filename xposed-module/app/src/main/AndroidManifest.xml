@@ -36,6 +36,10 @@
         <activity
             android:name=".ui.AppPickerActivity"
             android:exported="false" />
+        <!-- Live trace viewer (opened from Settings when diagnostics logging is on). -->
+        <activity
+            android:name=".ui.DiagnosticsActivity"
+            android:exported="false" />
         <!-- Diagnostics logging: continuous logcat capture while the Settings toggle is ON. -->
         <service
             android:name=".ui.DiagnosticsService"

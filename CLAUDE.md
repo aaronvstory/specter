@@ -31,8 +31,9 @@ code block:
   and the **FPJS demo** — don't casually experiment on the live Dasher (the user earns income there).
 - The user IS open to testing on Dasher when it's actually needed for dev work — do it deliberately, not
   by accident.
-- LSPosed scope DB: `/data/adb/lspd/config/modules_config.db`. Specter = mid **25**, GeerGit = mid **101**.
-  Only ever edit mid 25's scope. Never touch 101 (that's GeerGit's own config, unrelated to Specter).
+- LSPosed scope DB: `/data/adb/lspd/config/modules_config.db`. Specter = mid **154** (pkg `com.specter`),
+  GeerGit = mid **101**. Only ever edit mid 154's scope. Never touch 101 (that's GeerGit's own config,
+  unrelated to Specter). Specter's scope = FPJS demo + DevInfo + com.specter(.probe) — the dev test set.
 - Never spoof `android`/`system` (framework) — dangerous + pointless (the native `is_core_os` guard blocks it).
 
 ## Build (Windows)

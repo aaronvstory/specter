@@ -497,6 +497,13 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   Priority: (1) and (2) are contained, real, mergeable wins that genuinely close breadth gaps vs the
   competition. (3) is the thing holding back the FPJS visitorId but is a large native effort.
 
+- **2026-07-27 · UPDATE: live-trace VIEWER shipped.** status: `shipped`. The capture backend (foreground
+  service → diag.log) existed; the missing piece was the in-app live view. Added `TraceParser` (pure,
+  tested: filters loader/self-proc/lib-load noise, dedups by kind+target with counts) + `DiagnosticsActivity`
+  (grouped Properties/Files/Stat list, auto-refresh, Live/Pause/Refresh/Clear) reached via a "View live
+  trace" button by the Diagnostics toggle. Verified on-device: 64 signals from a demo run, real reads
+  (ro.product.model ×4, ro.build.fingerprint, /proc/cpuinfo…). READ-ONLY. The EXPORT-to-Downloads button
+  from the original design is unbuilt — diag.log is already adb-pullable; add if the user wants in-app export.
 - **2026-07-26 · Live logging / "what does the target grab" — DESIGN (researched, ready to build)** —
   status: `building-next`. Requirement (user, repeated): a diagnostics mode showing, live, what a target
   app (e.g. Dasher) actually READS + what Specter APPLIED, so we can tell what's working AS WE USE IT.

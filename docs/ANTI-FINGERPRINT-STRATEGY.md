@@ -404,3 +404,52 @@ Init-time reads pass real (no crash); runtime reads (FPJS fingerprints on user t
 PROVEN on-device (probe dual-read): `prop_sdk`=30 at onCreate (<1.5s), `prop_sdk_late`=29 after 2.5s — the
 spoof lands and the device is stable across reboots. This closes the last two native prop leaks; every prop
 FPJS reads that is device-identifying is now either spoofed or empty.
+
+---
+
+## 2026-07-27 · GitHub/Exa research sweep — verified gap list (5-agent workflow + synthesis)
+
+Surveyed the open-source FingerprintJS-android SDK, competitor spoofers, and native detection toolkits
+(Catched, EnvScope, snitchtt, SecurityRiskAndroid, TrickyStore, PlayIntegrityFix, LocationSpoofer,
+AmIUniqueApp). The synthesis grep-verified claims against our actual code and CORRECTED 6 false gaps.
+
+**FALSE gaps (already covered — do NOT re-build):** native `__system_property_read_callback` IS hooked
+(main.cpp), WebView UA IS hooked (HookEntry), Settings.Global/Secure/System getInt/getString ARE hooked
+incl dev-device tells, BluetoothAdapter address IS hooked, StatFs + ActivityManager.totalMem ARE hooked
+coherently, camera-id LIST is hooked.
+
+**GENUINE gaps, ranked (grep-confirmed absent):**
+1. **[FLAGSHIP, M] SENSORID — raw sensor-value calibration fingerprint.** We relabel the sensor LIST
+   (`getSensorList`) but NEVER transform the raw `SensorEvent.values[]` stream. The per-device factory
+   calibration of accel/gyro/mag is ~57 bits of stable entropy that SURVIVES factory reset (Cambridge
+   TIFS-2020 paper) and is IDENTICAL across every profile on the one physical Pixel 4 — a single constant
+   that can collapse all profiles to one device. This is the strongest candidate yet for a real remaining
+   client anchor. FIX: hook `SensorEventListener.onSensorChanged` dispatch (Java) AND the native
+   `ASensorEventQueue_getEvents` path; apply a profile-seeded affine transform v' = (I+scale+skew)·v + bias
+   (scale within ~2%, gravity magnitude preserved ~9.81). HYPOTHESIS until measured: this is a hypothesis
+   that sensor-value constancy contributes to the FPJS composite; must verify on-device.
+2. **[CHEAP, S] Verified-boot / bootloader-lock props.** ABSENT from PROP_ALIASES + SpoofLogic:
+   `ro.boot.verifiedbootstate` (leaks `orange`), `ro.boot.vbmeta.device_state` (`unlocked`),
+   `ro.boot.flash.locked` (`0`), `ro.build.tags` (`test-keys`/`release-keys`), `ro.build.type`. A rooted
+   Pixel 4 leaks "unlocked + modified" independent of the model spoof — high weight in every root/fraud SDK.
+   FIX: set green/locked/1/release-keys/user on BOTH Java + native paths; if they read early like SDK_INT,
+   route through the existing `g_prop_spoof_late` deferred map.
+3. **[CHEAP, S] Locale / TimeZone coherence.** No `Locale.getDefault`/`TimeZone.getDefault` hook. A US
+   carrier+Build profile whose locale/timezone still report the host region is an internal contradiction
+   FPJS DeviceState hashes. FIX: align to en-US + America/* per the profile's US MCC.
+4. **[M] Camera getCameraCharacteristics + battery capacity** — partial coverage, coherence gap.
+5. **[M] Boot-time / uptime / boot_count** — absent, high entropy (EXADPrinter).
+6. **[L, conditional] GNSS + `Location.isFromMockProvider`** — fully absent; matters only if a target reads
+   location (Incognia/SEON driver-fraud = the Dasher case). Min win: force isFromMockProvider=false.
+7. **[L, ceiling] Hardware key attestation (TrickyStore-class)** — TEE-signed cert chain states
+   bootloader=unlocked, unforgeable by prop/Build/libc hooks. Only if a target does in-app attestation.
+8. **[L, structural] Raw `svc #0` syscall bypass + self-presence scrub.** Detectors issue inline syscalls
+   that never enter libc, so our open/openat/stat hooks miss them AND the libc-vs-kernel divergence itself
+   proves a hook exists. Durable fix is per-app mount-namespace unmount (Shamiko-style), not more hooks.
+
+**Oracles to run in-scope (second ground-truth beyond FPJS):** Catched (raw-syscall + maps + ArtMethod
+tells), AmIUniqueApp/EXADPrinter (entropy-ranked attribute map — finds what a hook list won't think of).
+
+**Order of attack:** verifiedboot props (S) → SENSORID sensor-value transform (M, the flagship) → locale
+(S). Then run Catched + AmIUniqueApp in-scope to find the next tier. Attestation + GPU-output = documented
+ceilings unless a target forces them.
