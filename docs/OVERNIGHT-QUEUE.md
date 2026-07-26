@@ -286,3 +286,21 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   RESTORE A -> target has A's EXACT identity back (android_id a9052abe, device r3q), NOT C's (b5dc83c5).
   Proven on-device with distinct android_ids. Vault save/restore is correct end-to-end. Opt-in confirmed:
   the save checkbox is OFF by default, so users can just RANDOMIZE->APPLY and never touch profiles.
+
+- [2026-07-27 CRON] Live-trace VIEWER shipped (the GeerGit differentiator — users SEE what a scoped app
+  reads): TraceParser (pure/tested, filters loader+self-proc noise, keeps other-pid enum reads, dedup by
+  kind+target) + DiagnosticsActivity (grouped/monospace/accented, async off-main-thread, back+Export+
+  Live/Pause/Clear). Codex-reviewed (4 real bugs fixed: ANR, callback-stack, stderr, /proc over-filter).
+- [2026-07-27 CRON] 5-agent GitHub/Exa research sweep (494k subagent tokens, 5/5 ok). Grep-verified,
+  corrected 6 FALSE gaps. Genuine ranked gaps documented in ANTI-FINGERPRINT-STRATEGY.md:
+  (1) SENSORID raw sensor-value calibration transform [FLAGSHIP — ~57-bit stable per-device fp we NEVER
+  touch, only relabel the sensor list; potential real remaining anchor], (2) verifiedboot props [DONE],
+  (3) locale/tz coherence, (4) camera/battery, (5) boot-time/uptime, (6) GNSS/mock-location, (7) key
+  attestation [ceiling], (8) raw-syscall bypass [structural]. Oracles to run: Catched, AmIUniqueApp.
+- [2026-07-27 CRON] Verifiedboot/lock-state props SHIPPED + proven (0.6.0): a rooted device leaked
+  verifiedbootstate=orange/unlocked/test-keys/debuggable=1 — a root flag independent of the model spoof.
+  Now green/locked/1/release-keys/user/debuggable=0/secure=1 on Java+native (deferred late-map, no zygote
+  crash). build.tags/type DERIVED from fingerprint; warranty_bit samsung-only (codex: cross-OEM tell).
+  On-device: samsung a71 -> all coherent.
+- [2026-07-27 CRON NEXT] Building SENSORID (the flagship): profile-seeded affine transform on raw
+  SensorEvent.values[] so the factory-calibration fp differs per profile instead of being constant.
