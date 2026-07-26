@@ -215,3 +215,8 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   clearly not to re-attack the shared workspace (proven futile).
 - [STATUS] 37 commits, PR #20 mergeable, 2 code-review passes done (3 bugs fixed), Python 109 + JVM 61,606
   green, RESUME/handoffs/docs all current. Engineering complete + vetted. Sole open item is user-gated.
+- [done] Updated PR #20 body to the complete picture (was stale from creation, covered only the first 3
+  fixes). Now lists every spoof, the UI, the proven shared-workspace finding, tooling/tests, and the 3
+  code-review fixes — so the user can review + decide merge with full context.
+- [VERIFIED] Profiles persist across reboot (/data/local/tmp/specter survives; hooks re-read on each app
+  launch) — accounts don't leak the real device after a restart. Already proven by many reboots this run.
