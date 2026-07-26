@@ -376,3 +376,19 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   device: host 1.777M µAh -> app reads spoofed 3.5M µAh (moto g 5G). Camera characteristics DEFERRED
   (coherence-risky, low marginal value). gaps #4a + #5 now closed. Remaining: L-effort structural items
   (raw-syscall bypass, key attestation) + running Catched/AmIUniqueApp oracles.
+
+- [2026-07-27 AFK iter] Codex gauntlet on boot-count+battery caught 2 real bugs, both fixed + re-proven
+  (bc46ce0): (1) battery CHARGE_COUNTER is CURRENT charge not full capacity — now scales design capacity
+  by live % so it tracks discharge coherently (proven: 57% -> 1.995M µAh = 3.5M*0.57); (2) boot_count
+  leaked via getString/getStringForUser — now covered. Byte-parity + no-overflow confirmed clean by codex.
+  gaps #4a (battery) + #5 (boot-count) fully closed + hardened. Core-spoofing UI description updated to
+  list all newer signals (c142b37). main @ v0.9.2.
+
+*** session snapshot #3 (AFK, 2026-07-27) ***
+- 0.5.0 -> 0.9.2 this run. FPJS breadth gaps closed: SENSORID (flagship), verifiedboot, locale/tz, mock-
+  location, boot-count, battery capacity. UI polished (spec-sheet, compact cards, honest Location tab).
+  IDEAS backlog ALL shipped (vault export/import, custom fields, Specter Lite harvester).
+- Remaining gaps are L-effort/structural (raw-syscall bypass, key attestation) or empirical (run
+  Catched/AmIUniqueApp oracles) — camera characteristics deferred (coherence-risky).
+- Codex gauntlet ran on every risky change; caught+fixed real bugs each time (battery quantity, boot_count
+  getString, vault injection, locale parity, SENSORID x3, verifiedboot coherence x2). Tests green throughout.
