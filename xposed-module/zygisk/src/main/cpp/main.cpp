@@ -194,6 +194,18 @@ static std::string g_bootid_path;   // path to our spoofed boot_id file, empty =
 static bool is_bootid(const char *path) {
     return path && strcmp(path, "/proc/sys/kernel/random/boot_id") == 0;
 }
+// Per-SoC /sys hardware signals FPJS reads directly (tracer-proven): the CPU capacity vector
+// (/sys/devices/system/cpu/cpu<N>/cpu_capacity — one number per core), the KGSL GPU model
+// (/sys/class/kgsl/kgsl-3d0/gpu_model), and the present-CPU range (/sys/devices/system/cpu/present).
+// These leaked the REAL device (e.g. the Pixel 4's "261 261 261 261 871 871 871 1024") on every
+// rotation. We write a spoof file per path from the profile and redirect exact-path reads to it.
+static std::map<std::string, std::string> g_sys_redirect;   // real sysfs path -> spoof file path
+static const char *sys_redirect(const char *path) {
+    if (g_sys_redirect.empty() || !path) return nullptr;
+    auto it = g_sys_redirect.find(path);
+    return it == g_sys_redirect.end() ? nullptr : it->second.c_str();
+}
+
 // /proc/self/maps hiding: libfp.so reads maps (tracer-proven) to detect our injected .so + Magisk/Zygisk
 // (that's what sets rootApps/tampering). maps changes per read, so we regenerate a FILTERED copy on each
 // open: drop any line naming our lib or a known root artifact. Returns an fd to a fresh temp, or -1.
@@ -236,6 +248,8 @@ static const char *MAPS_HIDE_MARKERS[] = {
 static const char *redirect_path(const char *path) {
     if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) return g_cpuinfo_path.c_str();
     if (!g_bootid_path.empty()  && is_bootid(path))  return g_bootid_path.c_str();
+    const char *sr = sys_redirect(path);
+    if (sr) return sr;
     return path;
 }
 
@@ -566,10 +580,50 @@ public:
             }
         }
 
+        // Per-SoC /sys hardware signals (cpu_capacity vector, KGSL gpu_model, cpu present range). Each
+        // real sysfs node gets a spoof file under the app's files dir, and its exact path is redirected.
+        // cpu_capacity is per-core: "261 261 ... 1024" -> one file per core cpuN/cpu_capacity.
+        if (!pkg.empty()) {
+            std::string dir = "/data/data/" + pkg + "/files";
+            mkdir(dir.c_str(), 0700);
+            auto write_spoof = [&](const std::string &tag, const std::string &content,
+                                   const std::string &sysPath) {
+                std::string sp = dir + "/.specter_" + tag;
+                int f = open(sp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+                if (f >= 0) {
+                    bool ok = write(f, content.data(), content.size()) == (ssize_t) content.size();
+                    close(f);
+                    if (ok) g_sys_redirect[sysPath] = sp;
+                }
+            };
+            auto cap = profile.find("cpu_capacity");
+            if (cap != profile.end() && !cap->second.empty()) {
+                // split on spaces; core i -> /sys/devices/system/cpu/cpu<i>/cpu_capacity
+                const std::string &v = cap->second;
+                size_t i = 0, core = 0;
+                while (i < v.size()) {
+                    size_t j = v.find(' ', i);
+                    if (j == std::string::npos) j = v.size();
+                    std::string one = v.substr(i, j - i);
+                    if (!one.empty())
+                        write_spoof("cap" + std::to_string(core), one + "\n",
+                                    "/sys/devices/system/cpu/cpu" + std::to_string(core) + "/cpu_capacity");
+                    core++;
+                    i = j + 1;
+                }
+            }
+            auto gm = profile.find("gpu_model");
+            if (gm != profile.end() && !gm->second.empty())
+                write_spoof("gpumodel", gm->second + "\n", "/sys/class/kgsl/kgsl-3d0/gpu_model");
+            auto pr = profile.find("cpu_present");
+            if (pr != profile.end() && !pr->second.empty())
+                write_spoof("cpupresent", pr->second + "\n", "/sys/devices/system/cpu/present");
+        }
+
         if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&
             g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root &&
             g_gl_renderer.empty() && g_gl_vendor.empty() && g_gl_version.empty() &&
-            g_sensor_labels.empty()) return;
+            g_sensor_labels.empty() && g_sys_redirect.empty()) return;
         installHooks();
     }
 
@@ -604,8 +658,9 @@ private:
             applied += hookSym("fstatat64", (void *) my_fstatat, (void **) &orig_fstatat);
             applied += hookSym("statx",     (void *) my_statx,   (void **) &orig_statx);
         }
-        // File hooks: needed for cpuinfo/boot_id redirects, the tracer, AND root-hiding.
-        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || g_hide_root) {
+        // File hooks: needed for cpuinfo/boot_id/sysfs redirects, the tracer, AND root-hiding.
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || g_hide_root
+                || !g_sys_redirect.empty()) {
             applied += hookSym("openat", (void *) my_openat, (void **) &orig_openat);
             applied += hookSym("open",   (void *) my_open,   (void **) &orig_open);
             applied += hookSym("fopen",  (void *) my_fopen,  (void **) &orig_fopen);
@@ -661,7 +716,7 @@ private:
             applied += hookSym("dlsym", (void *) my_dlsym, (void **) &orig_dlsym);
         }
         // syscall: needed whenever we redirect files (libfp reads via raw syscall) or trace.
-        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace) {
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || !g_sys_redirect.empty()) {
             applied += hookSym("syscall", (void *) my_syscall, (void **) &orig_syscall);
         }
         // In pure-trace mode prop_get may not be hooked yet (no props spoofed) — ensure it for the trace.

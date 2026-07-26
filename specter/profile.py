@@ -20,6 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DEVICES_PATH = os.path.join(ROOT, "data", "devices.json")
 HARDWARE_PATH = os.path.join(ROOT, "data", "hardware.json")
+SOC_TOPOLOGY_PATH = os.path.join(ROOT, "data", "soc_topology.json")
 
 US_COMMON_BRANDS = {"samsung", "google", "motorola", "lge"}
 
@@ -48,6 +49,35 @@ def _load_devices():
 
 _HARDWARE_CACHE = None
 _HARDWARE_LOCK = threading.Lock()
+_SOC_TOPO_CACHE = None
+_SOC_TOPO_LOCK = threading.Lock()
+
+
+def _load_soc_topology():
+    """Per-SoC CPU-capacity vector + GPU model (data/soc_topology.json), keyed by SoC codename.
+    These are the values behind /sys/.../cpu_capacity and /sys/class/kgsl/kgsl-3d0/gpu_model, which
+    FingerprintJS reads directly and which leaked the REAL device on every rotation. Pure constant
+    lookup keyed on the already-picked SoC (no RNG) -> byte-parity safe."""
+    global _SOC_TOPO_CACHE
+    if _SOC_TOPO_CACHE is None:
+        with _SOC_TOPO_LOCK:
+            if _SOC_TOPO_CACHE is None:
+                _SOC_TOPO_CACHE = json.load(open(SOC_TOPOLOGY_PATH, encoding="utf-8"))
+    return _SOC_TOPO_CACHE
+
+
+def _soc_topology_fields(soc, topo=None):
+    """cpu_capacity / gpu_model / cpu_present for a SoC. Falls back to "_default" so the lookup is
+    total. Coherent by construction: the values describe the SoC the profile already claims."""
+    t = (topo or _load_soc_topology())
+    e = t.get(soc) or t["_default"]
+    cap = e["cpu_capacity"]
+    n = len(cap.split())
+    return {
+        "cpu_capacity": cap,
+        "gpu_model": e.get("gpu_model", ""),
+        "cpu_present": "0-%d" % (n - 1),
+    }
 
 
 def _load_hardware():
@@ -238,6 +268,9 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # lookup keyed on the picked device codename; consumes no RNG (byte-parity safe). LAST so every
     # existing field's draw order is unchanged.
     p.update(_hw_fields(codename, _hw))
+    # Per-SoC CPU-capacity vector + GPU model — the /sys hardware signals FPJS reads directly.
+    # Keyed on the already-computed soc_platform; pure constant, no RNG (byte-parity safe).
+    p.update(_soc_topology_fields(p["soc_platform"]))
     return p
 
 

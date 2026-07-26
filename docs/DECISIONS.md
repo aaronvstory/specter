@@ -210,3 +210,10 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   the way the bug expected. A fixture that disagrees with production data tests nothing. Fixtures now
   mirror the real dataset, and both suites assert the fingerprint's DEVICE slot is a codename
   (no spaces/parens) — the invariant that would have caught it originally.
+- **2026-07-26 · /sys CPU/GPU signals spoofed via native redirect, keyed on SoC (data/soc_topology.json
+  + embedded Java SOC_TOPOLOGY)** — FPJS reads /sys/.../cpu_capacity, kgsl gpu_model, cpu/present
+  directly (tracer-proven); these leaked the real Pixel 4 every rotation. Chose a per-SoC lookup table
+  (not per-model) because these are SoC-determined facts; keyed on the already-computed soc_platform so
+  no new RNG draw and byte-parity holds. Java embeds the table (not an asset) to avoid an extra asset
+  load; a parity test asserts the JSON and the embedded map agree. gpu_model empty for Exynos is correct
+  (no KGSL node). The probe reads these back (native redirect applies to its libc reads) as the gate.

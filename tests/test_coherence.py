@@ -76,6 +76,28 @@ def test_soc_is_a_real_platform_codename():
         assert re.fullmatch(r"[a-z0-9]{4,10}", soc), f"implausible SoC {soc!r}"
 
 
+def test_soc_topology_signals_are_coherent():
+    """cpu_capacity / gpu_model / cpu_present describe the SoC the profile claims — the /sys hardware
+    signals FingerprintJS reads directly. Regression guard: they must exist, be well-formed, and
+    cpu_present must match the capacity-vector length.
+    """
+    for p in _profiles():
+        cap = p["cpu_capacity"]
+        vals = cap.split()
+        assert 1 <= len(vals) <= 16, f"implausible core count in cpu_capacity: {cap!r}"
+        for v in vals:
+            assert v.isdigit() and 1 <= int(v) <= 1024, f"cpu_capacity out of range: {v!r}"
+        # Kernel capacities are normalized so the fastest core is 1024. Homogeneous SoCs (e.g. SD665,
+        # all cores equal) legitimately peak below 1024 only when every core is the same; a
+        # heterogeneous vector (distinct values) MUST include a 1024. Either way, never exceed 1024.
+        caps = [int(v) for v in vals]
+        if len(set(caps)) > 1:
+            assert max(caps) == 1024, f"heterogeneous capacity vector must peak at 1024: {cap!r}"
+        assert p["cpu_present"] == f"0-{len(vals) - 1}", f"present must match core count: {p['cpu_present']}"
+        # Qualcomm SoCs expose a numeric KGSL gpu_model; Exynos/others have no kgsl node (empty is coherent).
+        assert re.fullmatch(r"\d*", p["gpu_model"]), f"gpu_model must be numeric-or-empty: {p['gpu_model']!r}"
+
+
 def test_factory_reset_is_after_the_build_and_in_the_past():
     """A device cannot be factory-reset before its own OS was built, nor in the future.
 

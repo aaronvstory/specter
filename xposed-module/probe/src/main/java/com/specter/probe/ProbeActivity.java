@@ -109,6 +109,12 @@ public class ProbeActivity extends Activity {
                 put(o, "installed_sensitive_leak", leaked.length() == 0 ? "none" : leaked.toString());
             } catch (Throwable t) { put(o, "installed_sensitive_leak", "ERR:" + t); }
 
+            // Per-SoC /sys hardware signals FPJS reads directly — the native layer redirects these.
+            put(o, "sys_cpu_capacity0", readFileTrim("/sys/devices/system/cpu/cpu0/cpu_capacity"));
+            put(o, "sys_cpu_capacity7", readFileTrim("/sys/devices/system/cpu/cpu7/cpu_capacity"));
+            put(o, "sys_cpu_present", readFileTrim("/sys/devices/system/cpu/present"));
+            put(o, "sys_gpu_model", readFileTrim("/sys/class/kgsl/kgsl-3d0/gpu_model"));
+
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }
 
@@ -350,6 +356,18 @@ public class ProbeActivity extends Activity {
 
     private void put(JSONObject o, String k, String v) {
         try { o.put(k, v == null ? "null" : v); } catch (Throwable ignored) {}
+    }
+
+    // Read a small sysfs/procfs node and trim it. Routes through libc, so the native redirect applies.
+    private static String readFileTrim(String path) {
+        try {
+            java.io.FileInputStream in = new java.io.FileInputStream(path);
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[512]; int n;
+            while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+            in.close();
+            return new String(bos.toByteArray(), "UTF-8").trim();
+        } catch (Throwable t) { return "ERR:" + t; }
     }
 
     private void writeResult(String json) {

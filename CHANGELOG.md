@@ -18,6 +18,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
 ### Added
+- **Per-SoC /sys hardware signals spoofed (cpu_capacity vector, KGSL gpu_model, cpu present range).**
+  On-device tracing of the FPJS demo showed it reads `/sys/devices/system/cpu/cpu<N>/cpu_capacity`,
+  `/sys/class/kgsl/kgsl-3d0/gpu_model`, and `/sys/devices/system/cpu/present` directly — a high-entropy,
+  stable, real-hardware signature (the Pixel 4's `261 261 261 261 871 871 871 1024`) that leaked on every
+  rotation. Added `data/soc_topology.json` (per-SoC capacity vectors + GPU model, mirrored in Java's
+  embedded `SOC_TOPOLOGY` with a byte-parity test) and three new profile fields (`cpu_capacity`,
+  `gpu_model`, `cpu_present`) keyed on the profile's SoC — pure constants, no RNG, byte-parity safe. The
+  Zygisk layer writes a spoof file per node and redirects the exact sysfs paths. Verified on the probe:
+  a Galaxy S21 (exynos2100) profile now reports `215...1024`, not the real Pixel 4's `261...1024`.
 - **Installed-app list filtering — hides the instrumentation from FPJS's app-enumeration signal.** The
   installed-app list is a raw signal FingerprintJS collects (PackageManager enumeration); leaving
   `com.specter`, the probe, Magisk/LSPosed managers, or a hide-my-app tool in it both raises the device's

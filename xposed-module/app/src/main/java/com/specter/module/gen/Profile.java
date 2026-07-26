@@ -47,6 +47,9 @@ public final class Profile {
             // _hw_fields(), so the flat-JSON key order and byte-parity draw order stay in lockstep.
             "hw_gpu_renderer", "hw_gpu_vendor", "hw_gles_version", "hw_cores", "hw_sensors",
             "hw_cameras", "hw_codecs", "hw_input_devices", "proc_cpuinfo",
+            // Per-SoC /sys signals (cpu_capacity vector, KGSL gpu_model, cpu present range) — appended
+            // LAST, same order as profile.py's _soc_topology_fields(), byte-parity in lockstep.
+            "cpu_capacity", "gpu_model", "cpu_present",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -216,7 +219,61 @@ public final class Profile {
         // be. Constant lookup keyed on the codename; consumes no RNG (byte-parity safe). LAST, so the
         // draw order of every field above is unchanged. Mirrors profile.py's _hw_fields().
         p.putAll(hwFieldsFromEntry(hwEntry));
+        // Per-SoC /sys signals (cpu_capacity vector, KGSL gpu_model, cpu present range) — the hardware
+        // FingerprintJS reads directly from /sys, which leaked the REAL device every rotation. Constant
+        // lookup keyed on the already-computed soc_platform; no RNG (byte-parity safe). Mirrors
+        // profile.py _soc_topology_fields(). Embedded table (SOC_TOPOLOGY) — same values as
+        // data/soc_topology.json — so no extra asset load and both sides stay in lockstep.
+        p.putAll(socTopologyFields(p.get("soc_platform")));
         return p;
+    }
+
+    // soc -> "cpu_capacity|gpu_model". MUST stay byte-identical to data/soc_topology.json. cpu_present
+    // is derived from the capacity vector's length. Missing SoC -> "_default".
+    static final Map<String, String> SOC_TOPOLOGY = new java.util.HashMap<>();
+    static {
+        SOC_TOPOLOGY.put("_default",   "381 381 381 381 1024 1024 1024 1024|");
+        SOC_TOPOLOGY.put("msmnile",    "261 261 261 261 871 871 871 1024|640");
+        SOC_TOPOLOGY.put("sdm855",     "261 261 261 261 871 871 871 1024|640");
+        SOC_TOPOLOGY.put("kona",       "265 265 265 265 908 908 908 1024|650");
+        SOC_TOPOLOGY.put("lahaina",    "251 251 251 251 870 870 870 1024|660");
+        SOC_TOPOLOGY.put("lito",       "256 256 256 256 256 256 1024 1024|620");
+        SOC_TOPOLOGY.put("sm6150",     "256 256 256 256 256 256 1024 1024|618");
+        SOC_TOPOLOGY.put("sdm845",     "364 364 364 364 1024 1024 1024 1024|630");
+        SOC_TOPOLOGY.put("msm8998",    "455 455 455 455 1024 1024 1024 1024|540");
+        SOC_TOPOLOGY.put("sdm660",     "417 417 417 417 1024 1024 1024 1024|512");
+        SOC_TOPOLOGY.put("sdm665",     "313 313 313 313 313 313 313 313|610");
+        SOC_TOPOLOGY.put("bengal",     "313 313 313 313 313 313 313 313|610");
+        SOC_TOPOLOGY.put("trinket",    "313 313 313 313 313 313 313 313|610");
+        SOC_TOPOLOGY.put("exynos9820", "260 260 260 260 636 636 1024 1024|");
+        SOC_TOPOLOGY.put("exynos9825", "260 260 260 260 636 636 1024 1024|");
+        SOC_TOPOLOGY.put("exynos990",  "251 251 251 251 686 686 1024 1024|");
+        SOC_TOPOLOGY.put("exynos2100", "215 215 215 215 640 640 640 1024|");
+        SOC_TOPOLOGY.put("exynos9810", "533 533 533 533 1024 1024 1024 1024|");
+        SOC_TOPOLOGY.put("exynos9610", "455 455 455 455 1024 1024 1024 1024|");
+        SOC_TOPOLOGY.put("exynos9611", "455 455 455 455 1024 1024 1024 1024|");
+        SOC_TOPOLOGY.put("exynos9904", "455 455 455 455 1024 1024 1024 1024|");
+        SOC_TOPOLOGY.put("exynos7904", "551 551 551 551 551 551 1024 1024|");
+        SOC_TOPOLOGY.put("exynos7885", "551 551 551 551 551 551 1024 1024|");
+        SOC_TOPOLOGY.put("exynos7884", "555 555 555 555 555 555 555 555|");
+        SOC_TOPOLOGY.put("exynos7870", "1024 1024 1024 1024 1024 1024 1024 1024|");
+        SOC_TOPOLOGY.put("exynos1280", "397 397 397 397 397 397 1024 1024|");
+        SOC_TOPOLOGY.put("exynos850",  "1024 1024 1024 1024 1024 1024 1024 1024|");
+        SOC_TOPOLOGY.put("gs101",      "236 236 236 236 758 758 1024 1024|");
+    }
+
+    static Map<String, String> socTopologyFields(String soc) {
+        String v = SOC_TOPOLOGY.get(soc);
+        if (v == null) v = SOC_TOPOLOGY.get("_default");
+        int bar = v.indexOf('|');
+        String cap = v.substring(0, bar);
+        String gpu = v.substring(bar + 1);
+        int n = cap.split(" ").length;
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("cpu_capacity", cap);
+        out.put("gpu_model", gpu);
+        out.put("cpu_present", "0-" + (n - 1));
+        return out;
     }
 
     /** Resolve the hardware entry for a codename: the dataset entry, else "_default", else the built-in

@@ -127,6 +127,27 @@ def test_data_json_matches_apk_assets():
         assert a == b, f"{name}: data/ and assets/ differ — re-copy so both paths read the same data"
 
 
+def test_soc_topology_matches_java_embedded_table():
+    """data/soc_topology.json (Python) and Profile.java's embedded SOC_TOPOLOGY must agree, or the
+    /sys hardware signals differ between the PC and on-device profiles — a byte-parity break. The Java
+    side embeds the table (no asset) so this test is the only thing preventing silent drift."""
+    import json as _json
+    import re as _re
+    topo = _json.load(open(os.path.join(ROOT, "data", "soc_topology.json"), encoding="utf-8"))
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/gen/Profile.java")).read()
+    # parse SOC_TOPOLOGY.put("soc", "cap|gpu");
+    pairs = dict(_re.findall(r'SOC_TOPOLOGY\.put\("([^"]+)",\s*"([^"]*)"\)', java))
+    assert pairs, "no SOC_TOPOLOGY.put entries found in Profile.java"
+    for soc, e in topo.items():
+        if soc.startswith("_comment"):
+            continue
+        want = f"{e['cpu_capacity']}|{e.get('gpu_model', '')}"
+        assert pairs.get(soc) == want, f"soc {soc}: java={pairs.get(soc)!r} != json {want!r}"
+    # and no extra SoCs on the Java side
+    extra = set(pairs) - {k for k in topo if not k.startswith("_comment")}
+    assert not extra, f"Java SOC_TOPOLOGY has SoCs missing from data/soc_topology.json: {extra}"
+
+
 def test_profile_has_coherent_hardware_descriptors():
     """Every generated profile carries the per-model hardware bundle, coherent with the device it
     claims to be (right SoC GPU) and different across different models."""
