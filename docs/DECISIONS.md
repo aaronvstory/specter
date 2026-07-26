@@ -236,3 +236,9 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   resetprop needed. Only ro.build.version.sdk / ro.product.first_api_level are Java-only by necessity
   (native intercept SIGSEGVs the zygote); a native read of those two still returns real. The old CLAUDE.md
   "resetprop layer not built yet" note was stale and is now corrected.
+- **2026-07-26 · Full profile coherence re-audited across 500 profiles + real-app apply (0 issues)** — every
+  new field (screen/sensor-rmp/soc-topology/sdk) is internally consistent: SDK matches release, cpu_present
+  matches capacity length, screen is portrait, device codename in the fingerprint with no space in the
+  device slot. Verified on DevInfo (a real device-info reader): a Galaxy S10 profile is coherent end-to-end
+  (device=beyond1, soc=exynos9820, screen=1440x3040@550, cpu=260..1024 tri-cluster, fp well-formed). Added
+  test_build_sdk_matches_the_android_release as the SDK<->release coherence guard.

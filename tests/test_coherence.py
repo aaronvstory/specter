@@ -69,6 +69,17 @@ def test_dual_sim_imei_distinct_but_share_tac():
         assert p["imei1"][:8] == p["imei2"][:8], "IMEIs must share the brand TAC"
 
 
+def test_build_sdk_matches_the_android_release():
+    """Build.VERSION.SDK_INT (build_sdk) must be the correct API level for the claimed Android release —
+    a profile claiming Android 9 reporting SDK 30 is itself a fingerprint. Cross-checks the emitted
+    field against the release->SDK map."""
+    from specter import generators as G
+    for p in _profiles():
+        assert p["build_sdk"] == str(G.sdk_for_release(p["build_release"])), \
+            f"SDK {p['build_sdk']} incoherent with release {p['build_release']}"
+        assert p["build_sdk"].isdigit() and 19 <= int(p["build_sdk"]) <= 36, f"implausible SDK {p['build_sdk']}"
+
+
 def test_soc_is_a_real_platform_codename():
     # SoC is always a real Qualcomm/Google platform token — never a made-up or space-containing string.
     for p in _profiles():
