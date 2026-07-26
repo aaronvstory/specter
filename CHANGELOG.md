@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.9.0] — 2026-07-27
+
+### Added
+- **Specter Lite (non-root harvester).** A tiny separate APK (:lite module, ~12KB, no root/Xposed/
+  native) that runs on ANY device and harvests every identifier + device field readable WITHOUT root
+  (android_id, Build.*, MediaDrm device id, screen metrics), exporting a Specter profile envelope. Copy
+  it to a rooted device's Download and import it in Specter to clone the harvested device. IMEI/serial/
+  IMSI (need root/privileged perms to read) are honestly left for hand-entry, never fabricated. PROVEN
+  end-to-end: harvested the real Pixel 4 -> imported into the main app with matching android_id + model
+  (the lite checksum byte-matches the app's VaultChecksum, so cross-app import validates).
+
 ## [0.8.1] — 2026-07-27
 
 ### Added

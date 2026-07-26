@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Specter Lite: a tiny, root-FREE harvester. Runs on ANY (non-rooted) Android device, reads every
+// identifier + device field it can legally obtain without root (android_id, GSF, ad id, Build.*, MediaDrm,
+// sensors, screen), and exports a Specter profile envelope to Download. That file imports into the main
+// Specter app on a rooted device — so you can clone a real device you have physical access to. No native
+// code, no Xposed, no root.
+android {
+    namespace 'com.specter.lite'
+    compileSdk 36
+    defaultConfig {
+        applicationId "com.specter.lite"
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+    }
+    lint { checkReleaseBuilds false; abortOnError false }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

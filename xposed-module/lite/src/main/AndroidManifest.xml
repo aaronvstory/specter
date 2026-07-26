@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Ad ID (Advertising ID) is read via a service in Play services; no dangerous perms.
+         Writing the harvested profile goes to the app's OWN external files dir (no storage permission). -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
+    <application
+        android:label="Specter Lite"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity
+            android:name=".HarvestActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
