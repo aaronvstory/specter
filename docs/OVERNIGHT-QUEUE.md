@@ -116,3 +116,12 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   reads that we can SAFELY spoof (NOT ro.build.version.sdk natively — SIGSEGVs); (c) keep the UI polished,
   consider a per-protection "last verified" readout from the probe; (d) when the user returns and
   re-enters demo keys, run the two-rotation split test in their workspace — the real gate.
+- [done] Display metrics spoof (c4699c2) — getDisplayMetrics width/height/density, a JAVA-API signal the
+  native tracer couldn't see. Keyed on device codename (FNV hash, byte-parity proven vs Java). Probe: A7
+  reports 720x1520@295. This class of signal (Java-API reads) is the most likely remaining anchor family.
+- [PROVEN] Real UNSPOOFED device -> SAME shared-workspace id (18uu8) as spoofed. The shared workspace is a
+  per-physical-device bucket; useless for split measurement. Confirmed the cleanest possible way.
+- [checked] Build.SUPPORTED_ABIS[0]=arm64-v8a (low entropy, every device same — skip). Audio props low
+  entropy (48000 typical — skip). Sensors already spoofed (name+vendor, java+native).
+- [NEXT] Continue auditing Java-API reads in the SDK collector (C0460f2 + siblings): telecom/phone
+  (SIM/carrier already spoofed — verify composite), connectivity, UserManager. Then keep UI polished.

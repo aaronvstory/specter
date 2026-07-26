@@ -41,7 +41,7 @@ public final class Protections {
         new P("hide_apps",     "Hide My AppList",    "Drops Specter, root managers, and anti-fingerprint tools from the installed-app list an app can enumerate."),
         new P("spoof_ua",      "Spoof User-Agent",   "Rebuilds the HTTP + WebView User-Agent from the applied device, so the UA no longer leaks the real phone."),
         new P("spoof_apktime", "Spoof install time", "Rewrites the app's own APK install timestamps to a per-identity value (the FingerprintJS FileTimestamps signal)."),
-        new P("spoof_sysfs",   "Spoof CPU/GPU /sys", "Redirects /sys cpu_capacity, gpu_model and present so the hardware signature matches the applied SoC."),
+        new P("spoof_sysfs",   "Spoof hardware profile", "Aligns the deep hardware signature with the applied device: /sys cpu_capacity, gpu_model and present, plus /proc/version and the screen resolution/density (getDisplayMetrics)."),
     };
 
     /** True unless the user explicitly turned this protection off. */
