@@ -304,3 +304,9 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   On-device: samsung a71 -> all coherent.
 - [2026-07-27 CRON NEXT] Building SENSORID (the flagship): profile-seeded affine transform on raw
   SensorEvent.values[] so the factory-calibration fp differs per profile instead of being constant.
+
+- [2026-07-27 AFK] POLISH pass started. (1) Device-simulation fields -> compact spec-sheet card (label-left/
+  value-right, hairline separators, fingerprint wraps monospace, tap-to-edit) — ~half height, premium look
+  (c288430). (2) Identifier cards compacted: label+toggle row + value with inline Edit/⟳ (was full-width
+  button row), disabled toggle dims value — ~half height across 15 ids (4fa0da4). Identity tab now much
+  tighter. NEXT: Settings/Location tab consistency, then FPJS breadth (locale/tz), then IDEAS backlog.
