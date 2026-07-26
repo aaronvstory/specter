@@ -66,9 +66,11 @@ def _ui_dump():
     return adb("shell", "cat", "/sdcard/_split.xml")
 
 
-def identify_and_read():
+def identify_and_read(prev_eid=None):
     """Force-stop + relaunch the demo, tap the fingerprint icon (found from its clickable bounds so the
-    tap is layout-robust), then read the visitorId + eventId from the rendered result."""
+    tap is layout-robust), then read the visitorId + eventId from the rendered result. Re-taps until the
+    eventId differs from prev_eid (the demo shows the CACHED last result on launch, so a naive read can
+    return the previous run's event)."""
     adb("shell", "am", "force-stop", DEMO)
     time.sleep(1)
     adb("shell", "monkey", "-p", DEMO, "-c", "android.intent.category.LAUNCHER", "1")
@@ -78,12 +80,15 @@ def identify_and_read():
     # The fingerprint icon is the large clickable node in the vertical middle of the screen. Find its
     # bounds from the dump and tap the center — far more reliable than a hardcoded coordinate.
     cx, cy = _find_fingerprint_icon(_ui_dump())
-    adb("shell", "input", "tap", str(cx), str(cy))
-    time.sleep(12)
-
-    dump = _ui_dump()
-    vid = _first(r'text="([0-9A-Za-z]{20})"', dump)
-    eid = _first(r'text="(\d{13}\.[A-Za-z0-9]{6})"', dump)
+    vid = eid = None
+    for _ in range(4):
+        adb("shell", "input", "tap", str(cx), str(cy))
+        time.sleep(11)
+        dump = _ui_dump()
+        vid = _first(r'text="([0-9A-Za-z]{20})"', dump)
+        eid = _first(r'text="(\d{13}\.[A-Za-z0-9]{6})"', dump)
+        if eid and eid != prev_eid:
+            break  # a fresh identification landed
     return vid, eid
 
 
@@ -143,8 +148,11 @@ def main():
     print(f"  [A] visitorId={va}  eventId={ea}\n")
 
     mb = rotate_no_clear("B")
-    vb, eb = identify_and_read()
+    vb, eb = identify_and_read(prev_eid=ea)   # wait for a FRESH event, not A's cached one
     print(f"  [B] visitorId={vb}  eventId={eb}\n")
+    if eb and eb == ea:
+        print("  (warning: run B reused run A's eventId — the demo may not have re-identified; the "
+              "visitorId comparison below still holds if both reads are from real identifications.)\n")
 
     if not va or not vb:
         print("RESULT: could not read a visitorId from the screen. Is the demo showing a result, and are "
