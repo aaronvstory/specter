@@ -29,7 +29,8 @@ static const char *PROP_ALIASES[][2] = {
     {"ro.build.version.security_patch", "build_security_patch"},
     {"ro.build.host", "build_host"},
     {"ro.bootloader", "build_bootloader"}, {"ro.boot.bootloader", "build_bootloader"},
-    {"ro.hardware", "build_hardware"},
+    {"ro.hardware", "build_hardware"}, {"ro.boot.hardware", "build_hardware"},
+    {"ro.boot.hardware.platform", "soc_platform"},
     {"ro.product.board", "build_board"},
     {"ro.serialno", "serial"}, {"ro.boot.serialno", "serial"},
 };

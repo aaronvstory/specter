@@ -22,6 +22,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the hooked app while a non-hooked shell still sees the real mounts (per-app, not device-wide).
 
 ### Fixed
+- **`ro.boot.hardware` + `ro.boot.hardware.platform` leaked the real device.** These props read the
+  real Pixel 4 (`flame` / `sm8150`) while `ro.hardware` / `ro.board.platform` were spoofed — both a
+  leak AND an internal inconsistency (two hardware props disagreeing). Added them to the Java + native
+  PROP_ALIASES (`ro.boot.hardware`->build_hardware, `ro.boot.hardware.platform`->soc_platform);
+  lockstep test still passes. Verified on the probe: a Pixel 5 profile now reports
+  `ro.boot.hardware=redfin` / `.platform=lito`, not the real values, with no zygote crash (unlike the
+  init-time SDK props, these are safe to intercept natively).
 - **`build_sdk` was incoherent for pre-Lollipop devices** (code-review finding). Five release
   strings present in `data/devices.json` (`4.2.2`/`4.3`/`4.4.2`/`4.4.4`/`5.0.2`) were missing from
   the release->SDK map, so they fell through to the default SDK 30 — a KitKat device reporting

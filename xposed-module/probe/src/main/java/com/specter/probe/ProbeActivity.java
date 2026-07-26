@@ -123,6 +123,9 @@ public class ProbeActivity extends Activity {
             put(o, "mountinfo_magisk_leak", mountinfo.toLowerCase().contains("magisk") ? "LEAK" : "clean");
             // frida-server artifact must be hidden from a File.exists()/access check (frida detection).
             put(o, "frida_server_visible", new java.io.File("/data/local/tmp/frida-server").exists() ? "LEAK" : "clean");
+            // ro.boot.hardware / ro.boot.hardware.platform leaked the real device (flame/sm8150) — now aliased.
+            put(o, "prop_ro_boot_hardware", readProp("ro.boot.hardware"));
+            put(o, "prop_ro_boot_hardware_platform", readProp("ro.boot.hardware.platform"));
             put(o, "sdk_int", String.valueOf(Build.VERSION.SDK_INT));
             put(o, "prop_sdk", readProp("ro.build.version.sdk"));
             put(o, "prop_first_api", readProp("ro.product.first_api_level"));
