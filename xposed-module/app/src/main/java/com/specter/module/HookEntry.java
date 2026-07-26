@@ -334,17 +334,44 @@ public class HookEntry implements IXposedHookLoadPackage {
                 });
             } catch (Throwable ignored) {}
         }
-        // Input devices — the COUNT is the signal; size an int[] from the profile's input-device list.
+        // Input devices — FPJS reads InputDevice.getName()+getVendorId() for every id (decompiled
+        // C0465h, case 4). Faking only the COUNT left the real touchscreen/PMIC names (fts, qpnp_pon on
+        // a Pixel 4) leaking — a stable per-device anchor. Advertise the REAL ids (capped at the
+        // profile's device count) so every id resolves, AND relabel each returned InputDevice's mName
+        // to a profile name, zeroing mVendorId/mProductId (internal touchscreens report 0).
         final String inputs = p.get("hw_input_devices");
         if (inputs != null && !inputs.isEmpty()) {
-            final int n = inputs.split(",").length;
-            try {
+            // Filter empty tokens so a malformed ","/", ," value can't yield n==0 (div-by-zero below).
+            final java.util.ArrayList<String> nameList = new java.util.ArrayList<>();
+            for (String s : inputs.split(",")) { String t = s.trim(); if (!t.isEmpty()) nameList.add(t); }
+            final String[] inNames = nameList.toArray(new String[0]);
+            final int n = inNames.length;
+            if (n > 0) try {
                 Class<?> im = XposedHelpers.findClass("android.hardware.input.InputManager", lp.classLoader);
                 XposedBridge.hookAllMethods(im, "getInputDeviceIds", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam mp) {
-                        int[] ids = new int[n];
-                        for (int k = 0; k < n; k++) ids[k] = k;   // stable 0..n-1
+                        // Keep only REAL ids (capped at n), so every advertised id resolves to a
+                        // (relabeled) device. Advertising 0..n-1 when only ~3 real devices exist made
+                        // the count disagree with the number of readable names â itself a tell
+                        // (both codex + code-reviewer flagged it). count == names now.
+                        int[] real = (int[]) mp.getResult();
+                        if (real == null || real.length == 0) return;
+                        int cap = Math.min(n, real.length);
+                        int[] ids = new int[cap];
+                        System.arraycopy(real, 0, ids, 0, cap);
                         mp.setResult(ids);
+                    }
+                });
+                XposedBridge.hookAllMethods(im, "getInputDevice", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        Object dev = mp.getResult();
+                        if (dev == null) return;
+                        int id = 0;
+                        try { id = (Integer) mp.args[0]; } catch (Throwable ignored) {}
+                        String name = inNames[Math.floorMod(id, n)];
+                        setStringFieldSafe(dev, "mName", name);
+                        setIntFieldSafe(dev, "mVendorId", 0);
+                        setIntFieldSafe(dev, "mProductId", 0);
                     }
                 });
             } catch (Throwable ignored) {}
@@ -407,6 +434,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
     private static void setIntFieldSafe(Object o, String field, int val) {
         try { Field f = o.getClass().getDeclaredField(field); f.setAccessible(true); f.setInt(o, val); }
+        catch (Throwable ignored) {}
+    }
+    private static void setStringFieldSafe(Object o, String field, String val) {
+        try { Field f = o.getClass().getDeclaredField(field); f.setAccessible(true); f.set(o, val); }
         catch (Throwable ignored) {}
     }
 

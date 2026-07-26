@@ -134,8 +134,21 @@ bootloader) is itself a giveaway. Every hardware field must match the one picked
 
 ## Workflow
 Version-bump everywhere (VERSION drives it). Commit + push each unit as it completes (always commit
-work). Bot loop on the PR (CodeRabbit/Kilo/gemini + a code-reviewer subagent); apply high-confidence
-findings with tests. Never ship cosmetic/non-functional UI — build it or clearly mark it non-functional.
+work). Never ship cosmetic/non-functional UI — build it or clearly mark it non-functional.
+
+### Review gauntlet (NON-NEGOTIABLE before every merge)
+Run **`/gauntlet` before merging any PR to main.** As of 2026-07-26 the gauntlet's two AUTHORITATIVE
+review sources are (1) a **`code-reviewer` subagent** and (2) **`/codex`** (GPT-5.x, a strong
+different-model second opinion) — run in parallel on `git diff main...HEAD`, reconcile, fix everything
+both agree on plus any reproducible single-source CRITICAL/HIGH, add tests, re-verify. **The PR review
+bots (CodeRabbit/Kilo/gemini/Codoki) are BROKEN/unreliable and are NOT part of the gauntlet** — a bot
+comment is a non-blocking bonus if it happens to appear; never wait on or gate a merge on the bots.
+- **Also run `/codex` (or the full `/gauntlet`) whenever you're UNSURE about anything** — a tricky bug,
+  an unfamiliar API/behavior, a non-obvious design call, or when a fresh very-high-quality model take
+  would help. Don't reserve the second set of eyes for merge time; use it proactively when it adds value.
+- `/codex` invocation: pipe the prompt (`cat file | codex exec -`), `tee` the output, run in background
+  (~3-6 min), read the verdict from the END of the file. Never run codex inside a Task subagent (it
+  exits before codex finishes). See the global `codex` skill + `/gauntlet` command for details.
 
 ## Project structure & docs to keep updated (NON-NEGOTIABLE)
 Keep these current as work happens — they are the project's memory:

@@ -2,6 +2,23 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-26 · Deferred telephony-coherence hooks (getSimCountryIso/getNetworkCountryIso/getPhoneType/
+  getSimState)** — the FPJS SDK reads these (M0/N0), and a US-only profile whose SIM country reads a real
+  non-US value would be a coherence tell. BUT the test Pixel 4 has NO SIM (`gsm.sim.state=ABSENT`), so
+  every telephony country/operator signal reads empty (probe confirms `sim_operator=""`), not a constant —
+  they are NOT the visitorId anchor and can't be validated on this device. Decision: defer until there's a
+  real fleet SIM to test against; existing operator/IMEI hooks already cover the with-SIM case. Not chasing
+  empty signals on a SIM-less bench device.
+- **2026-07-26 · Input-device hook now relabels names, not just the count** — the SDK reads
+  `InputDevice.getName()`+`getVendorId()` per id (decompiled `C0465h` case 4), so faking only
+  `getInputDeviceIds` (the count) let the real Pixel-4 `fts`/`qpnp_pon` device names leak — a stable
+  hardware anchor. Chose to hook `getInputDevice(int)` and relabel `mName` from `hw_input_devices`
+  (indexed by the 0..n-1 ids the count-hook returns), zeroing `mVendorId`/`mProductId` (0 is what
+  internal touchscreens/PMICs actually report, so it's coherent and non-leaking). Java-only: InputDevice
+  objects can't be constructed from an app hook, but they CAN be relabeled in place via reflection, same
+  technique as the sensor relabel. A code-audit initially flagged `/proc/cpuinfo` as an uncovered
+  sibling leak — FALSE: the Zygisk native layer already redirects `/proc/cpuinfo` (main.cpp `g_cpuinfo_path`);
+  the audit only checked the Java HookEntry. Left cpuinfo as-is.
 - **2026-07-26 · The FPJS demo is now measured via the Server API in the USER's own workspace, and the
   visitorId anchor is PROVEN to be the User-Agent, not the hardware bundle** — earlier docs waffled on
   whether the demo's stuck visitorId was stale server memory vs a real leak, and framed a fresh key as a

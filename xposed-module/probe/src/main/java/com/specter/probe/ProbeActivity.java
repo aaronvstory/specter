@@ -348,6 +348,22 @@ public class ProbeActivity extends Activity {
                     (android.hardware.input.InputManager) getSystemService(INPUT_SERVICE);
             int[] ids = im.getInputDeviceIds();
             put(o, "hw_input_count", String.valueOf(ids.length));
+            // Read names+vendorIds exactly as FPJS does (getInputDevice(id).getName/getVendorId).
+            // On a spoofed device these must show the profile's input-device names, NOT the real
+            // Pixel-4 fts/qpnp_pon. This is the on-device self-check for the input-device relabel hook.
+            StringBuilder names = new StringBuilder();
+            int resolved = 0;
+            for (int id : ids) {
+                android.view.InputDevice d = im.getInputDevice(id);
+                if (d == null) continue;
+                resolved++;
+                if (names.length() > 0) names.append(";");
+                names.append(d.getName()).append("|").append(d.getVendorId());
+            }
+            put(o, "hw_input_devices", names.toString());
+            // Advertised-id count MUST equal the number that resolve to a real device, else FPJS sees
+            // "5 ids but 3 names" — a mismatch tell. resolved != ids.length flags a regression.
+            put(o, "hw_input_resolved", String.valueOf(resolved));
         } catch (Throwable t) { put(o, "hw_input_count", "ERR:" + t); }
 
         // --- /proc/cpuinfo (native redirect target): report the Hardware line + processor count ---
