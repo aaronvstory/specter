@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **On-device profile vault** — save a generated identity under a date/time label and re-apply that
+  EXACT device later (same unique IDs), or delete it. New **Saved** tab: an opt-in "Save to vault
+  after RANDOMIZE ALL" checkbox (default off — profiles are entirely skippable), a "Save current to
+  vault" button, and a **searchable, date-grouped, collapsible** list of saved profiles. Each entry
+  is one `files/vault/<label>.json` (label `MMDDYY-DayAbbr-HHMM[-Name]`, name optional). Search filters
+  by name or device (case-insensitive) and auto-expands matches; date groups ("Sun 07/26/26 (2)")
+  collapse/expand on tap. Same-minute saves disambiguate with a `-2`/`-3` suffix (no silent overwrite).
+  Verified on-device end-to-end: save A -> generate+apply C -> restore A re-applies A's exact android_id.
 - **Hide Frida artifacts** (a hooking/instrumentation-framework detection vector). This device had a
   leftover `/data/local/tmp/frida-server` binary that a `File.exists()`/`access()` frida check would
   find. Added the frida artifact paths (frida-server, frida-gadget, re.frida.server, libfrida-gadget)

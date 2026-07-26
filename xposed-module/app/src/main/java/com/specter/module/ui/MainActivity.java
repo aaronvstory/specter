@@ -50,6 +50,8 @@ public class MainActivity extends Activity {
     private int tab = 0;            // 0=Identity 1=Saved 2=Settings 3=Location
     private Vault vault;
     private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
+    private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
+    private final Set<String> collapsedGroups = new java.util.HashSet<>();  // date groups the user collapsed
 
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
@@ -533,8 +535,9 @@ public class MainActivity extends Activity {
         content.addView(saveCard);
 
         content.addView(sectionLabel("Saved profiles"));
-        java.util.List<Vault.Entry> entries = vault.list();
-        if (entries.isEmpty()) {
+        savedListHolder = null;   // fresh holder per full render (content was cleared by render())
+        java.util.List<Vault.Entry> all = vault.list();
+        if (all.isEmpty()) {
             LinearLayout empty = cardBox();
             TextView t = value("No saved profiles yet.");
             t.setTextColor(Theme.DIM);
@@ -542,7 +545,88 @@ public class MainActivity extends Activity {
             content.addView(empty);
             return;
         }
-        for (Vault.Entry e : entries) content.addView(savedRow(e));
+
+        // Search box — filters by label OR device (case-insensitive substring). Preserves the query and
+        // caret across re-renders so typing feels continuous.
+        final EditText search = new EditText(this);
+        search.setHint("Search saved (name or device)…");
+        search.setText(vaultQuery);
+        search.setSelection(vaultQuery.length());
+        search.setTextColor(Theme.INK);
+        search.setHintTextColor(Theme.DIM);
+        search.setSingleLine(true);
+        search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        search.setBackground(pill(Theme.CARD, Theme.LINE));
+        search.setPadding(dp(12), dp(8), dp(12), dp(8));
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        slp.setMargins(0, dp(2), 0, dp(6));
+        search.setLayoutParams(slp);
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                vaultQuery = s.toString();
+                renderSavedList(all);   // re-render just the list below the search box
+            }
+        });
+        content.addView(search);
+
+        renderSavedList(all);
+    }
+
+    /** Render the filtered, date-grouped, collapsible list of saved profiles (below the search box). */
+    private LinearLayout savedListHolder;
+    private void renderSavedList(java.util.List<Vault.Entry> all) {
+        if (savedListHolder == null) {
+            savedListHolder = new LinearLayout(this);
+            savedListHolder.setOrientation(LinearLayout.VERTICAL);
+            content.addView(savedListHolder);
+        }
+        savedListHolder.removeAllViews();
+
+        String q = vaultQuery.trim().toLowerCase();
+        // Group by the date+day prefix "MMDDYY-DayAbbr" (the label's first two dash-parts), newest first.
+        java.util.LinkedHashMap<String, java.util.List<Vault.Entry>> groups = new java.util.LinkedHashMap<>();
+        int shown = 0;
+        for (Vault.Entry e : all) {
+            if (!q.isEmpty() && !e.label.toLowerCase().contains(q) && !e.device.toLowerCase().contains(q)) continue;
+            shown++;
+            String[] parts = e.label.split("-");
+            String group = parts.length >= 2 ? parts[0] + "-" + parts[1] : e.label;   // "072626-Sun"
+            groups.computeIfAbsent(group, k -> new java.util.ArrayList<>()).add(e);
+        }
+        if (shown == 0) {
+            TextView none = value(q.isEmpty() ? "No saved profiles." : "No matches for \"" + vaultQuery + "\".");
+            none.setTextColor(Theme.DIM);
+            savedListHolder.addView(none);
+            return;
+        }
+        for (Map.Entry<String, java.util.List<Vault.Entry>> g : groups.entrySet()) {
+            final String groupKey = g.getKey();
+            final boolean collapsed = collapsedGroups.contains(groupKey) && q.isEmpty();  // search always expands
+            // Group header (tap to collapse/expand). Shows the date/day + count.
+            TextView header = new TextView(this);
+            header.setText((collapsed ? "▸  " : "▾  ") + prettyGroup(groupKey) + "   (" + g.getValue().size() + ")");
+            header.setTextColor(Theme.GOLD);
+            header.setTextSize(13);
+            header.setPadding(dp(4), dp(10), dp(4), dp(4));
+            header.setOnClickListener(v -> {
+                if (collapsedGroups.contains(groupKey)) collapsedGroups.remove(groupKey);
+                else collapsedGroups.add(groupKey);
+                renderSavedList(all);
+            });
+            savedListHolder.addView(header);
+            if (!collapsed) for (Vault.Entry e : g.getValue()) savedListHolder.addView(savedRow(e));
+        }
+    }
+
+    /** "072626-Sun" -> "Sun 07/26/26" for the group header. */
+    private String prettyGroup(String key) {
+        String[] p = key.split("-");
+        if (p.length >= 2 && p[0].length() == 6)
+            return p[1] + " " + p[0].substring(0, 2) + "/" + p[0].substring(2, 4) + "/" + p[0].substring(4, 6);
+        return key;
     }
 
     private View savedRow(final Vault.Entry e) {
