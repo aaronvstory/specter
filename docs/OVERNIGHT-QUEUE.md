@@ -242,3 +242,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - [SURFACE] su/magisk paths ENOENT, mounts/mountinfo filtered, frida hidden, our libs absent from maps
   (DenyList). The client-visible root surface is comprehensively covered. rootApps=True is server-side
   history in the shared demo workspace (client-side traced clean).
+
+- [VERIFIED this iter] developerTools: the demo reads adb_enabled + development_settings_enabled via the
+  Java Settings.Global.getString path (traced), and the hook returns final=0 for both — client sends
+  dev-options OFF. clonedApp: no clone/dual-app/data-dir probing that leaks (traced) — stays False. Mount
+  filter confirmed NOT over-filtering (no legit mount line matches the frida/gadget markers; 112 mounts,
+  only ~5 magisk dropped). Both remaining server smart-signals (rootApps, developerTools) are fully handled
+  on the client read path; any True is server-side history in the shared demo workspace.
