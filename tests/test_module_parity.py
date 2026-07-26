@@ -226,3 +226,20 @@ def test_every_selectable_device_has_hardware_entry():
             continue
         cn = d[4].split("_")[0]
         assert cn in hw, f"selectable device codename {cn} missing from hardware.json"
+
+
+def test_every_ui_identifier_is_actually_hooked():
+    """Guard against the 'generated-but-dropped' bug (e.g. gmail was shown in the UI but had NO
+    AccountManager hook, so apps read the real account). Every identifier the app UI presents as
+    spoofable MUST have a consuming reference in HookEntry.java — else the UI claims false coverage."""
+    hook = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/HookEntry.java")).read()
+    ui = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/ui/IdentityFields.java")).read()
+    ui_keys = re.findall(r'new Field\("([a-z0-9_]+)"', ui)
+    assert ui_keys, "no IdentityFields keys parsed"
+    # Build.* fields are applied via prop aliases / static-field spoof; identifiers must be named in HookEntry.
+    for k in ui_keys:
+        if k.startswith("build_") or k in ("sim_operator_name",):
+            continue  # applied via prop aliases / telephony operator hook (covered elsewhere)
+        assert f'"{k}"' in hook, (
+            f"UI shows identifier '{k}' as spoofable but HookEntry.java never references it "
+            f"— generated-but-dropped (false coverage). Wire a hook or remove it from the UI.")

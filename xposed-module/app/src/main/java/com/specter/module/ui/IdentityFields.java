@@ -36,7 +36,8 @@ final class IdentityFields {
             new Field("mobile_number", "Phone number", true),
             new Field("sim_subscriber_imsi", "IMSI", true),
             new Field("sim_serial_iccid", "SIM serial (ICCID)", true),
-            new Field("gmail", "Gmail", true)
+            new Field("gmail", "Gmail", true),
+            new Field("app_set_id", "App Set ID", true)
     );
 
     /** Device-simulation (Build.*) fields — shown read-only, rotated as a coherent bundle. */
