@@ -514,8 +514,12 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    /** One identifier: label + enable toggle on the top row; the value and two SMALL inline actions
+     *  (Edit / ⟳ randomize) on the second row. Compact — no full-width button row — so 15 identifiers
+     *  don't dominate the scroll. Disabled (toggle off) dims the value to signal it won't be applied. */
     private View identifierCard(final IdentityFields.Field f) {
         LinearLayout card = cardBox();
+
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
@@ -523,21 +527,26 @@ public class MainActivity extends Activity {
         lab.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         final Switch en = new Switch(this);
         en.setChecked(Toggles.isEnabled(prefs, f.key));
-        en.setOnCheckedChangeListener((v, on) -> Toggles.set(prefs, f.key, on));
         head.addView(lab);
         head.addView(en);
         card.addView(head);
 
+        // Value + inline actions row.
+        LinearLayout valRow = new LinearLayout(this);
+        valRow.setOrientation(LinearLayout.HORIZONTAL);
+        valRow.setGravity(Gravity.CENTER_VERTICAL);
+        valRow.setPadding(0, dp(3), 0, 0);
         final TextView val = value(profile.get(f.key));
-        card.addView(val);
+        val.setPadding(0, 0, dp(8), 0);
+        val.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (!Toggles.isEnabled(prefs, f.key)) val.setTextColor(Theme.DIM);
+        valRow.addView(val);
 
-        LinearLayout btns = new LinearLayout(this);
-        btns.setOrientation(LinearLayout.HORIZONTAL);
-        btns.addView(button("EDIT", false, v -> {
+        Button edit = compactButton("Edit", false, v -> {
             if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
             editField(f, val);
-        }));
-        btns.addView(button("RANDOMIZE", false, v -> {
+        });
+        Button rnd = compactButton("⟳", false, v -> {
             if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
             final Map<String, String> ctx = new LinkedHashMap<>(profile);
             new Thread(() -> {
@@ -551,8 +560,16 @@ public class MainActivity extends Activity {
                     runOnUiThread(() -> status.setText("Randomize failed: " + t.getMessage()));
                 }
             }).start();
-        }));
-        card.addView(btns);
+        });
+        valRow.addView(edit);
+        valRow.addView(rnd);
+        card.addView(valRow);
+
+        // Toggling enable also dims/undims the value so it's clear what will actually apply.
+        en.setOnCheckedChangeListener((v, on) -> {
+            Toggles.set(prefs, f.key, on);
+            val.setTextColor(on ? Theme.INK : Theme.DIM);
+        });
         return card;
     }
 
