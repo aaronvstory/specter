@@ -64,27 +64,38 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookBattery(lpparam, p);
     }
 
-    /** Battery full/design capacity (a FingerprintJS hardware signal). BatteryManager.getIntProperty/
-     *  getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER) exposes the current charge in µAh; at/near full
-     *  it's the device's real design capacity — a stable per-model hardware value. Return the profile's
-     *  per-device value so it doesn't leak the real host battery. Only the CHARGE_COUNTER property (id 1)
-     *  is rewritten; the live CAPACITY percentage etc. are left real (they're not device-identifying). */
+    /** Battery capacity (a FingerprintJS hardware signal). CHARGE_COUNTER is the CURRENT charge in µAh —
+     *  a fingerprinter derives the full/design capacity as charge_counter / (capacity%/100). To keep that
+     *  derivation coherent we don't return a constant: we scale the profile's DESIGN capacity by the LIVE
+     *  charge percentage (BATTERY_PROPERTY_CAPACITY, left real), so charge_counter tracks discharge exactly
+     *  as on a real device while implying the spoofed full capacity. The live percentage itself is not
+     *  device-identifying, so it stays real. */
     private void hookBattery(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
         long uah = 0;
         try { uah = Long.parseLong(p.get("battery_uah")); } catch (Throwable ignored) {}
         if (uah <= 0) return;
-        final long chargeUah = uah;
+        final long designUah = uah;
         try {
-            Class<?> bm = XposedHelpers.findClass("android.os.BatteryManager", lp.classLoader);
-            final int CHARGE_COUNTER = 1;   // BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER
+            final Class<?> bm = XposedHelpers.findClass("android.os.BatteryManager", lp.classLoader);
+            final int CHARGE_COUNTER = 1;   // BATTERY_PROPERTY_CHARGE_COUNTER
+            final int CAPACITY = 4;         // BATTERY_PROPERTY_CAPACITY (live %)
             XC_MethodHook h = new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam mp) {
-                    if (mp.args.length >= 1 && mp.args[0] instanceof Integer
-                            && (Integer) mp.args[0] == CHARGE_COUNTER) {
-                        Object res = mp.getResult();
-                        if (res instanceof Integer) mp.setResult((int) chargeUah);
-                        else if (res instanceof Long) mp.setResult(chargeUah);
-                    }
+                    if (mp.args.length < 1 || !(mp.args[0] instanceof Integer)) return;
+                    if ((Integer) mp.args[0] != CHARGE_COUNTER) return;
+                    // Live charge % via getIntProperty(CAPACITY) — plain reflection (the LSPosed
+                    // XposedHelpers stub has no callMethod). This re-enters our own hook, but with arg
+                    // CAPACITY != CHARGE_COUNTER so it falls straight through and returns the real %.
+                    int pct = 100;
+                    try {
+                        java.lang.reflect.Method gip = bm.getMethod("getIntProperty", int.class);
+                        Object live = gip.invoke(mp.thisObject, CAPACITY);
+                        if (live instanceof Integer) { int v = (Integer) live; if (v >= 0 && v <= 100) pct = v; }
+                    } catch (Throwable ignored) {}
+                    long spoofed = designUah * pct / 100L;
+                    Object res = mp.getResult();
+                    if (res instanceof Integer) mp.setResult((int) spoofed);
+                    else if (res instanceof Long) mp.setResult(spoofed);
                 }
             };
             try { XposedBridge.hookAllMethods(bm, "getIntProperty", h); } catch (Throwable ignored) {}
@@ -1008,7 +1019,12 @@ public class HookEntry implements IXposedHookLoadPackage {
                 // signals "explicitly set to 0" (i.e. was touched) — a subtly rooted-ish tell. null
                 // mimics a pristine consumer phone. (getInt still returns 0 via its own hook = the
                 // caller-supplied default, which is what a pristine device yields for getInt.)
-                if (hit) param.setResult(null);
+                if (hit) { param.setResult(null); return; }
+                // boot_count via getString must return the SAME spoofed value as getInt, or the string path
+                // leaks the host's real count (codex). Only overwrite if the real result was non-null.
+                if (bootCount > 0 && SpoofLogic.argsContainKey(param.args, "boot_count")
+                        && param.getResult() != null)
+                    param.setResult(String.valueOf(bootCount));
                 if (trace && param.args != null && param.args.length > 1 && param.args[1] instanceof String
                         && ((String) param.args[1]).matches(".*(adb|develop|settings).*"))
                     XposedBridge.log("[specter][global] getString " + param.args[1] + " hit=" + hit
@@ -1017,6 +1033,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         };
         try { XposedBridge.hookAllMethods(Settings.Global.class, "getInt", getInt); } catch (Throwable ignored) {}
         try { XposedBridge.hookAllMethods(Settings.Global.class, "getString", getStr); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(Settings.Global.class, "getStringForUser", getStr); } catch (Throwable ignored) {}
     }
 
     private static boolean argsContainAny(Object[] args, java.util.Set<String> keys) {
