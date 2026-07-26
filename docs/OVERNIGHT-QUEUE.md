@@ -428,3 +428,9 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   source). Clean-built dist/specter-module-v0.9.3.apk (all newest classes confirmed in dex via dexdump,
   not the false-negative strings check). Both test suites green. P4 on v0.9.3. 4a still root-blocked on
   the user (su inaccessible via adb). Remaining work is L-effort structural only.
+
+- [2026-07-27 AFK iter] FLAGSHIP POLISH: live-trace viewer now shows spoofed/real COVERAGE BADGES (0.10.0)
+  — every read gets a green "spoofed" / gray "real" / no-badge "unknown", + a summary protection score
+  ("79 signals · 43 spoofed · 15 real"). Users SEE which FPJS-read signals are protected (the differentiator
+  vs GeerGit). New Coverage class (pure, JVM-tested). Verified on-device vs a real demo trace: every
+  ro.product/ro.build/ro.boot identity prop + cpu_capacity files badged spoofed; fonts/abilist/arch real.
