@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Google-account + media-codec spoofing are OPT-IN (default OFF)** — both can break the target app
+  (a fabricated Google account fails sign-in; a relabeled codec name fails createByCodecName), so they
+  are now Settings protections the user enables knowingly, never on by default. Account masking also no
+  longer FABRICATES an account — it relabels the REAL com.google account's name in place (auth paths keep
+  resolving a genuine account) and invents nothing when the device has none. Fleet apps are safe by default.
 - **Media-codec list spoofing** (`MediaCodecList.getCodecInfos`). The codec-name set (e.g.
   `OMX.qcom.video.decoder.avc` reveals Qualcomm) is a stable per-SoC signal that was GENERATED into
   every profile (`hw_codecs`) but never applied â the real ~40-codec device list leaked (the probe only
