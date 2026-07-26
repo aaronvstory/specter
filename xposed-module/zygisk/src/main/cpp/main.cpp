@@ -585,6 +585,29 @@ public:
         // cpu_capacity is per-core: "261 261 ... 1024" -> one file per core cpuN/cpu_capacity.
         // Gated: the app writes "spoof_sysfs":"0" into the profile only when the user toggles it OFF.
         bool sysfs_off = profile.count("spoof_sysfs") && profile.at("spoof_sysfs") == "0";
+
+        // /proc/version — the kernel banner. The Java os.version property hook does NOT cover a direct
+        // /proc/version read (a known gap vs byedentity), so an app reading the file gets the REAL
+        // kernel. Rebuild the AOSP banner from build_kernel_version and redirect the read. Gated with
+        // spoof_sysfs (same hardware/kernel class of signal).
+        if (!pkg.empty() && !sysfs_off) {
+            auto kv = profile.find("build_kernel_version");
+            if (kv != profile.end() && !kv->second.empty()) {
+                // Match the real Pixel-4 banner shape; only the kernel-version token is identity-bearing.
+                std::string banner = "Linux version " + kv->second +
+                    " (android-build@abfarm) (Android clang version 11.0.1) "
+                    "#1 SMP PREEMPT Wed Jun 30 09:33:45 UTC 2021\n";
+                std::string dir = "/data/data/" + pkg + "/files";
+                mkdir(dir.c_str(), 0700);
+                std::string sp = dir + "/.specter_procver";
+                int f = open(sp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+                if (f >= 0) {
+                    if (write(f, banner.data(), banner.size()) == (ssize_t) banner.size())
+                        g_sys_redirect["/proc/version"] = sp;
+                    close(f);
+                }
+            }
+        }
         if (!pkg.empty() && !sysfs_off) {
             std::string dir = "/data/data/" + pkg + "/files";
             mkdir(dir.c_str(), 0700);

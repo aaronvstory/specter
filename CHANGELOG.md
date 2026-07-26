@@ -18,6 +18,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   detection, then re-run the two-rotation test. See docs/IDEAS.md + docs/GOAL.md 1.3.
 
 ### Added
+- **`/proc/version` kernel banner spoofed (closes a byedentity-comparison gap).** Specter spoofed the
+  `os.version` property but a direct `/proc/version` read got the REAL kernel (the Pixel 4's
+  `4.14.212-...`). The Zygisk layer now redirects `/proc/version` to a banner rebuilt from the profile's
+  `build_kernel_version`, so a file-reading collector sees the applied kernel. Gated by the CPU/GPU /sys
+  toggle. Verified on the probe: reports `5.15.294-android12-...`, real `4.14.212` no longer leaks.
 - **Protections UI — real toggles + live ON/OFF status for every anti-detection feature.** The app's
   Settings tab now has a Protections section with a working switch for each of: Hide root, Hide
   developer mode (ADB + dev options), Hide My AppList (installed-app filter), Spoof User-Agent, Spoof

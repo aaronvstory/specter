@@ -114,6 +114,7 @@ public class ProbeActivity extends Activity {
             put(o, "sys_cpu_capacity7", readFileTrim("/sys/devices/system/cpu/cpu7/cpu_capacity"));
             put(o, "sys_cpu_present", readFileTrim("/sys/devices/system/cpu/present"));
             put(o, "sys_gpu_model", readFileTrim("/sys/class/kgsl/kgsl-3d0/gpu_model"));
+            put(o, "proc_version", readFileTrim("/proc/version"));
 
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }
