@@ -280,12 +280,30 @@ static void build_filtered_mounts(const char *src, const std::string &tag, std::
     close(fd);
 }
 
+// SELinux enforce status — FPJS reads it NATIVELY (decompiled: da.component13(), "SELinux status
+// unavailable") as a root signal. A Magisk device is often permissive or policy-patched, which reads
+// as tampered. Redirect a read of /sys/fs/selinux/enforce to a file containing "1" so it reports
+// ENFORCING. Gated by g_hide_root (it's a root/tamper signal). Best-effort.
+static std::string g_selinux_path;   // spoof file "1\n", empty = not active
+static void build_selinux_spoof() {
+    if (g_files_dir.empty()) return;
+    std::string path = g_files_dir + "/.specter_selinux";
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd < 0) return;
+    if (write(fd, "1\n", 2) == 2) g_selinux_path = path;
+    close(fd);
+}
+static bool is_selinux_enforce(const char *path) {
+    return path && strcmp(path, "/sys/fs/selinux/enforce") == 0;
+}
+
 // Map a spoof-target path to our replacement file, or return the original path unchanged.
 static const char *redirect_path(const char *path) {
     if (!g_cpuinfo_path.empty() && is_cpuinfo(path)) return g_cpuinfo_path.c_str();
     if (!g_bootid_path.empty()  && is_bootid(path))  return g_bootid_path.c_str();
     if (!g_mounts_path.empty()    && is_mounts(path))    return g_mounts_path.c_str();
     if (!g_mountinfo_path.empty() && is_mountinfo(path)) return g_mountinfo_path.c_str();
+    if (!g_selinux_path.empty() && is_selinux_enforce(path)) return g_selinux_path.c_str();
     const char *sr = sys_redirect(path);
     if (sr) return sr;
     return path;
@@ -307,9 +325,27 @@ static const char *ROOT_PATHS[] = {
     "/data/local/tmp/re.frida.server", "/system/lib/libfrida-gadget.so",
     "/system/lib64/libfrida-gadget.so", "/data/local/tmp/frida",
 };
+// Root-owned directory PREFIXES. FPJS's native root check probes a ~200-entry list (encrypted, can't
+// enumerate) — an exact-match denylist of 24 paths always loses to it. Prefix-matching the root-owned
+// trees covers the WHOLE family (magisk db/service.d/post-fs-data.d/modules/riru, lspd, ksu, ap, the
+// magisk mirror dirs, root-app data/app dirs) in one rule, so a stat of any sub-path returns ENOENT.
+static const char *ROOT_PREFIXES[] = {
+    "/data/adb/",            // magisk/ksu/ap root dir: modules, service.d, post-fs-data.d, magisk.db, lspd, riru
+    "/sbin/.magisk",         // magisk mirror/mount tree
+    "/dev/.magisk",
+    "/cache/.disable_magisk",
+    "/debug_ramdisk/.magisk",
+    // Root-manager + common root-app package dirs (a native access("/data/data/<pkg>") probe). The Java
+    // PackageManager filter doesn't cover the native filesystem path.
+    "/data/data/com.topjohnwu.magisk", "/data/user/0/com.topjohnwu.magisk",
+    "/data/data/eu.chainfire.supersu", "/data/data/com.koushikdutta.superuser",
+    "/data/data/me.weishu.kernelsu", "/data/data/com.zachspong.temprootremovejb",
+    "/data/data/org.lsposed.manager", "/data/data/io.github.lsposed.manager",
+};
 static bool is_root_path(const char *path) {
     if (!path) return false;
     for (auto p : ROOT_PATHS) if (strcmp(path, p) == 0) return true;
+    for (auto pre : ROOT_PREFIXES) { size_t l = strlen(pre); if (strncmp(path, pre, l) == 0) return true; }
     // "which su" style: any path ending in "/su"
     size_t n = strlen(path);
     if (n >= 3 && strcmp(path + n - 3, "/su") == 0) return true;
@@ -355,6 +391,17 @@ static int my_access(const char *path, int mode) {
     return orig_access(path, mode);
 }
 
+// faccessat() is what bionic's access() actually calls on modern Android, and what a native root check
+// (e.g. faccessat(AT_FDCWD, "/system/bin/su", F_OK, 0)) uses to BYPASS the access() hook. Cover it too,
+// or a su-path probe via faccessat slips through and rootApps stays true. (faccessat2 raw-syscall variant
+// is handled in my_syscall below.)
+using faccessat_t = int (*)(int, const char *, int, int);
+static faccessat_t orig_faccessat = nullptr;
+static int my_faccessat(int dirfd, const char *path, int mode, int flags) {
+    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    return orig_faccessat(dirfd, path, mode, flags);
+}
+
 // getauxval is imported by libfp.so — likely reads AT_HWCAP/AT_HWCAP2 (CPU feature bits, a hardware
 // signal). Trace which keys it asks for; we don't spoof yet (would need coherent hwcaps per SoC).
 // syscall tracer + redirect: libfp.so imports raw `syscall` (readelf), which BYPASSES our open/openat/
@@ -367,9 +414,32 @@ static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5,
     if (number == __NR_openat) {
         const char *path = (const char *) a2;   // openat(dirfd, path, flags, mode)
         if (g_trace) trace_path("syscall.openat", path);
+        if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
         const char *rp = redirect_path(path);
         if (rp != path)
             return orig_syscall(number, (long) AT_FDCWD, (long) rp, (long)(O_RDONLY | O_CLOEXEC), 0, a5, a6);
+    }
+    // Root checks done via RAW syscall bypass our libc-function hooks (access/faccessat/stat/statx). A
+    // native root probe often does exactly this to dodge inline hooks. Cover the access + stat family:
+    // faccessat(dirfd, path, mode, flags) / faccessat2(dirfd, path, mode, flags) — path is a2.
+    else if (number == __NR_faccessat
+#ifdef __NR_faccessat2
+             || number == __NR_faccessat2
+#endif
+            ) {
+        const char *path = (const char *) a2;
+        if (g_trace) trace_path("syscall.faccessat", path);
+        if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    }
+    // newfstatat(dirfd, path, statbuf, flags) / statx(dirfd, path, flags, mask, statbuf) — path is a2.
+    else if (number == __NR_newfstatat
+#ifdef __NR_statx
+             || number == __NR_statx
+#endif
+            ) {
+        const char *path = (const char *) a2;
+        if (g_trace) trace_path("syscall.stat", path);
+        if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     }
     return orig_syscall(number, a1, a2, a3, a4, a5, a6);
 }
@@ -581,6 +651,8 @@ public:
         if (g_hide_root && !g_files_dir.empty()) {
             build_filtered_mounts("/proc/mounts", "mounts", g_mounts_path);
             build_filtered_mounts("/proc/self/mountinfo", "mountinfo", g_mountinfo_path);
+            // SELinux enforce -> "1" (a Magisk device's permissive/patched SELinux reads as tampered).
+            build_selinux_spoof();
         }
 
         // boot_id: a per-boot UUID FPJS reads (tracer-proven). Derive a stable per-identity UUID from
@@ -742,6 +814,7 @@ private:
         }
         if (g_hide_root) {
             applied += hookSym("access", (void *) my_access, (void **) &orig_access);
+            applied += hookSym("faccessat", (void *) my_faccessat, (void **) &orig_faccessat);
             // stat/lstat carry the root-hide check too; install them if not already (reset path installs them).
             if (g_reset_epoch == 0) {
                 applied += hookSym("stat",  (void *) my_stat,  (void **) &orig_stat);
