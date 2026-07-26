@@ -30,7 +30,7 @@ Recent merged PRs: #20 (0.5.0), #21 (vault), #22 (input-device), #23 (gmail/apps
 (diagnostics logging + gmail/codec default-on), #25 (native root-detection hardening — flipped FPJS
 `tampering` from high→FALSE). Read `docs/ANTI-FINGERPRINT-STRATEGY.md` (newest sections first) + `docs/DECISIONS.md`.
 
-**IN FLIGHT — finish this first: PR #26 `feat/native-sdk-firstapi-late-spoof`** (branch pushed, NOT merged).
+**DONE (merged 2026-07-27): PR #26 `feat/native-sdk-firstapi-late-spoof`** (MERGED to main, 17aeb4a). Native sdk/first_api spoof is live.
 Spoofs `ro.build.version.sdk` + `ro.product.first_api_level` on the NATIVE path (they leaked the real
 device). The old CLAUDE.md note said "native spoof SIGSEGVs the zygote — accept it"; that was a cop-out.
 FIXED it: the crash is a TIMING issue (ART reads them during init), so they go in a DEFERRED map
