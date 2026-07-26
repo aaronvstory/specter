@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Added
+- **Media-codec list spoofing** (`MediaCodecList.getCodecInfos`). The codec-name set (e.g.
+  `OMX.qcom.video.decoder.avc` reveals Qualcomm) is a stable per-SoC signal that was GENERATED into
+  every profile (`hw_codecs`) but never applied â the real ~40-codec device list leaked (the probe only
+  read a count, so it was never caught). Now `getCodecInfos()` returns the real infos capped to the
+  profile codec count, each 1:1 relabeled to a profile codec name (no duplicates, count == names,
+  capabilities preserved). Proven on-device: probe `hw_codecs` == the profile set (10 codecs, matched).
 - **Gmail account spoofing is now actually APPLIED** (was generated-but-dropped). Every profile
   generated a coherent Gmail and the UI showed it as spoofed, but NO `AccountManager` hook existed â
   so an app reading `getAccountsByType("com.google")`/`getAccounts()` got the REAL Google account (a

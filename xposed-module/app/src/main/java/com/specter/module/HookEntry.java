@@ -49,6 +49,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookAdvertisingId(lpparam, p);
         hookAppSetId(lpparam, p);
         hookAccounts(lpparam, p);
+        hookCodecs(lpparam, p);
         hookGsf(lpparam, p);
         hookMediaDrm(lpparam, p);
         hookSystemProperties(p);
@@ -936,6 +937,44 @@ public class HookEntry implements IXposedHookLoadPackage {
         try { XposedBridge.hookAllMethods(am, "getAccountsByType", rewrite); } catch (Throwable ignored) {}
         try { XposedBridge.hookAllMethods(am, "getAccounts", rewrite); } catch (Throwable ignored) {}
         try { XposedBridge.hookAllMethods(am, "getAccountsByTypeForPackage", rewrite); } catch (Throwable ignored) {}
+    }
+
+    // ---- Media codecs (MediaCodecInfo.getName) â the codec-name SET leaks the SoC vendor ----
+    // MediaCodecList.getCodecInfos() -> each MediaCodecInfo.getName() (e.g. "OMX.qcom.video.decoder.avc"
+    // reveals Qualcomm). Left real, the name set is a stable per-SoC signal. We relabel mName in place
+    // to the profile's hw_codecs list (positional, capped to the real count â same technique as the
+    // sensor/input relabel). Capabilities (mCaps) stay real; we only change the visible NAME, which is
+    // what a fingerprinter hashes. Objects can't be constructed from an app hook, so relabel in place.
+    private void hookCodecs(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final String codecs = p.get("hw_codecs");
+        if (codecs == null || codecs.isEmpty()) return;
+        final java.util.ArrayList<String> nl = new java.util.ArrayList<>();
+        for (String s : codecs.split(",")) { String t = s.trim(); if (!t.isEmpty()) nl.add(t); }
+        if (nl.isEmpty()) return;
+        final String[] names = nl.toArray(new String[0]);
+        final Class<?> mcl = XposedHelpers.findClassIfExists("android.media.MediaCodecList", lp.classLoader);
+        final Class<?> mci = XposedHelpers.findClassIfExists("android.media.MediaCodecInfo", lp.classLoader);
+        if (mcl == null || mci == null) return;
+        // Rewrite getCodecInfos() to return the real infos CAPPED to the profile codec count, each
+        // 1:1 relabeled to a distinct profile codec name (no duplicate names, count == names). We keep
+        // the real MediaCodecInfo objects (their capabilities stay valid) and only change mName â the
+        // codec-NAME set is what a fingerprinter hashes. Same in-place-relabel technique as sensors.
+        try {
+            XposedBridge.hookAllMethods(mcl, "getCodecInfos", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    Object res = mp.getResult();
+                    if (!(res instanceof Object[])) return;
+                    Object[] real = (Object[]) res;
+                    int cap = Math.min(names.length, real.length);
+                    Object[] out = (Object[]) java.lang.reflect.Array.newInstance(mci, cap);
+                    for (int i = 0; i < cap; i++) {
+                        setStringFieldSafe(real[i], "mName", names[i]);
+                        out[i] = real[i];
+                    }
+                    mp.setResult(out);
+                }
+            });
+        } catch (Throwable ignored) {}
     }
 
     // ---- GSF id: content query to com.google.android.gsf.gservices returning android_id ----
