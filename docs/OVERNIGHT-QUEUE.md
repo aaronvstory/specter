@@ -260,3 +260,13 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   crash (safe to intercept natively, unlike the init-time SDK props). Found by auditing the emulator/
   hardware prop surface (which is otherwise clean: no qemu/goldfish tells, 0 emulator-like hw values / 300
   profiles, emulator+virtualMachine signals stay False).
+
+- [VERIFIED END-TO-END] The full app UI workflow works: RANDOMIZE ALL generates a coherent identity (e.g.
+  Samsung Galaxy A50, samsung/a50dd/a50:9/...); Change picks the target app; APPLY writes it (root grant —
+  one-time Superuser prompt, then persistent). Status correctly shows "Applied to 1/1 app(s)" on success
+  and a clear "su write exited 13 — grant root in Magisk" on denial. Confirmed DevInfo (a real device-info
+  reader) then loads the profile: "[specter] active for com.liuzh.deviceinfo (57 fields)" — it sees the
+  spoofed A50, not the Pixel 4. So the user'''s workflow (add app -> enable+scope in LSPosed -> RANDOMIZE
+  ALL -> APPLY -> relaunch target) is fully functional. NOTE: the app needs Magisk root granted once
+  (it prompts; grant Forever). Fleet artifacts (module APK + zygisk zip) rebuilt fresh with all prop-leak
+  fixes.
