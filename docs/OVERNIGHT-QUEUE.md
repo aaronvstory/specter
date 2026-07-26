@@ -231,3 +231,14 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   catchable past su-path hiding. Per-app filtered-copy redirect (covers open/openat/fopen/syscall), gated
   by hide_root, NOT applied to maps (ART-GC crash). Probe verified: both read "clean", non-hooked shell
   still sees real mounts (per-app scope). This CLOSES the last real client-side root-detection gap.
+
+- [done] NEW: hide Frida artifacts (93e2087). A leftover /data/local/tmp/frida-server on the device would
+  be flagged by File.exists()/access(). Added frida paths to ROOT_PATHS + markers to the maps/mount filter,
+  gated by hide_root. Probe: frida_server_visible=clean; shell still sees it (per-app scope).
+- [ANALYSIS] su at /system_ext/bin/su: covered for access/stat/open (is_root_path /su suffix), but visible
+  via opendir+readdir (readdir NOT hooked). Deliberately not filtering getdents — the corrupt-every-readdir
+  blast radius outweighs a vector no observed detector uses. Documented (e7c6eb4). ro.debuggable/secure/
+  tags/type + TracerPid all report an ordinary consumer device.
+- [SURFACE] su/magisk paths ENOENT, mounts/mountinfo filtered, frida hidden, our libs absent from maps
+  (DenyList). The client-visible root surface is comprehensively covered. rootApps=True is server-side
+  history in the shared demo workspace (client-side traced clean).
