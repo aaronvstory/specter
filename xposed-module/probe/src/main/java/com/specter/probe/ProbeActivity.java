@@ -171,6 +171,12 @@ public class ProbeActivity extends Activity {
                 put(o, "screen_density", String.valueOf(dm.densityDpi));
             } catch (Throwable t) { put(o, "screen_width", "ERR:" + t); }
 
+            // Timezone + locale (FingerprintJS DeviceState signals) — spoofed by the locale/tz hook.
+            try {
+                put(o, "timezone", java.util.TimeZone.getDefault().getID());
+                put(o, "locale", java.util.Locale.getDefault().toString());
+            } catch (Throwable t) { put(o, "timezone", "ERR:" + t); }
+
             // getRadioVersion() (baseband) — static, API-level available on all
             try { put(o, "build_radio", Build.getRadioVersion()); } catch (Throwable t) { put(o, "build_radio", "ERR:" + t); }
 

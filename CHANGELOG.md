@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.7.1] — 2026-07-27
+
+### Added
+- **Locale / timezone coherence.** A US device profile whose TimeZone.getDefault()/Locale.getDefault()
+  still reported the HOST machine's region was an internal contradiction FingerprintJS DeviceState
+  hashes. The profile now carries a US IANA timezone DERIVED from the phone's area code (so phone +
+  timezone + locale tell one coherent US-location story) plus locale en-US, and hooks getDefault() on
+  both. PROVEN on-device: a Miami (786) number -> America/New_York + en_US, while the host device's
+  real America/Chicago no longer leaks. Byte-parity Java<->Python (pure lookup, no RNG).
+
 ## [0.7.0] — 2026-07-27
 
 ### Added

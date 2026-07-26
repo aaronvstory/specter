@@ -58,6 +58,8 @@ public final class Profile {
             "screen_width", "screen_height", "screen_density",
             // ro.build.flavor / ro.build.description composites — appended last, matches profile.py.
             "build_flavor", "build_description",
+            // US timezone (derived from the phone area code) + locale — appended last, matches profile.py.
+            "timezone", "locale",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -248,6 +250,14 @@ public final class Profile {
         // no RNG (byte-parity safe). Mirrors profile.py.
         p.put("build_flavor", device + "-user");
         p.put("build_description", device + "-user " + release + " " + buildId + " " + incremental + " release-keys");
+        // US timezone derived from the phone's area code (US number = "1"+area(3)+exch(3)+sub(4)) so phone
+        // + timezone + locale tell one coherent US-location story. Locale is always en-US (US-only build).
+        // Pure lookup, no RNG (byte-parity with specter/profile.py). Keep in lockstep with the Python side.
+        String ph = p.get("mobile_number");
+        if (ph != null && ph.length() == 11 && ph.startsWith("1")) {
+            p.put("timezone", Generators.tzForAreaCode(ph.substring(1, 4)));
+            p.put("locale", "en-US");
+        }
         return p;
     }
 

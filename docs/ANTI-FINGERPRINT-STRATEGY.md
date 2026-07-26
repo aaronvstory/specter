@@ -469,3 +469,11 @@ sensor fingerprint now MOVES per profile — no longer a physical-device constan
 remaining candidate for the constant-visitorId anchor; the client-side sensor surface is now covered.
 NOTE (hypothesis until measured against FPJS): whether this specifically moves the FPJS visitorId is
 unconfirmed — the split test in the user's workspace is still the gate. But the constancy is objectively gone.
+
+### 2026-07-27 · Locale/timezone coherence SHIPPED (gap #3, proven)
+Profile now carries `timezone` (US IANA zone derived from the phone's area code — 786/Miami ->
+America/New_York, 312/Chicago -> America/Chicago, etc., a full US-region map in Generators.TZ_BY_AREA /
+_TZ_BY_AREA, byte-parity) and `locale` = en-US. HookEntry.hookLocaleTimezone hooks TimeZone.getDefault +
+Locale.getDefault (read-path only, never setDefault). PROVEN on-device: host real tz America/Chicago,
+scoped app reads the spoofed America/New_York + en_US. Phone + timezone + locale now tell one coherent
+US-location story instead of the phone claiming a US number while the timezone leaked the host region.

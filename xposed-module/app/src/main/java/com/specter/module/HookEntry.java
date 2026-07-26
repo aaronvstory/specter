@@ -59,6 +59,37 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookFactoryResetTime(pkg, p);
         if (!gateOff(p, "hide_apps")) hookInstalledApps(lpparam);
         if (!gateOff(p, "spoof_sysfs")) hookDisplayMetrics(lpparam, p);
+        hookLocaleTimezone(p);
+    }
+
+    /** Align TimeZone.getDefault() + Locale.getDefault() with the profile's US location (timezone derived
+     *  from the phone area code; locale en-US), so an app that reads them doesn't see the HOST machine's
+     *  region — an internal contradiction FingerprintJS DeviceState hashes against the US carrier/number.
+     *  We spoof the READ path only (getDefault), never setDefault, so nothing else on the device shifts. */
+    private void hookLocaleTimezone(final Map<String, String> p) {
+        final String tzId = p.get("timezone");
+        final String loc = p.get("locale");
+        if (tzId != null && !tzId.isEmpty()) {
+            try {
+                final java.util.TimeZone tz = java.util.TimeZone.getTimeZone(tzId);
+                XposedBridge.hookAllMethods(java.util.TimeZone.class, "getDefault", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(tz.clone()); }
+                });
+            } catch (Throwable ignored) {}
+        }
+        if (loc != null && loc.contains("-")) {
+            try {
+                String[] ll = loc.split("-");
+                final java.util.Locale locale = new java.util.Locale(ll[0], ll.length > 1 ? ll[1] : "");
+                XposedBridge.hookAllMethods(java.util.Locale.class, "getDefault", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) {
+                        // Only the no-arg getDefault(); getDefault(Category) callers are rare and passing
+                        // them the same locale is still coherent.
+                        mp.setResult(locale);
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }
     }
 
     // A protection gate: the profile carries "<key>":"0" only when the user toggled it OFF in the app.

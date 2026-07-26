@@ -466,6 +466,26 @@ public final class Generators {
         return phoneUs(r);
     }
 
+    // Area-code -> US IANA timezone. MUST stay in exact lockstep with specter/generators.py _TZ_BY_AREA
+    // so the derived timezone byte-matches. Pure lookup, no RNG. See the Python side for the rationale.
+    private static final java.util.Map<String, String> TZ_BY_AREA = new java.util.HashMap<>();
+    static {
+        String[][] tz = {
+            {"America/New_York", "212 646 917 718 215 267 904 407 321 305 786 813 614 216 513 704 980 919 984 317 463 617 857 404 470 678 412 878"},
+            {"America/Chicago", "312 773 872 281 713 832 210 726 214 469 972 512 737 615 629 901 414 262 816 913 314 612 651 763"},
+            {"America/Phoenix", "602 480 623"},
+            {"America/Denver", "303 720 505 575 801 385"},
+            {"America/Los_Angeles", "213 323 310 424 818 619 858 408 669 206 425 253 503 971 702 725"},
+        };
+        for (String[] row : tz) for (String a : row[1].split(" ")) TZ_BY_AREA.put(a, row[0]);
+    }
+
+    /** US IANA timezone for a NANP area code; America/New_York if the code isn't mapped. No RNG. */
+    public static String tzForAreaCode(String area) {
+        String tz = TZ_BY_AREA.get(area);
+        return tz != null ? tz : "America/New_York";
+    }
+
     public static String imsi(Rng r, String mccmnc) {
         return mccmnc + digits(r, 15 - mccmnc.length());
     }

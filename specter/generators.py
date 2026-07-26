@@ -355,6 +355,44 @@ _US_AREA_CODES = [
     "612", "651", "763",                     # Minneapolis / St. Paul
 ]
 
+# Area-code -> US IANA timezone. A US device whose TimeZone.getDefault()/locale still report the HOST
+# machine's region is an internal contradiction FingerprintJS DeviceState hashes; deriving the zone from
+# the already-chosen phone area code makes phone + timezone + locale tell ONE coherent US-location story.
+# Pure lookup (no RNG) -> byte-parity safe. Keep in exact lockstep with Java Generators.TZ_BY_AREA.
+_TZ_BY_AREA = {
+    # Eastern
+    "212": "America/New_York", "646": "America/New_York", "917": "America/New_York", "718": "America/New_York",
+    "215": "America/New_York", "267": "America/New_York", "904": "America/New_York", "407": "America/New_York",
+    "321": "America/New_York", "305": "America/New_York", "786": "America/New_York", "813": "America/New_York",
+    "614": "America/New_York", "216": "America/New_York", "513": "America/New_York", "704": "America/New_York",
+    "980": "America/New_York", "919": "America/New_York", "984": "America/New_York", "317": "America/New_York",
+    "463": "America/New_York", "617": "America/New_York", "857": "America/New_York", "404": "America/New_York",
+    "470": "America/New_York", "678": "America/New_York", "412": "America/New_York", "878": "America/New_York",
+    # Central
+    "312": "America/Chicago", "773": "America/Chicago", "872": "America/Chicago", "281": "America/Chicago",
+    "713": "America/Chicago", "832": "America/Chicago", "210": "America/Chicago", "726": "America/Chicago",
+    "214": "America/Chicago", "469": "America/Chicago", "972": "America/Chicago", "512": "America/Chicago",
+    "737": "America/Chicago", "615": "America/Chicago", "629": "America/Chicago", "901": "America/Chicago",
+    "414": "America/Chicago", "262": "America/Chicago", "816": "America/Chicago", "913": "America/Chicago",
+    "314": "America/Chicago", "612": "America/Chicago", "651": "America/Chicago", "763": "America/Chicago",
+    # Mountain
+    "602": "America/Phoenix", "480": "America/Phoenix", "623": "America/Phoenix",   # Arizona (no DST)
+    "303": "America/Denver", "720": "America/Denver", "505": "America/Denver", "575": "America/Denver",
+    "801": "America/Denver", "385": "America/Denver",
+    # Pacific
+    "213": "America/Los_Angeles", "323": "America/Los_Angeles", "310": "America/Los_Angeles",
+    "424": "America/Los_Angeles", "818": "America/Los_Angeles", "619": "America/Los_Angeles",
+    "858": "America/Los_Angeles", "408": "America/Los_Angeles", "669": "America/Los_Angeles",
+    "206": "America/Los_Angeles", "425": "America/Los_Angeles", "253": "America/Los_Angeles",
+    "503": "America/Los_Angeles", "971": "America/Los_Angeles", "702": "America/Los_Angeles",
+    "725": "America/Los_Angeles",
+}
+
+
+def tz_for_area_code(area):
+    """US IANA timezone for a NANP area code; America/New_York if the code isn't mapped. No RNG."""
+    return _TZ_BY_AREA.get(area, "America/New_York")
+
 
 def phone_us(r):
     # NANP: a REAL assigned area code + exchange [2-9]XX (never an N11 service code) + 4 digits, with a
