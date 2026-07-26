@@ -253,3 +253,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - [done] UI (9e5e92b): Hide root description now accurately reflects the new mount-filtering + Frida hiding
   (both were already gated by the toggle; the description was stale). Verified rendering on-device — all 6
   Protections toggles render cleanly with accurate descriptions + ON status chips.
+
+- [done] LEAK FIX (c9e558d): ro.boot.hardware (=flame) + ro.boot.hardware.platform (=sm8150) leaked the
+  REAL Pixel 4 while ro.hardware/ro.board.platform were spoofed — a leak AND inconsistency. Added both to
+  Java+native PROP_ALIASES (lockstep test passes). Probe: Pixel 5 profile now reports redfin/lito, no
+  crash (safe to intercept natively, unlike the init-time SDK props). Found by auditing the emulator/
+  hardware prop surface (which is otherwise clean: no qemu/goldfish tells, 0 emulator-like hw values / 300
+  profiles, emulator+virtualMachine signals stay False).
