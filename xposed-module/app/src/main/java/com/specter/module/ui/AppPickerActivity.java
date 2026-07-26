@@ -31,7 +31,7 @@ import java.util.TreeSet;
 /**
  * Target-app picker (GeerGit parity: "Target Apps", "Show system apps", multi-select, Select All).
  * Lists installed apps via PackageManager, splits system/user by FLAG_SYSTEM, persists the checked
- * set via {@link Targets}. Warns on fleet/system packages (fleet safety).
+ * set via {@link Targets}. Warns on system/income packages before adding them.
  */
 public class AppPickerActivity extends Activity {
 
@@ -125,11 +125,11 @@ public class AppPickerActivity extends Activity {
         btns.addView(smallBtn("Select all (shown)", () -> {
             int skipped = 0;
             for (Row r : visible()) {
-                if (Targets.isRisky(r.pkg)) { skipped++; continue; } // don't bulk-add fleet/system apps
+                if (Targets.isRisky(r.pkg)) { skipped++; continue; } // don't bulk-add system/income apps
                 selected.add(r.pkg);
             }
             if (skipped > 0) Toast.makeText(this, "Skipped " + skipped
-                    + " fleet/system app(s) — add those individually if you really mean to.",
+                    + " system/income app(s) — add those individually if you mean to.",
                     Toast.LENGTH_LONG).show();
             rebuild();
         }));
@@ -222,14 +222,31 @@ public class AppPickerActivity extends Activity {
     private void rebuild() {
         list.removeAllViews();
         List<Row> vis = visible();
-        // Count line so an empty/short list is never mysterious.
+
+        // SELECTED apps pinned to the top (in their own section) so it's always obvious what's chosen and
+        // easy to uncheck — even if an app is far down the alphabetical list or filtered out by search.
+        List<Row> sel = new ArrayList<>();
+        List<Row> rest = new ArrayList<>();
+        for (Row r : vis) (selected.contains(r.pkg) ? sel : rest).add(r);
+        // Selected apps that aren't in the visible set (e.g. a system app while "show system" is off, or
+        // filtered by search) still need to show so the user can uncheck them.
+        java.util.Set<String> visPkgs = new java.util.HashSet<>();
+        for (Row r : vis) visPkgs.add(r.pkg);
+        for (Row r : rows) if (selected.contains(r.pkg) && !visPkgs.contains(r.pkg)) sel.add(r);
+
+        if (!sel.isEmpty()) {
+            list.addView(sectionHeader("Selected (" + sel.size() + ")"));
+            for (Row r : sel) list.addView(rowView(r));
+            list.addView(sectionHeader("All apps"));
+        }
+
         TextView count = new TextView(this);
-        count.setText(vis.size() + " app(s)" + (showSystem ? "" : " — user apps (toggle to show system)"));
+        count.setText(rest.size() + " app(s)" + (showSystem ? "" : " — user apps (toggle to show system)"));
         count.setTextColor(Theme.DIM);
         count.setTextSize(12);
         count.setPadding(dp(4), dp(4), dp(4), dp(6));
         list.addView(count);
-        if (vis.isEmpty()) {
+        if (rest.isEmpty() && sel.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText(query.isEmpty()
                     ? "No apps found. (If this stays empty, the app may lack package-visibility access.)"
@@ -239,7 +256,17 @@ public class AppPickerActivity extends Activity {
             list.addView(empty);
             return;
         }
-        for (Row r : vis) list.addView(rowView(r));
+        for (Row r : rest) list.addView(rowView(r));
+    }
+
+    private TextView sectionHeader(String s) {
+        TextView t = new TextView(this);
+        t.setText(s.toUpperCase(Locale.US));
+        t.setTextColor(Theme.GOLD);
+        t.setTextSize(11);
+        t.setLetterSpacing(0.1f);
+        t.setPadding(dp(4), dp(12), dp(4), dp(4));
+        return t;
     }
 
     private View rowView(final Row r) {
@@ -267,14 +294,29 @@ public class AppPickerActivity extends Activity {
         texts.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView name = new TextView(this);
         name.setText(r.label);
-        name.setTextColor(Targets.isRisky(r.pkg) ? Theme.RED : Theme.INK);
+        name.setTextColor(Theme.INK);
         name.setTextSize(14);
         TextView pkg = new TextView(this);
-        pkg.setText(r.pkg + (Targets.isRisky(r.pkg) ? "  ⚠ fleet/system" : ""));
+        pkg.setText(r.pkg);
         pkg.setTextColor(Theme.DIM);
         pkg.setTextSize(11);
         texts.addView(name);
         texts.addView(pkg);
+        // "Not enabled in LSPosed" hint for a SELECTED app that isn't actually in scope (won't be spoofed
+        // until the user enables Specter for it in the LSPosed manager). Checked off-thread.
+        if (selected.contains(r.pkg)) {
+            final TextView scopeWarn = new TextView(this);
+            scopeWarn.setTextSize(11);
+            scopeWarn.setTextColor(Theme.RED);
+            scopeWarn.setVisibility(View.GONE);
+            texts.addView(scopeWarn);
+            new Thread(() -> {
+                final boolean scoped = Targets.isScoped(r.pkg);
+                runOnUiThread(() -> {
+                    if (!scoped) { scopeWarn.setText("⚠ not enabled in LSPosed — enable Specter for this app"); scopeWarn.setVisibility(View.VISIBLE); }
+                });
+            }).start();
+        }
         row.addView(texts);
 
         CheckBox cb = new CheckBox(this);
@@ -282,11 +324,12 @@ public class AppPickerActivity extends Activity {
         cb.setOnCheckedChangeListener((v, on) -> {
             if (on) {
                 if (Targets.isRisky(r.pkg)) {
-                    Toast.makeText(this, "⚠ " + r.pkg + " is a fleet/system app. Spoofing it can risk a "
-                            + "real account — only do this deliberately.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, r.label + " is a system/income app — spoofing it can affect a real "
+                            + "account. Enable only if you mean to.", Toast.LENGTH_LONG).show();
                 }
                 selected.add(r.pkg);
             } else selected.remove(r.pkg);
+            rebuild();   // re-pin to the Selected section immediately so the choice is visible
         });
         row.addView(cb);
         return row;

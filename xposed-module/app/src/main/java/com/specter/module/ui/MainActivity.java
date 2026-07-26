@@ -94,7 +94,10 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (tab == 2) render(); // reflect target changes made in the app picker (Settings tab)
+        // Re-render on every resume so target changes from the app picker show up immediately — the
+        // "Change" button lives on BOTH the Identity (tab 0) and Settings (tab 2) tabs, so gating on
+        // tab==2 left the Identity target card showing stale selections after picking apps.
+        if (svc != null) render();
     }
 
     // ---------- top chrome ----------
@@ -307,33 +310,76 @@ public class MainActivity extends Activity {
         for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
     }
 
-    /** Target-app card at the top of the Identity tab: shows the selected app(s) + a Change button. */
+    /** Target-app card (Identity tab): a clear list of the selected apps (by name) each with a quick
+     *  remove (✕), an LSPosed-scope warning when an app isn't actually hooked, and a Change button. */
     private View targetHeader() {
         LinearLayout card = cardBox();
-        Set<String> targets = Targets.get(prefs);
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
+        final Set<String> targets = Targets.get(prefs);
 
-        LinearLayout txt = new LinearLayout(this);
-        txt.setOrientation(LinearLayout.VERTICAL);
-        txt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        txt.addView(label("Target app"));
-        if (targets.isEmpty()) {
-            TextView none = value("None selected — tap Change");
-            none.setTextColor(Theme.DIM);
-            txt.addView(none);
-        } else {
-            for (String pkg : targets) {
-                TextView t = value(pkg);
-                if (Targets.isRisky(pkg)) { t.setTextColor(Theme.RED); t.setText(pkg + "  ⚠ fleet/system"); }
-                txt.addView(t);
-            }
-        }
-        row.addView(txt);
-        row.addView(button("Change", false, v ->
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView lbl = label(targets.isEmpty() ? "Target apps" : "Target apps (" + targets.size() + ")");
+        lbl.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        head.addView(lbl);
+        head.addView(button("Change", false, v ->
                 startActivity(new Intent(this, AppPickerActivity.class))));
-        card.addView(row);
+        card.addView(head);
+
+        if (targets.isEmpty()) {
+            TextView none = value("None selected — tap Change to pick the app(s) to spoof.");
+            none.setTextColor(Theme.DIM);
+            card.addView(none);
+            return card;
+        }
+        // One row per selected app: app NAME (+ package small), a scope warning if not hooked, and ✕.
+        for (final String pkg : targets) {
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.HORIZONTAL);
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            r.setPadding(0, dp(6), 0, dp(6));
+
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView name = value(Targets.label(this, pkg));
+            name.setTextColor(Theme.INK);
+            col.addView(name);
+            TextView sub = value(pkg);
+            sub.setTextColor(Theme.DIM);
+            sub.setTextSize(11);
+            col.addView(sub);
+            r.addView(col);
+
+            // "Not enabled in LSPosed" warning — checked off the UI thread (root grep), then shown.
+            final TextView warn = new TextView(this);
+            warn.setTextSize(11);
+            warn.setTextColor(Theme.RED);
+            warn.setVisibility(View.GONE);
+            warn.setPadding(0, 0, dp(8), 0);
+            r.addView(warn);
+            new Thread(() -> {
+                final boolean scoped = Targets.isScoped(pkg);
+                runOnUiThread(() -> {
+                    if (!scoped) { warn.setText("⚠ not enabled in LSPosed"); warn.setVisibility(View.VISIBLE); }
+                });
+            }).start();
+
+            Button rm = new Button(this);
+            rm.setText("✕");
+            rm.setAllCaps(false);
+            rm.setTextColor(Theme.DIM);
+            rm.setBackground(pill(Theme.CARD2, Theme.LINE));
+            rm.setOnClickListener(v -> {
+                Set<String> cur = Targets.get(prefs);
+                cur.remove(pkg);
+                Targets.set(prefs, cur);
+                status.setText("Removed " + Targets.label(this, pkg) + " from targets.");
+                render();
+            });
+            r.addView(rm);
+            card.addView(r);
+        }
         return card;
     }
 
