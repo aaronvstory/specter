@@ -14,6 +14,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   OSError retries (~1s); {} is returned ONLY for a genuinely absent file; a real JSON error still
   quarantines (fail-closed); persistent I/O errors raise instead of silently emptying. Found via a flaky
   20-thread concurrency test; fix proven over 15+ runs with 0 failures. Regression test added.
+  Codex gauntlet caught a follow-up flaw: the eager os.path.exists() checks could ALSO race the
+  replace gap and return {} for a ledger with content; removed them — FileNotFoundError now retries
+  and only a file absent for the WHOLE budget is a fresh ledger (persistent I/O errors raise).
 
 ## [0.12.2] — 2026-07-27
 

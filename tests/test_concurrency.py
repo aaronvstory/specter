@@ -87,6 +87,34 @@ def test_transient_read_error_does_not_quarantine_the_ledger(tmp_path, monkeypat
     assert os.path.exists(path), "the ledger file must still be in place"
 
 
+def test_transient_absence_during_replace_does_not_return_empty(tmp_path, monkeypatch):
+    """
+    Regression (codex): during os.replace(tmp, path) the reader can momentarily see the file ABSENT
+    (FileNotFoundError). An eager os.path.exists()==False must NOT conclude "fresh ledger" and return {}
+    — that would erase a ledger that has content (ban-critical). The read must retry; the file reappears.
+    """
+    path = str(tmp_path / "used.json")
+    store = P.UsedStore(path)
+    p0 = P.generate_unique(store)                 # ledger has one real id
+    assert P.UsedStore(path).count() == 1
+
+    real_open = open
+    calls = {"n": 0}
+
+    def vanishing_open(*a, **k):
+        # First open of the ledger raises FileNotFoundError (the transient replace gap), then it's back.
+        if a and str(a[0]) == path and calls["n"] == 0:
+            calls["n"] += 1
+            raise FileNotFoundError("simulated mid-replace absence")
+        return real_open(*a, **k)
+
+    monkeypatch.setattr("builtins.open", vanishing_open)
+    reloaded = P.UsedStore(path)                   # must retry, not return {}
+    monkeypatch.undo()
+    assert reloaded.count() == 1, "a transient absence must not be read as an empty ledger"
+    assert p0["gsf_id"] in set(reloaded.data["gsf_id"]), "the issued id must survive a transient absence"
+
+
 def test_atomic_write_leaves_no_partial_on_disk(tmp_path):
     path = str(tmp_path / "used.json")
     store = P.UsedStore(path)

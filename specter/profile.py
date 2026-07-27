@@ -348,23 +348,27 @@ class UsedStore:
         self._sets = {k: set(self.data.get(k, [])) for k in UNIQUE_KEYS}
 
     def _read_disk(self):
-        if not os.path.exists(self.path):
-            return {}  # absent file == a fresh ledger, legitimately empty
-        # A concurrent record() does os.replace(tmp, path); on Windows a reader's open() can hit a
-        # TRANSIENT share violation (PermissionError) or momentarily see the file absent mid-rename.
-        # That is NOT corruption — retry briefly before concluding anything. Only a genuine JSON/format
-        # error (ValueError) means the ledger is actually bad and must be quarantined (fail closed).
+        # A concurrent record() does os.replace(tmp, path); on Windows a reader can momentarily hit a
+        # TRANSIENT share violation (PermissionError) OR see the file absent mid-rename (FileNotFoundError).
+        # NEITHER is proof of a fresh/empty ledger — an eager `os.path.exists()` check races the same gap
+        # and could return {} for a ledger that has content (ban-critical: every issued id becomes reusable,
+        # codex 2026-07-27). So we NEVER short-circuit on absence: we retry open() through the whole budget,
+        # and only conclude "genuinely fresh ledger" ({}) when the file stays absent for the ENTIRE retry
+        # window (a persistent FileNotFoundError). A persistent NON-absence OS error fails closed (raises).
+        # Only a real JSON ValueError means the ledger is corrupt and is quarantined (fail closed).
         import time as _t
-        last_os_err = None
+        last_err = None
         for _attempt in range(50):
             try:
                 with open(self.path, encoding="utf-8") as f:
                     data = json.load(f)
-            except (PermissionError, FileNotFoundError, OSError) as e:
-                last_os_err = e
-                _t.sleep(0.02)          # transient concurrent-replace window — retry
-                if not os.path.exists(self.path):
-                    return {}            # replaced-away and now absent == fresh ledger
+            except FileNotFoundError as e:
+                last_err = e            # possibly the transient replace gap — retry; may reappear
+                _t.sleep(0.02)
+                continue
+            except OSError as e:        # PermissionError (share violation) + other transient I/O — retry
+                last_err = e
+                _t.sleep(0.02)
                 continue
             except ValueError as e:
                 # Genuinely malformed JSON — FAIL CLOSED: an empty ledger would let every previously
@@ -382,10 +386,14 @@ class UsedStore:
             if not isinstance(data, dict):
                 raise UsedStoreCorrupt(f"used-id ledger at {self.path} is not a JSON object")
             return data
-        # 50 retries (~1s) of transient OS errors — treat as a real I/O problem, not silently empty.
+        # Retry budget (~1s) exhausted. Only NOW decide: a file that was absent the WHOLE time is a genuine
+        # fresh ledger ({}); anything else (persistent PermissionError/other I/O) is a real problem — raise
+        # rather than silently hand back an empty ledger that would allow id reuse.
+        if isinstance(last_err, FileNotFoundError):
+            return {}
         raise UsedStoreCorrupt(
-            f"used-id ledger at {self.path} could not be read after retries ({last_os_err})"
-        ) from last_os_err
+            f"used-id ledger at {self.path} could not be read after retries ({last_err})"
+        ) from last_err
 
     def _refresh_from_disk(self):
         """Reload disk state into memory (so collides() sees other processes' recent ids)."""
