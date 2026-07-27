@@ -114,6 +114,22 @@ def test_module_keys_match_python_profile_keys():
     assert java_keys == py_keys, "key order drift\n java: %s\n  py : %s" % (java_keys, py_keys)
 
 
+def test_coverage_badges_cover_every_aliased_prop():
+    """The live-trace 'spoofed' badge (Coverage.SPOOFED_PROPS) must include every prop key HookEntry
+    actually aliases (PROP_ALIASES column 0), or the viewer would show a spoofed prop as 'unknown'
+    (under-claim). Catches drift when a new alias is added but not reflected in the badge set."""
+    he = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/HookEntry.java")).read()
+    cov = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/ui/Coverage.java")).read()
+    # PROP_ALIASES rows look like {"ro.product.model", "build_model"}, — take the FIRST string (the key).
+    m = re.search(r"PROP_ALIASES\s*=\s*\{(.*?)\};", he, re.S)
+    assert m, "PROP_ALIASES not found in HookEntry"
+    alias_keys = set(re.findall(r'\{"([^"]+)",\s*"[^"]+"\}', m.group(1)))
+    assert alias_keys, "no PROP_ALIASES keys parsed"
+    cov_props = set(re.findall(r'"([a-z][a-z0-9._]+)"', cov))
+    missing = sorted(k for k in alias_keys if k not in cov_props)
+    assert not missing, "Coverage.SPOOFED_PROPS is missing aliased props (badge would under-claim): %s" % missing
+
+
 def test_data_json_matches_apk_assets():
     """The APK bundles data/*.json as assets; the copy is manual, so nothing but this test stops
     silent drift that would break byte-parity between the PC (Python) and on-device (Java) paths."""
