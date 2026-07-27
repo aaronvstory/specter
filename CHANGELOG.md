@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.2] — 2026-07-27
+
+### Added
+- **Specter Lite 1.2: scriptable auto-harvest.** `am start -n com.specter.lite/.HarvestActivity --ez
+  auto true` runs the harvest immediately (same worker-thread path as the button), so it can run
+  headless / from a test rig. Used to VERIFY the expanded 1.1 harvest end-to-end on a real Pixel 4a:
+  28 real fields exported — total_ram (5.9 GB), GPU Adreno 618/Qualcomm/GLES 3.2 (headless EGL), real
+  sensor list, locale en-US, timezone, Build.*, android_id, MediaDRM id, screen — with SIM/GSF cleanly
+  OMITTED (no SIM / no GAPPS provider, never faked). The exported checksum round-trips against
+  VaultChecksum.of (proven equal), so the harvested profile imports cleanly into Specter.
+
 ## [0.12.1] — 2026-07-27
 
 ### Fixed

@@ -78,6 +78,10 @@ public class HarvestActivity extends Activity {
         root.addView(out);
 
         setContentView(sc);
+
+        // Scriptable trigger: `am start -n com.specter.lite/.HarvestActivity --ez auto true` harvests
+        // immediately (same code path as the button) so the harvest can run headless / from a test rig.
+        if (getIntent() != null && getIntent().getBooleanExtra("auto", false)) doHarvest();
     }
 
     /** Runs collection + export OFF the UI thread — EGL/driver setup, MediaDrm, the GSF binder query and
