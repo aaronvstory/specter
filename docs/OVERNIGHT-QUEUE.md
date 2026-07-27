@@ -691,3 +691,11 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   (4th Windows concurrency gap). Java UsedStore unaffected (handed a pre-parsed ledger). Merged fddff40.
   Codex was run but STALLED (empty output after startup, long runtime) — merged on a rigorous 3-way self-
   proof per the no-gating mandate. Devices still blocked (P4 off USB, 4a secure-locked).
+
+- [2026-07-27 AFK iter, cont.] CODEX GAUNTLET CAUGHT A FOLLOW-UP FLAW in the 0.12.3 ledger fix (proving the
+  gauntlet's worth even on a confident self-review): the eager os.path.exists() checks could ALSO race the
+  os.replace gap and return {} for a ledger with content = ban-critical id reuse. Removed both; now
+  FileNotFoundError retries through the whole budget, {} only when the file is absent the ENTIRE budget,
+  persistent I/O raises. Added a transient-absence regression test. Merged (25517b4). Net: the no-reuse
+  ledger read is now correctly hardened on BOTH the write side (fsync+retry, prior) and read side
+  (retry-not-quarantine, retry-not-empty). Devices still blocked (P4 off USB, 4a secure-locked).
