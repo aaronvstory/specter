@@ -115,10 +115,16 @@ public final class Vault {
         return out;
     }
 
-    /** Load a saved profile map by label (minus the _saved_at/_targets metadata), or null if missing. */
+    /** Load a saved profile map by label (minus the _saved_at/_targets metadata), or null if missing.
+     *  Backfills any pure-derived signal fields the entry is MISSING (boot_count/battery_uah/timezone/
+     *  locale) — so an OLD profile saved before those signals existed still applies them coherently
+     *  instead of leaking the host value. */
     public Map<String, String> load(String label) {
         Map<String, String> p = readMap(new File(dir, label + ".json"));
-        if (p != null) { p.remove("_saved_at"); p.remove("_targets"); }
+        if (p != null) {
+            p.remove("_saved_at"); p.remove("_targets");
+            com.specter.module.gen.Profile.backfillDerived(p);
+        }
         return p;
     }
 

@@ -226,6 +226,29 @@ public class ProfileTest {
         // a value randomized into one key doesn't false-collide a different key
         check(one.recordOne("android_id", "111222333"), "same string, different key -> distinct");
 
+        // backfillDerived: an OLD profile (missing the newer signals) gets them filled from its own data,
+        // without overwriting existing values or needing RNG. This is what makes restoring/importing an
+        // old vault profile still apply boot_count/battery/timezone coherently.
+        java.util.Map<String, String> old = new java.util.LinkedHashMap<>();
+        old.put("android_id", "fd3833c66a179a71");
+        old.put("build_device", "flame");
+        old.put("mobile_number", "12127890123");   // 212 = NYC -> Eastern
+        // (deliberately missing boot_count / battery_uah / timezone / locale)
+        Profile.backfillDerived(old);
+        check(old.containsKey("boot_count") && old.get("boot_count").equals(
+                String.valueOf(Generators.bootCountFor("fd3833c66a179a71"))), "backfill boot_count from android_id");
+        check(old.containsKey("battery_uah") && old.get("battery_uah").equals(
+                String.valueOf(Generators.batteryUahFor("flame"))), "backfill battery_uah from device");
+        check("America/New_York".equals(old.get("timezone")), "backfill timezone from 212 area code");
+        check("en-US".equals(old.get("locale")), "backfill locale");
+        // Never overwrites an existing value.
+        java.util.Map<String, String> keep = new java.util.LinkedHashMap<>();
+        keep.put("android_id", "fd3833c66a179a71"); keep.put("boot_count", "999");
+        Profile.backfillDerived(keep);
+        check("999".equals(keep.get("boot_count")), "backfill does not overwrite an existing boot_count");
+        // Null-safe.
+        check(Profile.backfillDerived(null) == null, "backfill null -> null");
+
         System.out.println("Profile+UsedStore: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

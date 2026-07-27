@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.11.1] — 2026-07-27
+
+### Fixed
+- **Old vault/imported profiles now backfill the newer signals.** A profile saved (or shared) BEFORE
+  boot_count/battery_uah/timezone/locale existed would apply WITHOUT them — those signals then read the
+  host's real values (a leak). Vault.load() now backfills any missing PURE-DERIVED field from the
+  profile's own data (boot_count from android_id, battery from device codename, timezone/locale from
+  the phone number), never overwriting an existing value or adding RNG-drawn fields. So restoring or
+  importing an old profile still applies every signal coherently. JVM-tested (Profile.backfillDerived).
+
 ## [0.11.0] — 2026-07-27
 
 ### Changed

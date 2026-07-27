@@ -271,6 +271,29 @@ public final class Profile {
         return p;
     }
 
+    /**
+     * Fill any PURE-DERIVED signal fields a loaded profile is MISSING — so an OLD vault/imported profile
+     * (saved before a field existed) still applies the newer signals instead of leaking the host value.
+     * Only touches fields that are deterministic functions of data the profile already has (boot_count from
+     * android_id, battery_uah from device codename, timezone/locale from the phone number) — never
+     * overwrites an existing value, never adds RNG-drawn fields. Mutates and returns the same map.
+     */
+    public static Map<String, String> backfillDerived(Map<String, String> p) {
+        if (p == null) return null;
+        String aid = p.get("android_id");
+        if (aid != null && !p.containsKey("boot_count"))
+            p.put("boot_count", String.valueOf(Generators.bootCountFor(aid)));
+        String device = p.get("build_device");
+        if (device != null && !device.isEmpty() && !p.containsKey("battery_uah"))
+            p.put("battery_uah", String.valueOf(Generators.batteryUahFor(device)));
+        String ph = p.get("mobile_number");
+        if (ph != null && ph.length() == 11 && ph.startsWith("1")) {
+            if (!p.containsKey("timezone")) p.put("timezone", Generators.tzForAreaCode(ph.substring(1, 4)));
+            if (!p.containsKey("locale")) p.put("locale", "en-US");
+        }
+        return p;
+    }
+
     // soc -> "cpu_capacity|gpu_model". MUST stay byte-identical to data/soc_topology.json. cpu_present
     // is derived from the capacity vector's length. Missing SoC -> "_default".
     static final Map<String, String> SOC_TOPOLOGY = new java.util.HashMap<>();
