@@ -726,12 +726,21 @@ static std::vector<std::pair<std::string, std::string>> g_sensor_labels;  // (na
 static std::map<const void *, size_t> g_sensor_assign;    // ASensor* -> index into g_sensor_labels
 static std::mutex g_sensor_mtx;
 
+static const size_t SENSOR_REAL = (size_t) -1;   // sentinel: this ASensor* keeps its REAL label
 static size_t sensor_index_for(const void *sensor) {
-    // Assign this ASensor* the next label slot on first sight; stable thereafter. Caller holds nothing.
+    // Assign each distinct ASensor* the NEXT label slot on first sight, stable thereafter — but only up
+    // to g_sensor_labels.size() DISTINCT sensors. A real device has ~35 sensors while a profile lists ~5-7;
+    // the old code did (count % size), which round-robined the few labels across all 35 sensors and made a
+    // native reader see e.g. SEVEN identical "LSM6DSR Accelerometer" entries — an impossible multiset and a
+    // hard tell. Instead we relabel only the first N (N = profile label count) and leave the rest REAL
+    // (mostly composite/uncalibrated sensors with generic Android names), so the spoofed set has no
+    // duplicates and the overall list stays a realistic size. (Fuller per-model sensor datasets, so ALL
+    // sensors can be spoofed without duplication, are the eventual upgrade — see IDEAS.)
     std::lock_guard<std::mutex> lk(g_sensor_mtx);
     auto it = g_sensor_assign.find(sensor);
     if (it != g_sensor_assign.end()) return it->second;
-    size_t idx = g_sensor_assign.size() % g_sensor_labels.size();
+    size_t idx = g_sensor_assign.size() < g_sensor_labels.size()
+                     ? g_sensor_assign.size() : SENSOR_REAL;
     g_sensor_assign[sensor] = idx;
     return idx;
 }
@@ -740,14 +749,18 @@ using ASensor_getName_t = const char *(*)(const void *);
 static ASensor_getName_t orig_ASensor_getName = nullptr;
 static const char *my_ASensor_getName(const void *sensor) {
     if (g_sensor_labels.empty() || sensor == nullptr) return orig_ASensor_getName(sensor);
-    return g_sensor_labels[sensor_index_for(sensor)].first.c_str();
+    size_t idx = sensor_index_for(sensor);
+    if (idx == SENSOR_REAL) return orig_ASensor_getName(sensor);   // overflow sensor — keep real name
+    return g_sensor_labels[idx].first.c_str();
 }
 
 using ASensor_getVendor_t = const char *(*)(const void *);
 static ASensor_getVendor_t orig_ASensor_getVendor = nullptr;
 static const char *my_ASensor_getVendor(const void *sensor) {
     if (g_sensor_labels.empty() || sensor == nullptr) return orig_ASensor_getVendor(sensor);
-    return g_sensor_labels[sensor_index_for(sensor)].second.c_str();
+    size_t idx = sensor_index_for(sensor);
+    if (idx == SENSOR_REAL) return orig_ASensor_getVendor(sensor);  // overflow sensor — keep real vendor
+    return g_sensor_labels[idx].second.c_str();
 }
 
 // Why inline hooks, not PLT: bionic's __system_property_get calls __system_property_read_callback via
@@ -896,6 +909,43 @@ public:
                 if (semi == std::string::npos) break;
                 start = semi + 1;
             }
+            // A real phone exposes ~30-40 sensors, but a profile lists only its ~5-7 PHYSICAL ones. If we
+            // relabel only those, the ~25 real composite/derived sensors either leak (real path) or, if we
+            // round-robined the few labels over all of them, produce an impossible multiset (e.g. 7 identical
+            // accelerometers — a hard tell). Instead DERIVE the standard Android composite/uncalibrated
+            // sensors from the physical ones, reusing each physical sensor's own chip name + vendor, so the
+            // whole native list is coherently spoofed at a realistic size with NO duplicates. Every modern
+            // device with an accel/gyro/mag exposes these exact derived sensors.
+            size_t physical = g_sensor_labels.size();
+            std::vector<std::pair<std::string, std::string>> derived;
+            for (size_t i = 0; i < physical; i++) {
+                const std::string &nm = g_sensor_labels[i].first;
+                const std::string &vd = g_sensor_labels[i].second;
+                auto has = [&](const char *kw) { return nm.find(kw) != std::string::npos; };
+                if (has("Accel")) {
+                    derived.emplace_back(nm + "-Uncalibrated", vd);
+                    derived.emplace_back("Gravity Sensor", vd);
+                    derived.emplace_back("Linear Acceleration Sensor", vd);
+                    derived.emplace_back("Significant Motion Detector", vd);
+                    derived.emplace_back("Step Detector", vd);
+                    derived.emplace_back("Step Counter", vd);
+                }
+                if (has("Gyro")) {
+                    derived.emplace_back(nm + "-Uncalibrated", vd);
+                    derived.emplace_back("Game Rotation Vector Sensor", vd);
+                }
+                if (has("Magneto")) {
+                    derived.emplace_back(nm + "-Uncalibrated", vd);
+                    derived.emplace_back("Geomagnetic Rotation Vector Sensor", vd);
+                }
+                if (has("Accel"))
+                    derived.emplace_back("Orientation Sensor", vd);
+            }
+            // Append derived sensors, skipping any name already present (dedupe: no two identical entries).
+            std::set<std::string> present;
+            for (auto &s : g_sensor_labels) present.insert(s.first);
+            for (auto &d : derived)
+                if (present.insert(d.first).second) g_sensor_labels.push_back(d);
         }
 
         auto tr = profile.find("trace");

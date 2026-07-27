@@ -571,3 +571,13 @@ Checked the generated profile for cross-field incoherence beyond what's already 
     AD_ID permission (ad-id needs a Play-services dep + is deprecated — not worth faking). On-device
     harvest run PENDING an unlocked device (P4 off USB, 4a secure-locked) — the APK builds + installs
     clean and the import-compat path is unit-proven.
+
+- **2026-07-27 · Fuller per-model sensor datasets (native sensor coherence).** status: `idea`. The native
+  ASensor relabel now DERIVES the standard Android composite/uncalibrated sensors from the profile's ~5-7
+  physical ones (uncalibrated variants, gravity, linear-accel, significant-motion, step det/counter,
+  rotation vectors) so the native list is ~18 coherently-spoofed sensors with NO duplicates (was: 5 labels
+  round-robined over 35 real sensors = 7 identical accelerometers, a hard tell — fixed 2026-07-27). A
+  handful of the rarest overflow sensors (e.g. a color/ALS chip, Google virtual sensors) still pass through
+  REAL. Full fix: ship a real ~30-40-sensor list per device in data/hardware.json (harvested from real
+  devices) so EVERY native sensor is spoofed with zero passthrough. Byte-parity change (Java+Python). Lower
+  priority than the derivation fix which removed the impossible-multiset tell.
