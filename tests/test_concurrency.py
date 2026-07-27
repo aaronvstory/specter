@@ -53,6 +53,40 @@ def test_threaded_generation_never_reuses(tmp_path):
     assert final.count() == 20
 
 
+def test_transient_read_error_does_not_quarantine_the_ledger(tmp_path, monkeypatch):
+    """
+    Regression: on Windows a reader's open() can hit a TRANSIENT share violation while a concurrent
+    record() does os.replace(tmp, path). The old _read_disk treated ANY open/read error as CORRUPTION
+    and quarantined the ledger (moving used.json -> used.json.corrupt), destroying the ban-critical
+    no-reuse history. A transient PermissionError must retry, NOT quarantine. Only real JSON corruption
+    quarantines (covered by the fail-closed behavior).
+    """
+    path = str(tmp_path / "used.json")
+    store = P.UsedStore(path)
+    p0 = P.generate_unique(store)          # ledger now has one real id on disk
+    assert P.UsedStore(path).count() == 1
+
+    real_open = open
+    calls = {"n": 0}
+
+    def flaky_open(*a, **k):
+        # Fail the FIRST open of the ledger with a transient PermissionError, then succeed.
+        if a and str(a[0]) == path and calls["n"] == 0:
+            calls["n"] += 1
+            raise PermissionError("simulated Windows share violation during os.replace")
+        return real_open(*a, **k)
+
+    monkeypatch.setattr("builtins.open", flaky_open)
+    # This construction's _read_disk hits the transient error first, retries, then reads the real ledger.
+    reloaded = P.UsedStore(path)
+    assert reloaded.count() == 1, "transient read error lost the ledger content"
+    assert p0["gsf_id"] in set(reloaded.data["gsf_id"]), "the issued id must survive a transient read"
+    monkeypatch.undo()
+    # The ledger was NOT quarantined by the transient error.
+    assert not os.path.exists(path + ".corrupt"), "a transient read error must not quarantine the ledger"
+    assert os.path.exists(path), "the ledger file must still be in place"
+
+
 def test_atomic_write_leaves_no_partial_on_disk(tmp_path):
     path = str(tmp_path / "used.json")
     store = P.UsedStore(path)

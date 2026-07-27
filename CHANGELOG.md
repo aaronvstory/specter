@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.3] — 2026-07-27
+
+### Fixed
+- **Ban-critical: a transient read error no longer destroys the no-reuse ledger.** UsedStore.__init__
+  reads the ledger WITHOUT the file lock; on Windows a reader’s open() can hit a transient share
+  violation while a concurrent record() does os.replace(). The old _read_disk treated ANY open/read
+  error as CORRUPTION and quarantined used.json (-> .corrupt), erasing every issued id so they could be
+  reused — the exact thing Specter exists to prevent. Now transient PermissionError/FileNotFoundError/
+  OSError retries (~1s); {} is returned ONLY for a genuinely absent file; a real JSON error still
+  quarantines (fail-closed); persistent I/O errors raise instead of silently emptying. Found via a flaky
+  20-thread concurrency test; fix proven over 15+ runs with 0 failures. Regression test added.
+
 ## [0.12.2] — 2026-07-27
 
 ### Added

@@ -350,26 +350,42 @@ class UsedStore:
     def _read_disk(self):
         if not os.path.exists(self.path):
             return {}  # absent file == a fresh ledger, legitimately empty
-        try:
-            with open(self.path, encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                raise ValueError("used-id ledger is not a JSON object")
-            return data
-        except Exception as e:
-            # FAIL CLOSED: a corrupt/unreadable ledger must NOT be treated as empty, or the
-            # no-reuse guarantee silently dies (every previously-issued id becomes reusable).
-            # Quarantine the bad file and refuse rather than continue with {}.
-            quarantine = self.path + ".corrupt"
+        # A concurrent record() does os.replace(tmp, path); on Windows a reader's open() can hit a
+        # TRANSIENT share violation (PermissionError) or momentarily see the file absent mid-rename.
+        # That is NOT corruption — retry briefly before concluding anything. Only a genuine JSON/format
+        # error (ValueError) means the ledger is actually bad and must be quarantined (fail closed).
+        import time as _t
+        last_os_err = None
+        for _attempt in range(50):
             try:
-                os.replace(self.path, quarantine)
-            except OSError:
-                quarantine = "(could not move)"
-            raise UsedStoreCorrupt(
-                f"used-id ledger at {self.path} is unreadable ({e}); quarantined to {quarantine}. "
-                "Refusing to continue — an empty ledger would allow reusing already-issued ids. "
-                "Restore a good ledger or start fresh deliberately."
-            ) from e
+                with open(self.path, encoding="utf-8") as f:
+                    data = json.load(f)
+            except (PermissionError, FileNotFoundError, OSError) as e:
+                last_os_err = e
+                _t.sleep(0.02)          # transient concurrent-replace window — retry
+                if not os.path.exists(self.path):
+                    return {}            # replaced-away and now absent == fresh ledger
+                continue
+            except ValueError as e:
+                # Genuinely malformed JSON — FAIL CLOSED: an empty ledger would let every previously
+                # issued id be reused. Quarantine the bad file and refuse rather than continue with {}.
+                quarantine = self.path + ".corrupt"
+                try:
+                    os.replace(self.path, quarantine)
+                except OSError:
+                    quarantine = "(could not move)"
+                raise UsedStoreCorrupt(
+                    f"used-id ledger at {self.path} is unreadable ({e}); quarantined to {quarantine}. "
+                    "Refusing to continue — an empty ledger would allow reusing already-issued ids. "
+                    "Restore a good ledger or start fresh deliberately."
+                ) from e
+            if not isinstance(data, dict):
+                raise UsedStoreCorrupt(f"used-id ledger at {self.path} is not a JSON object")
+            return data
+        # 50 retries (~1s) of transient OS errors — treat as a real I/O problem, not silently empty.
+        raise UsedStoreCorrupt(
+            f"used-id ledger at {self.path} could not be read after retries ({last_os_err})"
+        ) from last_os_err
 
     def _refresh_from_disk(self):
         """Reload disk state into memory (so collides() sees other processes' recent ids)."""
