@@ -757,3 +757,13 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   Java==Python byte-identical via cross-lang dump). On-device: 5 profiles all coherent (A9->-perf,
   A10->-android10). Coherence tests both sides. Codex output truncated again (recurring tee issue) but the
   critical byte-parity property was proven independently. P4 on module 0.12.6. Both suites green.
+
+- [2026-07-27 post-reboot] SHIPPED 0.12.7: RAM/storage now COHERENT with the device SoC. On-device audit of
+  a fresh profile found a moto g7 play (2GB phone) reporting 8GB RAM + 115GB storage — a totalMem that
+  contradicts the model, a strong tell a fingerprinter correlates. Root cause: RAM tier drawn randomly,
+  decoupled from device. FIX: per-SoC allowed-RAM-tier map (RAM_IDX_FOR_SOC, all 26 dataset SoCs) + a 2GB
+  tier for budget SoCs; unknown SoC -> 3/4/6GB. Byte-parity PROVEN (150 pairs identical Java==Python) +
+  codex-clean ('No real bugs found, parity and logic hold'). Coherence tests both sides. On-device:
+  profiles now coherent (S10+/msmnile -> ~6GB, moto g6/SD660 -> ~4GB). P4 on module 0.12.7. Both suites
+  green. NOTE: the codex-output fix from the handoff WORKED perfectly (wait for completion notification +
+  filter skill dumps with awk '/^codex$/{c++} c>=1' | grep -viE 'SKILL|caveman|...' -> clean verdict).
