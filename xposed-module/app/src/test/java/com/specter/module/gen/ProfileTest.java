@@ -249,6 +249,46 @@ public class ProfileTest {
         // Null-safe.
         check(Profile.backfillDerived(null) == null, "backfill null -> null");
 
+        // --- backfillHardware: an imported/harvested partial profile gets the coherent per-model hardware
+        // bundle from its build_device codename, WITHOUT overwriting any hardware it already carries (a
+        // Specter-Lite harvest reads some real hw directly). Mirrors the loadHardware() entry shape
+        // (hw_-prefixed keys + a raw "soc").
+        java.util.Map<String, java.util.Map<String, String>> hw = new java.util.HashMap<>();
+        java.util.Map<String, String> a50 = new java.util.HashMap<>();
+        a50.put("soc", "exynos9611");
+        a50.put("hw_gpu_renderer", "Mali-G72"); a50.put("hw_gpu_vendor", "ARM");
+        a50.put("hw_gles_version", "3.2"); a50.put("hw_cores", "8");
+        a50.put("hw_sensors", "LSM6DSO|STMicro|1"); a50.put("hw_cameras", "48MP;8MP");
+        a50.put("hw_codecs", "OMX.qcom.video"); a50.put("hw_input_devices", "sec_touchscreen");
+        a50.put("proc_cpuinfo", "processor : 0");
+        hw.put("a50", a50);
+
+        // Harvest that already read a REAL renderer + is missing everything else.
+        java.util.Map<String, String> harv = new java.util.LinkedHashMap<>();
+        harv.put("build_device", "a50");
+        harv.put("hw_gpu_renderer", "Mali-G72 (REAL-harvested)");    // must be KEPT, not overwritten
+        Profile.backfillHardware(harv, hw);
+        check("Mali-G72 (REAL-harvested)".equals(harv.get("hw_gpu_renderer")),
+                "backfillHardware keeps a harvested-real hw value");
+        check("processor : 0".equals(harv.get("proc_cpuinfo")), "backfillHardware fills missing cpuinfo");
+        check("48MP;8MP".equals(harv.get("hw_cameras")), "backfillHardware fills missing cameras");
+        check(harv.containsKey("soc_platform") && !harv.get("soc_platform").isEmpty(),
+                "backfillHardware derives soc_platform from the entry's soc");
+        check(harv.containsKey("cpu_capacity") || harv.containsKey("gpu_model"),
+                "backfillHardware fills soc-topology fields");
+        // Unknown codename -> no-op (never fabricate a mismatched bundle).
+        java.util.Map<String, String> unk = new java.util.LinkedHashMap<>();
+        unk.put("build_device", "not_in_dataset");
+        int before = unk.size();
+        Profile.backfillHardware(unk, hw);
+        check(unk.size() == before, "backfillHardware no-op for an unknown codename");
+        // Null-safe.
+        check(Profile.backfillHardware(null, hw) == null, "backfillHardware null profile -> null");
+        java.util.Map<String, String> noHwDataset = new java.util.LinkedHashMap<>();
+        noHwDataset.put("build_device", "a50");
+        Profile.backfillHardware(noHwDataset, null);
+        check(noHwDataset.size() == 1, "backfillHardware no-op when no dataset supplied");
+
         System.out.println("Profile+UsedStore: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

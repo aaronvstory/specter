@@ -225,9 +225,20 @@ public final class IdentityService {
         return p;
     }
 
-    /** Apply an already-built profile (e.g. one the user edited) to {@code pkg}. */
+    /** Apply an already-built profile (e.g. one the user edited, imported, or harvested by Specter Lite)
+     *  to {@code pkg}. Backfills any MISSING coherent fields first: the pure-derived signals
+     *  (boot_count/battery/tz/locale) and the per-model HARDWARE bundle (soc/cpuinfo/cameras/codecs/…)
+     *  keyed by build_device — so a partial import (which omits fields it couldn't generate/read) applies
+     *  a device-coherent profile instead of leaving those fields to leak the host device. Existing values
+     *  are never overwritten (a Lite harvest's real hw reads win). No-op for a full generated profile. */
     public void apply(String pkg, Map<String, String> profile) {
-        RootWriter.write(shell, pkg, toJson(profile));
+        if (profile == null) return;   // nothing to apply; never write an empty "{}" profile
+        // Copy first: callers apply the SAME map to several packages in a loop, so we must not mutate it
+        // (the backfill is idempotent, but a side-effect on the caller's map is a surprise regardless).
+        Map<String, String> p = new java.util.LinkedHashMap<>(profile);
+        Profile.backfillDerived(p);
+        Profile.backfillHardware(p, loadHardware());
+        RootWriter.write(shell, pkg, toJson(p));
     }
 
     private static boolean isUniqueKey(String key) {

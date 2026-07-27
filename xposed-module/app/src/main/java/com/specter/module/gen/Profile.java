@@ -294,6 +294,55 @@ public final class Profile {
         return p;
     }
 
+    /**
+     * Backfill the per-model HARDWARE bundle (soc_platform, cpuinfo, GPU, sensors, cameras, codecs, cores,
+     * input) for an imported/harvested profile that is MISSING those fields — keyed by the profile's own
+     * build_device codename against the hardware dataset. Only fills fields ABSENT from the profile, so a
+     * Specter-Lite harvest (which reads SOME real hardware directly — real hw_gpu_renderer / hw_sensors)
+     * keeps its real values and only the un-harvested fields (cpuinfo/cameras/codecs/soc) get a coherent
+     * per-model value instead of leaking the HOST device. Never overwrites; never invents beyond the
+     * dataset. No-op if the codename is unknown / no dataset is supplied.
+     */
+    // The per-model hardware fields a loadHardware() entry carries (hw_-prefixed). Backfill copies only
+    // these real values; it never routes through hwFieldsFromEntry (whose DEFAULT_HW fallback would inject
+    // a mismatched SoC's values for any field the entry happens to omit).
+    static final String[] HW_FIELD_KEYS = {
+        "hw_gpu_renderer", "hw_gpu_vendor", "hw_gles_version", "hw_cores", "hw_sensors",
+        "hw_cameras", "hw_codecs", "hw_input_devices", "proc_cpuinfo",
+    };
+
+    public static Map<String, String> backfillHardware(Map<String, String> p,
+            Map<String, Map<String, String>> hardware) {
+        if (p == null || hardware == null) return p;
+        String codename = p.get("build_device");
+        if (codename == null || codename.isEmpty()) return p;
+        Map<String, String> entry = hardware.get(codename);
+        if (entry == null) return p;                 // unknown model — don't fabricate a mismatched bundle
+        // Iterate the entry's OWN hw_* fields directly (NOT hwFieldsFromEntry, which substitutes generic
+        // DEFAULT_HW for any absent key — that would inject a mismatched SoC's cpuinfo/etc). We only ever
+        // copy REAL per-model values this dataset entry actually carries.
+        for (String k : HW_FIELD_KEYS) {
+            String v = entry.get(k);
+            if (v != null && !v.isEmpty() && !p.containsKey(k)) p.put(k, v);
+        }
+        // soc_platform is DERIVED from the entry's SoC + the product string (byte-parity path), then it
+        // drives cpu_capacity/gpu_model/cpu_present (soc-topology). Fill all three only if absent.
+        if (!p.containsKey("soc_platform")) {
+            String soc = entry.get("soc");
+            String product = p.get("build_product");
+            if (product == null || product.isEmpty()) product = p.get("build_device");   // empty, not just absent
+            if (product == null) product = "";
+            String socPlat = Generators.socPlatform(product, soc == null ? "" : soc);
+            if (socPlat != null && !socPlat.isEmpty()) p.put("soc_platform", socPlat);
+        }
+        String socPlat = p.get("soc_platform");
+        if (socPlat != null && !socPlat.isEmpty())
+            for (Map.Entry<String, String> t : socTopologyFields(socPlat).entrySet())
+                if (!p.containsKey(t.getKey()) && t.getValue() != null && !t.getValue().isEmpty())
+                    p.put(t.getKey(), t.getValue());
+        return p;
+    }
+
     // soc -> "cpu_capacity|gpu_model". MUST stay byte-identical to data/soc_topology.json. cpu_present
     // is derived from the capacity vector's length. Missing SoC -> "_default".
     static final Map<String, String> SOC_TOPOLOGY = new java.util.HashMap<>();

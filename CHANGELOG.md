@@ -3,6 +3,19 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.1] — 2026-07-27
+
+### Fixed
+- **Imported / harvested partial profiles now apply a device-COHERENT hardware bundle.** When a profile
+  that omits fields (a vault import from another user, or a Specter-Lite non-root harvest — which reads
+  only what it legally can) is applied, IdentityService.apply() now backfills the missing per-model
+  hardware (soc_platform, /proc/cpuinfo, cameras, codecs, cores, GPU, sensors, input, cpu_capacity/
+  gpu_model) from the profile’s build_device codename against the hardware dataset — WITHOUT overwriting
+  any value already present (a harvest’s real hardware reads win). Previously those un-filled fields read
+  the HOST device, an internal contradiction (e.g. a Samsung model with the host Pixel’s cpuinfo). No-op
+  for a full generated profile and for an unknown codename (never fabricates a mismatched bundle).
+  JVM-tested (Profile.backfillHardware: keeps reals, fills gaps, unknown/null safe).
+
 ## [0.12.0] — 2026-07-27
 
 ### Added
