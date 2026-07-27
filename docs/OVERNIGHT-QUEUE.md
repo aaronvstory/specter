@@ -454,3 +454,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   ro.boot.slot_suffix, ro.hardware.gralloc, cpuXYZ, etc. no longer false-"spoofed"). Added a Python drift-
   guard test (every HookEntry alias must be in Coverage.SPOOFED_PROPS). Python 111 + JVM (Coverage) green.
   The flagship viewer is now precise + drift-protected. main @ v0.10.0.
+
+- [2026-07-27 AFK iter] COHERENCE CERTIFICATION: bulk audit of 500 generated profiles -> 0 incoherent, all
+  8 session signals (SENSORID/verifiedboot/locale/tz/boot_count/battery/meminfo) present + plausible in
+  every profile. Timezone<->phone-area geographic coherence: 0 mismatches / 300 profiles (tz always matches
+  the phone's area-code region). The multi-signal profiles are fully coherent. Raw-syscall check: my_syscall
+  already covers openat(+redirect)/faccessat/newfstatat/statx — the only uncovered vector is inline svc#0
+  (needs seccomp/namespace-unmount, a documented L-effort ceiling, not a quick win).
