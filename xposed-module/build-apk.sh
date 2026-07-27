@@ -28,3 +28,19 @@ echo "[build] APK: $APK"
 mkdir -p ../dist
 cp "$APK" "../dist/specter-module-v${VERSION}.apk"
 echo "[build] staged -> dist/specter-module-v${VERSION}.apk"
+
+# Specter Lite — the standalone no-root harvester. Versioned independently (lite/build.gradle), so a
+# friend can install it on a NON-rooted phone, harvest a profile, and hand it back to import into Specter.
+# Debug-signed like the module (this project's accepted install path). Best-effort — a Lite build failure
+# must not fail the main module build.
+LITE_VER="$(grep -oE 'versionName[[:space:]]+"[^"]+"' lite/build.gradle 2>/dev/null | grep -oE '"[^"]+"' | tr -d '"')"
+: "${LITE_VER:=1.0}"
+if "$GRADLE" :lite:assembleDebug --no-daemon "$@"; then
+    LITE_APK="lite/build/outputs/apk/debug/lite-debug.apk"
+    if [ -f "$LITE_APK" ]; then
+        cp "$LITE_APK" "../dist/specter-lite-v${LITE_VER}.apk"
+        echo "[build] staged -> dist/specter-lite-v${LITE_VER}.apk"
+    fi
+else
+    echo "[build] WARN: Specter Lite build failed — module APK is fine, lite not staged"
+fi
