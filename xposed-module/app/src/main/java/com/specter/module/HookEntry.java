@@ -420,7 +420,13 @@ public class HookEntry implements IXposedHookLoadPackage {
         // Camera id list — return exactly the profile's camera ids (a hardware-count signal).
         final String cams = p.get("hw_cameras");
         if (cams != null && !cams.isEmpty()) {
-            final String[] camIds = cams.split(",");
+            // Filter empty/whitespace tokens so a malformed "0,,1" can't inflate the count with a blank id
+            // (codex robustness note); the camera2 hook returns these ids verbatim and the legacy hook uses
+            // the length, so both must see only real ids.
+            final java.util.ArrayList<String> camList = new java.util.ArrayList<>();
+            for (String s : cams.split(",")) { String t = s.trim(); if (!t.isEmpty()) camList.add(t); }
+            final String[] camIds = camList.toArray(new String[0]);
+            if (camIds.length > 0) {
             try {
                 Class<?> cm = XposedHelpers.findClass("android.hardware.camera2.CameraManager", lp.classLoader);
                 XposedBridge.hookAllMethods(cm, "getCameraIdList", new XC_MethodHook() {
@@ -438,6 +444,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                     @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(camCount); }
                 });
             } catch (Throwable ignored) {}
+            }
         }
         // Input devices — FPJS reads InputDevice.getName()+getVendorId() for every id (decompiled
         // C0465h, case 4). Faking only the COUNT left the real touchscreen/PMIC names (fts, qpnp_pon on
