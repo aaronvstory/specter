@@ -711,3 +711,18 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   validate + checksum matches + imports cleanly. Codex was run but truncated mid-startup again; merged on a
   rigorous 3-way self-proof (regex anchoring vs 6 lengths, onCreate/onNewIntent exclusivity, on-device
   round-trip). 4a on Lite 1.3 (newest). P4 still off USB.
+
+- [2026-07-27, devices back] TWO-ROTATION TEST RUN (GLES ext spoof LIVE): visitorId did NOT split (A=moto
+  g pro/Adreno, B=SM-G977N/Mali both -> SJoG6...). Proven the ext spoof fires (103 glGetStringi, per-family
+  lists) but it's NOT the anchor. Remaining constant candidates: rootApps=true (native Magisk), dev
+  Tools=true (FPJS doesn't read our hooked Settings.Global — 0 hits), IP, non-extension GPU cap vector
+  (glGetInternalformativ/limits = real Adreno 640). Full finding in ANTI-FINGERPRINT-STRATEGY.md.
+  USER DIRECTION: don't accept demo limit, but WRAP UP + make the app super polished / all options working
+  + logging seamless for a REAL FLEET test. Surveyed all 4 tabs on the P4 @ 0.12.4 (rooted, unlocked):
+  Identity (device sim + target cards + red X), Saved (save/import/search + collapsed-by-date), Settings
+  (anti-fp always-on card + Hide root/dev toggles + Spoof UA/install/hw/codecs toggles + Diagnostics
+  logging + View live trace), Location (mock-flag ON, coord-spoof honestly marked 'Planned'). All flagship-
+  polished. CORE FLOW VERIFIED on-device: apply->verify probe = 29 spoofed, 0 HARD LEAKS, native GPU/media
+  drm/sensors coherent. Live-trace viewer works beautifully (coverage badges, live/refresh/export/clear).
+  App is essentially fleet-ready. Also noted: 'Hide root'+'Hide dev' toggles are ON but FPJS still sees
+  rootApps/devTools true — the protections need to actually beat FPJS's detection path (the anchor work).

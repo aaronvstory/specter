@@ -619,3 +619,27 @@ Zygisk layer now varies the extension list per profile. Implementation (main.cpp
   finally SPLITS between two profiles.** That two-rotation re-test is the def-of-done for this fix and is the
   first action when the device reconnects. Epistemically: the fix is a well-grounded HYPOTHESIS-driven build,
   NOT yet a proven win — do not claim FPJS is beaten until the split is measured on-device.
+
+### 2026-07-27 · GLES EXTENSION-SPOOF TWO-ROTATION TEST — visitorId did NOT split (decisive negative)
+Ran the full two-rotation test with the 0.12.4 GLES ext spoof LIVE + PROVEN firing on the P4:
+- Identity A = moto g pro (Adreno 610 / Qualcomm) -> visitorId `SJoG6j4i4vS9DoH6EM90`, event 1785145722893
+- Identity B = Samsung SM-G977N (Mali-G76 / ARM) -> **SAME** `SJoG6...`, event 1785145822768
+Both traces confirm the ext spoof engaged: `glGetStringi 0x1f03` called 103x, indices 0..98, NUM_EXTENSIONS
+spoofed to ~99, per-profile lists (QCOM markers for A, ARM for B). So the GLES EXTENSION LIST is NOT the
+visitorId anchor — spoofing it, even across two totally different GPU families, did not move the id.
+Server-API diff (A vs B): the ONLY differing device signals are browserDetails.device/userAgent (UA hook)
+and vpn.originTimezone (tz spoof). Everything else FPJS returns is identical.
+STILL-CONSTANT anchor candidates (identical A vs B, unspoofed):
+  - `rootApps: true` (Magisk detected — native path, NOT in our file/prop trace; likely PackageManager or
+    a native probe libfp does that SpecterTrace doesn't capture)
+  - `developerTools: true` (we hook Settings.Global adb_enabled/development_settings_enabled -> 0/null at
+    the JAVA layer, and ro.debuggable=0 natively, yet FPJS still reports true — reads it via a path we miss)
+  - the egress IP + geo (identical, 23.234.72.101)
+  - the NON-extension GPU capability vector: libfp ALSO resolves glGetInternalformativ / glGetMultisamplefv
+    / glGetTexLevelParameteriv / glGetProgramBinary (format/limit/multisample support = REAL Adreno 640
+    hardware, same both runs) — we spoof ONLY glGetStringi (extensions), not these. Higher crash risk to
+    spoof (wrong format support breaks GL init).
+EPISTEMIC STATUS: PROVEN that the extension list is not the anchor. The remaining anchor is one/some of
+{rootApps, developerTools, IP, the non-extension GPU capability vector} — NOT yet isolated. Next candidates
+by tractability: (1) close developerTools (find the unhooked read), (2) close rootApps (native Magisk hide),
+(3) the GPU format/limit vector (risky). This is a genuine reframe: the GPU EXTENSION hypothesis is refuted.
