@@ -602,3 +602,16 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   committed+pushed (e480d85). STILL BLOCKED: P4 off USB the whole iter — the two-rotation split is unproven.
   The hardened .so is staged; installs via the base64 route the instant the P4 reconnects. USER ACTION:
   re-seat the Pixel 4 (9B151FFAZ00FPF) USB cable so the decisive test can run.
+
+- [2026-07-27 AFK iter] TWO UNITS MERGED TO MAIN. (1) GLES ext spoof 0.12.0 (glGetStringi/glGetIntegerv,
+  the native GPU anchor found in the two-rotation test) — squash-merged, codex-clean from last iter.
+  (2) Specter Lite 1.1: expanded the non-root harvester from the minimal baseline (Build/android_id/
+  MediaDrm) to the FULL no-permission signal set — total_ram, GPU renderer/vendor/GLES (headless EGL),
+  sensor list, locale, timezone, carrier operator, GSF id. Added a JVM parity test (export checksum ==
+  VaultChecksum.of, the import-compat guarantee). Codex gauntlet on the harvest: fixed READ_GSERVICES
+  perm (GSF needs it, normal/install-time), GSF cursor try-with-resources + decimal-only gsf_id, EGL
+  finally-cleanup, harvest OFF the UI thread (ANR). Builds+installs clean on 4a, both suites green.
+  BLOCKERS this iter: P4 still off USB; 4a secure-PIN-locked (screencap returns empty, can't tap) — so
+  interactive on-device verification (polish screenshots, live harvest run, the two-rotation split) is
+  blocked on BOTH devices. All non-device-gated work verified (compile/install/unit). USER ACTIONS to
+  unblock: re-seat the Pixel 4 USB cable, and/or unlock the Pixel 4a.
