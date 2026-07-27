@@ -643,3 +643,19 @@ EPISTEMIC STATUS: PROVEN that the extension list is not the anchor. The remainin
 {rootApps, developerTools, IP, the non-extension GPU capability vector} — NOT yet isolated. Next candidates
 by tractability: (1) close developerTools (find the unhooked read), (2) close rootApps (native Magisk hide),
 (3) the GPU format/limit vector (risky). This is a genuine reframe: the GPU EXTENSION hypothesis is refuted.
+
+### 2026-07-27 · Injection tell CLOSED: inline hooks left RWX system-lib pages (found in the maps/root hunt)
+Chasing the constant `rootApps: true` / potential tamper anchor, traced what FPJS reads from
+`/proc/self/maps` (3x open + 3x fopen per identification). The demo's maps did NOT show our .so or Magisk
+by name (DenyList hides those), BUT it had 14 `rwxp` (read-WRITE-execute) segments on libc/libandroid/libdl
+— left by And64InlineHook, which mprotect'd each patched code page to RWX to write the patch and never
+dropped the write bit. A normal app never has writable+executable system-library pages; a maps-scanning
+fraud/root SDK flags exactly this. FIXED (0.12.5): restore each patched page to R-X right after patching
+(__make_rx). PROVEN on P4: rwxp on system libs 14 -> 0, hooks still work (probe 29 spoofed / 0 leaks).
+NOTE: this demo reported `tampering: false` even WITH the RWX pages, so it was not THIS demo's anchor — but
+it's a real injection tell a stricter target scans for, so worth closing for the fleet. The FPJS
+`rootApps: true` itself was NOT traceable to a client read (no su/magisk file probes, maps hides our names)
+— likely server-side inference or a path libfp does natively that SpecterTrace doesn't capture; `developer
+Tools: true` similarly is NOT read via Settings.Global (0 hook hits) — both appear server-inferred, not
+client-side leaks we can close. So the demo visitorId anchor remains unisolated among {rootApps, devTools,
+IP, non-extension GPU vector}; the client surface keeps getting cleaner (RWX pages now closed).

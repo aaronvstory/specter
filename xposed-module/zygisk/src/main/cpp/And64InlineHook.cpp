@@ -123,6 +123,13 @@ public:
 #define __make_rwx(p, n)           ::mprotect(__ptr_align(p), \
                                               __page_align(__uintval(p) + n) != __page_align(__uintval(p)) ? __page_align(n) + __page_size : __page_align(n), \
                                               PROT_READ | PROT_WRITE | PROT_EXEC)
+// After patching, restore the page to R-X (drop PROT_WRITE). Leaving system-library code pages RWX is a
+// classic injection/tamper tell — a normal app never has writable+executable libc/libandroid pages, and a
+// maps-scanning fraud SDK flags exactly this. Best-effort: if it fails the hook still works, just leaves
+// the page RWX (the prior behaviour).
+#define __make_rx(p, n)            ::mprotect(__ptr_align(p), \
+                                              __page_align(__uintval(p) + n) != __page_align(__uintval(p)) ? __page_align(n) + __page_size : __page_align(n), \
+                                              PROT_READ | PROT_EXEC)
 
 //-------------------------------------------------------------------------
 
@@ -539,6 +546,8 @@ extern "C" {
                 original[1] = 0xd61f0220u; // BR X17
                 *reinterpret_cast<int64_t *>(original + 2) = __intval(replace);
                 __flush_cache(symbol, 5 * sizeof(uint32_t));
+                // Drop the write bit — don't leave the patched code page RWX (injection tell).
+                __make_rx(symbol, 5 * sizeof(uint32_t));
 
                 A64_LOGI("inline hook %p->%p successfully! %zu bytes overwritten",
                          symbol, replace, 5 * sizeof(uint32_t));
@@ -559,6 +568,8 @@ extern "C" {
             if (__make_rwx(original, 1 * sizeof(uint32_t)) == 0) {
                 __sync_cmpswap(original, *original, 0x14000000u | (pc_offset & mask)); // "B" ADDR_PCREL26
                 __flush_cache(symbol, 1 * sizeof(uint32_t));
+                // Drop the write bit — don't leave the patched code page RWX (injection tell).
+                __make_rx(symbol, 1 * sizeof(uint32_t));
 
                 A64_LOGI("inline hook %p->%p successfully! %zu bytes overwritten",
                          symbol, replace, 1 * sizeof(uint32_t));
@@ -590,6 +601,10 @@ extern "C" {
         if (trampoline == NULL && result != NULL) {
             *result = NULL;
         } //if
+        // Restore the page(s) this outer grant unlocked back to R-X — A64HookFunctionV restores only the
+        // bytes it patched, but this grant covers 5*sizeof(size_t) which may span a 2nd page it didn't
+        // touch. Leaving ANY system-code page RWX is the injection tell we're closing. Best-effort.
+        __make_rx(symbol, 5 * sizeof(size_t));
     }
 }
 

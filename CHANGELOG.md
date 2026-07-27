@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.5] — 2026-07-27
+
+### Fixed
+- **Inline hooks no longer leave writable+executable system-library pages (an injection tell).** The
+  And64InlineHook primitive made each patched code page RWX to write the patch but never dropped the
+  write bit, leaving ~14 rwxp segments on libc/libandroid/libdl in every hooked process. A normal app
+  never has writable+executable system-library pages, so a maps-scanning fraud/root SDK flags exactly
+  this. Now the page is restored to R-X (PROT_READ|PROT_EXEC) right after patching. PROVEN on the Pixel
+  4: rwxp segments on system libs dropped from 14 to 0, and the hooks still work (probe: 29 spoofed, 0
+  hard leaks). Found while tracing what FPJS reads from /proc/self/maps for root/tamper detection.
+
 ## [0.12.4] — 2026-07-27
 
 ### Fixed
