@@ -726,3 +726,13 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   drm/sensors coherent. Live-trace viewer works beautifully (coverage badges, live/refresh/export/clear).
   App is essentially fleet-ready. Also noted: 'Hide root'+'Hide dev' toggles are ON but FPJS still sees
   rootApps/devTools true — the protections need to actually beat FPJS's detection path (the anchor work).
+
+- [2026-07-27, devices back cont.] POLISH PASS + real coherence bug found & fixed. Surveyed all 4 tabs on
+  the P4 (flagship-quality confirmed) + verified core flow (apply->probe: 29 spoofed, 0 hard leaks) + the
+  live-trace viewer (beautiful, working). Found via probe: the NATIVE sensor list was DUPLICATED — 5
+  profile labels round-robined over 35 real sensors = 7 identical accelerometers (impossible multiset, hard
+  tell). FIXED: derive standard Android composite/uncalibrated sensors from the physical ones (same chip
+  vendor) so the native list is ~18 coherently-spoofed distinct sensors + real overflow kept real (not
+  duplicated). PROVEN on P4: native list 35 sensors, 0 duplicates, coherent vendors. 1 minor residual chip
+  leak (color sensor) noted in IDEAS for the fuller-dataset upgrade. Merged 8e6894b. P4 on 0.12.4 module +
+  newest .so (db684007). App is fleet-test-ready: all tabs polished, all toggles working, logging seamless.
