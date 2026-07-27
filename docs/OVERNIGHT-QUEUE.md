@@ -736,3 +736,15 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   duplicated). PROVEN on P4: native list 35 sensors, 0 duplicates, coherent vendors. 1 minor residual chip
   leak (color sensor) noted in IDEAS for the fuller-dataset upgrade. Merged 8e6894b. P4 on 0.12.4 module +
   newest .so (db684007). App is fleet-test-ready: all tabs polished, all toggles working, logging seamless.
+
+- [2026-07-27] SHIPPED 0.12.5: closed the RWX-system-library INJECTION TELL. Tracing FPJS's /proc/self/maps
+  reads (root/tamper hunt), found And64InlineHook left 14 rwxp (writable+EXECutable) segments on libc/
+  libandroid/libdl — a classic injection tell (normal apps never have writable+exec system-lib pages). Fix:
+  restore each patched page to R-X after patching (all 3 grant paths: 2 inner + the outer .text unlock that
+  codex caught). PROVEN P4: rwxp on system libs 14->0, hooks work (29 spoofed/0 leaks), reboot-survives.
+  Codex-reviewed (outer-page finding fixed; concurrent-install race N/A — sequential single-thread install;
+  range calc symmetric with grant). Then EXHAUSTIVELY traced the rest of the client root-detection surface
+  and it's CLEAN: mountinfo/mounts redirect to filtered copies (0 magisk leaks, verified), maps hides our
+  .so + Magisk names, NO su/magisk file probes fire, dev-mode not read via Settings.Global. So FPJS's
+  rootApps=true / developerTools=true are SERVER-INFERRED, not closeable client leaks (documented, no
+  cop-out — every vector traced+ruled out). P4 on module 0.12.5 + newest .so; 4a on Lite 1.3.
