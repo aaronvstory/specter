@@ -297,3 +297,13 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   vendor is a worse tell than a real one). The two that HAD spoofed counterparts (ro.boot.hardware /
   ro.boot.hardware.platform, inconsistent with ro.hardware/ro.board.platform) are already fixed (c9e558d).
   Revisit only if a real target is shown to read ro.boot.* — then add per-device SKU/DDR/UFS data first.
+
+- 2026-07-27 · Specter Lite does NOT harvest the advertising ID — decided against. It would need the Play
+  Services `play-services-ads-identifier` dependency (or fragile reflection into GMS internals), but the
+  whole project is deliberately ZERO external-maven-dependency (app/probe/lite use only local file deps +
+  the Xposed stub jar) and the vendored offline gradle can't be relied on to resolve maven artifacts. The
+  advertising ID is also DEPRECATED, GAPPS-only, and user-resettable (low identifier value). So harvesting
+  it is a poor trade: a heavy dep (breaking the clean design) or brittle reflection, for a weak signal.
+  The harvest reads every OTHER no-root identifier (android_id, gsf_id, MediaDRM, Build.*, sensors, GPU,
+  RAM, screen, locale/tz, carrier-when-present). Revisit only if a real target is shown to key on the ad
+  id AND a dependency-free read proves reliable.

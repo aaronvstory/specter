@@ -657,3 +657,17 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   (no unverifiable UI churn, no redoing done work, no spoofing signals FPJS doesn't read). Main green+clean
   @ 0.12.1, 5 units shipped this session. ONLY remaining work (UI polish screenshots + two-rotation split)
   needs interactive device access. Polling for a device to become reachable.
+
+- [2026-07-27 AFK iter] BREAKTHROUGH: found a NON-INTERACTIVE path to verify on the locked 4a — added a
+  scriptable auto-harvest (am start ... --ez auto true) to Specter Lite (1.2 / 0.12.2). Used it to PROVE
+  the expanded 1.1 harvest end-to-end on the real Pixel 4a: 28→29 real fields exported (total_ram 5.9GB,
+  Adreno 618/Qualcomm/GLES 3.2 via headless EGL, real sensor list, en-US, tz, Build.*, android_id,
+  MediaDRM, screen, gsf_id), checksum round-trips against VaultChecksum.of (imports cleanly). This real
+  verification IMMEDIATELY caught a genuine BUG: the GSF id was parsed as HEX but the gservices provider
+  returns it as a DECIMAL 19-digit long → Long.parseLong(v,16) overflowed → gsf_id silently dropped on
+  EVERY GAPPS device. Fixed (parse as decimal, validate positive long) + re-proven on-device (gsf_id now
+  present). Both fixes merged (d5484f8 auto-harvest, 0966ddb gsf). Decided AGAINST harvesting advertising
+  id (documented in DECISIONS.md): needs a Play Services dep but the project is deliberately zero-maven-dep
+  + ad-id is deprecated/GAPPS-only/low-value. 3 more units this iter. 4a is usable NON-INTERACTIVELY for
+  harvest/probe verification even while PIN-locked (am start + pull files) — but UI polish still needs the
+  screen visible. P4 still off USB.
