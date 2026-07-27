@@ -489,3 +489,15 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   StatFs (spoofed), getIntProperty(1)=CHARGE_COUNTER (spoofed battery), camera facing/orientation
   (universal). Every signal the SDK ACTUALLY reads is now covered. getCameraCharacteristics NOT read by
   the SDK (confirmed). Client coverage complete + source-audit-verified.
+
+- [2026-07-27 AFK iter] Camera-count hook hardened (empty-token filter, codex). dist v0.10.1 built.
+
+*** session snapshot #7 (AFK, 2026-07-27) ***
+- 0.10.0 -> 0.10.1. This iter: SDK-source audit found + closed the legacy camera-count leak (FPJS reads
+  Camera.getNumberOfCameras, not camera2 — was leaking the real Pixel 4's 3; now spoofed to profile count,
+  PROVEN 3->4), then exhaustively verified EVERY FPJS signal provider is covered (sensors/inputs/memory/
+  statfs/battery-charge-counter/camera). Client coverage now SDK-source-audited end to end.
+- Full session (0.5.0 -> 0.10.1, ~52 commits): live-trace viewer + flagship coverage badges, SENSORID,
+  verifiedboot, locale/tz, mock-location, boot-count, battery, meminfo, legacy-camera, extensive UI polish,
+  IDEAS backlog (all 3). Client coverage verified 5 ways (trace, SDK-source x2, badges, 500-profile
+  coherence). Codex gauntlet on every risky change. Remaining: L-effort structural / user-blocked (4a).
