@@ -521,3 +521,9 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - STATE: flagship-polished, exhaustively-audited, fully-tested, clean-build-certified. Remaining work is
   ONLY the documented L-effort ceilings (raw svc#0 syscalls, hardware key attestation) or user-blocked
   (4a root). The core mission — cover every client signal FPJS reads + a polished app — is COMPLETE.
+
+- [2026-07-27 AFK iter] POLISH: live-trace Export now writes a readable COVERAGE REPORT (0.11.0) instead of
+  the raw 90k-line log — summary (N signals · X spoofed · Y real · Z unknown) + every signal grouped +
+  tagged [spoofed]/[real]/[unknown] with read count. A shareable proof of what's protected, complementing
+  the on-screen badges. Pure JVM-tested DiagReport. Verified on-device. Reviewed Identity/Saved/Settings
+  screens — all flagship-polished + cohesive (Identity spec-sheet, target cards consistent everywhere).
