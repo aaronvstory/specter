@@ -748,3 +748,12 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   .so + Magisk names, NO su/magisk file probes fire, dev-mode not read via Settings.Global. So FPJS's
   rootApps=true / developerTools=true are SERVER-INFERRED, not closeable client leaks (documented, no
   cop-out — every vector traced+ruled out). P4 on module 0.12.5 + newest .so; 4a on Lite 1.3.
+
+- [2026-07-27] SHIPPED 0.12.6: kernel-version-vs-OS coherence. On-device inspection of a fresh profile's
+  proc_version showed a Motorola Android-9 device with a '4.14.120-android10-...' kernel — a kernel branched
+  for a NEWER OS than it runs (impossible; a kernel-vs-OS correlation a fingerprinter catches). Root cause:
+  kernel_version drew a random -androidN tag (10-13) decoupled from build_release. FIX: clamp the tag to the
+  release (never > OS version), release<10 -> -perf. Byte-parity preserved + PROVEN (100 kernel strings
+  Java==Python byte-identical via cross-lang dump). On-device: 5 profiles all coherent (A9->-perf,
+  A10->-android10). Coherence tests both sides. Codex output truncated again (recurring tee issue) but the
+  critical byte-parity property was proven independently. P4 on module 0.12.6. Both suites green.
