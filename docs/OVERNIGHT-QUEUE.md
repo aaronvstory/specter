@@ -480,3 +480,12 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   locale/tz, mock-location, boot-count, battery, meminfo fix, extensive UI polish, IDEAS backlog (all 3).
 - App state: flagship-polished, client coverage verified 4 ways + drift-guarded, 500-profile coherence
   clean, both dist APKs current, P4 on newest. Remaining work is L-effort/structural or user-blocked (4a).
+
+- [2026-07-27 AFK iter] SDK-SOURCE AUDIT continued -> found + fixed legacy camera-count leak (0.10.1):
+  FPJS's camera provider (W.java) uses legacy Camera.getNumberOfCameras() not camera2; only camera2 was
+  hooked so the legacy count leaked the real Pixel 4's 3. Now returns the profile count. PROVEN: real 3 ->
+  app reads spoofed 4. Then AUDITED every SDK signal provider: getSensorList/getDefaultSensor (spoofed),
+  getInputDevice (spoofed), SUPPORTED_ABIS[0]=arm64 (universal), getMemoryInfo+/proc/meminfo (spoofed),
+  StatFs (spoofed), getIntProperty(1)=CHARGE_COUNTER (spoofed battery), camera facing/orientation
+  (universal). Every signal the SDK ACTUALLY reads is now covered. getCameraCharacteristics NOT read by
+  the SDK (confirmed). Client coverage complete + source-audit-verified.
