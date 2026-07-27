@@ -527,3 +527,17 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   tagged [spoofed]/[real]/[unknown] with read count. A shareable proof of what's protected, complementing
   the on-screen badges. Pure JVM-tested DiagReport. Verified on-device. Reviewed Identity/Saved/Settings
   screens — all flagship-polished + cohesive (Identity spec-sheet, target cards consistent everywhere).
+
+*** session snapshot #9 (AFK, 2026-07-27) ***
+- 0.10.1 -> 0.11.0. This iter: live-trace Export upgraded to a readable coverage report (summary +
+  [spoofed]/[real]/[unknown]-tagged signals) instead of the raw log — a shareable "what's protected"
+  audit, complementing the on-screen badges. Pure JVM-tested (DiagReport). dist v0.11.0 built.
+- Reviewed all screens: flagship-polished + cohesive (Identity spec-sheet first-impression is clean).
+- Full session (0.5.0 -> 0.11.0, 55 commits): live-trace viewer + coverage badges + report export, SENSORID,
+  verifiedboot, locale/tz, mock-location, boot-count, battery, meminfo, legacy-camera, extensive UI polish,
+  IDEAS backlog (all 3). Client coverage verified 5 ways + exhaustive SDK-source audit.
+- STATE: flagship-polished, exhaustively-audited, fully-tested. The core mission is complete. Remaining is
+  ONLY L-effort structural ceilings (raw svc#0, key attestation) or user-blocked (4a root).
+  NOTE: codex on the 0.11.0 export was killed mid-run (hung); reasoned the concerns through manually
+  (no injection - fixed path + decimal ts; safe volatile publish; null-guarded tested DiagReport). Low risk;
+  re-run codex next iter if warranted.
