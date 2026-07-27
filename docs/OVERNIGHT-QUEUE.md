@@ -461,3 +461,11 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   the phone's area-code region). The multi-signal profiles are fully coherent. Raw-syscall check: my_syscall
   already covers openat(+redirect)/faccessat/newfstatat/statx — the only uncovered vector is inline svc#0
   (needs seccomp/namespace-unmount, a documented L-effort ceiling, not a quick win).
+
+- [2026-07-27 AFK iter] POLISH: Settings tab now uses the SAME rich target-app cards as Identity (icon +
+  name + red ✕ + Change) instead of a plain text list — one cohesive target UI everywhere (3a2ebda, -11
+  LOC). End-to-end verified on v0.10.0: 29 spoofed / 0 hard leaks + all session signals coherent (moto g7:
+  boot_count=377, battery=1.72M, tz=America/New_York, meminfo=7716...KB). RESOLVED the recurring "stale-
+  profile-read" note: it was NOT a bug — verify_on_device.py re-seeds the probe from DevInfo's profile
+  (documented behavior), so running it between a manual rotate and a probe read overwrites the manual
+  profile. push/rotate writes the correct file immediately (verified). No fix needed.
