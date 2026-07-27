@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.11.0] — 2026-07-27
+
+### Changed
+- **Live-trace Export now writes a readable COVERAGE REPORT**, not the raw 90k-line diag.log. A
+  plain-text audit: a summary (N signals · X spoofed · Y real · Z unknown) followed by every signal the
+  target read, grouped (Properties/Files/Stat), each tagged [spoofed] / [real] / [unknown] with its
+  read count. Shareable proof of exactly what's protected. Written to /sdcard/Download/specter-
+  coverage-*.txt. Logic is a pure, JVM-tested helper (DiagReport).
+
 ## [0.10.1] — 2026-07-27
 
 ### Fixed

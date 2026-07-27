@@ -34,6 +34,7 @@ public final class DiagnosticsActivity extends Activity {
     private final Handler h = new Handler(Looper.getMainLooper());
     private volatile boolean live = true;
     private volatile boolean reading = false;   // one in-flight read at a time (no su-exec pileup)
+    private volatile List<TraceParser.Row> lastRows = java.util.Collections.emptyList();  // for Export
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!live) return;
@@ -124,6 +125,7 @@ public final class DiagnosticsActivity extends Activity {
     }
 
     private void render(String raw, List<TraceParser.Row> rows) {
+        lastRows = rows;   // snapshot for Export (a readable coverage report, not the raw log)
         list.removeAllViews();
         if (raw == null) {
             summary.setText("Capture not running. Enable “Diagnostics logging” in Settings, then APPLY to a "
@@ -311,25 +313,35 @@ public final class DiagnosticsActivity extends Activity {
         catch (Throwable ignored) {}
     }
 
-    /** Copy the capture to /sdcard/Download so it can be pulled/shared. Root-owned source -> su copy;
-     *  chmod world-readable so a file manager can open it. Toasts the destination (or the failure). */
+    /** Export a READABLE coverage report (the parsed signals grouped with their spoofed/real status +
+     *  summary) to /sdcard/Download — far more useful than the raw 90k-line diag.log. Built from the
+     *  in-memory parsed rows; staged in the app's own dir then su-copied out (Download isn't app-writable). */
     private void exportLog() {
-        final String dest = "/sdcard/Download/specter-trace-" + System.currentTimeMillis() + ".log";
+        final String report = DiagReport.build(lastRows);
+        final String name = "specter-coverage-" + System.currentTimeMillis() + ".txt";
+        final String dest = "/sdcard/Download/" + name;
         new Thread(() -> {
             boolean ok = false;
+            java.io.File staged = new java.io.File(getFilesDir(), name);
             try {
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(staged)) {
+                    fos.write(report.getBytes("UTF-8"));
+                }
                 Process p = Runtime.getRuntime().exec(new String[]{"su", "-c",
-                        "cp " + DiagnosticsCmd.LOG_PATH + " " + dest + " && chmod 644 " + dest});
+                        "cp '" + staged.getAbsolutePath() + "' '" + dest + "' && chmod 644 '" + dest + "'"});
                 drain(p.getErrorStream());
                 drain(p.getInputStream());
                 ok = p.waitFor() == 0;
             } catch (Throwable ignored) {}
+            //noinspection ResultOfMethodCallIgnored
+            staged.delete();
             final boolean done = ok;
             h.post(() -> android.widget.Toast.makeText(this,
-                    done ? "Exported to " + dest : "Export failed (capture running? root granted?)",
+                    done ? "Coverage report -> " + dest : "Export failed (grant root?)",
                     android.widget.Toast.LENGTH_LONG).show());
         }, "specter-diag-export").start();
     }
+
 
     private Button flatButton(String text) {
         Button btn = new Button(this);
