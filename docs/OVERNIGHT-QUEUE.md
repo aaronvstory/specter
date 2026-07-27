@@ -615,3 +615,12 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   interactive on-device verification (polish screenshots, live harvest run, the two-rotation split) is
   blocked on BOTH devices. All non-device-gated work verified (compile/install/unit). USER ACTIONS to
   unblock: re-seat the Pixel 4 USB cable, and/or unlock the Pixel 4a.
+
+- [2026-07-27 AFK iter, cont.] THIRD UNIT: on-device invariant test for the GLES extension-spoof algorithm
+  (dev-scripts/gl_ext_invariants_test.cpp + run-gl-ext-test.sh). The build/finalize logic in main.cpp was
+  untested (coupled to Zygisk globals + EGL); this mirrors the pure algorithm and asserts determinism,
+  per-seed variation (the split property), count==size, strict subset-of-real, no-dups, CORE-always,
+  vendor-gating, empty-real fallback. Cross-compiles arm64 + runs on any device — PROVEN ALL PASS on the
+  4a. Committed to main (fc461e0). 3 units merged this session: GLES spoof 0.12.0, Lite 1.1 harvest, GL
+  invariant test. Both suites green. P4 STILL off USB, 4a STILL secure-locked — on-device UI polish + the
+  two-rotation split remain the only blocked work, pending device access (re-seat P4 USB / unlock 4a).
