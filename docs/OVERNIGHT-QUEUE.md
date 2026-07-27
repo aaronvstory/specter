@@ -649,3 +649,11 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   0.12.1. Devices STILL blocked (P4 off USB, 4a secure-locked) — UI polish + two-rotation split remain the
   ONLY gated work, needing interactive device access. Not manufacturing unverifiable UI churn (would
   violate screenshot-verify + no-fake-UI). USER ACTIONS to unblock: re-seat P4 USB / unlock 4a.
+
+- [2026-07-27 AFK iter] Devices STILL blocked (P4 off USB; 4a confirmed SECURE-locked — strongAuthRequired
+  =0x100, swipe-dismiss fails, cannot bypass user PIN). Audited the live-trace viewer (DiagnosticsActivity,
+  the GeerGit differentiator) — fully functional + correct (Live/Refresh/Export/Clear, grouped coverage
+  badges, bg-thread read, no TODOs). Re-confirmed device-independent backlog is EXHAUSTED. Held per mandate
+  (no unverifiable UI churn, no redoing done work, no spoofing signals FPJS doesn't read). Main green+clean
+  @ 0.12.1, 5 units shipped this session. ONLY remaining work (UI polish screenshots + two-rotation split)
+  needs interactive device access. Polling for a device to become reachable.
