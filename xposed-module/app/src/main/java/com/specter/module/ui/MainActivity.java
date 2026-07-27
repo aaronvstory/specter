@@ -51,9 +51,14 @@ public class MainActivity extends Activity {
     private int tab = 0;            // 0=Identity 1=Saved 2=Settings 3=Location
     private Vault vault;
     private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
+    private android.widget.CheckBox clearBeforeApply;  // "clear each target's data+cache before APPLY"
     private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
     private String appliedTargets = "";                 // comma-sep pkgs the CURRENT profile was applied to
                                                         // ("" until Apply succeeds — vault saves only applied)
+    private String appliedSig = "";                      // signature (android_id + target set) of the LAST
+                                                        // successful apply — so a second APPLY of the SAME
+                                                        // unchanged identity says "already applied" instead
+                                                        // of silently re-doing it + re-prompting to save.
     private final Set<String> expandedGroups = new java.util.HashSet<>();  // date groups the user EXPANDED
                                                                           // (Saved profiles collapse by default)
 
@@ -168,6 +173,22 @@ public class MainActivity extends Activity {
         cp.setMargins(dp(16), 0, dp(16), dp(4));
         saveOnRandomize.setLayoutParams(cp);
         col.addView(saveOnRandomize);
+
+        // "Clear data + cache before APPLY": the fleet-workflow start-clean step in one tap. When checked,
+        // APPLY runs `pm clear` on each target app first (wipes storage AND cache — same as doing it by hand
+        // in app settings), then applies the identity to a fresh install. Destructive + off by default.
+        clearBeforeApply = new android.widget.CheckBox(this);
+        clearBeforeApply.setText("Clear data + cache before APPLY");
+        clearBeforeApply.setTextColor(Theme.SOFT);
+        clearBeforeApply.setTextSize(13);
+        clearBeforeApply.setChecked(prefs.getBoolean("clear_before_apply", false));
+        clearBeforeApply.setOnCheckedChangeListener((v, on) ->
+                prefs.edit().putBoolean("clear_before_apply", on).apply());
+        LinearLayout.LayoutParams cp2 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cp2.setMargins(dp(16), 0, dp(16), dp(4));
+        clearBeforeApply.setLayoutParams(cp2);
+        col.addView(clearBeforeApply);
         return col;
     }
 
@@ -273,7 +294,7 @@ public class MainActivity extends Activity {
                 final Map<String, String> p = svc.generateUnique();
                 runOnUiThread(() -> {
                     profile = p;
-                    appliedTargets = "";   // fresh identity — not applied to anything yet
+                    appliedTargets = ""; appliedSig = "";   // fresh identity — not applied to anything yet
                     status.setText("New identity ready — not yet applied.");
                     render();
                     // NOTE: saving happens after APPLY (below), not here — a vault entry should only ever
@@ -297,20 +318,45 @@ public class MainActivity extends Activity {
             return;
         }
         final List<String> pkgs = new ArrayList<>(targets);
-        status.setText("Applying to " + pkgs.size() + " app(s)…");
+        final boolean clearFirst = clearBeforeApply != null && clearBeforeApply.isChecked();
+        // Already-applied guard: if THIS exact identity is already applied to THIS exact target set, don't
+        // silently re-apply + re-prompt to save. Users forget whether they hit Apply — tell them plainly.
+        // (Skipped when clearing first — a wipe changes device state, so re-applying is a real action.)
+        // Sign off `profile` (the full pre-toggle map), NOT `toApply`: android_id is a per-identifier
+        // toggle, so a user who disabled it drops the key from toApply and every identity would collapse
+        // to the same "?" signature — false "already applied". profile always carries android_id.
+        final String sig = applySignature(profile, targets);
+        if (!clearFirst && !appliedSig.isEmpty() && appliedSig.equals(sig)) {
+            String msg = "Already applied to " + pkgs.size() + " app(s). "
+                    + "Relaunch them to see it, or RANDOMIZE ALL for a new identity.";
+            status.setText(msg); toast(msg);
+            return;
+        }
+        status.setText(clearFirst ? "Clearing + applying to " + pkgs.size() + " app(s)…"
+                                  : "Applying to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
-            int ok = 0; String lastErr = null;
+            int ok = 0; String lastErr = null; int cleared = 0; String clearErr = null;
             for (String pkg : pkgs) {
+                if (clearFirst) {
+                    // Wipe data+cache first so the identity applies to a fresh install (fleet start-clean).
+                    try { com.specter.module.gen.SessionMigrator.clearData(pkg); cleared++; }
+                    catch (Throwable t) { clearErr = t.getMessage(); }
+                }
                 try { svc.apply(pkg, toApply); ok++; }
                 catch (Throwable t) { lastErr = t.getMessage(); }
             }
+            final int clearedN = cleared; final String clrErr = clearErr;
             final int okN = ok; final String err = lastErr;
             runOnUiThread(() -> {
-                String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
-                        + (err != null ? " Last error: " + err + " (grant root in Magisk?)" : " Relaunch them to see it.");
+                String m = (clearFirst ? "Cleared " + clearedN + "/" + pkgs.size() + ", applied " + okN + "/" + pkgs.size() + " app(s)."
+                                       : "Applied to " + okN + "/" + pkgs.size() + " app(s).")
+                        + (err != null ? " Apply error: " + err + " (grant root in Magisk?)"
+                           : clrErr != null ? " Clear error: " + clrErr
+                           : " Relaunch them to see it.");
                 status.setText(m); toast(m);
                 if (okN > 0) {
                     appliedTargets = String.join(",", pkgs);   // this profile is now applied to these apps
+                    appliedSig = sig;                          // remember it so a repeat Apply is a no-op
                     // Save to vault ONLY after a successful apply (a vault entry represents an applied
                     // identity), recording which apps it reached.
                     if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName(appliedTargets);
@@ -331,6 +377,14 @@ public class MainActivity extends Activity {
         // above, so the hook stays dormant. One control, shown next to the value — no separate toggle.
         if (Toggles.isEnabled(prefs, "gmail") && out.containsKey("gmail")) out.put("spoof_accounts", "1");
         return out;
+    }
+
+    /** Signature identifying "this identity applied to this target set" — the android_id (unique per
+     *  generated identity) plus the sorted package set. Two Applies match iff the identity AND the targets
+     *  are both unchanged, which is exactly when a re-apply would be a no-op. */
+    private String applySignature(Map<String, String> applied, Set<String> targets) {
+        String aid = applied.get("android_id");
+        return (aid == null ? "?" : aid) + "|" + new java.util.TreeSet<>(targets);
     }
 
     private void toast(String m) { Toast.makeText(this, m, Toast.LENGTH_LONG).show(); }

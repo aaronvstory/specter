@@ -83,6 +83,20 @@ public class SessionMigratorTest {
         catch (SessionMigrator.SessionException e) { surfaced = e.getMessage().contains("root"); }
         check(surfaced, "su-absent surfaces as SessionException mentioning root");
 
+        // clear-data command: pm clear the validated pkg, assert on "Success" in the output (pm clear can
+        // exit 0 even on failure), reject a bad pkg at build.
+        String clr = SessionMigrator.buildClearCommand("com.doordash.driverapp");
+        check(clr.contains("pm clear com.doordash.driverapp"), "clear runs pm clear on the pkg");
+        check(clr.contains("Success"), "clear asserts on the Success marker");
+        boolean clrThrew = false;
+        try { SessionMigrator.buildClearCommand("bad;rm"); } catch (SessionMigrator.SessionException e) { clrThrew = true; }
+        check(clrThrew, "clear rejects bad pkg at build");
+        SessionMigrator.Shell clrFail = command -> new SessionMigrator.Result(5, "Failed");
+        boolean clrLoud = false;
+        try { SessionMigrator.clearData(clrFail, "com.doordash.driverapp"); }
+        catch (SessionMigrator.SessionException e) { clrLoud = true; }
+        check(clrLoud, "clear fails loudly on non-Success");
+
         // happy path: the exact built command is what the shell receives, exit 0 returns the output
         final String[] seen = new String[1];
         SessionMigrator.Shell okCap = command -> { seen[0] = command; return new SessionMigrator.Result(0, "captured 125223 bytes"); };

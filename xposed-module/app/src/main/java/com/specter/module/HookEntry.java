@@ -32,6 +32,13 @@ public class HookEntry implements IXposedHookLoadPackage {
     // where the push .bat drops per-app profiles
     private static final String PROFILE_DIR = "/data/local/tmp/specter/";
 
+    // The REAL device API level, captured at module class-load — BEFORE any hook can spoof SDK_INT.
+    // handleLoadPackage() can fire more than once per process (shared/multi-package processes), so reading
+    // Build.VERSION.SDK_INT inside the hook would return an ALREADY-spoofed value on the 2nd+ call and drift
+    // the clamp ceiling down (codex-flagged). This static is set once, at first class init, when the field
+    // is still the real value.
+    private static final int REAL_SDK = Build.VERSION.SDK_INT;
+
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         final String pkg = lpparam.packageName;
@@ -223,9 +230,31 @@ public class HookEntry implements IXposedHookLoadPackage {
         String sdk = p.get("build_sdk");
         if (sdk != null) {
             try {
+                // Clamp the SDK_INT int field to [29, realSdk]. Framework method availability is tied
+                // to the REAL OS, not the spoofed number, so the int must stay in the real device's
+                // supported range — both directions, proven on-device (real P4 = API 30):
+                //  • too LOW (21..28): OkHttp findPlatform() takes the reflective AndroidPlatform path
+                //    and NPEs at Platform.<clinit> (conscrypt OpenSSLSocketImpl gone + hidden-API block).
+                //    Verified: sdk 28 crashes Dasher, 29 does not (SDK_INT>=29 -> Android10Platform).
+                //  • too HIGH (>realSdk): apps call framework methods that don't exist yet, e.g. Firebase
+                //    Sessions calls Process.myProcessName() (added API 33) when SDK_INT>=33 -> NoSuchMethodError.
+                //    Verified: sdk 31/32/33 crash Dasher, 30 does not.
+                // The RELEASE/SDK string + native first_api still carry the profile's CLAIMED version for
+                // fingerprinters that read those paths; only the SDK_INT int primitive is clamped, so
+                // SDK_INT-consuming libraries (OkHttp, Firebase) don't die. A library that gates on the SDK
+                // *string* instead could still see the raw claimed level — accepted (that path is the point
+                // of the spoof), and no such crash is known.
+                // REAL_SDK is captured once at class-load (see field) — NOT re-read here, or a 2nd hook call
+                // in the same process would read the already-spoofed value and drift the ceiling down.
+                // ponytail: static int field can't be per-caller — [29, REAL_SDK] is the ceiling.
+                int wanted = Integer.parseInt(sdk);
+                // On a genuine <29 device the interval [29, REAL_SDK] is empty; there, just report REAL_SDK
+                // (the app already runs natively at that level, so no spoof-induced crash). Else clamp.
+                if (REAL_SDK < 29) wanted = REAL_SDK;
+                else { if (wanted < 29) wanted = 29; if (wanted > REAL_SDK) wanted = REAL_SDK; }
                 java.lang.reflect.Field f = Build.VERSION.class.getField("SDK_INT");
                 f.setAccessible(true);
-                f.setInt(null, Integer.parseInt(sdk));
+                f.setInt(null, wanted);
             } catch (Throwable ignored) {}
             // SDK is also exposed as a String field/prop; cover the String field too.
             setVersion("SDK", sdk);

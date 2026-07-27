@@ -338,3 +338,12 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   sm7150 topology. Kept the fix data-only + byte-parity. A dataset-wide test now cross-checks every
   device's GL renderer vs its SoC gpu_model so a self-consistent-but-wrong SoC label can't slip through
   again (the per-profile check couldn't catch it). See [[test-dataset-gpu-renderer]].
+
+- 2026-07-28 — SDK_INT int field is clamped to [29, real-device-SDK], NOT set to the profile's exact API.
+  The spoofed number must stay inside the range the REAL framework actually implements, because method
+  availability is tied to the real OS: too low (≤28) crashes OkHttp (reflective AndroidPlatform path,
+  conscrypt class gone on API29+), too high (≥31 on a real-30 device) crashes Firebase Sessions
+  (Process.myProcessName is API33-only). Both proven on-device on the Pixel 4 (API 30). RELEASE / SDK
+  string / native first_api still carry the profile's claimed version, so fingerprinters still read the
+  spoofed level; only the primitive int is bounded. This is why GeerGit never crashed — it doesn't
+  clobber SDK_INT past the real device's ceiling.

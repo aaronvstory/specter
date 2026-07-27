@@ -135,6 +135,30 @@ public final class SessionMigrator {
                 + "echo restored to uid $uid";
     }
 
+    /**
+     * Shell command that WIPES a target app's data + cache — the fleet-workflow "start clean" step, done
+     * reliably in one shot instead of by hand. {@code pm clear} removes /data/data/&lt;pkg&gt; AND the
+     * caches (internal + external) and resets the app to first-install state; that's exactly the manual
+     * "clear storage + clear cache" from app settings. Only the validated pkg is interpolated.
+     *
+     * <p>WARNING by design: this is destructive (it also drops any login the app had). It's a deliberate,
+     * opt-in step — the caller gates it behind an explicit checkbox, never automatic.
+     */
+    public static String buildClearCommand(String pkg) {
+        if (!validPkg(pkg)) throw new SessionException("invalid package name: " + pkg);
+        // `pm clear` returns "Success"/"Failed" and exit 0 even on some failures, so assert on the output.
+        return "out=$(pm clear " + pkg + " 2>&1); echo \"$out\"; "
+                + "case \"$out\" in *Success*) exit 0;; *) exit 5;; esac";
+    }
+
+    /** Wipe {@code pkg}'s data + cache (pm clear). Throws (loudly) on failure. */
+    public static String clearData(Shell shell, String pkg) {
+        return exec(shell, buildClearCommand(pkg), "clear-data", pkg);
+    }
+
+    /** Convenience: wipe via a real su process. */
+    public static String clearData(String pkg) { return clearData(new SuShell(), pkg); }
+
     private static String join(String[] items) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < items.length; i++) { if (i > 0) sb.append(' '); sb.append(items[i]); }

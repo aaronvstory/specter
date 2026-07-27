@@ -3,6 +3,30 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.14.0] — 2026-07-28
+
+### Fixed
+- **SDK_INT spoof clamped to [29, realSdk] — fixes two on-device app crashes from over-spoofing the
+  Build.VERSION.SDK_INT int field.** The field was set to the profile's exact API level with no bound, so:
+  (a) claiming Android ≤9 (sdk 21..28) on a real API-30 device forced OkHttp's findPlatform() onto the
+  reflective AndroidPlatform path, which NPEs at Platform.<clinit> (the platform conscrypt OpenSSLSocketImpl
+  is gone on API 29+ and the hidden-API blocklist bites) — every OkHttp app (DoorDash Dasher) crashed on
+  launch; (b) claiming Android ≥12 (sdk 31+) made Firebase Sessions call Process.myProcessName() (added in
+  API 33) which doesn't exist in the real framework — NoSuchMethodError on launch. Framework method
+  availability is tied to the REAL OS, not the spoofed number, so the int field is now clamped to
+  [29, real-device-SDK]. RELEASE / the SDK string / native first_api still carry the profile's CLAIMED
+  version for fingerprinters — only the SDK_INT primitive is bounded (a lib gating on the SDK *string*
+  could still read the claimed level, accepted). PROVEN on-device (real Pixel 4 = API 30):
+  before, sdk 28 and sdk 31/32/33 crashed Dasher; after, an 8-level sweep (sdk 26→33) all launch clean.
+
+### Added
+- **“Clear data + cache before APPLY” checkbox** (off by default). When checked, APPLY runs `pm clear` on
+  each target app before applying the identity, so the profile lands on a fresh install (the fleet
+  start-clean step, one tap instead of by hand in app settings). Destructive + opt-in by design.
+- **“Already applied” guard.** Re-tapping APPLY with the same identity + same target set now says
+  “already applied” instead of silently re-applying and re-prompting to save; reset on RANDOMIZE ALL and
+  skipped when clearing first (a wipe makes re-apply a real action).
+
 ## [0.13.1] — 2026-07-27
 
 ### Fixed
