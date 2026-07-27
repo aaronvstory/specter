@@ -239,4 +239,84 @@ public final class SpoofLogic {
         for (String m : SENSITIVE_PKG_MARKERS) if (p.contains(m)) return true;
         return false;
     }
+
+    // ---- profile JSON parsing without org.json ----
+    // Another LSPosed module scoped to the same app (e.g. GeerGit) hooks JSONObject.getString AND
+    // HashMap/ArrayMap.put and rewrites the "android_id" value to its own constant. That poisoned Specter's
+    // OWN profile load, so Specter applied a foreign, stable android_id and the device stayed recognized
+    // across clear+randomize (the number-survival leak). These scan the raw JSON text with plain char ops —
+    // no org.json, no Map — so no other module's hook can touch what Specter reads. Kept here (pure) so the
+    // parser is JVM-tested. The profile is machine-generated + flat (every value a JSON string).
+
+    // Shadow key under which parseFlatJson mirrors the android_id value. A co-scoped module (GeerGit) hooks
+    // Map.put for the EXACT key "android_id" to rewrite it; it does not match this key, so the value stored
+    // here survives untouched. The hooks read TRUE_ANDROID_ID_KEY, never "android_id". (An underscore-prefixed
+    // key that is never a real profile field, so it can't collide.)
+    public static final String TRUE_ANDROID_ID_KEY = "__specter_true_android_id";
+
+    /** Parse a FLAT {"k":"v",...} JSON string into out. Ignores non-string values. Never throws. Also mirrors
+     *  the android_id value into out[TRUE_ANDROID_ID_KEY] (a key GeerGit's put-hook doesn't match) so the hooks
+     *  can read an un-poisoned copy. Captured DURING the scan, so it's whitespace-robust and format-independent. */
+    public static void parseFlatJson(String s, java.util.Map<String, String> out) {
+        if (s == null) return;
+        int i = 0, len = s.length();
+        while (i < len) {
+            while (i < len && s.charAt(i) != '"') i++;
+            if (i >= len) break;
+            StringBuilder key = new StringBuilder();
+            i = readJsonString(s, i + 1, key);
+            if (i < 0) break;
+            while (i < len && s.charAt(i) != ':') i++;
+            if (i >= len) break;
+            i++;
+            while (i < len && Character.isWhitespace(s.charAt(i))) i++;
+            if (i >= len) break;
+            if (s.charAt(i) == '"') {
+                StringBuilder val = new StringBuilder();
+                i = readJsonString(s, i + 1, val);
+                if (i < 0) break;
+                String k = key.toString(), v = val.toString();
+                out.put(k, v);
+                // Mirror android_id under the shadow key IN THE SAME scan (whitespace already skipped above),
+                // so the true value is captured regardless of JSON spacing and without a second raw match.
+                if ("android_id".equals(k)) out.put(TRUE_ANDROID_ID_KEY, v);
+            } else {
+                while (i < len && s.charAt(i) != ',' && s.charAt(i) != '}') i++;
+            }
+        }
+    }
+
+
+    /** Read a JSON string body from `start` (char after the opening quote) into sb; return index past the
+     *  closing quote, or -1 if unterminated. Handles standard escapes incl. 4-hex-digit unicode. */
+    static int readJsonString(String s, int start, StringBuilder sb) {
+        int i = start, len = s.length();
+        while (i < len) {
+            char c = s.charAt(i++);
+            if (c == '"') return i;
+            if (c == '\\' && i < len) {
+                char e = s.charAt(i++);
+                switch (e) {
+                    case '"': sb.append('"'); break;
+                    case '\\': sb.append('\\'); break;
+                    case '/': sb.append('/'); break;
+                    case 'n': sb.append('\n'); break;
+                    case 'r': sb.append('\r'); break;
+                    case 't': sb.append('\t'); break;
+                    case 'b': sb.append('\b'); break;
+                    case 'f': sb.append('\f'); break;
+                    case 'u':
+                        if (i + 4 <= len) {
+                            try { sb.append((char) Integer.parseInt(s.substring(i, i + 4), 16)); } catch (Throwable ignored) {}
+                            i += 4;
+                        }
+                        break;
+                    default: sb.append(e);
+                }
+            } else {
+                sb.append(c);
+            }
+        }
+        return -1;
+    }
 }

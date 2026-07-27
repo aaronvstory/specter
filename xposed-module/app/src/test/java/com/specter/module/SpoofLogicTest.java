@@ -142,6 +142,55 @@ public class SpoofLogicTest {
         float gz = 9.81f * a1[2] + a1[5];
         check(gz > 9.6f && gz < 10.0f, "gravity magnitude stays plausible after transform (" + gz + ")");
 
+        // parseFlatJson: the un-hookable profile parser (the number-survival leak fix — another module's
+        // JSONObject.getString / Map.put hook must not be able to poison what Specter reads).
+        java.util.Map<String, String> pm = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{\"android_id\":\"e117a7fba7f255ab\",\"serial\":\"RREFG0T2J93\",\"build_sdk\":\"29\"}", pm);
+        check("e117a7fba7f255ab".equals(pm.get("android_id")), "parseFlatJson reads android_id");
+        check("RREFG0T2J93".equals(pm.get("serial")), "parseFlatJson reads serial");
+        check("29".equals(pm.get("build_sdk")), "parseFlatJson reads build_sdk");
+        // android_id is ALSO mirrored under the shadow key (the leak fix — GeerGit's put-hook doesn't match it)
+        check("e117a7fba7f255ab".equals(pm.get(SpoofLogic.TRUE_ANDROID_ID_KEY)), "parseFlatJson mirrors android_id to shadow key");
+        check(pm.size() == 4, "parseFlatJson key count incl shadow");
+        // shadow key is captured even WITH JSON whitespace after the colon (format-independent, not a raw match)
+        java.util.Map<String, String> wm = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{ \"android_id\" :  \"abc123\" , \"x\":\"y\" }", wm);
+        check("abc123".equals(wm.get("android_id")), "parseFlatJson tolerates whitespace");
+        check("abc123".equals(wm.get(SpoofLogic.TRUE_ANDROID_ID_KEY)), "shadow key captured despite whitespace");
+        // no android_id -> no shadow key
+        java.util.Map<String, String> sm = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{\"serial\":\"S\"}", sm);
+        check(sm.get(SpoofLogic.TRUE_ANDROID_ID_KEY) == null && sm.size() == 1, "no shadow key when android_id absent");
+        // escapes: quote, backslash, slash, newline, and 4-hex unicode are decoded
+        java.util.Map<String, String> em = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{\"a\":\"x\\ny\",\"b\":\"c\\/d\",\"q\":\"he said \\\"hi\\\"\",\"u\":\"\\u0041\"}", em);
+        check("x\ny".equals(em.get("a")), "parseFlatJson decodes newline escape");
+        check("c/d".equals(em.get("b")), "parseFlatJson decodes slash escape");
+        check("he said \"hi\"".equals(em.get("q")), "parseFlatJson decodes escaped quotes");
+        check("A".equals(em.get("u")), "parseFlatJson decodes unicode escape");
+        // a value CONTAINING an escaped quote doesn't desync the scanner for the next key (false-match guard)
+        java.util.Map<String, String> qm = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{\"a\":\"has \\\"android_id\\\":\\\"fake\\\" inside\",\"android_id\":\"real\"}", qm);
+        check("real".equals(qm.get("android_id")), "escaped-quote value doesn't false-match a later key");
+        check("real".equals(qm.get(SpoofLogic.TRUE_ANDROID_ID_KEY)), "shadow key is the REAL android_id, not the embedded fake");
+        // non-string values are skipped without desyncing the scanner
+        java.util.Map<String, String> nm = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{\"n\":42,\"ok\":\"yes\",\"b\":true}", nm);
+        check("yes".equals(nm.get("ok")) && nm.size() == 1, "parseFlatJson skips non-string values");
+        // duplicate key: last write wins (standard Map semantics), no crash
+        java.util.Map<String, String> dm = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{\"android_id\":\"first\",\"android_id\":\"second\"}", dm);
+        check("second".equals(dm.get("android_id")) && "second".equals(dm.get(SpoofLogic.TRUE_ANDROID_ID_KEY)), "duplicate key -> last wins");
+        // malformed / adversarial inputs never throw or loop
+        java.util.Map<String, String> mm = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{\"unterminated\":\"oops", mm);           // no closing quote/brace
+        SpoofLogic.parseFlatJson("", mm);                                    // empty
+        SpoofLogic.parseFlatJson("not json at all", mm);                     // garbage
+        SpoofLogic.parseFlatJson("{\"a\":\"b\"} trailing garbage", mm);      // trailing garbage after close
+        SpoofLogic.parseFlatJson("{\"bad\\", mm);                            // lone trailing backslash
+        SpoofLogic.parseFlatJson("{\"u\":\"\\u12", mm);                      // truncated unicode escape
+        check("b".equals(mm.get("a")), "parseFlatJson recovers valid pairs amid garbage, never throws/loops");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

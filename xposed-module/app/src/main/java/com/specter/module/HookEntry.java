@@ -14,7 +14,6 @@ import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
-import org.json.JSONObject;
 
 /**
  * GeerGit replacement — per-app identifier spoofing Xposed module.
@@ -177,11 +176,28 @@ public class HookEntry implements IXposedHookLoadPackage {
             byte[] buf = new byte[4096]; int n;
             while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
             in.close();
-            JSONObject j = new JSONObject(new String(bos.toByteArray(), "UTF-8"));
-            java.util.Iterator<String> it = j.keys();
-            while (it.hasNext()) { String k = it.next(); m.put(k, j.getString(k)); }
+            // Parse the profile WITHOUT org.json's getString/optString: another LSPosed module scoped to
+            // the same app (e.g. GeerGit) hooks JSONObject.getString and rewrites the "android_id" value to
+            // ITS OWN constant. That poisoned Specter's OWN profile load — Specter applied GeerGit's stable
+            // android_id instead of the per-identity one, so the device stayed recognized across
+            // clear+randomize (the number-survival leak). PROVEN on-device: json.getString(android_id)
+            // returned GeerGit's constant while the raw file bytes held Specter's value. Fix: extract every
+            // key/value straight from the raw bytes with a tiny un-hookable scanner, so no other module's
+            // getString hook can touch what Specter loads.
+            // parseFlatJson also mirrors android_id into m[TRUE_ANDROID_ID_KEY] during the scan — a shadow key
+            // GeerGit's Map.put hook doesn't match, so it holds the true value even though m["android_id"] gets
+            // rewritten to GeerGit's constant. The android_id hooks read the shadow key. Kept in the map (not a
+            // shared field) so it stays scoped to this load — no cross-package state.
+            SpoofLogic.parseFlatJson(new String(bos.toByteArray(), "UTF-8"), m);
         } catch (Throwable t) { XposedBridge.log("[specter] profile load fail: " + t); }
         return m;
+    }
+
+    // The un-poisoned android_id: the shadow key parseFlatJson mirrored during the scan (a key GeerGit's
+    // Map.put hook doesn't rewrite), falling back to the direct key if the shadow copy is absent.
+    private static String trueAid(Map<String, String> p) {
+        String v = p.get(SpoofLogic.TRUE_ANDROID_ID_KEY);
+        return v != null ? v : p.get("android_id");
     }
 
     private void setStatic(String field, String val) {
@@ -584,7 +600,9 @@ public class HookEntry implements IXposedHookLoadPackage {
     private static final float[] NO_CALIB = new float[0];
 
     private void hookSensorValues(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
-        final String seed = p.get("android_id");
+        // shadow-key android_id (un-poisoned), not the map value another module's put-hook may have overwritten
+        // — keeps the sensor-noise calibration seeded on OUR identity, coherent with the applied android_id.
+        final String seed = trueAid(p);
         if (seed == null || seed.isEmpty()) return;
         try {
             Class<?> queueCls = XposedHelpers.findClass(
@@ -1016,7 +1034,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     // A single-overload hook missed DevInfo's read (GSF/serial spoofed in the same process but
     // android_id leaked the real value) — the key can be at any arg position, so scan all args.
     private void hookSettingsSecure(final Map<String, String> p) {
-        final String aid = p.get("android_id");
+        // Read the shadow key (un-poisoned), NOT p.get("android_id") — GeerGit's Map.put hook rewrote the
+        // "android_id" value to its constant (the number-survival leak). Fall back to the direct key only if
+        // the shadow copy is missing (older profile / parse miss).
+        final String aid = trueAid(p);
         final String btMac = p.get("bluetooth_mac");
         if (aid == null) return;
         XC_MethodHook h = new XC_MethodHook() {

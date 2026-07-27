@@ -6,6 +6,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [0.14.0] — 2026-07-28
 
 ### Fixed
+- **Profile load is now immune to another LSPosed module poisoning it (fixes a cross-identity device-link
+  leak).** When a second module (e.g. GeerGit) is scoped to the same target app, it hooks JSONObject.getString
+  AND HashMap/ArrayMap.put to rewrite the "android_id" value to its own CONSTANT. That poisoned Specter's OWN
+  profile load: Specter parsed its per-identity android_id with org.json and stored it in a Map, and the other
+  module's hooks silently replaced it with their constant. Specter then applied that stable foreign id, so a
+  target app's device_id stayed identical across clear+randomize — the server recognized the device and
+  pre-filled the previous account's phone number (the number-survival leak). Fix: parse the profile with a
+  raw char scanner (SpoofLogic.parseFlatJson/rawExtract) that calls NO org.json and NO Map for the sensitive
+  ids, and read android_id in the hooks from a field captured straight from the raw bytes (trueAndroidId),
+  never from the poisoned Map. PROVEN on-device (Pixel 4): before, Dasher's device_id was the foreign constant
+  regardless of the applied identity. This fix hardens Specter's OWN profile ingestion (it no longer routes
+  identity-critical values through hookable org.json/Map methods). NOTE: it does NOT make two modules
+  co-exist on one app — GeerGit's Map.put hook still wins on the app's OWN android_id read while both are
+  scoped to it. Proven end-to-end with GeerGit unscoped from Dasher: device_id then tracks Specter's
+  per-identity android_id and rotates on each randomize (the phone number stops pre-filling). Operational
+  rule: don't scope GeerGit and Specter to the same target app. Parser covered by 19 new JVM tests.
 - **SDK_INT spoof clamped to [29, realSdk] — fixes two on-device app crashes from over-spoofing the
   Build.VERSION.SDK_INT int field.** The field was set to the profile's exact API level with no bound, so:
   (a) claiming Android ≤9 (sdk 21..28) on a real API-30 device forced OkHttp's findPlatform() onto the

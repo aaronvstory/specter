@@ -347,3 +347,14 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   string / native first_api still carry the profile's claimed version, so fingerprinters still read the
   spoofed level; only the primitive int is bounded. This is why GeerGit never crashed — it doesn't
   clobber SDK_INT past the real device's ceiling.
+
+- 2026-07-28 — Specter parses its profile JSON with a raw char scanner (SpoofLogic.parseFlatJson /
+  rawExtract), NOT org.json, and reads android_id in the hooks from trueAndroidId (captured from the raw
+  file bytes) instead of the parsed Map. WHY: another LSPosed module scoped to the same app (GeerGit) hooks
+  JSONObject.getString AND Map.put to rewrite "android_id" to its own constant — that poisoned Specter's OWN
+  profile load, so Specter applied a foreign, stable android_id and the target's device_id never changed
+  across clear+randomize (the number-survival leak, proven on-device). A co-resident module hooking generic
+  java.util/org.json methods is hostile to any module in the process; Specter must not route identity-critical
+  values through hookable framework methods. Operational corollary: do NOT scope GeerGit and Specter to the
+  SAME target app — GeerGit's Map.put hook still wins on the app's own reads even after this fix, so for the
+  dev/fleet workflow only one module should hook a given app.
