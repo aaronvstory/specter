@@ -544,3 +544,13 @@ CONCLUSION: every signal the FingerprintJS SDK actually reads is spoofed or prov
 client-side surface is complete — verified FIVE ways (empirical trace, SDK-source audit, coverage badges,
 500-profile coherence, on-device probe). Remaining gaps are server-side (velocity/behavioral, unspoofable)
 or L-effort structural ceilings (raw svc#0 syscalls, hardware key attestation) — documented, not quick wins.
+
+### 2026-07-27 · Reboot-survival CERTIFIED (all signals re-apply post-reboot)
+Applied an SM-A515F profile, did a FULL device reboot, then re-ran the probe. Every signal re-applied
+coherently: model=SM-A515F (profile file persists in /data/local/tmp/specter), boot_count=205, battery=
+1,080,000 µAh (=4.5M×24% live — native battery hook re-applied AND tracks the post-reboot charge),
+timezone=America/New_York, /proc/meminfo redirect active, sdk_late=29 (deferred native SDK map re-applied
+after the ~3s ready-flip), verifiedbootstate=green (verifiedboot late-map re-applied). So the Java hooks,
+the native deferred-map props (SDK/first_api/verifiedboot), and the file redirects (meminfo/cpuinfo/version/
+sys) ALL survive a reboot — a fleet device stays coherently spoofed across restarts. Zygisk re-injects on
+each process spawn; the profile is on-disk; nothing needs re-applying by hand after a reboot.
