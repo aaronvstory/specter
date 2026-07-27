@@ -3,6 +3,33 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.0] — 2026-07-27
+
+### Added
+- **Per-profile GPU EXTENSION-list spoofing (native GLES).** The FingerprintJS Pro SDK reads the GPU
+  extension list natively via `glGetStringi` + `glGetIntegerv(GL_NUM_EXTENSIONS)` (proven by an on-device
+  trace of libfp.so — it never calls the `glGetString` our previous hook covered). That ~100-string list
+  is high-entropy and, left real, stayed CONSTANT across rotations — anchoring the visitorId even after
+  the renderer string was spoofed. The Zygisk layer now serves a per-profile extension list: a real
+  modern GLES-3.2 base pool, deterministically subset + reordered from the profile’s android_id, with the
+  vendor-specific family (Qualcomm vs ARM markers) matched to the claimed GPU vendor. Hooks
+  `glGetStringi`/`glGetIntegerv(GL_NUM_EXTENSIONS)`/`glGetString(GL_EXTENSIONS)`; only installs when the
+  profile has an android_id seed, so a seedless profile leaves the real driver untouched.
+
+### Fixed (hardening, pre-merge codex review)
+- Extension spoof now serves only a strict SUBSET of what the REAL driver supports (lazily intersected
+  on first GL query) — so it can never advertise a capability the app then calls and crashes on.
+- Count (glGetIntegerv) and entries (glGetStringi) are spoofed only when BOTH hooks install, so they
+  can never desync into a detectable half-fake list; out-of-range extension indices return nullptr
+  (not the real string); vendor-family markers are added only for a KNOWN vendor (ARM or Qualcomm);
+  the pool is de-duplicated; and null-trampoline fallthroughs are guarded.
+
+### Notes
+- On-device two-rotation verification of the split is PENDING (the test Pixel 4 dropped off USB mid-test);
+  the module builds clean, is installed (md5-verified), and boots without a loop (an identification ran
+  post-install). Whether this splits the visitorId is the pending experiment — see
+  docs/ANTI-FINGERPRINT-STRATEGY.md (2026-07-27).
+
 ## [0.11.1] — 2026-07-27
 
 ### Fixed

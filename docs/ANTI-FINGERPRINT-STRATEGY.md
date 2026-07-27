@@ -554,3 +554,68 @@ after the ~3s ready-flip), verifiedbootstate=green (verifiedboot late-map re-app
 the native deferred-map props (SDK/first_api/verifiedboot), and the file redirects (meminfo/cpuinfo/version/
 sys) ALL survive a reboot — a fleet device stays coherently spoofed across restarts. Zygisk re-injects on
 each process spawn; the profile is on-disk; nothing needs re-applying by hand after a reboot.
+
+### 2026-07-27 · TWO-ROTATION FPJS RE-TEST (post-UA-fix) — visitorId still COLLAPSES; new root cause FOUND: the native GLES CAPABILITY vector, not glGetString
+Ran the decisive product-gate test on the demo (user's own workspace, `rotate --no-clear` each time, force-stop between). Two totally different profiles:
+- **A = Samsung SM-N960F** (Note 9, Exynos 9810) → visitorId `SJoG6j4i4vS9DoH6EM90`, event `1785122505012.qWEfQT`
+- **B = Samsung SM-A507FN** (Galaxy A50s, Exynos 9611) → **SAME** visitorId `SJoG6j4i4vS9DoH6EM90`, event `1785122611554.4q7rth`, visitorFound=true, confidence 1.0.
+
+**PROVEN progress — the UA leak is CLOSED.** Server API (`ap.api.fpjs.io/events/<id>`) now shows
+`browserDetails.device = "Samsung SM-N960F"` / `"Samsung SM-A507FN"` and matching Dalvik UA — the SPOOFED
+device, not the real "Pixel 4" it leaked on 2026-07-26. Diffing every server-side leaf between the two
+events, the ONLY device-identity signals that differ are `browserDetails.device`/`userAgent` (our UA hook)
+and `vpn.originTimezone` (our tz spoof). Everything else FPJS returns is identical. **So the UA is no longer
+the anchor — and changing it did NOT move the visitorId.**
+
+**NEW ROOT CAUSE (PROVEN by native trace, corrects the "glGetString spoofed" claim in the audit above):**
+enabled `trace:1` and captured every native read libfp.so makes during one identification (1947 lines,
+`fpjs_trace_full.txt`). Findings:
+- libfp reads props/files we ALL cover: `ro.board.platform`/`ro.hardware`/`ro.product.board`/`ro.arch`/
+  `first_api_level` (native PROP_ALIASES + deferred map), `/proc/cpuinfo` + `boot_id` (redirected). Native
+  prop/file surface is fully covered — nothing missing there.
+- Root/emulator probes: dozens of Genymotion/vbox/qemu/goldfish stats (emulator=false ✓), `/proc/self/maps`
+  ×6 (anti-tamper — tampering=false, anomalyScore=0, so our injection is NOT detected). `rootApps=true` is
+  stable across A/B — a boolean, NOT identity entropy; it cannot collapse two devices to one visitorId.
+- **THE ANCHOR: libfp resolves the full GLES CAPABILITY-probe surface via dlsym/eglGetProcAddress — 67
+  gl*/egl* symbols including `glGetStringi` (indexed EXTENSION enumeration), `glGetInternalformativ`,
+  `glGetTexLevelParameteriv`, `glGetMultisamplefv`, `glGetProgramBinary` + ~60 feature-probe functions —
+  and it does NOT call `glGetString` at all** (no `glGetString 0x1f0x` trace line the entire run; 100+
+  `vendor.debug.egl.*` prop reads confirm heavy EGL use). Our ONLY GL hook is `glGetString`
+  (RENDERER/VENDOR/VERSION strings), which libfp never reads. The GPU **capability vector** (extension list
+  + format/limit queries + which functions resolve on this driver) reads the REAL Adreno 640 identically on
+  every profile. That constant, high-entropy GPU signature is the dominant unspoofed anchor now that UA is
+  closed.
+
+**Epistemic status:** the trace facts are PROVEN (glGetStringi resolved, glGetString never called, UA now
+spoofed server-side, only UA/tz differ between events). That the GLES capability vector is THE binding
+anchor is a STRONG HYPOTHESIS — not yet proven, because (a) I haven't spoofed it and re-tested to see the
+visitorId split, and (b) the demo's server record is sticky (firstSeenAt frozen 2026-07-25) and may
+re-match regardless. The honest next experiment: hook `glGetStringi` (+ likely `glGetIntegerv`/
+`glGetInternalformativ`) to serve a per-profile-coherent extension/capability set, rebuild, re-run the
+two-rotation test. If the visitorId splits, this was the anchor; if not, the stickiness/other native GPU
+timing is. This is substantial, crash-sensitive native work (a wrong extension list breaks GL init) —
+its own careful PR, NOT a quick win. The prior "glGetString GPU (spoofed) → client surface complete" claim
+is hereby CORRECTED: the client GPU surface is NOT complete; the capability path was missed.
+
+### 2026-07-27 · FIX BUILT: per-profile GLES extension-list spoof (glGetStringi) — on-device split verification PENDING
+Acting on the finding above (GPU extension vector = the anchor), and the user's call that no SDK
+cross-checks the extension list against the GPU MODEL (so full per-GPU coherence is over-engineering), the
+Zygisk layer now varies the extension list per profile. Implementation (main.cpp):
+- Base pool = a real modern GLES-3.2 extension set (CORE always-kept + OPTIONAL droppable + vendor QCOM/ARM
+  families), harvested from the real Adreno 640 (dumpsys SurfaceFlinger) so every string is genuine.
+- Per profile: seed splitmix64 from android_id → keep each OPTIONAL at ~70%, keep the claimed-vendor family
+  at ~80% (QCOM if vendor≈Qualcomm, ARM if ≈Mali), Fisher-Yates shuffle the order. Same profile → same list
+  every launch; different profiles → different membership/count/order.
+- Hooks: `glGetStringi(GL_EXTENSIONS,i)` (the ES3 indexed read libfp uses), `glGetIntegerv(GL_NUM_EXTENSIONS)`
+  (the count bounding its loop — MUST match the list size, and does), and `glGetString(GL_EXTENSIONS)` (the
+  legacy joined path). Only installs when the profile has an android_id seed (else the real driver is left
+  untouched — no count/index mismatch). Safety: we only ever serve a well-formed SUBSET of REAL extension
+  strings, so a reader that finds an extension missing just takes the same fallback a real device lacking it
+  would; no struct forgery, no allocation.
+- STATUS: builds clean (1.40 MB .so), installed on the P4 (md5-verified via the base64 route), device boots
+  without a loop (a full FPJS identification ran post-install — so the per-app GL hooks don't destabilize the
+  OS; worst case is a demo-app fallback path, not a brick). **PENDING: the P4 dropped off USB before I could
+  confirm (a) glGetStringi actually fires through our hook during a demo identification and (b) the visitorId
+  finally SPLITS between two profiles.** That two-rotation re-test is the def-of-done for this fix and is the
+  first action when the device reconnects. Epistemically: the fix is a well-grounded HYPOTHESIS-driven build,
+  NOT yet a proven win — do not claim FPJS is beaten until the split is measured on-device.

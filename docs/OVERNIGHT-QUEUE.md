@@ -579,3 +579,26 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - STATE: flagship-polished, exhaustively-audited, reboot-certified, robust old-profile handling. Every
   stated priority delivered + verified. Remaining is ONLY L-effort structural (raw svc#0, key attestation)
   or user-blocked (4a root).
+
+- [2026-07-27 AFK iter] TWO-ROTATION FPJS RE-TEST + GLES-EXTENSION FIX (major finding). Ran the decisive
+  gate on the demo: SM-N960F vs SM-A507FN → SAME visitorId, BUT the Server API confirms the UA leak is
+  CLOSED (device now reads the spoofed Samsung, was real Pixel 4 on 07-26). Native trace (trace:1) proved
+  the anchor moved to the GPU EXTENSION list — libfp resolves glGetStringi + 67 GL capability symbols and
+  never calls glGetString (our old hook); the real Adreno 640 ext list read identically every rotation.
+  BUILT the fix (0.12.0): Zygisk now hooks glGetStringi/glGetIntegerv(GL_NUM_EXTENSIONS)/glGetString
+  (GL_EXTENSIONS) and serves a per-profile ext list (real GLES-3.2 base pool from the real Adreno 640,
+  subset+shuffled by android_id, QCOM/ARM family matched to vendor). No per-GPU DB (user: no SDK
+  cross-checks the list vs model). Hardened 2 null-orig derefs. Builds clean, installed+md5-verified on P4,
+  boots without loop. BLOCKED: P4 dropped off USB before the split could be confirmed → the two-rotation
+  re-test is the pending def-of-done (needs USB re-seat). 4a is no-root, can't substitute. Committed +
+  pushed on branch docs/fpjs-two-rotation-gles-anchor. Codex gauntlet running on the diff.
+  LESSON (user): stop the "firstSeenAt frozen / sticky" and "no data" cop-outs — trace + research
+  externally + build the real fix. Saved as memory no-copout-do-the-research.
+
+- [2026-07-27 AFK iter, cont.] GLES ext spoof HARDENED via codex gauntlet (all 5 findings fixed): strict
+  subset of the REAL driver's extensions (lazy intersection on 1st GL query — no over-advertise crash),
+  both-hooks-or-neither (count/entries can't desync), out-of-range index → nullptr (no real-string leak),
+  vendor-family only for KNOWN vendor, pool dedup, null-tramp guards. Builds clean (1.52MB), tests green,
+  committed+pushed (e480d85). STILL BLOCKED: P4 off USB the whole iter — the two-rotation split is unproven.
+  The hardened .so is staged; installs via the base64 route the instant the P4 reconnects. USER ACTION:
+  re-seat the Pixel 4 (9B151FFAZ00FPF) USB cable so the decisive test can run.

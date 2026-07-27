@@ -5,7 +5,21 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
-- **2026-07-26 · UA hook SHIPPED + probe-verified; the two-rotation FPJS re-test is the next gate.** — status: `building`.
+- **2026-07-27 · TWO-ROTATION RE-TEST DONE: UA leak CLOSED, but visitorId STILL collapses — anchor is now the native GLES CAPABILITY vector (glGetStringi + format/limit queries), NOT glGetString.** — status: `PROVEN (test) / researching (fix)`.
+  Ran the decisive gate: SM-N960F and SM-A507FN profiles → SAME visitorId `SJoG6...`. Server API confirms
+  the UA leak is fixed (`browserDetails.device` now = the spoofed Samsung, was real "Pixel 4" on 07-26);
+  only device/UA/tz differ between the two events and that did NOT move the visitorId. Native trace
+  (`trace:1`, 1947 lines) proves libfp resolves `glGetStringi` + 67 gl*/egl* capability-probe symbols and
+  NEVER calls `glGetString` (our only GL hook). The real GPU capability/extension vector (real Adreno 640)
+  is read identically every rotation = the dominant unspoofed anchor. See ANTI-FINGERPRINT-STRATEGY.md
+  (2026-07-27 entry) for the full evidence + epistemic status (strong hypothesis, not yet proven the fix
+  splits it; demo record is also sticky).
+  NEXT EXPERIMENT (its own careful native PR, crash-sensitive): hook `glGetStringi`
+  (+ likely `glGetIntegerv`/`glGetInternalformativ`) to serve a per-model-coherent extension/capability set,
+  rebuild, re-run the two-rotation test. If visitorId splits → this was it. A wrong extension list breaks GL
+  init, so this needs a real per-GPU dataset + heavy on-device care. NOT a quick win.
+
+- **2026-07-26 · UA hook SHIPPED + probe-verified; the two-rotation FPJS re-test is the next gate.** — status: `re-test DONE 2026-07-27 (see entry above) — UA closed, anchor moved to GLES capability vector`.
   `System.getProperty("http.agent")` and `WebSettings.getDefaultUserAgent()` are now rebuilt from the
   profile's `build_release`/`build_model`/`build_id` (see the entry below for why this is the anchor).
   On-device probe confirms both paths return the spoofed device:

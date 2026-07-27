@@ -24,6 +24,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <set>
 #include <mutex>
 #include <utility>
 #include <fcntl.h>
@@ -516,7 +517,13 @@ static unsigned long my_getauxval(unsigned long type) {
 #define GL_VENDOR_ENUM   0x1F00
 #define GL_RENDERER_ENUM 0x1F01
 #define GL_VERSION_ENUM  0x1F02
+#define GL_EXTENSIONS_ENUM   0x1F03
+#define GL_NUM_EXTENSIONS    0x821D
 static std::string g_gl_renderer, g_gl_vendor, g_gl_version;
+static std::string g_gl_ext_joined;            // space-joined spoofed list (for legacy glGetString(GL_EXTENSIONS))
+static bool g_gl_both_hooked = false;                  // true only if BOTH ext hooks are live
+static std::vector<std::string> g_gl_ext_candidates;   // candidate ext list (built at specialize)
+static void finalize_gl_extensions();         // forward decl: intersect candidates with the real list
 using glGetString_t = const unsigned char *(*)(unsigned int);
 static glGetString_t orig_glGetString = nullptr;
 static const unsigned char *my_glGetString(unsigned int name) {
@@ -527,7 +534,184 @@ static const unsigned char *my_glGetString(unsigned int name) {
         return reinterpret_cast<const unsigned char *>(g_gl_vendor.c_str());
     if (name == GL_VERSION_ENUM && !g_gl_version.empty())
         return reinterpret_cast<const unsigned char *>(g_gl_version.c_str());
+    // GL_EXTENSIONS via legacy glGetString: return the joined spoofed list (some readers use this path,
+    // even though ES3 readers iterate glGetStringi). Finalize first so the list is intersected+built.
+    if (name == GL_EXTENSIONS_ENUM && g_gl_both_hooked && !g_gl_ext_candidates.empty()) {
+        finalize_gl_extensions();
+        if (!g_gl_ext_joined.empty())
+            return reinterpret_cast<const unsigned char *>(g_gl_ext_joined.c_str());
+    }
     return orig_glGetString(name);
+}
+
+// ================= GL extension-list spoof (glGetStringi + glGetIntegerv(GL_NUM_EXTENSIONS)) =========
+// PROVEN (2026-07-27 trace + two-rotation FPJS test): the Pro SDK's libfp.so reads the GPU EXTENSION list
+// natively — it resolves glGetStringi + glGetIntegerv (never glGetString) — and that ~100-string list is
+// a high-entropy, per-device signal that stays CONSTANT across our rotations (reads the real Adreno 640),
+// so it anchors the visitorId even after the renderer string is spoofed. We make the list VARY per profile:
+// from a real modern GLES-3.2 base pool, deterministically drop a fraction of the OPTIONAL extensions
+// (seeded by android_id) and swap vendor-specific families to match the claimed GPU vendor. NO per-GPU
+// database / cross-check is needed — a fraud SDK hashes the list, it does not verify it against the model
+// (user call 2026-07-27). We keep only a well-formed SUBSET of REAL extension strings, so a dropped
+// extension merely makes the reader take the same fallback path a real device lacking it would — safe.
+static std::vector<std::string> g_gl_exts;     // per-profile spoofed extension list (process-lifetime)
+
+// CORE: always keep (baseline every GLES-3.2 device exposes) — dropping these could look non-conformant.
+static const char *GL_EXT_CORE[] = {
+    "GL_OES_EGL_image", "GL_OES_EGL_image_external", "GL_OES_EGL_sync", "GL_OES_vertex_half_float",
+    "GL_OES_framebuffer_object", "GL_OES_rgb8_rgba8", "GL_OES_texture_npot", "GL_OES_texture_3D",
+    "GL_OES_texture_float", "GL_OES_texture_float_linear", "GL_OES_texture_half_float",
+    "GL_OES_texture_half_float_linear", "GL_OES_element_index_uint", "GL_OES_depth24",
+    "GL_OES_packed_depth_stencil", "GL_OES_depth_texture", "GL_OES_standard_derivatives",
+    "GL_OES_vertex_array_object", "GL_OES_get_program_binary", "GL_OES_surfaceless_context",
+    "GL_EXT_texture_filter_anisotropic", "GL_EXT_texture_format_BGRA8888", "GL_EXT_read_format_bgra",
+    "GL_EXT_color_buffer_float", "GL_EXT_color_buffer_half_float", "GL_EXT_sRGB",
+    "GL_EXT_copy_image", "GL_EXT_geometry_shader", "GL_EXT_tessellation_shader",
+    "GL_EXT_texture_border_clamp", "GL_EXT_texture_buffer", "GL_EXT_texture_cube_map_array",
+    "GL_EXT_draw_buffers_indexed", "GL_EXT_gpu_shader5", "GL_EXT_robustness", "GL_EXT_texture_norm16",
+    "GL_EXT_discard_framebuffer", "GL_KHR_debug", "GL_KHR_texture_compression_astc_ldr",
+    "GL_ANDROID_extension_pack_es31a", "GL_EXT_primitive_bounding_box",
+};
+// OPTIONAL: a subset is dropped per profile (variation source). Real strings from modern Adreno/Mali.
+static const char *GL_EXT_OPTIONAL[] = {
+    "GL_KHR_texture_compression_astc_hdr", "GL_OES_texture_compression_astc",
+    "GL_EXT_texture_type_2_10_10_10_REV", "GL_EXT_texture_sRGB_decode",
+    "GL_EXT_texture_format_sRGB_override", "GL_OES_texture_stencil8", "GL_EXT_shader_io_blocks",
+    "GL_OES_shader_image_atomic", "GL_OES_sample_variables", "GL_EXT_EGL_image_external_wrap_modes",
+    "GL_EXT_multisampled_render_to_texture", "GL_EXT_multisampled_render_to_texture2",
+    "GL_OES_shader_multisample_interpolation", "GL_OES_texture_storage_multisample_2d_array",
+    "GL_OES_sample_shading", "GL_KHR_blend_equation_advanced", "GL_KHR_blend_equation_advanced_coherent",
+    "GL_EXT_YUV_target", "GL_EXT_sRGB_write_control", "GL_OVR_multiview", "GL_OVR_multiview2",
+    "GL_EXT_texture_sRGB_R8", "GL_KHR_no_error", "GL_EXT_debug_marker", "GL_EXT_debug_label",
+    "GL_OES_EGL_image_external_essl3", "GL_EXT_buffer_storage", "GL_EXT_external_buffer",
+    "GL_EXT_blit_framebuffer_params", "GL_EXT_clip_cull_distance", "GL_EXT_protected_textures",
+    "GL_EXT_shader_non_constant_global_initializers", "GL_EXT_memory_object", "GL_EXT_memory_object_fd",
+    "GL_EXT_EGL_image_array", "GL_NV_shader_noperspective_interpolation",
+    "GL_KHR_robust_buffer_access_behavior", "GL_EXT_EGL_image_storage", "GL_EXT_blend_func_extended",
+    "GL_EXT_clip_control", "GL_OES_texture_view", "GL_EXT_shader_framebuffer_fetch",
+    "GL_EXT_texture_mirror_clamp_to_edge", "GL_EXT_shader_group_vote", "GL_OES_shader_io_blocks",
+    "GL_EXT_float_blend", "GL_OES_copy_image", "GL_EXT_draw_elements_base_vertex",
+};
+// Qualcomm/Adreno-family markers — kept only when the claimed vendor is Qualcomm.
+static const char *GL_EXT_QCOM[] = {
+    "GL_AMD_compressed_ATC_texture", "GL_QCOM_alpha_test", "GL_QCOM_tiled_rendering",
+    "GL_QCOM_texture_foveated", "GL_QCOM_texture_foveated_subsampled_layout",
+    "GL_QCOM_shader_framebuffer_fetch_noncoherent", "GL_QCOM_shader_framebuffer_fetch_rate",
+    "GL_QCOM_motion_estimation", "GL_QCOM_validate_shader_binary", "GL_QCOM_YUV_texture_gather",
+};
+// ARM/Mali-family markers — kept only when the claimed vendor is ARM.
+static const char *GL_EXT_ARM[] = {
+    "GL_ARM_shader_framebuffer_fetch", "GL_ARM_shader_framebuffer_fetch_depth_stencil",
+    "GL_ARM_mali_shader_binary", "GL_ARM_rgba8", "GL_ARM_mali_program_binary",
+    "GL_EXT_shader_pixel_local_storage", "GL_EXT_shader_pixel_local_storage2",
+    "GL_OES_depth_texture_cube_map", "GL_EXT_disjoint_timer_query",
+};
+
+// Small deterministic PRNG (splitmix64) seeded from the profile — same profile => same list every launch.
+static uint64_t g_gl_rng = 0;
+static uint64_t gl_next() {
+    uint64_t z = (g_gl_rng += 0x9e3779b97f4a7c15ULL);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
+using glGetStringi_t = const unsigned char *(*)(unsigned int, unsigned int);
+using glGetIntegerv_t = void (*)(unsigned int, int *);
+static glGetStringi_t orig_glGetStringi = nullptr;
+static glGetIntegerv_t orig_glGetIntegerv = nullptr;
+
+static std::atomic<bool> g_gl_ext_final(false);        // finalized (intersected with real) yet?
+static std::mutex g_gl_ext_mtx;
+
+// Build the per-profile CANDIDATE extension list from android_id + claimed vendor (specialize-time; the
+// real driver isn't up yet, so we can't intersect here — that happens lazily in finalize_gl_extensions).
+static void build_gl_extensions(const std::string &seed_src, const std::string &vendor) {
+    if (seed_src.empty()) return;      // no seed => leave real list (safer than a constant fake)
+    uint64_t h = 1469598103934665603ULL;                      // FNV-1a of the seed
+    for (unsigned char c : seed_src) { h ^= c; h *= 1099511628211ULL; }
+    g_gl_rng = h ? h : 0x1234567890abcdefULL;
+
+    std::set<std::string> seen;                               // dedup: no extension appears twice
+    auto add = [&](const char *e) { if (seen.insert(e).second) g_gl_ext_candidates.emplace_back(e); };
+
+    for (auto e : GL_EXT_CORE) add(e);                        // always present
+    for (auto e : GL_EXT_OPTIONAL) if ((gl_next() % 100) < 70) add(e);   // ~70% each (varies membership)
+    // Vendor-family: add ONLY when the claimed vendor is KNOWN, so we never contradict the renderer
+    // string. Unknown vendor (empty / PowerVR / Google / etc.) => no vendor-specific markers at all.
+    bool arm  = vendor.find("ARM") != std::string::npos || vendor.find("Mali") != std::string::npos;
+    bool qcom = vendor.find("Qualcomm") != std::string::npos || vendor.find("Adreno") != std::string::npos;
+    const char **fam = arm ? GL_EXT_ARM : (qcom ? GL_EXT_QCOM : nullptr);
+    size_t famN = arm ? (sizeof(GL_EXT_ARM) / sizeof(*GL_EXT_ARM))
+                      : (qcom ? (sizeof(GL_EXT_QCOM) / sizeof(*GL_EXT_QCOM)) : 0);
+    for (size_t i = 0; i < famN; i++) if ((gl_next() % 100) < 80) add(fam[i]);
+}
+
+// Finalize on the FIRST real GL query (driver is live now): keep only candidates the REAL driver actually
+// supports — a strict subset, so a reader can never make us advertise an unsupported feature it then calls
+// (the crash risk codex flagged) — then deterministically shuffle. Runs once, guarded. If the real list
+// can't be read, keep the candidates (all are real, widely-supported extension strings). Never empty.
+static void finalize_gl_extensions() {
+    if (g_gl_ext_final.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> lk(g_gl_ext_mtx);
+    if (g_gl_ext_final.load(std::memory_order_relaxed)) return;
+
+    std::set<std::string> real;
+    if (orig_glGetStringi && orig_glGetIntegerv) {
+        int n = 0;
+        orig_glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+        for (int i = 0; i < n && i < 4096; i++) {
+            const unsigned char *s = orig_glGetStringi(GL_EXTENSIONS_ENUM, (unsigned) i);
+            if (s) real.insert(reinterpret_cast<const char *>(s));
+        }
+    }
+    g_gl_exts.clear();
+    for (auto &e : g_gl_ext_candidates)
+        if (real.empty() || real.count(e)) g_gl_exts.push_back(e);   // intersect (keep all if unreadable)
+    if (g_gl_exts.empty()) g_gl_exts = g_gl_ext_candidates;          // never end up empty
+
+    for (size_t i = g_gl_exts.size(); i > 1; i--) {                  // deterministic shuffle
+        size_t j = gl_next() % i;
+        std::swap(g_gl_exts[i - 1], g_gl_exts[j]);
+    }
+    g_gl_ext_joined.clear();
+    for (size_t i = 0; i < g_gl_exts.size(); i++) {
+        if (i) g_gl_ext_joined += ' ';
+        g_gl_ext_joined += g_gl_exts[i];
+    }
+    g_gl_ext_final.store(true, std::memory_order_release);
+}
+
+// glGetStringi(GL_EXTENSIONS, i) — the ES3 indexed read libfp uses. Return our i-th spoofed extension.
+// An out-of-range GL_EXTENSIONS index returns nullptr (NOT the real list), so a probe of index==count
+// can't leak a real extension past our spoofed count. Only spoofs when BOTH hooks are live, so the count
+// (glGetIntegerv) and the entries (glGetStringi) can never desync into a half-fake list.
+static const unsigned char *my_glGetStringi(unsigned int name, unsigned int index) {
+    if (g_trace) __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "glGetStringi 0x%x %u", name, index);
+    if (name == GL_EXTENSIONS_ENUM && g_gl_both_hooked && !g_gl_ext_candidates.empty()) {
+        finalize_gl_extensions();
+        if (index < g_gl_exts.size())
+            return reinterpret_cast<const unsigned char *>(g_gl_exts[index].c_str());
+        return nullptr;   // past our (spoofed) count — do NOT fall through to the real driver
+    }
+    if (!orig_glGetStringi) return nullptr;
+    return orig_glGetStringi(name, index);
+}
+
+// glGetIntegerv(GL_NUM_EXTENSIONS, *) — the count the reader uses to bound its glGetStringi loop. Must
+// match our list size (finalize first so the intersection is applied) or the reader walks off the end /
+// stops short. Only this one pname is intercepted; everything else (limits, etc.) passes straight through.
+static void my_glGetIntegerv(unsigned int pname, int *data) {
+    if (pname == GL_NUM_EXTENSIONS && data && g_gl_both_hooked && !g_gl_ext_candidates.empty()) {
+        finalize_gl_extensions();
+        if (g_trace) __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "glGetIntegerv NUM_EXT->%zu", g_gl_exts.size());
+        *data = (int) g_gl_exts.size();
+        return;
+    }
+    // orig null only if the trampoline failed (rare). Can't safely synthesize other pnames; do nothing
+    // rather than deref null — the caller sees an unchanged buffer, which never crashes.
+    if (!orig_glGetIntegerv) return;
+    orig_glGetIntegerv(pname, data);
 }
 
 // ================= ASensor_getName / ASensor_getVendor (native sensor list) =================
@@ -685,6 +869,13 @@ public:
         auto gl = profile.find("hw_gles_version");
         if (gl != profile.end() && !gl->second.empty())
             g_gl_version = "OpenGL ES " + gl->second + " V@0.0";
+        // Per-profile GL extension list (varies the high-entropy native GPU signal that anchored the
+        // FPJS visitorId). Seed from android_id; vendor-match the family markers to g_gl_vendor.
+        {
+            auto aidg = profile.find("android_id");
+            if (aidg != profile.end())
+                build_gl_extensions(aidg->second, g_gl_vendor);
+        }
 
         // Sensor labels — hw_sensors is "name|vendor|type" rows joined by ';' (the native reads only
         // name+vendor; type is ignored here). Populated for the ASensor_getName/getVendor relabel hooks.
@@ -947,16 +1138,30 @@ private:
         // specialize-time (it loads when the app first touches GL), so dlopen it to resolve the symbol;
         // the inline patch then applies to the real function every later caller uses. Best-effort — if
         // the lib can't be opened the app just isn't a GL reader, and nothing is lost.
-        if (!g_gl_renderer.empty() || !g_gl_vendor.empty() || !g_gl_version.empty()) {
+        if (!g_gl_renderer.empty() || !g_gl_vendor.empty() || !g_gl_version.empty() || !g_gl_ext_candidates.empty()) {
             void *glh = dlopen("libGLESv2.so", RTLD_NOW | RTLD_NOLOAD);
             if (!glh) glh = dlopen("libGLESv2.so", RTLD_NOW);
-            void *sym = glh ? dlsym(glh, "glGetString") : dlsym(RTLD_DEFAULT, "glGetString");
-            if (sym && !g_hooked_addrs.count(sym)) {
-                void *tramp = nullptr;
-                A64HookFunction(sym, (void *) my_glGetString, &tramp);
-                if (tramp) { g_hooked_addrs[sym] = true; orig_glGetString = (glGetString_t) tramp; applied++; }
-                else LOGD("A64HookFunction glGetString failed");
-            } else if (!sym) LOGD("glGetString unresolved (no GL lib)");
+            // Returns true iff the inline hook is live AND its trampoline (*orig) was published. Publishing
+            // orig before the caller can enter my_* is what keeps the null-orig window from ever mattering.
+            auto hookGl = [&](const char *n, void *repl, void **orig) -> bool {
+                void *sym = glh ? dlsym(glh, n) : dlsym(RTLD_DEFAULT, n);
+                if (sym && !g_hooked_addrs.count(sym)) {
+                    void *tramp = nullptr;
+                    A64HookFunction(sym, repl, &tramp);
+                    if (tramp) { g_hooked_addrs[sym] = true; *orig = tramp; applied++; return true; }
+                    LOGD("A64HookFunction %s failed", n);
+                } else if (!sym) LOGD("%s unresolved (no GL lib)", n);
+                return false;
+            };
+            hookGl("glGetString", (void *) my_glGetString, (void **) &orig_glGetString);
+            // Extension-list spoof: BOTH glGetStringi and glGetIntegerv must hook, or the count and the
+            // entries desync into a detectable half-fake list (codex). Enable the spoof (g_gl_both_hooked)
+            // only when both land; if either fails, neither my_* spoofs (they fall through to real).
+            if (!g_gl_ext_candidates.empty()) {
+                bool si = hookGl("glGetStringi",  (void *) my_glGetStringi,  (void **) &orig_glGetStringi);
+                bool iv = hookGl("glGetIntegerv", (void *) my_glGetIntegerv, (void **) &orig_glGetIntegerv);
+                g_gl_both_hooked = si && iv;
+            }
         }
         // Native sensor list — libfp reads it via libandroid's ASensor_getName/getVendor (tracer-proven
         // direct JNI). Relabel those two accessors to the profile's per-model sensor names/vendors.
