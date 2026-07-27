@@ -469,3 +469,14 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   profile-read" note: it was NOT a bug — verify_on_device.py re-seeds the probe from DevInfo's profile
   (documented behavior), so running it between a manual rotate and a probe read overwrites the manual
   profile. push/rotate writes the correct file immediately (verified). No fix needed.
+
+*** session snapshot #6 (AFK, 2026-07-27) ***
+- Still v0.10.0. This iter: UI consistency polish (Settings reuses Identity's rich target-app cards),
+  end-to-end verification on v0.10.0 (29 spoofed/0 leaks + all new signals coherent), resolved the
+  recurring stale-read note (verify_on_device.py re-seeds the probe — expected, not a bug), rebuilt both
+  dist artifacts (module-v0.10.0.apk + specter-lite-v1.0.apk), confirmed lite harvest checksum still
+  byte-matches VaultChecksum (cross-app import intact).
+- Full session (0.5.0 -> 0.10.0): live-trace viewer + flagship coverage badges, SENSORID, verifiedboot,
+  locale/tz, mock-location, boot-count, battery, meminfo fix, extensive UI polish, IDEAS backlog (all 3).
+- App state: flagship-polished, client coverage verified 4 ways + drift-guarded, 500-profile coherence
+  clean, both dist APKs current, P4 on newest. Remaining work is L-effort/structural or user-blocked (4a).
