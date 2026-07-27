@@ -568,3 +568,14 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   locale<-phone), never overwriting, no RNG. Confirmed on-device the pre-0.9 vault entries lack those
   fields; JVM-tested (backfill/no-overwrite/null-safe); codex-clean (byte-parity matches fresh gen). 0.11.1.
   This closes a real gap in the vault export/import feature (shared old profiles now apply fully).
+
+*** session snapshot #11 (AFK, 2026-07-27) ***
+- 0.11.0 -> 0.11.1. This iter: fixed a REAL vault robustness gap — old saved/shared profiles (pre the newer
+  signals) now backfill boot_count/battery/tz/locale from their own data on load, so restore/import applies
+  every signal coherently instead of leaking. Codex-clean. P4 on v0.11.1.
+- Full session (0.5.0 -> 0.11.1, 62 commits): live-trace viewer + coverage badges + report export, SENSORID,
+  verifiedboot, locale/tz, mock-location, boot-count, battery, meminfo, legacy-camera, old-profile backfill,
+  extensive UI polish, IDEAS backlog (all 3). Client coverage verified 6 ways + reboot-survival certified.
+- STATE: flagship-polished, exhaustively-audited, reboot-certified, robust old-profile handling. Every
+  stated priority delivered + verified. Remaining is ONLY L-effort structural (raw svc#0, key attestation)
+  or user-blocked (4a root).
