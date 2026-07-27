@@ -5,7 +5,13 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
-- **2026-07-28 - BUILD the Widevine L1->L3 liboemcrypto bind-mount (byedentity parity)** - status: `building`.
+- **2026-07-28 - Widevine L1->L3 liboemcrypto bind-mount (byedentity parity)** - status: `shipped` (0.14.0).
+  SHIPPED + PROVEN on-device (Pixel 4a): `WidevineL3` generates a Magisk module (module.prop + post-fs-data.sh
+  that `mount -o bind`s an EMPTY stub over /vendor/lib{,64}/liboemcrypto.so), installed/removed via su behind a
+  Settings > Advanced (root) toggle. Verified: module installed + reboot -> unhooked native MediaDrm
+  securityLevel read = L3; uninstall + reboot -> L1 (real hardware restored); device boots fine + Widevine HAL
+  stays running both ways. Reaches the native OEMCrypto path below the Java MediaDrm hook. 27 JVM tests.
+  Original rationale kept below:
   CORRECTION of the earlier 'don't build it' call: that reasoning tunnel-visioned on the FPJS demo (reads
   ONLY deviceUniqueId, not securityLevel) as if it were THE target. It isn't - FPJS/DevInfo are just the
   measurement instruments. Specter's actual goal is BROAD: any user, any check, surpassing GeerGit AND
@@ -18,12 +24,13 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   channel, verify a NATIVE securityLevel read returns L3. BYEDENTITY-ANALYSIS.md candidate #4 reclassified
   from 'not needed' to a real build under the broad-coverage goal.
 
-- **2026-07-28 - adopt byedentity's other native tricks for broad coverage** - status: `idea`.
-  Build these so Specter is a superset: (1) boot-time resetprop in service.d as belt-and-suspenders under
-  the Zygisk prop hook (covers a process reading a prop before the hook attaches); (2) GSF re-registration
-  via pm clear gms/gsf/vending + reboot - attacks the server-side re-link anchor the FPJS test showed
-  actually matters, possibly the single most impactful thing byedentity does. The `Clear data+cache before
-  APPLY` checkbox (0.14.0) is step one; GSF-reset is the extension.
+- **2026-07-28 - adopt byedentity's other native tricks for broad coverage** - status: `partial`.
+  (2) GSF re-registration is SHIPPED (0.14.0): `GsfReset` force-stops + `pm clear`s gms/gsf/vending + reboots
+  (Settings > Advanced (root) > "Reset GSF + reboot", confirmed), so Google re-registers a fresh device id -
+  attacks the server-side re-link anchor (same class as the Dasher number leak). 14 JVM tests. STILL OPEN:
+  (1) boot-time resetprop in service.d as belt-and-suspenders under the Zygisk prop hook (covers a process
+  reading a prop before the hook attaches). The `Clear data+cache before APPLY` checkbox (0.14.0) + GSF-reset
+  cover the app-data + Google-side anchors; boot resetprop is the remaining native belt-and-suspenders.
 
 - **2026-07-27 · audit the remaining sm6150-mapped devices for SoC accuracy** — status: `open`.
   Fixing the Pixel 4a (sm6150→sm7150) surfaced that several other devices are mapped to sm6150 in

@@ -23,6 +23,8 @@ import com.specter.module.gen.Country;
 import com.specter.module.gen.Generators;
 import com.specter.module.gen.IdentityService;
 import com.specter.module.gen.SessionMigrator;
+import com.specter.module.gen.WidevineL3;
+import com.specter.module.gen.GsfReset;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -52,6 +54,7 @@ public class MainActivity extends Activity {
     private Vault vault;
     private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
     private android.widget.CheckBox clearBeforeApply;  // "clear each target's data+cache before APPLY"
+    private boolean widevineBusy = false;              // guards the Widevine-L3 toggle's failure-rollback re-fire
     private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
     private String appliedTargets = "";                 // comma-sep pkgs the CURRENT profile was applied to
                                                         // ("" until Apply succeeds — vault saves only applied)
@@ -760,8 +763,131 @@ public class MainActivity extends Activity {
 
         content.addView(sectionLabel("Protections"));
         for (Protections.P prot : Protections.ALL) content.addView(protectionRow(prot));
+
+        // Advanced (root) — device-wide, persistent Magisk-module actions, NOT per-profile hook gates.
+        // Kept in their own section + explicitly opt-in because they modify the system (a /vendor bind-mount),
+        // can break unrelated apps (DRM HD playback), and persist across reboot until turned off.
+        content.addView(sectionLabel("Advanced (root)"));
+        content.addView(widevineL3Row());
+        content.addView(gsfResetRow());
         // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
         // as a dead toggle until it actually works.
+    }
+
+    /** Widevine L1->L3 toggle: installs/uninstalls the liboemcrypto bind-mount Magisk module via su, off-thread.
+     *  This reaches the NATIVE OEMCrypto read the Java MediaDrm hook can't; opt-in because it breaks DRM HD
+     *  playback and modifies /vendor. State is the actual module presence (persisted in prefs after a successful
+     *  install/uninstall), not a cosmetic switch. */
+    private View widevineL3Row() {
+        LinearLayout card = cardBox();
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout txt = new LinearLayout(this);
+        txt.setOrientation(LinearLayout.VERTICAL);
+        txt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView lab = label("Widevine L1 -> L3 (native)");
+        lab.setTextColor(Theme.INK); lab.setTextSize(14);
+        titleRow.addView(lab);
+        final TextView chip = statusChip(prefs.getBoolean("widevine_l3", false));
+        titleRow.addView(chip);
+        txt.addView(titleRow);
+        TextView d = value("Bind-mounts an empty liboemcrypto.so over the vendor lib so hardware Widevine drops "
+                + "to software L3 — coherent for a native securityLevel/deviceUniqueId read (below the Java hook). "
+                + "Device-wide, survives reboot. WARNING: breaks DRM HD playback (Netflix/Prime) while on. Root.");
+        d.setTextColor(Theme.DIM); d.setTextSize(12); d.setTextIsSelectable(false);
+        txt.addView(d);
+        head.addView(txt);
+
+        final Switch sw = new Switch(this);
+        sw.setChecked(prefs.getBoolean("widevine_l3", false));
+        sw.setOnCheckedChangeListener((v, on) -> {
+            // widevineBusy suppresses the recursive listener fire when we programmatically revert the switch
+            // on failure (setChecked below re-invokes THIS listener) — without it a failed install would
+            // immediately kick off an uninstall (and vice-versa). Guard both the entry and the rollback.
+            if (widevineBusy) return;
+            widevineBusy = true;
+            sw.setEnabled(false);
+            status.setText(on ? "Installing Widevine L3 module…" : "Removing Widevine L3 module…");
+            new Thread(() -> {
+                String err = null;
+                try {
+                    if (on) WidevineL3.install(); else WidevineL3.uninstall();
+                } catch (Throwable t) { err = t.getMessage(); }
+                final String e = err;
+                runOnUiThread(() -> {
+                    // try/finally so widevineBusy is ALWAYS cleared — if a UI call below threw, the flag would
+                    // otherwise stay true and permanently dead-lock the toggle.
+                    try {
+                        sw.setEnabled(true);
+                        if (e == null) {
+                            prefs.edit().putBoolean("widevine_l3", on).apply();
+                            styleChip(chip, on);
+                            status.setText(on
+                                    ? "Widevine L3 installed — native reads report L3. Reboot to be safe. If a DRM app "
+                                      + "or boot misbehaves, turn this OFF (or boot to safe mode to disable all modules)."
+                                    : "Widevine L3 removed — reboot to fully restore hardware Widevine.");
+                        } else {
+                            // revert the switch to the real (unchanged) state — no cosmetic ON without the module.
+                            // widevineBusy stays true across this setChecked so the re-fired listener no-ops.
+                            sw.setChecked(!on);
+                            styleChip(chip, !on);
+                            status.setText("Widevine L3 " + (on ? "install" : "remove") + " failed: " + e);
+                        }
+                    } finally {
+                        widevineBusy = false;
+                    }
+                });
+            }).start();
+        });
+        head.addView(sw);
+        card.addView(head);
+        return card;
+    }
+
+    /** GSF/Google-identity reset: a one-shot destructive action (pm clear gms/gsf/vending + reboot) that makes
+     *  GSF re-register a fresh device android_id — the server-side re-link anchor a per-app spoof can't touch.
+     *  A button (not a toggle) behind a confirm, because it signs the device out of Google and forces a reboot. */
+    private View gsfResetRow() {
+        LinearLayout card = cardBox();
+        card.addView(label("Reset Google identity (GSF)"));
+        TextView d = value("Wipes Play Services + Services Framework + Play Store and reboots, so Google "
+                + "re-registers a FRESH device id. Attacks the server-side re-link anchor that survives an app's "
+                + "own data clear. WARNING: signs the device out of Google, drops Play state, and REBOOTS. Root.");
+        d.setTextColor(Theme.DIM); d.setTextSize(12); d.setTextIsSelectable(false);
+        card.addView(d);
+        Button go = button("Reset GSF + reboot", false, v ->
+                new AlertDialog.Builder(this)
+                        .setTitle("Reset Google identity?")
+                        .setMessage("This clears Play Services / Framework / Store and REBOOTS now. The device "
+                                + "signs out of Google and re-registers a new id on boot. Continue?")
+                        .setPositiveButton("Reset + reboot", (dl, w) -> {
+                            status.setText("Resetting Google identity — device will reboot…");
+                            new Thread(() -> {
+                                String err = null;
+                                try { GsfReset.reset(); }   // clears (checked) + reboots; on a real reboot this doesn't return
+                                catch (Throwable t) { err = t.getMessage(); }
+                                final String e = err;
+                                // If we got here the reboot call RETURNED (device didn't reboot) — either the
+                                // clears failed (e != null) or the reboot itself didn't take. Tell the user plainly;
+                                // never leave the stale "device will reboot…" hanging.
+                                runOnUiThread(() -> status.setText(e != null
+                                        ? "GSF reset failed: " + e
+                                        : "Google identity cleared, but the reboot didn't fire — reboot manually to finish."));
+                            }).start();
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(8), 0, 0);
+        go.setLayoutParams(lp);
+        card.addView(go);
+        return card;
     }
 
     /** One protection: label + description + a real toggle that gates the corresponding hook, plus a

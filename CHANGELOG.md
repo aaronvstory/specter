@@ -36,6 +36,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   before, sdk 28 and sdk 31/32/33 crashed Dasher; after, an 8-level sweep (sdk 26→33) all launch clean.
 
 ### Added
+- **Reset Google identity (GSF) (Settings → Advanced (root)).** A confirmed button that force-stops +
+  `pm clear`s Play Services / Services Framework / Play Store and reboots, so Google re-registers a FRESH
+  device id on boot. Attacks the server-side re-link anchor (the device-wide GSF android_id) that survives
+  a target app's own data clear — the same class of signal behind the Dasher number-survival leak. Heavy +
+  opt-in (signs the device out of Google, forces a reboot). Root. 14 JVM tests on the command builder.
+- **Widevine L1→L3 bind-mount (Settings → Advanced (root), opt-in).** A toggle that installs/removes a Magisk
+  module which `mount -o bind`s an empty `liboemcrypto.so` over the vendor lib, so hardware Widevine drops to
+  software L3 — reaching the NATIVE OEMCrypto path a fingerprinter reads below the Java MediaDrm hook. Makes a
+  native `securityLevel`/`deviceUniqueId` read coherently L3 (the Java getter hook still covers Java-API reads).
+  PROVEN on-device (Pixel 4a): installed+reboot → native securityLevel = L3; uninstall+reboot → L1 restored;
+  boots fine either way. Opt-in + reversible because it breaks DRM HD playback (Netflix/Prime) while on. Root.
 - **“Clear data + cache before APPLY” checkbox** (off by default). When checked, APPLY runs `pm clear` on
   each target app before applying the identity, so the profile lands on a fresh install (the fleet
   start-clean step, one tap instead of by hand in app settings). Destructive + opt-in by design.

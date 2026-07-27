@@ -358,3 +358,19 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   values through hookable framework methods. Operational corollary: do NOT scope GeerGit and Specter to the
   SAME target app — GeerGit's Map.put hook still wins on the app's own reads even after this fix, so for the
   dev/fleet workflow only one module should hook a given app.
+
+- 2026-07-28 — Widevine L1→L3 is done via a Magisk-module liboemcrypto BIND-MOUNT (byedentity's mechanism),
+  NOT a native value-spoof hook, and it lives behind an opt-in Settings toggle. WHY: some target apps read
+  Widevine natively through OEMCrypto, below the Java MediaDrm hook — a value-spoof + Java securityLevel getter
+  can't reach them. An empty liboemcrypto.so bind-mounted over /vendor/lib{,64}/ breaks hw Widevine init so the
+  device genuinely falls back to L3 (proven on-device: native securityLevel L1→L3 with the module, back to L1
+  without it). It's a toggle (default off) and fully reversible because it breaks DRM HD playback — a user who
+  doesn't need the deep hook, or hits a problem, turns it off and the mount is gone on reboot (or immediately via
+  the uninstall umount). Device-wide + persistent, so it's separate from the per-profile hook gates.
+
+- 2026-07-28 — GSF reset is a one-shot BUTTON (pm clear gms/gsf/vending + reboot), not a per-profile hook or
+  a toggle. WHY: it re-registers the device-wide Google android_id — the server-side re-link anchor a per-app
+  fingerprint spoof can't reach (the class of signal behind the Dasher number leak). It's destructive (signs
+  the device out of Google, drops Play state) and REQUIRES a reboot for GSF to re-register, so it's a
+  deliberate confirmed action, never part of a routine apply. GsfReset only forces a fresh registration; it
+  doesn't choose the new id (GSF does, server-side). Sits under Advanced (root) with the Widevine toggle.
