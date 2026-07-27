@@ -89,11 +89,26 @@ def _tac_for_brand(r, brand):
 
 _KERNEL_BASES = ["4.9", "4.14", "4.19", "5.4", "5.10", "5.15"]
 
-def kernel_version(r):
-    """os.version kernel string, e.g. '4.14.180-perf-g0a1b2c3' (mirrors Java kernelVersion)."""
+def kernel_version(r, release="13"):
+    """os.version kernel string, e.g. '4.14.180-perf-g0a1b2c3' (mirrors Java kernelVersion).
+
+    The '-androidN' branch tag must be COHERENT with the OS: a kernel can't be branched for a NEWER
+    Android than the one running it. Keep the exact RNG draw order (base, patch, branch, tag-num, hex)
+    for byte-parity, then CLAMP the drawn android tag to the profile release. If release < 10 (no
+    -androidN tag exists there) fall back to a '-perf' kernel (common on Android <=9).
+    """
     base = _KERNEL_BASES[r(len(_KERNEL_BASES))]
     patch = 50 + r(250)
-    tag = "-perf" if r(2) == 0 else "-android" + str(10 + r(4))
+    branch = r(2)            # 0 => -perf, 1 => -androidN
+    tagnum = 10 + r(4)       # 10..13 (draw consumed regardless, for parity)
+    try:
+        rel = int(str(release).split(".")[0])
+    except (ValueError, TypeError):
+        rel = 13
+    if branch == 0 or rel < 10:
+        tag = "-perf"
+    else:
+        tag = "-android" + str(min(tagnum, rel))   # never newer than the OS
     return f"{base}.{patch}{tag}-g" + hexs(r, 4)
 
 def build_host(r):

@@ -58,6 +58,21 @@ def test_media_drm_32_hex():
         assert G.validate("media_drm_id", G.hex32(r))
 
 
+def test_kernel_version_android_tag_coherent_with_release():
+    # The kernel's -androidN branch tag can never be NEWER than the OS release running it. release<10
+    # devices get a -perf kernel (no -androidN tag). Verify across many seeds + releases.
+    import re as _re
+    from specter import profile as _P
+    for s in range(400):
+        for rel in ("9", "10", "11", "12", "13"):
+            kv = G.kernel_version(_P._seeded(s), rel)
+            m = _re.search(r"-android(\d+)", kv)
+            if m:
+                n = int(m.group(1))
+                assert n <= int(rel), f"kernel {kv} tag android{n} > release {rel}"
+                assert int(rel) >= 10, f"-androidN tag on release {rel}: {kv}"
+
+
 def test_media_drm_accepts_32_and_64_hex():
     # Real Widevine PROPERTY_DEVICE_UNIQUE_ID is 16 OR 32 bytes (32/64 hex) depending on device, so a
     # harvested/hand-entered id of either length must validate; other lengths + non-hex must be rejected.

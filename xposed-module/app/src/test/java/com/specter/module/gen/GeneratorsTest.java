@@ -70,6 +70,21 @@ public class GeneratorsTest {
             check(Generators.validate("mobile_number", Generators.phoneUs(g)), "phone valid s=" + s);
             check(Generators.validate("gmail", Generators.gmail(g)), "email valid s=" + s);
 
+            // Kernel version must be COHERENT with the OS release: an -androidN tag can never be NEWER
+            // than the Android version running it (a kernel isn't branched for a future OS). release<10
+            // devices get a -perf kernel (no -androidN tag exists there).
+            for (String rel : new String[]{"9", "10", "11", "12", "13"}) {
+                Generators.Rng kg = seeded(s * 31 + 7);
+                String kv = Generators.kernelVersion(kg, rel);
+                int relN = Integer.parseInt(rel);
+                int idx = kv.indexOf("-android");
+                if (idx >= 0) {
+                    int n = Integer.parseInt(kv.substring(idx + "-android".length()).split("-")[0]);
+                    check(n <= relN, "kernel -android" + n + " <= release " + relN + " (s=" + s + " kv=" + kv + ")");
+                    check(relN >= 10, "-androidN tag only when release>=10 (rel=" + rel + " kv=" + kv + ")");
+                }
+            }
+
             // Email realism: contains a real name from the list, no random-consonant-soup, a known provider.
             String em = Generators.gmail(g);
             String localPart = em.substring(0, em.indexOf('@'));

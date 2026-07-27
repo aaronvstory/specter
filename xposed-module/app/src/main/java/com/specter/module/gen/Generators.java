@@ -158,11 +158,20 @@ public final class Generators {
     // Android). Keeping to real branches means the kernel string never looks synthetic.
     static final String[] KERNEL_BASES = {"4.9", "4.14", "4.19", "5.4", "5.10", "5.15"};
 
-    /** os.version / uname kernel string, e.g. "4.14.180-perf-g0a1b2c3". High-entropy fingerprint signal. */
-    public static String kernelVersion(Rng r) {
+    /** os.version / uname kernel string, e.g. "4.14.180-perf-g0a1b2c3". High-entropy fingerprint signal.
+     *  The "-androidN" branch tag must be COHERENT with the OS — a kernel can't be branched for a NEWER
+     *  Android than the one running it. Keep the exact RNG draw order (base, patch, branch, tag-num, hex)
+     *  for byte-parity with Python, then CLAMP the drawn tag to {@code release}; release &lt; 10 (no
+     *  -androidN tag) falls back to "-perf" (common on Android &lt;= 9). */
+    public static String kernelVersion(Rng r, String release) {
         String base = KERNEL_BASES[r.next(KERNEL_BASES.length)];
         int patch = 50 + r.next(250);
-        String tag = (r.next(2) == 0) ? "-perf" : "-android" + (10 + r.next(4));
+        int branch = r.next(2);          // 0 => -perf, 1 => -androidN
+        int tagnum = 10 + r.next(4);     // 10..13 (draw consumed regardless, for parity)
+        int rel;
+        try { rel = Integer.parseInt(release.split("\\.")[0]); }
+        catch (Exception e) { rel = 13; }
+        String tag = (branch == 0 || rel < 10) ? "-perf" : "-android" + Math.min(tagnum, rel);
         return base + "." + patch + tag + "-g" + hexs(r, 4);   // -g + 8 hex = a git-ish suffix
     }
 

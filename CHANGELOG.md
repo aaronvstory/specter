@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.6] — 2026-07-27
+
+### Fixed
+- **Kernel version is now coherent with the OS release.** `build_kernel_version` picked a random
+  `-androidN` branch tag (android10-13) INDEPENDENT of the device’s Android version — so an Android 9
+  profile could ship a `4.14.120-android10-…` kernel, i.e. a kernel branched for a NEWER OS than the one
+  running it (impossible on a real device, a correlation a fingerprinter catches). Now the drawn tag is
+  CLAMPED to the release (kernel android-tag never > OS version) and release < 10 falls back to a `-perf`
+  kernel (no `-androidN` tag exists there). Byte-parity preserved (Java + Python keep the identical RNG
+  draw order; the tag is post-processed with the already-known release). PROVEN on-device: 5 fresh
+  profiles all coherent (Android 9 -> -perf, Android 10 -> -android10). Tests added both sides.
+
 ## [0.12.5] — 2026-07-27
 
 ### Fixed

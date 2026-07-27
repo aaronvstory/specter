@@ -210,7 +210,7 @@ public final class Profile {
         // Build.HARDWARE/BOARD are the board codename too.
         p.put("build_hardware", codename);
         p.put("build_board", codename);
-        p.put("build_kernel_version", Generators.kernelVersion(r));
+        p.put("build_kernel_version", Generators.kernelVersion(r, release));
         p.put("build_radio", Generators.radioVersion(r));
         String[] ramStorage = Generators.ramStorageBytes(r);   // coherent RAM+storage pair
         p.put("total_ram", ramStorage[0]);
