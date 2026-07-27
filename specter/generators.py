@@ -243,7 +243,7 @@ def factory_reset_epoch(r, security_patch=None):
 
 _SOC_BY_DEVICE = {
     "flame": "msmnile", "coral": "msmnile", "redfin": "lito", "bramble": "lito",
-    "sunfish": "sm6150", "barbet": "lito", "oriole": "gs101", "raven": "gs101",
+    "sunfish": "sm7150", "barbet": "lito", "oriole": "gs101", "raven": "gs101",
     "blueline": "sdm845", "crosshatch": "sdm845", "walleye": "msm8998",
     "sailfish": "msm8996", "marlin": "msm8996", "taimen": "msm8998",
     "h1": "msm8996", "elsa": "msm8996", "joan": "msm8998",
@@ -324,7 +324,7 @@ _RAM_IDX_FOR_SOC = {
     "kona": [4, 5], "exynos2100": [4, 5], "lahaina": [4, 5], "sdm855": [3, 4, 5],
     "exynos9810": [3, 4], "msm8998": [2, 3, 4], "sdm845": [2, 3, 4],
     # upper-mid: 4/6/8 GB
-    "sm6150": [2, 3, 4], "lito": [2, 3, 4], "gs101": [4], "exynos9610": [2, 3],
+    "sm6150": [2, 3, 4], "sm7150": [2, 3, 4], "lito": [2, 3, 4], "gs101": [4], "exynos9610": [2, 3],
     # mid: 3/4/6 GB
     "sdm660": [1, 2, 3], "exynos7904": [1, 2, 3], "exynos9611": [1, 2, 3], "exynos1280": [2, 3],
     # budget: 2/3/4 GB

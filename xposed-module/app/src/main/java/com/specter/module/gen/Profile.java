@@ -353,6 +353,7 @@ public final class Profile {
         SOC_TOPOLOGY.put("lahaina",    "251 251 251 251 870 870 870 1024|660");
         SOC_TOPOLOGY.put("lito",       "256 256 256 256 256 256 1024 1024|620");
         SOC_TOPOLOGY.put("sm6150",     "256 256 256 256 256 256 1024 1024|612");
+        SOC_TOPOLOGY.put("sm7150",     "427 427 427 427 427 427 1024 1024|618");
         SOC_TOPOLOGY.put("sdm845",     "364 364 364 364 1024 1024 1024 1024|630");
         SOC_TOPOLOGY.put("msm8998",    "455 455 455 455 1024 1024 1024 1024|540");
         SOC_TOPOLOGY.put("sdm660",     "417 417 417 417 1024 1024 1024 1024|512");

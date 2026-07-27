@@ -331,3 +331,10 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   chown to THIS install's uid + restorecon (SELinux categories are per-uid, never carried from source).
   Session migration is separate from the fingerprint envelope (large binary vs small JSON) and opt-in
   per app (copies real account data). See [[SessionMigrator]].
+
+- **Pixel 4a (sunfish) = sm7150 / Adreno 618, and a71naxx too (0.13.1).** The dataset mislabelled the
+  Pixel 4a as sm6150 (SD675/Adreno 612); it's really SD730G = sm7150 = Adreno 618 (mainline DT:
+  "qcom,sm7150"; confirmed by a real-device harvest). Fixed the SoC map + hardware.json renderer + added
+  sm7150 topology. Kept the fix data-only + byte-parity. A dataset-wide test now cross-checks every
+  device's GL renderer vs its SoC gpu_model so a self-consistent-but-wrong SoC label can't slip through
+  again (the per-profile check couldn't catch it). See [[test-dataset-gpu-renderer]].

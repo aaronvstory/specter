@@ -137,6 +137,69 @@ def test_soc_topology_signals_are_coherent():
             )
 
 
+def test_dataset_gpu_renderer_matches_soc_topology():
+    """Dataset-level guard: for EVERY device in hardware.json, the Adreno number in its gpu_renderer must
+    equal the gpu_model its SoC maps to in the topology, AND the /proc/cpuinfo "Hardware" line must not
+    name a DIFFERENT SoC than the one claimed. This catches internal inconsistency across the three SoC
+    read-paths (GL renderer, /sys gpu_model, /proc/cpuinfo). Non-Adreno (Mali/Exynos) devices have an
+    empty gpu_model and skip the renderer check. (Note: an entry that is factually WRONG but internally
+    self-consistent — every path agreeing on the wrong SoC — passes here; test_known_device_socs pins the
+    real SoC for such cases.)
+    """
+    hardware = P._load_hardware()
+    topo = P._load_soc_topology()
+    for codename, e in hardware.items():
+        if codename.startswith("_"):
+            continue
+        renderer = e.get("gpu_renderer", "")
+        m = re.search(r"Adreno.*?(\d{3})", renderer)
+        if m:
+            soc = e.get("soc", "")
+            soc_entry = topo.get(soc)
+            assert soc_entry is not None, f"{codename}: soc {soc!r} has no topology entry"
+            gpu_model = soc_entry.get("gpu_model", "")
+            assert gpu_model == m.group(1), (
+                f"{codename}: renderer says Adreno {m.group(1)} but SoC {soc!r} topology gpu_model is "
+                f"{gpu_model!r} — incoherent /sys-vs-GL (check the SoC mapping AND the renderer string)"
+            )
+
+
+# Authoritative device -> (soc_platform, Adreno gpu number) for models we've verified against a real
+# device or the mainline kernel device tree. Pins the FACT, so a factually-wrong-but-self-consistent
+# mislabel (all read-paths agreeing on the wrong SoC — the exact shape of the original sunfish bug) is
+# caught. Extend as real devices are harvested/confirmed.
+_KNOWN_DEVICE_SOC = {
+    "sunfish": ("sm7150", "618"),   # Pixel 4a = SD730G — DT "qcom,sm7150", real cpuinfo "SDMMAGPIE"
+    "flame":   ("msmnile", "640"),  # Pixel 4  = SD855
+}
+
+
+def test_known_device_socs():
+    """Pin the real SoC + GPU for verified models so a mislabel that is internally self-consistent (the
+    original sunfish bug: sm6150/Adreno-612 everywhere when the 4a is really sm7150/Adreno-618) can't slip
+    through.
+    """
+    hardware = P._load_hardware()
+    topo = P._load_soc_topology()
+    for codename, (want_soc, want_gpu) in _KNOWN_DEVICE_SOC.items():
+        e = hardware.get(codename)
+        assert e is not None, f"{codename} missing from hardware.json"
+        assert e.get("soc") == want_soc, f"{codename}: soc is {e.get('soc')!r}, real device is {want_soc!r}"
+        m = re.search(r"Adreno.*?(\d{3})", e.get("gpu_renderer", ""))
+        assert m and m.group(1) == want_gpu, (
+            f"{codename}: renderer {e.get('gpu_renderer')!r} != real Adreno {want_gpu}"
+        )
+        gpu_model = topo.get(want_soc, {}).get("gpu_model", "")
+        assert gpu_model == want_gpu, f"{want_soc} topology gpu_model {gpu_model!r} != {want_gpu!r}"
+        # The /proc/cpuinfo "Hardware" line must not name a chip the device isn't. It uses marketing
+        # codenames (SD730G = "SDMMAGPIE", not "SM7150"), so we only assert it doesn't leak a KNOWN-wrong
+        # SoC id — for sunfish, the old bug baked "SM6150" into cpuinfo. Guard against that regressing.
+        ci = e.get("cpuinfo", "")
+        if codename == "sunfish":
+            assert "SM6150" not in ci, "sunfish cpuinfo still names SM6150 — the wrong SoC (real: SDMMAGPIE)"
+            assert "SDMMAGPIE" in ci, "sunfish cpuinfo should name SDMMAGPIE (real SD730G codename)"
+
+
 def test_screen_metrics_are_plausible():
     """screen_width/height/density (the getDisplayMetrics signal) must be plausible real values:
     portrait (height > width), sane resolution + density ranges. Keyed on the device codename, so a

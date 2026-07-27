@@ -1017,8 +1017,13 @@ public class MainActivity extends Activity {
             final java.util.List<String> names = new java.util.ArrayList<>();
             Process pr = null;
             try {
-                pr = Runtime.getRuntime().exec(new String[]{"su", "-c",
-                        "ls -1t /sdcard/Download/specter-profile-*.json 2>/dev/null"});
+                // Find both flavours: profiles SHARED from another Specter (specter-profile-*.json) and
+                // harvests from Specter Lite (Specter-<mfr>-<model>-*.json), in Download/ and the
+                // Download/Specter-exports/ subfolder Lite writes to. -M (mount-master) for the namespace.
+                pr = Runtime.getRuntime().exec(new String[]{"su", "-M", "-c",
+                        "ls -1t /sdcard/Download/specter-profile-*.json "
+                        + "/sdcard/Download/Specter-*.json "
+                        + "/sdcard/Download/Specter-exports/*.json 2>/dev/null"});
                 try (java.io.BufferedReader r = new java.io.BufferedReader(
                         new java.io.InputStreamReader(pr.getInputStream()))) {
                     String line;
@@ -1029,7 +1034,8 @@ public class MainActivity extends Activity {
             finally { if (pr != null) pr.destroy(); }
             runOnUiThread(() -> {
                 if (names.isEmpty()) {
-                    toast("No specter-profile-*.json in Download. Put a shared file there first.");
+                    toast("No profile found. Put a shared specter-profile-*.json or a Specter Lite harvest "
+                            + "(Specter-*.json) in Download or Download/Specter-exports.");
                     return;
                 }
                 final String[] labels = new String[names.size()];
@@ -1043,7 +1049,9 @@ public class MainActivity extends Activity {
                             java.io.File src = new java.io.File(names.get(which));
                             String err = vault.importError(src);
                             if (err != null) { toast("Import failed: " + err); return; }
-                            String stem = labels[which].replace("specter-profile-", "").replace(".json", "");
+                            // Strip whichever prefix this file has (shared export or Lite harvest) + .json.
+                            String stem = labels[which].replace("specter-profile-", "")
+                                    .replace("Specter-", "").replace(".json", "");
                             String label = vault.importFromFile(src, "imported-" + stem);
                             if (label != null) {
                                 status.setText("Imported " + label + " — restore it to apply.");

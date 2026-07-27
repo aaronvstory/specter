@@ -3,6 +3,36 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.13.1] — 2026-07-27
+
+### Fixed
+- **Pixel 4a (sunfish) SoC corrected: sm7150 / Adreno 618 (was mislabelled sm6150 / Adreno 612).** The
+  real Pixel 4a is a Snapdragon 730G (sm7150, Adreno 618) — confirmed against the mainline device tree
+  (compatible = "google,sunfish", "qcom,sm7150") and a real-device harvest (GL renderer = Adreno 618).
+  The dataset had sunfish → sm6150 (SD675, Adreno 612), so importing a harvested/cloned Pixel 4a produced
+  an incoherent /sys gpu_model 612 vs GL renderer 618 — a fingerprinting tell. Added the sm7150 topology
+  (Adreno 618, SD730G CPU capacities) and RAM tiers (4/6/8GB), fixed sunfish's SoC + renderer in
+  hardware.json (both data/ and the APK asset copy). Galaxy A71 (a71naxx, also SD730G) noted for the same
+  fix in IDEAS. Byte-parity preserved (Python+Java). PROVEN: a real Pixel 4a harvest now backfills to a
+  coherent sm7150/Adreno-618 profile.
+- **sunfish /proc/cpuinfo Hardware line corrected to SDMMAGPIE (was SM6150).** The SoC fix above left the
+  cpuinfo string naming the OLD wrong SoC — a cloned Pixel 4a would report soc_platform=sm7150/Adreno
+  618 but /proc/cpuinfo "SM6150", a third-read-path contradiction (gauntlet: codex caught this). Set to
+  the real device value SDMMAGPIE (SD730G's internal codename, confirmed from the actual 4a's cpuinfo) in
+  both hardware.json copies. Added test_known_device_socs pinning sunfish=sm7150/618/SDMMAGPIE so a
+  factually-wrong-but-self-consistent mislabel (the original bug's shape) is caught — proven to fail on a
+  full revert.
+- **Import now finds Specter Lite harvests, not just shared profiles.** "Import from Download" scanned
+  only `specter-profile-*.json`, but Lite exports as `Specter-<mfr>-<model>-*.json` in
+  Download/Specter-exports/ — so the Lite→Specter round-trip was broken (import saw "no file"). The scan
+  now also matches `Specter-*.json` in both Download/ and Download/Specter-exports/. PROVEN on-device: a
+  Pixel 4a Lite harvest imports into the vault on the rooted Pixel 4.
+
+### Added
+- Dataset-level coherence test: every hardware.json device's GL-renderer Adreno number must equal its
+  SoC's topology gpu_model — catches a factually-wrong-but-self-consistent SoC label (the class of bug
+  the sunfish mislabel was) that the per-generated-profile check can't. Proven to catch the sunfish case.
+
 ## [0.13.0] — 2026-07-27
 
 ### Added

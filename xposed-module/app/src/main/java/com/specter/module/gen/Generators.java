@@ -194,7 +194,7 @@ public final class Generators {
         SOC_BY_DEVICE.put("coral", "msmnile");   // Pixel 4 XL
         SOC_BY_DEVICE.put("redfin", "lito");     // Pixel 5  = SD765G
         SOC_BY_DEVICE.put("bramble", "lito");    // Pixel 4a 5G
-        SOC_BY_DEVICE.put("sunfish", "sm6150");  // Pixel 4a = SD730G
+        SOC_BY_DEVICE.put("sunfish", "sm7150");  // Pixel 4a = SD730G (sm7150, Adreno 618)
         SOC_BY_DEVICE.put("barbet", "lito");     // Pixel 5a
         SOC_BY_DEVICE.put("oriole", "gs101");    // Pixel 6  = Tensor
         SOC_BY_DEVICE.put("raven", "gs101");     // Pixel 6 Pro
@@ -399,7 +399,8 @@ public final class Generators {
         RAM_IDX_FOR_SOC.put("lahaina", new int[]{4, 5});       RAM_IDX_FOR_SOC.put("sdm855", new int[]{3, 4, 5});
         RAM_IDX_FOR_SOC.put("exynos9810", new int[]{3, 4});    RAM_IDX_FOR_SOC.put("msm8998", new int[]{2, 3, 4});
         RAM_IDX_FOR_SOC.put("sdm845", new int[]{2, 3, 4});
-        RAM_IDX_FOR_SOC.put("sm6150", new int[]{2, 3, 4});     RAM_IDX_FOR_SOC.put("lito", new int[]{2, 3, 4});
+        RAM_IDX_FOR_SOC.put("sm6150", new int[]{2, 3, 4});     RAM_IDX_FOR_SOC.put("sm7150", new int[]{2, 3, 4});
+        RAM_IDX_FOR_SOC.put("lito", new int[]{2, 3, 4});
         RAM_IDX_FOR_SOC.put("gs101", new int[]{4});            RAM_IDX_FOR_SOC.put("exynos9610", new int[]{2, 3});
         RAM_IDX_FOR_SOC.put("sdm660", new int[]{1, 2, 3});     RAM_IDX_FOR_SOC.put("exynos7904", new int[]{1, 2, 3});
         RAM_IDX_FOR_SOC.put("exynos9611", new int[]{1, 2, 3}); RAM_IDX_FOR_SOC.put("exynos1280", new int[]{2, 3});
