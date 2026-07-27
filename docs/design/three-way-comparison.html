@@ -1,0 +1,558 @@
+<title>Specter · GeerGit · byedentity — decompile intelligence brief</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ============ tokens ============ */
+  :root{
+    --paper:#F5F2EC; --ground:#ECE7DD; --card:#FBFAF6; --ink:#1A1712; --ink-soft:#5A5346;
+    --line:#DAD3C5; --line-strong:#C4BBA8;
+    --amber:#B8791A;           /* Specter identity + page accent */
+    --amber-hi:#D89A2E;
+    --geergit:#3E6FC4;          /* Flutter blue — data encoding only */
+    --bye:#B0424F;              /* root red — data encoding only */
+    --proven:#3F7A52; --hyp:#9A6B14; --refuted:#B0424F;
+    --proven-bg:#E4EDE3; --hyp-bg:#F0E7D2; --refuted-bg:#F2DEDD;
+    --mono:"SFMono-Regular",ui-monospace,"JetBrains Mono","Cascadia Code",Consolas,monospace;
+    --sans:"Inter","Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    --disp:"Inter","Segoe UI",-apple-system,system-ui,sans-serif;
+    --shadow:0 1px 2px rgba(26,23,18,.04),0 6px 20px rgba(26,23,18,.06);
+    --maxw:1120px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0E1116; --ground:#0A0C10; --card:#151A21; --ink:#EBE6DC; --ink-soft:#9A9384;
+      --line:#232A33; --line-strong:#333C47;
+      --amber:#E0A73D; --amber-hi:#F0BB55;
+      --geergit:#6B9AF0; --bye:#D06B78;
+      --proven:#63B683; --hyp:#D2A445; --refuted:#D06B78;
+      --proven-bg:#16241C; --hyp-bg:#241E10; --refuted-bg:#251418;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#F5F2EC; --ground:#ECE7DD; --card:#FBFAF6; --ink:#1A1712; --ink-soft:#5A5346;
+    --line:#DAD3C5; --line-strong:#C4BBA8; --amber:#B8791A; --amber-hi:#D89A2E;
+    --geergit:#3E6FC4; --bye:#B0424F; --proven:#3F7A52; --hyp:#9A6B14; --refuted:#B0424F;
+    --proven-bg:#E4EDE3; --hyp-bg:#F0E7D2; --refuted-bg:#F2DEDD;
+    --shadow:0 1px 2px rgba(26,23,18,.04),0 6px 20px rgba(26,23,18,.06);
+  }
+  :root[data-theme="dark"]{
+    --paper:#0E1116; --ground:#0A0C10; --card:#151A21; --ink:#EBE6DC; --ink-soft:#9A9384;
+    --line:#232A33; --line-strong:#333C47; --amber:#E0A73D; --amber-hi:#F0BB55;
+    --geergit:#6B9AF0; --bye:#D06B78; --proven:#63B683; --hyp:#D2A445; --refuted:#D06B78;
+    --proven-bg:#16241C; --hyp-bg:#241E10; --refuted-bg:#251418;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(circle at 50% -10%, color-mix(in oklab,var(--amber) 7%, transparent), transparent 60%);
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  section{padding:clamp(40px,6vw,72px) 0;border-top:1px solid var(--line)}
+  section:first-of-type{border-top:none}
+
+  /* ============ type ============ */
+  h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.02em;line-height:1.1}
+  h1{font-size:clamp(2rem,5vw,3.3rem);font-weight:800;font-family:var(--disp)}
+  h2{font-size:clamp(1.5rem,3vw,2.1rem);font-weight:750}
+  h3{font-size:1.12rem;font-weight:700;letter-spacing:-.01em}
+  p{margin:0 0 .9em}
+  .lede{font-size:clamp(1.05rem,2vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:62ch}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--amber);font-weight:600;margin-bottom:14px}
+  .mono{font-family:var(--mono)}
+  .measure{max-width:66ch}
+  a{color:var(--amber);text-decoration-color:color-mix(in oklab,var(--amber) 40%,transparent)}
+
+  /* ============ header ============ */
+  header.hero{padding:clamp(48px,7vw,88px) 0 clamp(28px,4vw,44px)}
+  .herometa{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:26px;font-family:var(--mono);
+    font-size:.78rem;color:var(--ink-soft)}
+  .herometa b{color:var(--ink);font-weight:600}
+  .toolstrip{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:34px}
+  @media(max-width:680px){.toolstrip{grid-template-columns:1fr}}
+  .toolcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px;
+    box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .toolcard::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--tc)}
+  .toolcard[data-t="specter"]{--tc:var(--amber)}
+  .toolcard[data-t="geergit"]{--tc:var(--geergit)}
+  .toolcard[data-t="bye"]{--tc:var(--bye)}
+  .toolcard .tname{font-weight:800;font-size:1.15rem;letter-spacing:-.02em}
+  .toolcard .tpkg{font-family:var(--mono);font-size:.72rem;color:var(--ink-soft);margin-top:2px}
+  .toolcard .tone{margin-top:10px;font-size:.9rem;color:var(--ink-soft);line-height:1.45}
+  .toolcard .tarch{margin-top:12px;display:inline-flex;font-family:var(--mono);font-size:.68rem;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--tc);border:1px solid color-mix(in oklab,var(--tc) 40%,var(--line));
+    padding:3px 8px;border-radius:6px;font-weight:600}
+
+  /* ============ verdict chips ============ */
+  .verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  .vrow{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+    display:flex;flex-direction:column;gap:7px}
+  .vrow .axis{font-size:.82rem;color:var(--ink-soft);letter-spacing:.01em}
+  .winner{display:inline-flex;align-items:center;gap:8px;font-weight:750;font-size:1.02rem}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .dot.specter{background:var(--amber)} .dot.geergit{background:var(--geergit)}
+  .dot.bye{background:var(--bye)} .dot.tie{background:var(--ink-soft)}
+
+  /* ============ matrix ============ */
+  .tablescroll{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card);
+    box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:720px;font-size:.9rem}
+  thead th{position:sticky;top:0;background:var(--card);z-index:2;text-align:left;
+    padding:14px 16px;border-bottom:2px solid var(--line-strong);font-weight:700;font-size:.82rem}
+  thead th .th-tool{display:flex;align-items:center;gap:8px}
+  tbody td,tbody th{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td,tbody tr:last-child th{border-bottom:none}
+  tbody tr:hover td,tbody tr:hover th{background:color-mix(in oklab,var(--amber) 5%,transparent)}
+  th.sig{font-weight:650;text-align:left;color:var(--ink);width:24%;font-size:.9rem}
+  th.sig small{display:block;font-family:var(--mono);font-size:.68rem;color:var(--ink-soft);
+    font-weight:400;margin-top:2px;letter-spacing:.01em}
+  .cell{font-size:.86rem;line-height:1.4}
+  .cell .k{font-family:var(--mono);font-size:.8rem}
+
+  /* status chips */
+  .chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.68rem;
+    font-weight:600;letter-spacing:.02em;padding:2px 7px;border-radius:5px;white-space:nowrap;line-height:1.5}
+  .chip.full{background:var(--proven-bg);color:var(--proven)}
+  .chip.partial{background:var(--hyp-bg);color:var(--hyp)}
+  .chip.none{background:var(--refuted-bg);color:var(--refuted)}
+  .chip.na{background:color-mix(in oklab,var(--ink-soft) 14%,transparent);color:var(--ink-soft)}
+  .chip .g{font-size:.82em;opacity:.85}
+  .conf{display:inline-block;font-family:var(--mono);font-size:.62rem;font-weight:700;letter-spacing:.04em;
+    padding:1px 5px;border-radius:4px;margin-left:2px;vertical-align:1px}
+  .conf.p{color:var(--proven);border:1px solid color-mix(in oklab,var(--proven) 45%,transparent)}
+  .conf.h{color:var(--hyp);border:1px solid color-mix(in oklab,var(--hyp) 45%,transparent)}
+
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:10px 20px;margin-top:18px;font-size:.82rem;color:var(--ink-soft)}
+  .legend .li{display:flex;align-items:center;gap:7px}
+
+  /* ============ dossier cards ============ */
+  .dossier{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+  .dcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;
+    box-shadow:var(--shadow);border-top:3px solid var(--tc)}
+  .dcard[data-t="specter"]{--tc:var(--amber)} .dcard[data-t="geergit"]{--tc:var(--geergit)}
+  .dcard[data-t="bye"]{--tc:var(--bye)}
+  .dcard h3{color:var(--ink);display:flex;align-items:baseline;gap:9px}
+  .dcard h3 .ver{font-family:var(--mono);font-size:.72rem;color:var(--ink-soft);font-weight:500}
+  .dcard .role{font-size:.86rem;color:var(--ink-soft);margin:.5em 0 1em}
+  .dl{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:11px}
+  .dl li{display:grid;grid-template-columns:15px 1fr;gap:9px;font-size:.88rem;line-height:1.45}
+  /* plus = semantic GOOD (green), minus = semantic BAD (red) — independent of the tool-identity hue,
+     so byedentity's red identity never makes its own advantages read as drawbacks. */
+  .dl li .m{color:var(--proven);font-weight:800;line-height:1.3}
+  .dl li.bad .m{color:var(--refuted)}
+  .dl li b{font-weight:650}
+  .kbd{font-family:var(--mono);font-size:.8em;background:color-mix(in oklab,var(--ink-soft) 12%,transparent);
+    padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
+
+  /* ============ headline delta ============ */
+  .delta{background:linear-gradient(135deg,color-mix(in oklab,var(--amber) 12%,var(--card)),var(--card));
+    border:1px solid color-mix(in oklab,var(--amber) 30%,var(--line));border-radius:16px;
+    padding:clamp(24px,3vw,36px);box-shadow:var(--shadow)}
+  .delta h2{margin-bottom:.35em}
+  .beforeafter{display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:stretch;margin-top:22px}
+  @media(max-width:640px){.beforeafter{grid-template-columns:1fr;gap:10px}.ba-arrow{transform:rotate(90deg)}}
+  .ba{border-radius:12px;padding:16px 18px;border:1px solid var(--line);background:var(--paper)}
+  .ba .lab{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-soft);margin-bottom:8px}
+  .ba.was{border-color:color-mix(in oklab,var(--refuted) 30%,var(--line))}
+  .ba.now{border-color:color-mix(in oklab,var(--proven) 40%,var(--line))}
+  .ba p{margin:0;font-size:.9rem;line-height:1.45}
+  .ba-arrow{display:flex;align-items:center;justify-content:center;font-family:var(--mono);
+    color:var(--amber);font-size:1.5rem;font-weight:700}
+
+  /* ============ evidence / epistemics ============ */
+  .evgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+  .ev{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .ev .method{font-family:var(--mono);font-size:.72rem;color:var(--amber);letter-spacing:.05em;
+    text-transform:uppercase;font-weight:600;margin-bottom:10px}
+  .ev p{font-size:.87rem;margin:0;color:var(--ink-soft);line-height:1.5}
+  .ev p b{color:var(--ink);font-weight:600}
+  .caveat{margin-top:26px;border-left:3px solid var(--hyp);padding:2px 0 2px 18px;color:var(--ink-soft);
+    font-size:.9rem;max-width:74ch}
+  .caveat b{color:var(--ink)}
+
+  footer{padding:36px 0 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+  footer .mono{font-size:.76rem}
+
+  /* theme toggle */
+  .toggle{position:fixed;top:16px;right:16px;z-index:20;background:var(--card);border:1px solid var(--line);
+    color:var(--ink-soft);border-radius:9px;padding:7px 11px;font-family:var(--mono);font-size:.72rem;
+    cursor:pointer;box-shadow:var(--shadow)}
+  .toggle:hover{color:var(--ink)}
+  .toggle:focus-visible,a:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:4px}
+
+  .note{font-size:.82rem;color:var(--ink-soft);margin-top:10px}
+  .winbar{font-family:var(--mono);font-size:.76rem;color:var(--ink-soft);margin-top:6px}
+</style>
+
+<button class="toggle" id="tg" aria-label="Toggle light or dark theme">◐ theme</button>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Decompile intelligence brief · grounded in APK teardown, not READMEs</div>
+    <h1>Three device-identity tools, read at the binary.</h1>
+    <p class="lede">A capability comparison of <b>Specter</b>, <b>GeerGit</b>, and <b>byedentity</b> — built
+      from jadx decompiles, native-string dumps, Dart AOT symbol diffs, and on-device probes. Every claim
+      carries a confidence tag: what the binary literally shows versus what a native method name implies.</p>
+
+    <div class="herometa">
+      <span>Sources · <b>APKs/byedentity.apk</b> · <b>Geergit v2.7–2.9.7</b> · <b>Specter v0.13.1</b></span>
+      <span>Method · <b>jadx</b> + <b>strings(libapp/libbyedentity.so)</b> + dual-read probe</span>
+    </div>
+
+    <div class="toolstrip">
+      <div class="toolcard" data-t="specter">
+        <div class="tname">Specter</div>
+        <div class="tpkg">com.specter · v0.13.1</div>
+        <div class="tone">Surgical, coherent, US-only. One real device row drives every field. Java Xposed
+          hooks + a Zygisk native layer, no server.</div>
+        <div class="tarch">Xposed + Zygisk · local</div>
+      </div>
+      <div class="toolcard" data-t="geergit">
+        <div class="tname">GeerGit</div>
+        <div class="tpkg">Flutter (Dart AOT) · v2.9.x</div>
+        <div class="tone">Per-account rotation in a Dart <span class="kbd">libapp.so</span>; a thin dex hook
+          reads it. Under-spoofs hardware → "sometimes detected".</div>
+        <div class="tarch">Flutter · per-account</div>
+      </div>
+      <div class="toolcard" data-t="bye">
+        <div class="tname">byedentity</div>
+        <div class="tpkg">com.byedentity · v3.0.1</div>
+        <div class="tone">Root/Magisk + native-JNI, deepest at the system level — but heavy, server-leashed,
+          and it leaves Build.*/SoC real.</div>
+        <div class="tarch">Root Magisk · server-gated</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="verdict">
+  <div class="wrap">
+    <div class="eyebrow">Who wins where</div>
+    <h2>The scorecard, one axis at a time</h2>
+    <p class="lede" style="margin:14px 0 18px">Different bets, not the same tool at three quality levels.
+      Specter optimizes for <b>coherence + breadth without a server</b>; byedentity for <b>native depth</b>;
+      GeerGit for <b>per-account rotation in a Flutter shell</b> (all three need root). The one axis byedentity
+      used to own — reads below the Java layer — Specter closed with its Zygisk layer.</p>
+    <p class="measure" style="margin:0 0 28px;font-size:.88rem;color:var(--ink-soft);border-left:3px solid var(--hyp);padding-left:16px">
+      <b>Read this as capability, not conquest.</b> These axes measure what each tool <i>changes</i> and how
+      <i>coherently</i> — which is verifiable. None of the three has a <i>proven</i> field-evasion win against a
+      live detector: on-device testing found the dominant re-link anchor is server-side (fuzzy match + a cached
+      ID that survives a wipe), which no client-side spoofer fully touches. Specter leads on capability; "wins in
+      the field" is unproven for everyone here.</p>
+
+    <div class="verdict">
+      <div class="vrow"><span class="axis">Signal breadth</span>
+        <span class="winner"><span class="dot specter"></span>Specter</span>
+        <span class="winbar">high · vs medium / medium</span></div>
+      <div class="vrow"><span class="axis">Device coherence (no impossible combos)</span>
+        <span class="winner"><span class="dot specter"></span>Specter</span>
+        <span class="winbar">strong · GeerGit &amp; byedentity leave HW real</span></div>
+      <div class="vrow"><span class="axis">Native-read reach (NDK, below Java)</span>
+        <span class="winner"><span class="dot tie"></span>Specter ≈ byedentity</span>
+        <span class="winbar">was byedentity-only — now tied</span></div>
+      <div class="vrow"><span class="axis">DRM / Widevine depth</span>
+        <span class="winner"><span class="dot bye"></span>byedentity</span>
+        <span class="winbar">real L1→L3 bind-mount · Specter L3 coherent, no root</span></div>
+      <div class="vrow"><span class="axis">Uniqueness / no-reuse</span>
+        <span class="winner"><span class="dot specter"></span>Specter</span>
+        <span class="winbar">enforced ledger · GeerGit's stale-cache bug bans</span></div>
+      <div class="vrow"><span class="axis">USA realism (carriers, NANP, IMSI/ICCID)</span>
+        <span class="winner"><span class="dot specter"></span>Specter</span>
+        <span class="winbar">full · others partial / none</span></div>
+      <div class="vrow"><span class="axis">Stateless / no remote leash</span>
+        <span class="winner"><span class="dot specter"></span>Specter</span>
+        <span class="winbar">local · byedentity can block/force-update its users</span></div>
+      <div class="vrow"><span class="axis">Root requirement</span>
+        <span class="winner"><span class="dot tie"></span>All need root</span>
+        <span class="winbar">all three are LSPosed/Magisk — root-free spoofing isn't possible</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="matrix">
+  <div class="wrap">
+    <div class="eyebrow">Signal-by-signal coverage</div>
+    <h2>What each tool actually changes</h2>
+    <p class="lede" style="margin:14px 0 26px">A fraud SDK (FingerprintJS-class) computes a <b>deviceId</b>
+      (GSF → mediaDrm → androidId) and a <b>fingerprint</b> — a hash of ~30 hardware/OS signals. Rotating the
+      deviceId is easy; the fingerprint leaks because the physical phone's signals never change. This is the
+      real battlefield.</p>
+
+    <div class="tablescroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="sig">Signal</th>
+            <th><span class="th-tool"><span class="dot geergit"></span>GeerGit</span></th>
+            <th><span class="th-tool"><span class="dot specter"></span>Specter</span></th>
+            <th><span class="th-tool"><span class="dot bye"></span>byedentity</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th class="sig">Serial <small>ro.serialno</small></th>
+            <td class="cell"><span class="chip full">spoofed</span> per-account</td>
+            <td class="cell"><span class="chip full">spoofed</span> brand-shaped <span class="k">serial_for_brand</span>, Java+native</td>
+            <td class="cell"><span class="chip full">spoofed</span> boot <span class="k">service.d</span> reset<span class="conf h">HYP cmd</span></td>
+          </tr>
+          <tr>
+            <th class="sig">IMEI <small>both SIM slots</small></th>
+            <td class="cell"><span class="chip full">spoofed</span> +increment mode</td>
+            <td class="cell"><span class="chip full">spoofed</span> both slots share TAC, slot-aware</td>
+            <td class="cell"><span class="chip none">real</span> collected, not changed</td>
+          </tr>
+          <tr>
+            <th class="sig">SIM identity <small>IMSI · ICCID · MCC-MNC · operator</small></th>
+            <td class="cell"><span class="chip partial">partial</span></td>
+            <td class="cell"><span class="chip full">spoofed + coherent</span> IMSI==MCCMNC, ICCID IIN==carrier, US</td>
+            <td class="cell"><span class="chip none">real</span></td>
+          </tr>
+          <tr>
+            <th class="sig">android_id / SSAID</th>
+            <td class="cell"><span class="chip full">spoofed</span></td>
+            <td class="cell"><span class="chip full">spoofed</span> <span class="k">Settings.Secure</span> hook</td>
+            <td class="cell"><span class="chip full">spoofed</span> <span class="k">commandSetAndroidId</span><span class="conf h">HYP</span></td>
+          </tr>
+          <tr>
+            <th class="sig">GSF ID <small>Google Services Framework</small></th>
+            <td class="cell"><span class="chip none">regressed</span> 2.9.6 reused a stale fake → bans<span class="conf p">P</span></td>
+            <td class="cell"><span class="chip full">spoofed</span> Gservices hook</td>
+            <td class="cell"><span class="chip partial">reset</span> force-stop+<span class="k">pm clear</span>+reboot<span class="conf p">P</span></td>
+          </tr>
+          <tr>
+            <th class="sig">Widevine deviceUniqueId <small>+ securityLevel</small></th>
+            <td class="cell"><span class="chip none">real → L1 leak</span></td>
+            <td class="cell"><span class="chip full">id + L3</span> value-spoof + level hook, coherent, no root</td>
+            <td class="cell"><span class="chip full">real L1→L3</span> bind-mount empty <span class="k">liboemcrypto.so</span><span class="conf p">P</span></td>
+          </tr>
+          <tr>
+            <th class="sig">Build.* fingerprint <small>brand · model · device · product</small></th>
+            <td class="cell"><span class="chip partial">partial</span> leaves most real</td>
+            <td class="cell"><span class="chip full">spoofed + coherent</span> one real <span class="k">devices.json</span> row</td>
+            <td class="cell"><span class="chip none">real</span> sent to server, not changed<span class="conf p">P</span></td>
+          </tr>
+          <tr>
+            <th class="sig">SoC / board platform</th>
+            <td class="cell"><span class="chip none">real (leaks)</span></td>
+            <td class="cell"><span class="chip full">spoofed</span> per-model SoC table; 4a→sm7150/Adreno618 fixed</td>
+            <td class="cell"><span class="chip none">real</span> no SoC table<span class="conf p">P</span></td>
+          </tr>
+          <tr>
+            <th class="sig">bootloader · radio · baseband · kernel</th>
+            <td class="cell"><span class="chip none">real (leaks)</span></td>
+            <td class="cell"><span class="chip full">spoofed</span> codename-coherent; kernel tag ≤ OS release</td>
+            <td class="cell"><span class="chip none">real</span></td>
+          </tr>
+          <tr>
+            <th class="sig">Total RAM · storage <small>StatFs</small></th>
+            <td class="cell"><span class="chip none">real (likely)</span></td>
+            <td class="cell"><span class="chip full">spoofed + coherent</span> RAM↔storage↔SoC pair</td>
+            <td class="cell"><span class="chip none">real</span></td>
+          </tr>
+          <tr>
+            <th class="sig">GPU · sensors · cpuinfo <small>native reads</small></th>
+            <td class="cell"><span class="chip na">n/a</span></td>
+            <td class="cell"><span class="chip full">spoofed (native)</span> de-duped sensors, coherent GPU model</td>
+            <td class="cell"><span class="chip na">n/a</span> not in verified surface</td>
+          </tr>
+          <tr>
+            <th class="sig">Native prop reads <small>__system_property_get, NDK path</small></th>
+            <td class="cell"><span class="chip na">n/a</span></td>
+            <td class="cell"><span class="chip full">spoofed</span> Zygisk <span class="k">my_prop_get</span> inline hook<span class="conf p">P</span></td>
+            <td class="cell"><span class="chip full">spoofed</span> boot resetprop (below Java)<span class="conf h">HYP cmd</span></td>
+          </tr>
+          <tr>
+            <th class="sig">Public IP telemetry <small>a leash, not a spoof</small></th>
+            <td class="cell"><span class="chip na">none</span></td>
+            <td class="cell"><span class="chip full">not collected</span> no server — nothing phones home</td>
+            <td class="cell"><span class="chip none">fetched + POSTed</span> reports your egress IP to its own server<span class="conf p">P</span></td>
+          </tr>
+          <tr>
+            <th class="sig">Server attestation / kill switch <small>a leash, not a spoof</small></th>
+            <td class="cell"><span class="chip none">alpha gate</span> profile-share API</td>
+            <td class="cell"><span class="chip full">none</span> stateless by design — no remote control</td>
+            <td class="cell"><span class="chip none">HMAC report</span> 403→disables you, 426→force-update<span class="conf p">P</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="legend">
+      <span class="li"><span class="chip full">spoofed</span> changed &amp; coherent</span>
+      <span class="li"><span class="chip partial">partial</span> some, or gaps</span>
+      <span class="li"><span class="chip none">real</span> left as the physical device (leaks)</span>
+      <span class="li"><span class="chip na">n/a</span> not applicable / not in surface</span>
+      <span class="li"><span class="conf p">P</span> proven — literal in the binary</span>
+      <span class="li"><span class="conf h">HYP</span> inferred from a native name / string-adjacency</span>
+    </div>
+  </div>
+</section>
+
+<section id="delta">
+  <div class="wrap">
+    <div class="delta">
+      <div class="eyebrow" style="color:var(--amber-hi)">The finding that changes the standings</div>
+      <h2>byedentity's one structural edge — native-read reach — is now closed</h2>
+      <p class="measure" style="margin-top:12px">The 2026-07-25 teardown concluded byedentity was ahead on
+        exactly one axis: its boot-time <span class="kbd">resetprop</span> and Widevine bind-mount sit
+        <b>below the Java layer</b>, so a fingerprinter reading <span class="kbd">ro.serialno</span> or
+        Widevine via NDK bypassed Specter's Java-only hooks. Specter's Zygisk layer erased that gap.</p>
+
+      <div class="beforeafter">
+        <div class="ba was">
+          <div class="lab">Before — Java-only hook</div>
+          <p>A native <span class="kbd">__system_property_get("ro.product.model")</span> read the <b>real</b>
+            "Pixel 4". Specter's Xposed hook only saw the Java <span class="kbd">Build.MODEL</span> path.
+            A ~10-prop native blind spot.</p>
+        </div>
+        <div class="ba-arrow" aria-hidden="true">→</div>
+        <div class="ba now">
+          <div class="lab">Now — Zygisk inline hook</div>
+          <p>The per-app <span class="kbd">my_prop_get</span> hook intercepts native prop reads. Dual-read
+            probe confirms <span class="kbd">_java == _native</span> for model, serial, board, fingerprint,
+            baseband, bootloader. <b>29 spoofed / 0 hard leaks.</b></p>
+        </div>
+      </div>
+      <p class="note">Deliberate exception: <span class="kbd">ro.build.version.sdk</span> and
+        <span class="kbd">first_api_level</span> are served by a <b>deferred</b> native map (a detached thread
+        flips them ~1.5s after process start) — adding them to the always-on map SIGSEGVs the zygote, since
+        ART/libc read them during init. Proven on-device: read at onCreate = real 30, read after 2.5s =
+        spoofed 29, no crash.</p>
+
+      <div style="margin-top:26px;padding-top:22px;border-top:1px solid var(--line)">
+        <h3 style="font-size:1rem;margin-bottom:8px">Where byedentity is genuinely deeper — and the plan to absorb it</h3>
+        <p class="measure" style="margin:0 0 .8em;font-size:.92rem">The goal isn't to beat one detector — it's
+          <b>broad coverage: any user, any check</b>, taking the best of both rivals and going past them. Judged
+          that way, byedentity has real depth Specter should <b>adopt, not dismiss</b>:</p>
+        <ul class="dl" style="max-width:74ch">
+          <li><span class="m" style="color:var(--hyp)">→</span><span><b>Widevine at the native OEMCrypto level.</b> The <span class="kbd">liboemcrypto.so</span> bind-mount forces a <i>real</i> L1→L3 drop, so an app reading the level through native crypto (below the Java <span class="kbd">MediaDrm</span> hook) sees it too. Specter's L3 is a Java getter — enough for API readers, not for a native one. <b>Building this</b> (root; Netflix-HD breakage is irrelevant here).</span></li>
+          <li><span class="m" style="color:var(--hyp)">→</span><span><b>GSF re-registration + app-data wipe.</b> <span class="kbd">pm clear</span> gms/gsf/vending + reboot resets the Google device identity — this attacks the <i>server-side re-link anchor</i> that on-device testing suggests actually matters. Specter's new "clear data + cache before apply" is step one; GSF-reset is the extension.</span></li>
+          <li><span class="m" style="color:var(--hyp)">→</span><span><b>Boot-time <span class="kbd">resetprop</span></b> as belt-and-suspenders under the Zygisk prop hook — covers a process that reads a prop before the per-app hook attaches.</span></li>
+        </ul>
+        <p class="measure" style="margin:.4em 0 0;font-size:.88rem;color:var(--ink-soft)">These are techniques, not
+          a permanent moat — Specter has the root channel to build all three, while keeping the things byedentity
+          gives up: coherence, breadth, US realism, no-reuse, and no server leash.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="dossier">
+  <div class="wrap">
+    <div class="eyebrow">Per-tool dossier</div>
+    <h2>How each one is built, and where it bleeds</h2>
+    <div class="dossier" style="margin-top:26px">
+
+      <div class="dcard" data-t="specter">
+        <h3>Specter <span class="ver">com.specter · 0.13.1</span></h3>
+        <div class="role">Xposed hooks + Zygisk native layer + a Python reference core. One real device row
+          drives everything; Java↔Python byte-parity keeps generation identical.</div>
+        <ul class="dl">
+          <li><span class="m">+</span><span><b>Coherence as an invariant.</b> serial↔brand, RAM↔storage↔SoC, DRM id↔level, kernel↔OS, GPU model↔renderer all cross-checked by tests.</span></li>
+          <li><span class="m">+</span><span><b>Native parity.</b> Zygisk <span class="kbd">my_prop_get</span> closes the NDK prop blind spot; sensors de-duped; RWX injection pages restored to R-X.</span></li>
+          <li><span class="m">+</span><span><b>Enforced no-reuse ledger</b> + full US SIM/telephony + both-IMEI spoof.</span></li>
+          <li><span class="m">+</span><span><b>Stateless.</b> No server — nothing can block or force-update you.</span></li>
+          <li class="bad"><span class="m">−</span><span>Needs root/LSPosed. Widevine is a Java <b>L3</b> getter hook, not byedentity's native <span class="kbd">liboemcrypto</span> bind-mount.</span></li>
+        </ul>
+      </div>
+
+      <div class="dcard" data-t="geergit">
+        <h3>GeerGit <span class="ver">Flutter · 2.9.x</span></h3>
+        <div class="role">Identity generation + persistence live in a Dart AOT <span class="kbd">libapp.so</span>;
+          a 3-class dex hook just reads it. The Java layer is byte-identical across versions.</div>
+        <ul class="dl">
+          <li><span class="m">+</span><span><b>Per-account deviceId rotation.</b> Rotates GSF/mediaDrm/androidId per account — the easy half of the problem, done cleanly.</span></li>
+          <li class="bad"><span class="m">−</span><span><b>Needs root, same as the others.</b> The dex layer is an <b>LSPosed/Xposed module</b> (five <span class="kbd">xposedmodule</span> manifest markers) — the "Flutter app" is just packaging; the hook is root-gated exactly like Specter.</span></li>
+          <li class="bad"><span class="m">−</span><span><b>Under-spoofs hardware.</b> SoC, baseband, kernel, RAM, Build.* left largely real → the fingerprint hash stays stable → "sometimes detected".</span></li>
+          <li class="bad"><span class="m">−</span><span><b>2.9.6 GSF regression.</b> A lazily-cached static (<span class="kbd">init:_gsf@…</span>, present only in the broken build) reused <b>one</b> fake GSF across signups → cross-account link → coordinated-account bans. Reverted in 2.9.7-beta.</span></li>
+          <li class="bad"><span class="m">−</span><span>Dart AOT resists decompile — mechanism inferred from symbol diffs + on-device fake-GSF evidence.</span></li>
+        </ul>
+      </div>
+
+      <div class="dcard" data-t="bye">
+        <h3>byedentity <span class="ver">com.byedentity · 3.0.1</span></h3>
+        <div class="role">Root/Magisk + native-JNI. The native lib <i>builds</i> shell commands; Java runs them
+          as <span class="kbd">su -c</span>. Startup hard-gates on root + anti-debug + server health.</div>
+        <ul class="dl">
+          <li><span class="m">+</span><span><b>Native-read depth.</b> Boot <span class="kbd">service.d</span> resetprop + a Widevine bind-mount that <b>empties</b> <span class="kbd">liboemcrypto.so</span> to force real L1→L3.</span></li>
+          <li><span class="m">+</span><span><b>GSF re-registration reset</b> via <span class="kbd">pm clear</span> gms/gsf/vending + reboot.</span></li>
+          <li class="bad"><span class="m">−</span><span><b>Leaves Build.*/SoC/baseband/RAM/IMEI/SIM real</b> — collected into the server payload, not changed. No coherence table.</span></li>
+          <li class="bad"><span class="m">−</span><span><b>Server leash.</b> HMAC-signed device report; a <span class="kbd">403 blocked</span> deletes local auth, <span class="kbd">426</span> forces an update. The vendor can switch you off.</span></li>
+          <li class="bad"><span class="m">−</span><span>Several native writes are name-only in the stripped binary — <span class="conf h">HYP</span>, not readable commands.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="evidence">
+  <div class="wrap">
+    <div class="eyebrow">Evidence basis &amp; epistemics</div>
+    <h2>How this was read, and how sure we are</h2>
+    <p class="lede" style="margin:14px 0 26px">Everything above traces to a decompiled artifact or an
+      on-device measurement. Where a claim rests on a native method's <i>name</i> in a stripped binary, it's
+      tagged <span class="conf h">HYP</span> — not cited as fact.</p>
+
+    <div class="evgrid">
+      <div class="ev">
+        <div class="method">jadx · dex</div>
+        <p><b>byedentity</b> Kotlin/Compose decompiled: the <span class="kbd">su -c</span> exec helpers, the
+          startup root/anti-debug gate, <span class="kbd">mount -o bind</span> in the DRM script, and the
+          15-field HMAC report are <b>literal</b> in the source — PROVEN.</p>
+      </div>
+      <div class="ev">
+        <div class="method">strings · native .so</div>
+        <p>Serial-mask templates, Frida-artifact probes, and installer messages are literal strings in
+          <span class="kbd">libbyedentity.so</span>. The native <b>bodies</b> (gen math, exact write commands)
+          weren't disassembled → those stay <b>HYPOTHESIS</b>.</p>
+      </div>
+      <div class="ev">
+        <div class="method">Dart AOT symbol diff</div>
+        <p><b>GeerGit</b>'s <span class="kbd">libapp.so</span> can't be fully decompiled. The 2.9.6 ban cause is
+          bracketed by version (2.9.5 clean → 2.9.6 breaks → 2.9.7 fixes) and a symbol present only in the
+          broken build, plus on-device fake-GSF prefs. High confidence on cause, medium on exact mechanism.</p>
+      </div>
+      <div class="ev">
+        <div class="method">dual-read probe</div>
+        <p><b>Specter</b>'s claims are measured on a real Pixel 4: a native+Java probe reads every spoofable
+          API back. <span class="kbd">getprop</span> via exec is a false proxy (separate unhooked process);
+          the in-process dual read is the instrument. 29 spoofed / 0 hard leaks.</p>
+      </div>
+    </div>
+
+    <p class="caveat"><b>Honest limits.</b> byedentity's exact native write commands and generation math are
+      inferred from symbol names, not read. GeerGit's Dart mechanism is inferred from symbol/version boundaries.
+      Whether DoorDash's specific SDK reads <span class="kbd">securityLevel</span> natively, or keys on the
+      fingerprint hash at all, remains a hypothesis — the incoherences fixed are real regardless of which
+      signal any one detector happens to weigh.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p class="mono">Decompile intelligence brief · Specter v0.13.1 · byedentity 3.0.1 · GeerGit 2.7–2.9.7-beta.3</p>
+    <p>Grounded in <b>APK teardown</b> (jadx + native strings + Dart symbol diffs) and <b>on-device probes</b>,
+      not vendor descriptions. Confidence tags are load-bearing: <span class="conf p">P</span> proven from the
+      binary, <span class="conf h">HYP</span> inferred. Full analysis: <span class="mono">docs/BYEDENTITY-ANALYSIS.md</span>,
+      <span class="mono">docs/GEERGIT-2.9.6-REGRESSION.md</span>, <span class="mono">docs/ANTI-FINGERPRINT-STRATEGY.md</span>.</p>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var btn=document.getElementById('tg');
+    function cur(){var e=document.documentElement.getAttribute('data-theme');
+      if(e)return e;return matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+    btn.addEventListener('click',function(){
+      var next=cur()==='dark'?'light':'dark';
+      document.documentElement.setAttribute('data-theme',next);
+    });
+  })();
+</script>

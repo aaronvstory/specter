@@ -5,6 +5,26 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-28 - BUILD the Widevine L1->L3 liboemcrypto bind-mount (byedentity parity)** - status: `building`.
+  CORRECTION of the earlier 'don't build it' call: that reasoning tunnel-visioned on the FPJS demo (reads
+  ONLY deviceUniqueId, not securityLevel) as if it were THE target. It isn't - FPJS/DevInfo are just the
+  measurement instruments. Specter's actual goal is BROAD: any user, any check, surpassing GeerGit AND
+  byedentity. Under that goal some target app WILL read Widevine natively (OEMCrypto, below the Java MediaDrm
+  hook), so the value-spoof + Java securityLevel getter isn't enough. byedentity: a Magisk module that
+  touch+chmod an EMPTY liboemcrypto.so then post-fs-data.sh `mount -o bind`s it over
+  /vendor/lib{,64}/liboemcrypto.so - breaks hw Widevine init -> device genuinely drops to L3, so a native
+  securityLevel read AND deviceUniqueId are both coherently L3. Netflix-HD breakage is a non-issue here.
+  Root-only (we have it). Build: generate the Magisk module + bind script from Specter, install via the su
+  channel, verify a NATIVE securityLevel read returns L3. BYEDENTITY-ANALYSIS.md candidate #4 reclassified
+  from 'not needed' to a real build under the broad-coverage goal.
+
+- **2026-07-28 - adopt byedentity's other native tricks for broad coverage** - status: `idea`.
+  Build these so Specter is a superset: (1) boot-time resetprop in service.d as belt-and-suspenders under
+  the Zygisk prop hook (covers a process reading a prop before the hook attaches); (2) GSF re-registration
+  via pm clear gms/gsf/vending + reboot - attacks the server-side re-link anchor the FPJS test showed
+  actually matters, possibly the single most impactful thing byedentity does. The `Clear data+cache before
+  APPLY` checkbox (0.14.0) is step one; GSF-reset is the extension.
+
 - **2026-07-27 · audit the remaining sm6150-mapped devices for SoC accuracy** — status: `open`.
   Fixing the Pixel 4a (sm6150→sm7150) surfaced that several other devices are mapped to sm6150 in
   hardware.json. a71naxx (Galaxy A71) is genuinely SD730G = sm7150/Adreno 618 and should move too (same
