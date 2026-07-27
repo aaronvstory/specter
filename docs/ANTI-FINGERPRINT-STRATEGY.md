@@ -516,3 +516,11 @@ they're STATIC platform constants used as magic numbers in decompiler-obfuscated
 Combined with the empirical trace audit (every native prop/file read covered, incl the meminfo fix), the
 client-side signal surface is verified complete two independent ways (trace + source). Remaining gaps are
 all L-effort structural (raw-syscall bypass, key attestation) — documented ceilings, not quick wins.
+
+### 2026-07-27 · Legacy camera-count leak CLOSED (SDK-source audit find)
+The FPJS SDK's camera provider (W.java) uses the LEGACY android.hardware.Camera.getNumberOfCameras() +
+Camera.getCameraInfo (facing/orientation), NOT camera2. We hooked only camera2 getCameraIdList, so the
+legacy count leaked the real device (Pixel 4 = 3). Added a legacy Camera.getNumberOfCameras() hook
+returning the profile's camera count. PROVEN: real 3 -> app reads spoofed 4. facing/orientation are
+universal (back=0/90, front=270) so not device-identifying; getCameraCharacteristics is NOT read by the
+SDK (confirmed — camera fully covered now).

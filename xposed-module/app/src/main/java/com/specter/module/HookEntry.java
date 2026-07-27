@@ -427,6 +427,17 @@ public class HookEntry implements IXposedHookLoadPackage {
                     @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(camIds); }
                 });
             } catch (Throwable ignored) {}
+            // LEGACY Camera API: FingerprintJS's CameraInfoProvider uses android.hardware.Camera.
+            // getNumberOfCameras() (decompiled W.java), NOT camera2 — so hooking only getCameraIdList left
+            // the legacy count reading the REAL device (a Pixel 4's legacy count vs the claimed device).
+            // Return the profile's camera count on the legacy path too, for coherence.
+            final int camCount = camIds.length;
+            try {
+                Class<?> legacy = XposedHelpers.findClass("android.hardware.Camera", lp.classLoader);
+                XposedBridge.hookAllMethods(legacy, "getNumberOfCameras", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam mp) { mp.setResult(camCount); }
+                });
+            } catch (Throwable ignored) {}
         }
         // Input devices — FPJS reads InputDevice.getName()+getVendorId() for every id (decompiled
         // C0465h, case 4). Faking only the COUNT left the real touchscreen/PMIC names (fts, qpnp_pon on

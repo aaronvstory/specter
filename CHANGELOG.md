@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.10.1] — 2026-07-27
+
+### Fixed
+- **Legacy camera-count leak.** FingerprintJS's CameraInfoProvider uses the LEGACY android.hardware.
+  Camera.getNumberOfCameras() (confirmed in the decompiled SDK), not camera2 — but only camera2's
+  getCameraIdList() was hooked, so the legacy count leaked the real device (a Pixel 4 reports 3 vs a
+  claimed device's count). Now the legacy getNumberOfCameras() returns the profile's camera count too.
+  PROVEN on-device: real legacy count 3, scoped app reads the spoofed 4 (Pixel 5 profile), matching the
+  camera2 id list. Found by the ground-truth SDK-source audit.
+
 ## [0.10.0] — 2026-07-27
 
 ### Added

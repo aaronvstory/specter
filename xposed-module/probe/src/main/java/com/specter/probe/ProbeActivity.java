@@ -394,6 +394,10 @@ public class ProbeActivity extends Activity {
             String[] ids = cm.getCameraIdList();
             put(o, "hw_cameras", android.text.TextUtils.join(",", ids));
         } catch (Throwable t) { put(o, "hw_cameras", "ERR:" + t); }
+        // Legacy Camera.getNumberOfCameras() — the API FingerprintJS uses; must match the spoofed count.
+        try {
+            put(o, "camera_count_legacy", String.valueOf(android.hardware.Camera.getNumberOfCameras()));
+        } catch (Throwable t) { put(o, "camera_count_legacy", "ERR:" + t); }
 
         // --- Google account (AccountManager) — self-check for the Gmail hook. A fingerprinter reads
         // getAccountsByType("com.google"); on a spoofed device this must show the profile gmail, not
