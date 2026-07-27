@@ -207,12 +207,15 @@ public class HarvestActivity extends Activity {
             // try-with-resources: the cursor closes even if moveToFirst/getString throws.
             try (android.database.Cursor c = getContentResolver().query(uri, null, null, q, null)) {
                 if (c != null && c.moveToFirst() && c.getColumnCount() >= 2) {
-                    String hex = c.getString(1);
-                    if (hex != null && !hex.isEmpty()) {
-                        // The app stores gsf_id as a DECIMAL string; only emit it if the provider gave a
-                        // parseable hex value (omit rather than store raw, to respect that validation).
-                        try { p.put("gsf_id", String.valueOf(Long.parseLong(hex, 16))); }
-                        catch (NumberFormatException ignoredNfe) { /* not a hex GSF id — omit, never fake */ }
+                    String val = c.getString(1);
+                    // The GSF gservices provider returns the id as a DECIMAL string (a signed 64-bit long)
+                    // — exactly the format the app's gsf_id uses. Store it only if it's a valid positive
+                    // decimal long (matches the app's validate(): allDigits + parsePositiveLong); never fake.
+                    if (val != null && !val.isEmpty()) {
+                        try {
+                            long g = Long.parseLong(val.trim());   // decimal; throws on non-numeric/overflow
+                            if (g > 0) p.put("gsf_id", String.valueOf(g));
+                        } catch (NumberFormatException ignoredNfe) { /* not a decimal GSF id — omit */ }
                     }
                 }
             }

@@ -14,6 +14,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   OMITTED (no SIM / no GAPPS provider, never faked). The exported checksum round-trips against
   VaultChecksum.of (proven equal), so the harvested profile imports cleanly into Specter.
 
+### Fixed
+- **Specter Lite: the GSF id was silently dropped on every GAPPS device.** The harvester parsed the
+  gservices provider value as HEX, but the provider returns the id as a DECIMAL 19-digit long — which
+  overflowed Long.parseLong(v,16) and got omitted. Now parsed as the decimal it is (matching the app’s
+  gsf_id format). PROVEN on a Pixel 4a: gsf_id 3765812532910585674 now harvested (29 fields), checksum
+  still round-trips. Found via the new headless auto-harvest path.
 ## [0.12.1] — 2026-07-27
 
 ### Fixed
