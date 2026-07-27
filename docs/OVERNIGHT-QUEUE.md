@@ -561,3 +561,10 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   coherence, on-device probe, reboot-survival).
 - STATE: flagship-polished, exhaustively-audited, fully-tested, reboot-certified. Core mission COMPLETE.
   Remaining is ONLY L-effort structural ceilings (raw svc#0, key attestation) or user-blocked (4a root).
+
+- [2026-07-27 AFK iter] ROBUSTNESS FIX: old vault/shared profiles (saved before boot_count/battery/tz/locale
+  existed) applied WITHOUT those signals -> host leak. Profile.backfillDerived (in Vault.load) now fills any
+  missing pure-derived field from the profile's own data (boot_count<-android_id, battery<-codename, tz/
+  locale<-phone), never overwriting, no RNG. Confirmed on-device the pre-0.9 vault entries lack those
+  fields; JVM-tested (backfill/no-overwrite/null-safe); codex-clean (byte-parity matches fresh gen). 0.11.1.
+  This closes a real gap in the vault export/import feature (shared old profiles now apply fully).
