@@ -524,3 +524,23 @@ legacy count leaked the real device (Pixel 4 = 3). Added a legacy Camera.getNumb
 returning the profile's camera count. PROVEN: real 3 -> app reads spoofed 4. facing/orientation are
 universal (back=0/90, front=270) so not device-identifying; getCameraCharacteristics is NOT read by the
 SDK (confirmed — camera fully covered now).
+
+### 2026-07-27 · EXHAUSTIVE SDK-source audit COMPLETE — every FPJS-read signal covered
+Systematically grepped the ENTIRE decompiled FPJS SDK for every device-reading API and cross-checked each:
+- IDs: Settings.Secure android_id (spoofed), MediaDrm deviceUniqueId/getPropertyByteArray (spoofed,
+  media_drm_id=per-profile on-device). GSF/advertising/imei/serial/MACs all spoofed via the profile.
+- Hardware: getSensorList+getDefaultSensor (list + SENSORID values), getInputDevice getName/getVendorId
+  (relabeled + vendor zeroed — exact match to what C0465h reads), Camera legacy getNumberOfCameras (now
+  spoofed) + camera2 getCameraIdList (spoofed) + facing/orientation (universal), MediaCodecList codecs
+  (relabeled), glGetString GPU (spoofed).
+- Memory/storage: ActivityManager totalMem/getMemoryInfo (spoofed) + /proc/meminfo redirect (spoofed),
+  StatFs family (spoofed).
+- Battery: getIntProperty(1)=CHARGE_COUNTER (spoofed, tracks live %).
+- OS/build: Build.* + all ro.* prop aliases (spoofed), SUPPORTED_ABIS[0]=arm64 (universal), sdk/first_api
+  (deferred native map), verifiedboot/lock-state (spoofed), timezone/locale (spoofed), boot_count (spoofed).
+- NOT read by the SDK (confirmed 0 hits): getSystemAvailableFeatures, hasSystemFeature,
+  getInstalledApplications (we still hook hide_apps defensively), getCameraCharacteristics, getFontScale.
+CONCLUSION: every signal the FingerprintJS SDK actually reads is spoofed or provably non-identifying. The
+client-side surface is complete — verified FIVE ways (empirical trace, SDK-source audit, coverage badges,
+500-profile coherence, on-device probe). Remaining gaps are server-side (velocity/behavioral, unspoofable)
+or L-effort structural ceilings (raw svc#0 syscalls, hardware key attestation) — documented, not quick wins.
