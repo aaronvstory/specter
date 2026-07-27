@@ -40,6 +40,18 @@ public final class CoverageTest {
         eq(Coverage.of("open", "/proc/self/maps"), Coverage.State.REAL, "self maps");
         eq(Coverage.of("open", "/system/lib64/libc.so"), Coverage.State.REAL, "system lib");
 
+        // Codex prefix-over-match guards: keys under a spoofed namespace we DON'T alias must NOT be SPOOFED.
+        eq(Coverage.of("prop", "ro.build.date.utc"), Coverage.State.UNKNOWN, "ro.build.date.utc (not aliased)");
+        eq(Coverage.of("prop", "ro.boot.slot_suffix"), Coverage.State.UNKNOWN, "ro.boot.slot_suffix (not aliased)");
+        eq(Coverage.of("prop", "ro.board.foo"), Coverage.State.UNKNOWN, "ro.board.foo (only .platform aliased)");
+        eq(Coverage.of("prop", "ro.bootloader.fake"), Coverage.State.UNKNOWN, "ro.bootloader.fake (exact only)");
+        eq(Coverage.of("prop", "ro.serialno.foo"), Coverage.State.UNKNOWN, "ro.serialno.foo (exact only)");
+        eq(Coverage.of("prop", "os.version.extra"), Coverage.State.UNKNOWN, "os.version.extra (exact only)");
+        // Strict cpu_capacity: only cpu<digits> redirected; bogus paths are NOT spoofed.
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu999/cpu_capacity"), Coverage.State.SPOOFED, "cpu999 (digits ok)");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpuXYZ/cpu_capacity"), Coverage.State.UNKNOWN, "cpuXYZ (non-digit)");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/cpu_capacity"), Coverage.State.UNKNOWN, "nested cache path");
+
         // Unknowns -> UNKNOWN (never over-claim)
         eq(Coverage.of("prop", "some.random.prop"), Coverage.State.UNKNOWN, "unknown prop");
         eq(Coverage.of("stat", "/data/data/com.x/files/thing"), Coverage.State.UNKNOWN, "unknown file");
