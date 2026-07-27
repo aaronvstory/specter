@@ -5,6 +5,15 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-27 · VERIFY that a real logged-in session survives migration (attestation gate)** — status: `open / needs a logged-in device`.
+  The session capture/restore MECHANISM is proven on-device (files round-trip byte-intact, correct
+  uid/SELinux, from the app UI). What's UNPROVEN: whether the target app's SERVER honors a migrated
+  session after the force-stop, or re-challenges via device attestation (Dasher has an Attestation.xml —
+  likely Play Integrity). The round-trip test landed on Dasher's login screen ONLY because that P4 install
+  was never logged in (empty user row) — not a feature failure. To close this: on a device actually logged
+  into the target, capture → restore onto a second rooted device with the matching fingerprint applied →
+  see if it opens logged in. Until then, session migration is 'files proven, login-survival unverified'.
+
 - **2026-07-27 · first_api_level should reflect the device's LAUNCH API, not the current SDK** — status: `hypothesis`.
   Specter sets `ro.product.first_api_level` = the current `build_sdk` (derived from the dataset release).
   Real devices that shipped on an older OS and updated have first_api < sdk (e.g. Galaxy A70 launched on

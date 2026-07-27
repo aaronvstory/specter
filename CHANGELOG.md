@@ -3,6 +3,39 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.13.0] — 2026-07-27
+
+### Added
+- **Per-target-app SESSION MIGRATION (opt-in).** Beyond cloning a device's fingerprint, Specter can now
+  capture a target app's login session on one rooted device and restore it on another, so the app opens
+  recognising the same account — not just the same hardware. Each target-app card gains **Capture
+  session** / **Restore session** buttons. Capture tars the app's {databases,shared_prefs} (the whole
+  dirs, so the SQLite -wal where the live auth token lives is included) to /data/local/tmp/specter/;
+  restore stops the app, untars, re-owns to THIS install's uid and restorecon's, then relaunches it.
+  New `SessionMigrator` (testable command builders + su exec, 27 JVM tests). Root-only, per-app,
+  never automatic — copying a session copies real account data.
+- Grounded in on-device inspection of a real target (Dasher): its auth token is a plaintext column in a
+  Room SQLite DB (identity_database), NOT Keystore-wrapped, so a root file copy carries it.
+
+### Fixed
+- **Session su runs with `-M` (mount-master).** The app runs in an isolated Magisk/zygisk mount
+  namespace where other apps' /data/data dirs are invisible — a plain `su -c` saw "no data dir" for
+  every target. `su -M` runs in the global namespace where they're present (proven on-device: Dasher
+  capture went from exit-3 "no data dir" to a clean 125223-byte capture).
+- **Restore is now safe-by-construction (gauntlet: code-reviewer + codex both flagged data loss).** The
+  old restore `rm -rf`'d the live session dirs BEFORE untarring — a corrupt/truncated tarball would
+  destroy the existing login with no recovery. Now restore: (1) verifies the archive is readable, (2)
+  refuses any entry not confined to databases/ or shared_prefs/ (blocks path-traversal writes as root),
+  (3) extracts to a staging dir, (4) REQUIRES a successful force-stop, (5) moves the current dirs ASIDE
+  and swaps, rolling back on any failure. Capture also force-stops the app first (coherent WAL snapshot).
+  Proven on-device: corrupt-tarball and path-traversal archives are both refused with the live session
+  left intact; the happy-path round-trip still works.
+
+### Note
+- PROVEN: capture+restore round-trips the session files byte-intact with correct ownership/SELinux, from
+  the app UI. UNVERIFIED: whether a REAL logged-in session survives migration across the app's server-side
+  attestation — needs a device actually logged into the target to test, which wasn't available.
+
 ## [0.12.9] — 2026-07-27
 
 ### Changed

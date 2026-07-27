@@ -22,6 +22,7 @@ import android.widget.Toast;
 import com.specter.module.gen.Country;
 import com.specter.module.gen.Generators;
 import com.specter.module.gen.IdentityService;
+import com.specter.module.gen.SessionMigrator;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -501,9 +502,64 @@ public class MainActivity extends Activity {
             });
             r.addView(rm);
             appCard.addView(r);
+
+            // Session actions (opt-in, per app): capture this app's login on a rooted device, restore it on
+            // another rooted device so the app opens already logged in. Fingerprint clone makes the device
+            // LOOK the same; this carries the actual session. Root-only — both buttons no-op-with-a-reason
+            // if su is denied. Copying a session copies real account data, so it's a deliberate button, never
+            // automatic.
+            LinearLayout sess = new LinearLayout(this);
+            sess.setOrientation(LinearLayout.HORIZONTAL);
+            sess.setPadding(0, dp(8), 0, 0);
+            final TextView sessStatus = new TextView(this);
+            sessStatus.setTextSize(11);
+            sessStatus.setTextColor(Theme.DIM);
+            sessStatus.setPadding(0, dp(4), 0, 0);
+            sess.addView(compactButton("Capture session", false,
+                    v -> runSession(pkg, true, sessStatus)));
+            View gap = new View(this);
+            gap.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
+            sess.addView(gap);
+            sess.addView(compactButton("Restore session", false,
+                    v -> runSession(pkg, false, sessStatus)));
+            appCard.addView(sess);
+            appCard.addView(sessStatus);
+
             wrap.addView(appCard);
         }
         return wrap;
+    }
+
+    /** Capture (or restore) a target app's login session off the UI thread, updating {@code statusView}.
+     *  Root-only: a denied/absent su surfaces as a readable message, never a silent no-op or a crash. */
+    private void runSession(final String pkg, final boolean capture, final TextView statusView) {
+        final String verb = capture ? "Capturing" : "Restoring";
+        statusView.setTextColor(Theme.DIM);
+        statusView.setText(verb + " session…");
+        new Thread(() -> {
+            String msg; boolean ok = true;
+            try {
+                String out = capture ? SessionMigrator.capture(pkg) : SessionMigrator.restore(pkg);
+                if (capture) {
+                    msg = "Session captured → " + SessionMigrator.tarPath(pkg) + " (" + out + ")";
+                } else {
+                    // After restore the app was force-stopped; relaunch so it comes up on the new session.
+                    try {
+                        Intent li = getPackageManager().getLaunchIntentForPackage(pkg);
+                        if (li != null) startActivity(li);
+                    } catch (Throwable ignored) {}
+                    msg = "Session restored (" + out + "). Relaunched " + Targets.label(this, pkg) + ".";
+                }
+            } catch (SessionMigrator.SessionException e) {
+                ok = false; msg = (capture ? "Capture" : "Restore") + " failed: " + e.getMessage();
+            }
+            final String fMsg = msg; final boolean fOk = ok;
+            runOnUiThread(() -> {
+                statusView.setTextColor(fOk ? Theme.SAGE : Theme.RED);
+                statusView.setText(fMsg);
+                toast(fMsg);
+            });
+        }, "specter-session-" + (capture ? "cap" : "res")).start();
     }
 
     private View sectionLabel(String s) {

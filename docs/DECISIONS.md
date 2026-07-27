@@ -323,3 +323,11 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   string already reports "Adreno (TM) 612". The topology table had 618 (a typo), making /sys disagree
   with the GL path — a coherence tell. Fixed in data + Java table; added a test cross-checking gpu_model
   vs the renderer's Adreno number for every Adreno SoC so it can't regress silently.
+
+- **Session migration uses `su -M` and copies whole {databases,shared_prefs} dirs (0.13.0).** Two
+  on-device-proven calls: (1) the app runs in an isolated Magisk mount namespace, so session su MUST be
+  `su -M` (mount-master) or other apps' /data/data is invisible; (2) capture takes the WHOLE databases dir,
+  not just *.db — the live auth token lives in the SQLite -wal, not the checkpointed .db. On restore we
+  chown to THIS install's uid + restorecon (SELinux categories are per-uid, never carried from source).
+  Session migration is separate from the fingerprint envelope (large binary vs small JSON) and opt-in
+  per app (copies real account data). See [[SessionMigrator]].
