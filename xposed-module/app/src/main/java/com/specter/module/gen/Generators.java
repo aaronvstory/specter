@@ -169,7 +169,7 @@ public final class Generators {
         int branch = r.next(2);          // 0 => -perf, 1 => -androidN
         int tagnum = 10 + r.next(4);     // 10..13 (draw consumed regardless, for parity)
         int rel;
-        try { rel = Integer.parseInt(release.split("\\.")[0]); }
+        try { rel = Integer.parseInt(release.trim().split("\\.")[0]); }
         catch (Exception e) { rel = 13; }
         String tag = (branch == 0 || rel < 10) ? "-perf" : "-android" + Math.min(tagnum, rel);
         return base + "." + patch + tag + "-g" + hexs(r, 4);   // -g + 8 hex = a git-ish suffix

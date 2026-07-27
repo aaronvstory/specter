@@ -102,7 +102,7 @@ def kernel_version(r, release="13"):
     branch = r(2)            # 0 => -perf, 1 => -androidN
     tagnum = 10 + r(4)       # 10..13 (draw consumed regardless, for parity)
     try:
-        rel = int(str(release).split(".")[0])
+        rel = int(str(release).strip().split(".")[0])
     except (ValueError, TypeError):
         rel = 13
     if branch == 0 or rel < 10:
