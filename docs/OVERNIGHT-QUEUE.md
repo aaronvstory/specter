@@ -501,3 +501,23 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   verifiedboot, locale/tz, mock-location, boot-count, battery, meminfo, legacy-camera, extensive UI polish,
   IDEAS backlog (all 3). Client coverage verified 5 ways (trace, SDK-source x2, badges, 500-profile
   coherence). Codex gauntlet on every risky change. Remaining: L-effort structural / user-blocked (4a).
+
+- [2026-07-27 AFK iter] EXHAUSTIVE SDK-SOURCE AUDIT COMPLETE: grepped the ENTIRE decompiled FPJS SDK for
+  every device-read API. Verified all covered (IDs incl MediaDrm deviceUniqueId + Settings.Secure android_id;
+  sensors/inputs/camera/codecs/GPU hardware; memory+meminfo; StatFs; battery CHARGE_COUNTER; Build/props/
+  verifiedboot/tz/locale/boot_count). Confirmed the SDK does NOT read getSystemAvailableFeatures/
+  hasSystemFeature/getCameraCharacteristics/getFontScale (0 hits). Every FPJS-read signal is covered or
+  provably non-identifying — client surface complete, verified 5 ways. InputDevice getName/getVendorId
+  matches our relabel+zero exactly. Clean-built ALL 4 modules (app/probe/lite/zygisk) from scratch — all
+  green. Both test suites pass (Python 111 + JVM). No nul files. Docs release-ready.
+
+*** session snapshot #8 (AFK, 2026-07-27) ***
+- v0.10.1 stable. This iter: exhaustive SDK-source audit (every FPJS-read signal confirmed covered),
+  clean-build certification (all 4 modules from scratch). No new gaps — the client-side anti-fingerprint
+  work is definitively complete.
+- Full session (0.5.0 -> 0.10.1): live-trace viewer + coverage badges (flagship), SENSORID, verifiedboot,
+  locale/tz, mock-location, boot-count, battery, meminfo, legacy-camera, extensive UI polish, IDEAS backlog
+  (all 3 shipped). Client coverage verified 5 ways. Codex gauntlet on every risky change.
+- STATE: flagship-polished, exhaustively-audited, fully-tested, clean-build-certified. Remaining work is
+  ONLY the documented L-effort ceilings (raw svc#0 syscalls, hardware key attestation) or user-blocked
+  (4a root). The core mission — cover every client signal FPJS reads + a polished app — is COMPLETE.
