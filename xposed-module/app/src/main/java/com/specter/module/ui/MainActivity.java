@@ -618,21 +618,10 @@ public class MainActivity extends Activity {
 
     private void renderSettings() {
         // Target apps
+        // Same polished per-app cards (icon + name + LSPosed-scope warning + red ✕) as the Identity tab —
+        // one consistent target UI everywhere, not a plain text list here and rich cards there.
         content.addView(sectionLabel("Target apps"));
-        Set<String> targets = Targets.get(prefs);
-        LinearLayout tcard = cardBox();
-        tcard.addView(label(targets.isEmpty() ? "None selected" : targets.size() + " app(s):"));
-        for (String pkg : targets) {
-            TextView t = value(Targets.label(this, pkg) + "  (" + pkg + ")");
-            tcard.addView(t);
-        }
-        content.addView(tcard);
-        // Select-apps button lives OUTSIDE the card so it's always visible (not buried in a list).
-        LinearLayout selRow = new LinearLayout(this);
-        selRow.setOrientation(LinearLayout.HORIZONTAL);
-        selRow.addView(button("Select target apps", false, v ->
-                startActivity(new Intent(this, AppPickerActivity.class))));
-        content.addView(selRow);
+        content.addView(targetHeader());
 
         // USA-only build: carrier + phone are always randomized within the US (T-Mobile/Verizon/
         // AT&T/Sprint/US Cellular/MVNOs, NANP numbers). No country picker — one coherent US market.
