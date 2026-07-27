@@ -699,3 +699,15 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   persistent I/O raises. Added a transient-absence regression test. Merged (25517b4). Net: the no-reuse
   ledger read is now correctly hardened on BOTH the write side (fsync+retry, prior) and read side
   (retry-not-quarantine, retry-not-empty). Devices still blocked (P4 off USB, 4a secure-locked).
+
+- [2026-07-27 AFK iter] The on-device round-trip found TWO MORE real bugs (3rd/4th this approach): (1)
+  Lite's scriptable auto-harvest only fired from onCreate — a re-launch of a running activity delivers to
+  onNewIntent, so a repeat `am start --ez auto true` silently did nothing; now handled in both (Lite 1.3).
+  (2) media_drm_id validation required exactly 32 hex, but Widevine PROPERTY_DEVICE_UNIQUE_ID is 16 OR 32
+  bytes per-device — the real Pixel 4a returns 64 hex — so a harvested/hand-entered real id was REJECTED on
+  import. Relaxed the validator (Java+Python) to 32-or-64 hex (anchored, byte-parity-neutral; generator
+  unchanged; generator-length decision documented in DECISIONS.md). 0.12.4, merged (9d7333b). Both suites
+  green (Java 42008 assertions). FULL round-trip now PROVEN on the Pixel 4a: all 29 harvested fields
+  validate + checksum matches + imports cleanly. Codex was run but truncated mid-startup again; merged on a
+  rigorous 3-way self-proof (regex anchoring vs 6 lengths, onCreate/onNewIntent exclusivity, on-device
+  round-trip). 4a on Lite 1.3 (newest). P4 still off USB.
