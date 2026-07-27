@@ -126,6 +126,15 @@ def test_soc_topology_signals_are_coherent():
         assert p["cpu_present"] == f"0-{len(vals) - 1}", f"present must match core count: {p['cpu_present']}"
         # Qualcomm SoCs expose a numeric KGSL gpu_model; Exynos/others have no kgsl node (empty is coherent).
         assert re.fullmatch(r"\d*", p["gpu_model"]), f"gpu_model must be numeric-or-empty: {p['gpu_model']!r}"
+        # The /sys KGSL gpu_model number MUST equal the Adreno number in the GL renderer string — a
+        # fingerprinter reading both paths flags any mismatch (e.g. gpu_model 618 while renderer says
+        # "Adreno 612"). Only cross-check when both are present (Adreno devices).
+        renderer = p.get("hw_gpu_renderer", "")
+        m = re.search(r"Adreno.*?(\d{3})", renderer)
+        if p["gpu_model"] and m:
+            assert p["gpu_model"] == m.group(1), (
+                f"gpu_model {p['gpu_model']!r} != renderer Adreno {m.group(1)!r} ({renderer!r})"
+            )
 
 
 def test_screen_metrics_are_plausible():

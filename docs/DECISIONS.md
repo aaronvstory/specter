@@ -317,3 +317,9 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   32-hex generated value is not an obvious tell, and (c) the id is already a random spoof; only its length
   is a signal, and 16-byte is a legitimate real length. Revisit (make generation per-device-length) only
   if a target is shown to key on the byte-length specifically AND a per-model length map is built.
+
+- **sm6150 KGSL gpu_model = 612, not 618 (0.12.8).** The `/sys/class/kgsl/kgsl-3d0/gpu_model` numeric
+  id for Qualcomm equals the Adreno number, and sm6150 (Snapdragon 675) is Adreno 612 — the GL renderer
+  string already reports "Adreno (TM) 612". The topology table had 618 (a typo), making /sys disagree
+  with the GL path — a coherence tell. Fixed in data + Java table; added a test cross-checking gpu_model
+  vs the renderer's Adreno number for every Adreno SoC so it can't regress silently.

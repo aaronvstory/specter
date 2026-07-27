@@ -5,6 +5,21 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-27 · first_api_level should reflect the device's LAUNCH API, not the current SDK** — status: `hypothesis`.
+  Specter sets `ro.product.first_api_level` = the current `build_sdk` (derived from the dataset release).
+  Real devices that shipped on an older OS and updated have first_api < sdk (e.g. Galaxy A70 launched on
+  Android 9 -> first_api 28, but may run Android 10 -> sdk 29). Whenever the dataset release is newer than
+  the model's real launch OS, first_api==sdk is a subtle coherence tell for an SDK that reads both. Fix:
+  a per-model launch-API map (data-only; the native deferred g_prop_spoof_late path already serves
+  first_api, so it's a value change, not new plumbing). Lower priority -- many real devices never update,
+  so first_api==sdk is common and not an obvious giveaway. Needs a launch-OS-per-model dataset.
+
+- **2026-07-27 · battery design capacity is plausible-random, not per-model real** -- status: `idea`.
+  battery_uah_for(codename) hashes the codename into [2800,4600] mAh -- stable + in-range, but not the
+  model's true capacity (e.g. moto g7 play real = 3000 mAh). A fingerprinter would need a per-model
+  battery DB to catch a wrong-but-plausible value, and FPJS isn't known to read design capacity. Low
+  value; log only. Build a real per-model uAh map only if a target is shown to key on battery capacity.
+
 - **2026-07-27 · TWO-ROTATION RE-TEST DONE: UA leak CLOSED, but visitorId STILL collapses — anchor is now the native GLES CAPABILITY vector (glGetStringi + format/limit queries), NOT glGetString.** — status: `PROVEN (test) / researching (fix)`.
   Ran the decisive gate: SM-N960F and SM-A507FN profiles → SAME visitorId `SJoG6...`. Server API confirms
   the UA leak is fixed (`browserDetails.device` now = the spoofed Samsung, was real "Pixel 4" on 07-26);

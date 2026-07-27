@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.8] — 2026-07-27
+
+### Fixed
+- **GPU model number now matches the GL renderer string (sm6150 reported Adreno 618 vs 612 — a
+  /sys-vs-GL coherence tell).** The per-SoC KGSL `gpu_model` (`/sys/class/kgsl/kgsl-3d0/gpu_model`)
+  for sm6150 (Snapdragon 675) was `618`, but the GL renderer string for the same SoC reports
+  `Adreno (TM) 612`. A fingerprinter reading both hardware paths flags the mismatch. Corrected the
+  sm6150 gpu_model to `612` in both `data/soc_topology.json` and Profile.java’s embedded table
+  (byte-parity preserved). Added a coherence test cross-checking gpu_model against the renderer’s
+  Adreno number for every Adreno SoC, so a future mismatch self-reports.
+
 ## [0.12.7] — 2026-07-27
 
 ### Fixed
