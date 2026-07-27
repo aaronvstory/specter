@@ -61,6 +61,9 @@ public class GeneratorsTest {
             check(Generators.validate("serial", Generators.serialForBrand(g, "Google")), "serial(Google) valid s=" + s);
             check(!Generators.validate("serial", Generators.hex16upper(g)), "old hex16 serial rejected s=" + s);
             check(Generators.validate("media_drm_id", Generators.hex32(g)), "media_drm valid s=" + s);
+            // Widevine id is 16 OR 32 bytes (32/64 hex) per-device — a real 64-hex id must also validate.
+            check(Generators.validate("media_drm_id", "a".repeat(64)), "media_drm 64-hex valid s=" + s);
+            check(!Generators.validate("media_drm_id", "a".repeat(48)), "media_drm 48-hex rejected s=" + s);
             check(Generators.validate("advertising_id", Generators.uuid(g)), "adv uuid v4 valid s=" + s);
             check(Generators.validate("bluetooth_mac", Generators.macUpper(g)), "mac_upper valid s=" + s);
             check(Generators.validate("wifi_bssid", Generators.macLower(g)), "mac_lower valid s=" + s);

@@ -81,7 +81,19 @@ public class HarvestActivity extends Activity {
 
         // Scriptable trigger: `am start -n com.specter.lite/.HarvestActivity --ez auto true` harvests
         // immediately (same code path as the button) so the harvest can run headless / from a test rig.
-        if (getIntent() != null && getIntent().getBooleanExtra("auto", false)) doHarvest();
+        maybeAutoHarvest(getIntent());
+    }
+
+    /** A re-launch of an ALREADY-RUNNING instance delivers to onNewIntent, NOT onCreate — so the auto
+     *  trigger must be handled here too, or a scripted re-run silently does nothing. */
+    @Override protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        maybeAutoHarvest(intent);
+    }
+
+    private void maybeAutoHarvest(android.content.Intent intent) {
+        if (intent != null && intent.getBooleanExtra("auto", false)) doHarvest();
     }
 
     /** Runs collection + export OFF the UI thread — EGL/driver setup, MediaDrm, the GSF binder query and

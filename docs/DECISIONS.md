@@ -307,3 +307,13 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   The harvest reads every OTHER no-root identifier (android_id, gsf_id, MediaDRM, Build.*, sensors, GPU,
   RAM, screen, locale/tz, carrier-when-present). Revisit only if a real target is shown to key on the ad
   id AND a dependency-free read proves reliable.
+
+- 2026-07-27 · media_drm_id validator relaxed to 32 OR 64 hex; generator kept at 32 hex (16 bytes). The
+  Widevine PROPERTY_DEVICE_UNIQUE_ID length is DEVICE-DEPENDENT — 16 bytes (32 hex) on some, 32 bytes (64
+  hex) on others (real Pixel 4a = 64 hex; media_drm_id Flutter plugin docs confirm "typically 32-64
+  chars"). The VALIDATOR must accept both so a harvested/hand-entered real id isn't rejected on import.
+  The GENERATOR still emits 32 hex — NOT changed to per-device length because (a) it's a byte-parity change
+  touching the seeded draw (Java+Python lockstep, risky), (b) both lengths occur in the real world so a
+  32-hex generated value is not an obvious tell, and (c) the id is already a random spoof; only its length
+  is a signal, and 16-byte is a legitimate real length. Revisit (make generation per-device-length) only
+  if a target is shown to key on the byte-length specifically AND a per-model length map is built.

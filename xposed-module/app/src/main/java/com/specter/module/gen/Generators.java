@@ -591,7 +591,9 @@ public final class Generators {
     // ---------- validators ----------
     private static final Pattern P_ANDROID_ID = Pattern.compile("[0-9a-f]{16}");
     private static final Pattern P_SERIAL     = Pattern.compile("[0-9A-HJ-NP-Z]{11,15}"); // Base34, brand-plausible
-    private static final Pattern P_MEDIA_DRM  = Pattern.compile("[0-9a-f]{32}");
+    // Widevine PROPERTY_DEVICE_UNIQUE_ID is 16 OR 32 bytes depending on the device (32 or 64 hex chars) —
+    // accept both so a real harvested/hand-entered id from a 32-byte device isn't wrongly rejected on import.
+    private static final Pattern P_MEDIA_DRM  = Pattern.compile("[0-9a-f]{32}|[0-9a-f]{64}");
     private static final Pattern P_ADV        = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
     private static final Pattern P_MAC_UP     = Pattern.compile("([0-9A-F]{2}:){5}[0-9A-F]{2}");
     private static final Pattern P_MAC_LOW    = Pattern.compile("([0-9a-f]{2}:){5}[0-9a-f]{2}");

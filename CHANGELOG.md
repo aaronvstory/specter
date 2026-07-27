@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.4] — 2026-07-27
+
+### Fixed
+- **media_drm_id validation now accepts a real device’s id.** The Widevine
+  PROPERTY_DEVICE_UNIQUE_ID is 16 OR 32 bytes depending on the device (32 or 64 hex chars) — the real
+  Pixel 4a returns 64 hex — but the validator required exactly 32, so a harvested or hand-entered real
+  id was rejected on import/edit. Relaxed to accept 32 OR 64 hex (both Java + Python, byte-parity-neutral
+  since generation is unchanged). Found via the on-device harvest round-trip.
+- **Specter Lite 1.3: the scriptable auto-harvest now fires on a re-launch.** A repeat
+  `am start ... --ez auto true` delivers to onNewIntent (not onCreate) when the activity is already
+  running, so the auto-harvest silently did nothing; now handled in both. Verified on the Pixel 4a.
+
 ## [0.12.3] — 2026-07-27
 
 ### Fixed

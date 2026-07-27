@@ -521,7 +521,7 @@ def validate(key, value):
         "android_id":          lambda v: bool(re.fullmatch(r"[0-9a-f]{16}", v)),
         # brand-plausible serials: Base34 (0-9 A-Z minus I,O), prefix optional, 11-15 chars per brand.
         "serial":              lambda v: bool(re.fullmatch(r"[0-9A-HJ-NP-Z]{11,15}", v)),
-        "media_drm_id":        lambda v: bool(re.fullmatch(r"[0-9a-f]{32}", v)),
+        "media_drm_id":        lambda v: bool(re.fullmatch(r"[0-9a-f]{32}|[0-9a-f]{64}", v)),
         "imei1":               lambda v: len(v) == 15 and v.isdigit() and luhn_valid(v),
         "imei2":               lambda v: len(v) == 15 and v.isdigit() and luhn_valid(v),
         "advertising_id":      lambda v: bool(re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", v)),

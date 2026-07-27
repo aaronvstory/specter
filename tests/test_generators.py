@@ -58,6 +58,18 @@ def test_media_drm_32_hex():
         assert G.validate("media_drm_id", G.hex32(r))
 
 
+def test_media_drm_accepts_32_and_64_hex():
+    # Real Widevine PROPERTY_DEVICE_UNIQUE_ID is 16 OR 32 bytes (32/64 hex) depending on device, so a
+    # harvested/hand-entered id of either length must validate; other lengths + non-hex must be rejected.
+    assert G.validate("media_drm_id", "0" * 32)
+    assert G.validate("media_drm_id", "a" * 64)
+    assert G.validate("media_drm_id", "2dece312ff2b0e4d6de43551804fe42462f078cd542ef7418d250be4dd0e0739")  # real Pixel 4a
+    assert not G.validate("media_drm_id", "0" * 16)   # too short
+    assert not G.validate("media_drm_id", "0" * 48)   # in-between length
+    assert not G.validate("media_drm_id", "0" * 65)   # too long
+    assert not G.validate("media_drm_id", "Z" * 32)   # non-hex
+
+
 def test_mac_is_locally_administered_unicast():
     for _ in range(300):
         m = G.mac_upper(r)
