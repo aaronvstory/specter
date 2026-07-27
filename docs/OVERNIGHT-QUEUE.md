@@ -636,3 +636,16 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   JVM-tested, both suites green, merged (cc9aebf). This closes a real coherence gap in the vault/harvest
   feature the user prioritized. Devices STILL blocked (P4 off USB, 4a secure-locked) — on-device UI polish
   + the two-rotation split remain gated. 4 units merged this session total.
+
+- [2026-07-27 AFK iter] SHIPPED: build-apk.sh now stages the Specter Lite APK to dist/ (specter-lite-v1.1
+  .apk) alongside the module — the non-root harvester is now distributable by the standard build so a
+  friend can install it, harvest, and hand the profile back. Best-effort (lite failure warns, doesn't fail
+  the module build). Verified both APKs stage. Also re-confirmed (evidence-based) that FPJS breadth is
+  EXHAUSTED: camera getCameraCharacteristics is NOT read by FPJS (SDK audit, strategy doc L525/542) so
+  spoofing it = risk with zero FPJS benefit (correctly deferred); remaining gaps are documented structural
+  ceilings (raw svc#0, key attestation). IDEAS backlog verified complete + improved this session (harvest
+  expansion + coherent-hardware backfill). 5 units merged this session: GLES ext spoof 0.12.0, Lite 1.1
+  harvest, GL invariant test, 0.12.1 hardware backfill, Lite dist build. Both suites green, tree clean @
+  0.12.1. Devices STILL blocked (P4 off USB, 4a secure-locked) — UI polish + two-rotation split remain the
+  ONLY gated work, needing interactive device access. Not manufacturing unverifiable UI churn (would
+  violate screenshot-verify + no-fake-UI). USER ACTIONS to unblock: re-seat P4 USB / unlock 4a.
