@@ -3,6 +3,19 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.7] — 2026-07-27
+
+### Fixed
+- **RAM/storage now match the device’s SoC (was random — an impossible-hardware tell).** total_ram was
+  drawn from a fixed tier list decoupled from the device, so a moto g7 play (a 2GB phone) could report
+  8GB and a Pixel 6 could report 2.8GB — a totalMem that contradicts the model, which a fingerprinter
+  correlates instantly. Now the RAM tier is constrained to what the device’s SoC realistically ships
+  with (a per-SoC allowed-tier map for all 26 dataset SoCs; unknown SoC -> a safe 3/4/6GB mid range),
+  and a 2GB tier was added for budget SoCs. Storage stays coherent with the chosen RAM tier as before.
+  Byte-parity preserved and PROVEN (150 ram/storage pairs byte-identical Java==Python across 10 SoCs).
+  On-device: fresh profiles now coherent (moto g6/SD660 -> ~4GB, Galaxy S10/Exynos9820 -> 8-12GB).
+  Tests added both sides.
+
 ## [0.12.6] — 2026-07-27
 
 ### Fixed

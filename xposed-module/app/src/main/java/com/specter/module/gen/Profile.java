@@ -212,17 +212,16 @@ public final class Profile {
         p.put("build_board", codename);
         p.put("build_kernel_version", Generators.kernelVersion(r, release));
         p.put("build_radio", Generators.radioVersion(r));
-        String[] ramStorage = Generators.ramStorageBytes(r);   // coherent RAM+storage pair
+        // Resolve the per-model hardware bundle ONCE (pure lookup, no RNG) BEFORE ramStorage so the RAM
+        // tier can be constrained to the SoC — its SoC also drives soc_platform below. Mirrors profile.py.
+        Map<String, String> hwEntry = resolveHardware(codename, hardware);
+        String[] ramStorage = Generators.ramStorageBytes(r, hwEntry.get("soc"));   // SoC-coherent RAM+storage
         p.put("total_ram", ramStorage[0]);
         p.put("total_storage", ramStorage[1]);
         // Build.HOST leaks the real build-farm hostname (e.g. "abfarm-00902" = Google infra — incoherent
         // on a spoofed Samsung/Moto). Build.DISPLAY is the build display id, ==build_id on real devices.
         p.put("build_host", Generators.buildHost(r));
         p.put("build_display", buildId);
-        // Resolve the per-model hardware bundle ONCE — its SoC drives soc_platform (so the reported SoC
-        // is coherent with the GPU/cpuinfo the same profile carries), and the whole entry is reused for
-        // the hardware fields appended at the end. Mirrors profile.py (which looks it up once).
-        Map<String, String> hwEntry = resolveHardware(codename, hardware);
         // ro.board.platform (SoC codename) — COHERENT with the hardware bundle, PURE (no RNG). Mirrors
         // profile.py: soc_platform(product, hwEntry.soc).
         p.put("soc_platform", Generators.socPlatform(product, hwEntry.get("soc")));

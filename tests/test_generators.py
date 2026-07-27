@@ -58,6 +58,24 @@ def test_media_drm_32_hex():
         assert G.validate("media_drm_id", G.hex32(r))
 
 
+def test_ram_matches_soc_tier():
+    # RAM must be constrained to what the SoC realistically ships with — no 8GB budget phones, no 2GB
+    # flagships. Verify each SoC only ever yields a RAM tier from its allowed index set.
+    from specter import profile as _P
+    for soc, idxs in G._RAM_IDX_FOR_SOC.items():
+        allowed_gb = {G._RAM_GB[i] for i in idxs}
+        for s in range(30):
+            ram_bytes, _ = G.ram_storage_bytes(_P._seeded(s * 7 + 3), soc)
+            gb = round(int(ram_bytes) / (1024 ** 3))
+            # reported RAM is nominal minus a 3-8% shave, so it rounds to the nominal tier
+            assert gb in allowed_gb or (gb + 1) in allowed_gb, \
+                f"soc {soc}: ram {gb}GB not in allowed {sorted(allowed_gb)}"
+    # a budget SoC never yields a flagship RAM tier
+    for s in range(50):
+        ram_bytes, _ = G.ram_storage_bytes(_P._seeded(s), "trinket")   # SD665/moto g7 play class
+        assert int(ram_bytes) / (1024 ** 3) <= 4.5, "trinket (budget) must not get >4GB RAM"
+
+
 def test_kernel_version_android_tag_coherent_with_release():
     # The kernel's -androidN branch tag can never be NEWER than the OS release running it. release<10
     # devices get a -perf kernel (no -androidN tag). Verify across many seeds + releases.

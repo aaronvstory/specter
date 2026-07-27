@@ -299,13 +299,14 @@ def bootloader(r, brand, device):
         return f"LGE-{dev.upper()}-{digits(r, 4)}"
     return "BL" + chr(ord('A')+r(26)) + f"{digits(r, 2)}.{digits(r, 4)}-{digits(r, 4)}"
 
-_RAM_GB = [3, 4, 6, 8, 12]
+_RAM_GB = [2, 3, 4, 6, 8, 12]   # index 0 = 2GB (budget); real phones ship these tiers
 _STORAGE_GB = [32, 64, 128, 256]
 
 # storage capacities that plausibly ship with each RAM tier (index-aligned to _RAM_GB); a 12GB
 # flagship is never 32GB, a 3GB budget phone is never 512GB. Coherence matters — an incoherent
 # RAM+storage combo is itself a fingerprint, so storage is DERIVED from the chosen RAM tier.
 _STORAGE_FOR_RAM = [
+    [16, 32],        # 2GB
     [32, 64],        # 3GB
     [32, 64, 128],   # 4GB
     [64, 128, 256],  # 6GB
@@ -313,10 +314,31 @@ _STORAGE_FOR_RAM = [
     [128, 256, 512], # 12GB
 ]
 
-def ram_storage_bytes(r):
+# RAM tier INDICES (into _RAM_GB) that are REALISTIC for each SoC. A moto g7 play (SD632/trinket) is
+# never 8-12GB; a Galaxy S20 (exynos990) is never 2-3GB. Keying RAM off the SoC kills the biggest
+# hardware tell: totalMem that contradicts the device. Unknown SoC -> a safe mid range (3/4/6GB).
+# MUST stay byte-identical to Java RAM_IDX_FOR_SOC.
+_RAM_IDX_FOR_SOC = {
+    # flagships: 6/8/12 GB
+    "exynos9820": [3, 4, 5], "msmnile": [3, 4, 5], "exynos990": [4, 5], "exynos9825": [4, 5],
+    "kona": [4, 5], "exynos2100": [4, 5], "lahaina": [4, 5], "sdm855": [3, 4, 5],
+    "exynos9810": [3, 4], "msm8998": [2, 3, 4], "sdm845": [2, 3, 4],
+    # upper-mid: 4/6/8 GB
+    "sm6150": [2, 3, 4], "lito": [2, 3, 4], "gs101": [4], "exynos9610": [2, 3],
+    # mid: 3/4/6 GB
+    "sdm660": [1, 2, 3], "exynos7904": [1, 2, 3], "exynos9611": [1, 2, 3], "exynos1280": [2, 3],
+    # budget: 2/3/4 GB
+    "trinket": [0, 1, 2], "bengal": [0, 1, 2], "exynos850": [0, 1, 2], "exynos7884": [0, 1, 2],
+    "exynos7885": [0, 1, 2], "exynos7870": [0, 1], "sdm665": [1, 2, 3],
+}
+_RAM_IDX_DEFAULT = [1, 2, 3]   # unknown SoC -> 3/4/6 GB (safe modern mid)
+
+def ram_storage_bytes(r, soc=""):
     """RAM+storage as one coherent pair, (ram_bytes, storage_bytes). Mirrors Java ramStorageBytes.
-    RNG order: ram-tier idx, ram-shave, storage-capacity idx, storage-fill."""
-    ram_idx = r(len(_RAM_GB))
+    RAM tier is constrained to what the SoC realistically ships with (no 8GB budget phones).
+    RNG order: ram-tier idx (against the SoC subset), ram-shave, storage-capacity idx, storage-fill."""
+    idxs = _RAM_IDX_FOR_SOC.get(soc, _RAM_IDX_DEFAULT)
+    ram_idx = idxs[r(len(idxs))]
     ram_gb = _RAM_GB[ram_idx]
     ram_nominal = ram_gb * 1024 * 1024 * 1024
     ram_reported = ram_nominal - (ram_nominal * (3 + r(6)) // 100)

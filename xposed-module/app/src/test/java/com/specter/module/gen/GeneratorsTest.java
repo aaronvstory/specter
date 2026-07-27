@@ -115,6 +115,23 @@ public class GeneratorsTest {
             check(gsfN >= 1000000000000000000L && gsfN <= Generators.LONG_MAX, "gsf in [1e18,LongMax] s=" + s);
         }
 
+        // RAM must be constrained to the SoC's realistic tiers — no 8GB budget phones, no 2GB flagships.
+        for (java.util.Map.Entry<String, int[]> e : Generators.RAM_IDX_FOR_SOC.entrySet()) {
+            java.util.Set<Integer> allowed = new java.util.HashSet<>();
+            for (int i : e.getValue()) allowed.add(Generators.RAM_GB[i]);
+            for (int s = 0; s < 30; s++) {
+                String[] rs = Generators.ramStorageBytes(seeded(s * 7 + 3), e.getKey());
+                long gb = Math.round(Long.parseLong(rs[0]) / (double) (1024L * 1024L * 1024L));
+                check(allowed.contains((int) gb) || allowed.contains((int) gb + 1),
+                        "soc " + e.getKey() + " ram " + gb + "GB in allowed " + allowed);
+            }
+        }
+        // Budget SoC never gets a flagship RAM tier.
+        for (int s = 0; s < 50; s++) {
+            long ramB = Long.parseLong(Generators.ramStorageBytes(seeded(s), "trinket")[0]);
+            check(ramB / (double) (1024L * 1024L * 1024L) <= 4.5, "trinket (budget) ram <= 4GB");
+        }
+
         // Luhn primitive: a valid IMEI stays valid; flipping a digit breaks it.
         String imei = Generators.imei(r, "35815807");
         check(Generators.luhnValid(imei), "luhn: generated imei valid");
