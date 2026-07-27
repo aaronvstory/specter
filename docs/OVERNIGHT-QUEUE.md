@@ -624,3 +624,15 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   4a. Committed to main (fc461e0). 3 units merged this session: GLES spoof 0.12.0, Lite 1.1 harvest, GL
   invariant test. Both suites green. P4 STILL off USB, 4a STILL secure-locked — on-device UI polish + the
   two-rotation split remain the only blocked work, pending device access (re-seat P4 USB / unlock 4a).
+
+- [2026-07-27 AFK iter] SHIPPED 0.12.1: coherent hardware backfill for imported/harvested PARTIAL profiles.
+  Traced the harvest->import->apply flow: parseEnvelope preserves all keys, apply writes them raw, hooks
+  skip missing fields (reading the HOST value) — so a Lite harvest or vault import that OMITS the per-model
+  hardware bundle left cpuinfo/cameras/codecs/soc leaking the host device (Samsung model + host Pixel
+  cpuinfo = incoherent). FIX: IdentityService.apply() now backfills the missing hardware from build_device
+  vs the dataset (never overwriting harvested reals) + the derived signals. Codex gauntlet (4 findings all
+  fixed): copy-before-mutate (callers loop one map over many pkgs), iterate real entry keys not
+  hwFieldsFromEntry (no DEFAULT_HW injection), empty build_product fallback, apply(null) early-return.
+  JVM-tested, both suites green, merged (cc9aebf). This closes a real coherence gap in the vault/harvest
+  feature the user prioritized. Devices STILL blocked (P4 off USB, 4a secure-locked) — on-device UI polish
+  + the two-rotation split remain gated. 4 units merged this session total.
