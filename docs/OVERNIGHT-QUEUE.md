@@ -679,3 +679,15 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   device-independent work to do without redoing done work or manufacturing unverifiable churn. Main green +
   clean @ 0.12.2, 13 commits this session. Holding for device access (UI polish needs 4a screen visible;
   two-rotation split needs P4).
+
+- [2026-07-27 AFK iter] BAN-CRITICAL FIX (0.12.3): caught an intermittent full-suite flake
+  (test_threaded_generation_never_reuses) — traced to a REAL bug: UsedStore._read_disk (called unlocked in
+  __init__) treated a transient Windows share-violation open() during a concurrent os.replace as CORRUPTION
+  and QUARANTINED the ledger (used.json -> .corrupt), destroying the no-reuse history = every id reusable,
+  the exact thing Specter must never do. Fix: retry transient PermissionError/FileNotFoundError/OSError
+  (~1s), return {} only for a genuinely-absent file, quarantine ONLY on real JSON ValueError, raise on
+  persistent I/O. Proven 3 ways (15+/15 concurrency runs clean, new regression test, direct old-vs-new
+  comparison showing old code nukes the ledger). Extended the atomic-write memory with the read-side defect
+  (4th Windows concurrency gap). Java UsedStore unaffected (handed a pre-parsed ledger). Merged fddff40.
+  Codex was run but STALLED (empty output after startup, long runtime) — merged on a rigorous 3-way self-
+  proof per the no-gating mandate. Devices still blocked (P4 off USB, 4a secure-locked).
