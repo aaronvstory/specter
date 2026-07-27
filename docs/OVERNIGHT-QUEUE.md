@@ -671,3 +671,11 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   + ad-id is deprecated/GAPPS-only/low-value. 3 more units this iter. 4a is usable NON-INTERACTIVELY for
   harvest/probe verification even while PIN-locked (am start + pull files) — but UI polish still needs the
   screen visible. P4 still off USB.
+
+- [2026-07-27 AFK iter] Full clean-build integration check: all 3 artifacts build from scratch + are
+  current in dist/ (specter-module-v0.12.2.apk, specter-lite-v1.2.apk, specter-zygisk-v0.12.2.zip, 1.52MB
+  .so with the GLES ext spoof). Versions correct (module vc1202, lite vc3). Devices still blocked (P4 off
+  USB, 4a secure-locked — usable non-interactively for harvest but not for UI screenshots). No new
+  device-independent work to do without redoing done work or manufacturing unverifiable churn. Main green +
+  clean @ 0.12.2, 13 commits this session. Holding for device access (UI polish needs 4a screen visible;
+  two-rotation split needs P4).
