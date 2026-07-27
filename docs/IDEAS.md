@@ -561,3 +561,13 @@ Checked the generated profile for cross-field incoherence beyond what's already 
      document what's harvestable without root vs what must be hand-entered.
   Sequence: finish current polish + the FPJS breadth work first, THEN this as its own careful multi-PR
   effort. Ties into [[no-fake-nonfunctional-ui]] (import/harvest must actually work, not stubs).
+  - **2026-07-27 UPDATE (Lite 1.1): harvest coverage EXPANDED from the minimal baseline.** The 0.9.0 Lite
+    harvested only Build.*/android_id/MediaDrm/screen. Lite 1.1 now also reads (all no-permission APIs):
+    total_ram (ActivityManager), GPU renderer/vendor/GLES version (headless EGL14 pbuffer), the sensor
+    list (name|vendor|type, app hw_sensors format), locale, timezone, carrier operator MCC+MNC/name
+    (TelephonyManager operator strings — no READ_PHONE_STATE; try-guarded since some OEMs throw), and the
+    GSF id (content provider). Every field is a real read or omitted — none faked. The export checksum is
+    JVM-tested to byte-match VaultChecksum.of so harvested profiles import cleanly. Dropped the unused
+    AD_ID permission (ad-id needs a Play-services dep + is deprecated — not worth faking). On-device
+    harvest run PENDING an unlocked device (P4 off USB, 4a secure-locked) — the APK builds + installs
+    clean and the import-compat path is unit-proven.

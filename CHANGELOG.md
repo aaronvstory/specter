@@ -30,6 +30,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   post-install). Whether this splits the visitorId is the pending experiment — see
   docs/ANTI-FINGERPRINT-STRATEGY.md (2026-07-27).
 
+### Added (Specter Lite 1.1 — non-root harvester)
+- **Specter Lite now harvests the full no-root-readable signal set**, not just Build/android_id/MediaDrm:
+  total RAM (ActivityManager), GPU renderer/vendor/GLES version (headless EGL14 pbuffer context), the
+  sensor list (name|vendor|type, matching the app’s hw_sensors format), locale, timezone, carrier
+  operator MCC+MNC/name (TelephonyManager operator strings — no READ_PHONE_STATE), and the GSF id (its
+  content provider). Every read is a no-permission API or is omitted if unreadable — nothing is faked;
+  IMEI/serial/IMSI/ICCID still need root/privileged perms so they are left to hand-enter in Specter.
+  The exported envelope’s checksum is JVM-tested to byte-match the app’s VaultChecksum.of, so a harvested
+  profile imports cleanly. Dropped the unused AD_ID manifest permission.
+
 ## [0.11.1] — 2026-07-27
 
 ### Fixed

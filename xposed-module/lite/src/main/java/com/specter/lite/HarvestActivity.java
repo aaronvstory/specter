@@ -80,25 +80,37 @@ public class HarvestActivity extends Activity {
         setContentView(sc);
     }
 
+    /** Runs collection + export OFF the UI thread — EGL/driver setup, MediaDrm, the GSF binder query and
+     *  file I/O are all synchronous and could cross the ~5s input-ANR limit on a slow HAL/provider. UI
+     *  updates (out/Toast) are posted back to the main thread. */
     private void doHarvest() {
-        Map<String, String> p = collect();
-        String env = buildEnvelope(p);
-        File dest = new File(getExternalFilesDir(null), "specter-harvest-" + safeStamp() + ".json");
-        try (FileOutputStream fos = new FileOutputStream(dest)) {
-            fos.write(env.getBytes("UTF-8"));
-            lastPath = dest.getAbsolutePath();
-        } catch (Throwable t) {
-            Toast.makeText(this, "Export failed: " + t, Toast.LENGTH_LONG).show();
-            return;
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("Exported ").append(p.size()).append(" fields to:\n").append(lastPath).append("\n\n");
-        sb.append("Copy this file to the target device's Download folder, then open Specter -> Saved -> "
-                + "Import from Download.\n\n--- harvested ---\n");
-        for (Map.Entry<String, String> e : p.entrySet())
-            sb.append(e.getKey()).append(" = ").append(e.getValue()).append('\n');
-        out.setText(sb.toString());
-        Toast.makeText(this, "Harvested to " + lastPath, Toast.LENGTH_LONG).show();
+        out.setText("Harvesting…");
+        new Thread(() -> {
+            Map<String, String> p = collect();
+            String env = buildEnvelope(p);
+            File dest = new File(getExternalFilesDir(null), "specter-harvest-" + safeStamp() + ".json");
+            String err = null;
+            try (FileOutputStream fos = new FileOutputStream(dest)) {
+                fos.write(env.getBytes("UTF-8"));
+                lastPath = dest.getAbsolutePath();
+            } catch (Throwable t) { err = String.valueOf(t); }
+            final String fErr = err;
+            runOnUiThread(() -> {
+                if (fErr != null) {
+                    out.setText("Export failed: " + fErr);
+                    Toast.makeText(this, "Export failed", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                StringBuilder sb = new StringBuilder();
+                sb.append("Exported ").append(p.size()).append(" fields to:\n").append(lastPath).append("\n\n");
+                sb.append("Copy this file to the target device's Download folder, then open Specter -> Saved -> "
+                        + "Import from Download.\n\n--- harvested ---\n");
+                for (Map.Entry<String, String> e : p.entrySet())
+                    sb.append(e.getKey()).append(" = ").append(e.getValue()).append('\n');
+                out.setText(sb.toString());
+                Toast.makeText(this, "Harvested to " + lastPath, Toast.LENGTH_LONG).show();
+            });
+        }, "specter-lite-harvest").start();
     }
 
     /** Read every field obtainable without root. Missing/unreadable ones are simply omitted (never faked). */
@@ -146,7 +158,107 @@ public class HarvestActivity extends Activity {
             }
             try { drm.close(); } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
+        // Total RAM — ActivityManager.MemoryInfo.totalMem (bytes), no permission.
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+            am.getMemoryInfo(mi);
+            if (mi.totalMem > 0) p.put("total_ram", String.valueOf(mi.totalMem));
+        } catch (Throwable ignored) {}
+        // GPU renderer/vendor/GLES version — via a headless EGL pbuffer context (no root, no permission).
+        collectGpu(p);
+        // Sensor list — "name|vendor|type;..." matching the app's hw_sensors format. No permission.
+        try {
+            android.hardware.SensorManager sm = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
+            java.util.List<android.hardware.Sensor> sensors = sm.getSensorList(android.hardware.Sensor.TYPE_ALL);
+            StringBuilder sb = new StringBuilder();
+            for (android.hardware.Sensor s : sensors) {
+                if (sb.length() > 0) sb.append(';');
+                sb.append(s.getName()).append('|').append(s.getVendor()).append('|').append(s.getType());
+            }
+            if (sb.length() > 0) p.put("hw_sensors", sb.toString());
+        } catch (Throwable ignored) {}
+        // Locale + timezone — the device's own, no permission.
+        try {
+            java.util.Locale lc = java.util.Locale.getDefault();
+            String tag = lc.getLanguage() + (lc.getCountry().isEmpty() ? "" : "-" + lc.getCountry());
+            if (!tag.isEmpty()) p.put("locale", tag);
+        } catch (Throwable ignored) {}
+        try { p.put("timezone", java.util.TimeZone.getDefault().getID()); } catch (Throwable ignored) {}
+        // Carrier — operator MCC+MNC and name are readable without READ_PHONE_STATE. IMEI/IMSI/ICCID are
+        // NOT (privileged) so we deliberately omit them (hand-enter in Specter), never fake them.
+        try {
+            android.telephony.TelephonyManager tm =
+                    (android.telephony.TelephonyManager) getSystemService(TELEPHONY_SERVICE);
+            String mccmnc = tm.getSimOperator();          // "" if no SIM — omitted by put()
+            put(p, "sim_operator_mccmnc", mccmnc);
+            put(p, "sim_operator_name", tm.getSimOperatorName());
+            put(p, "network_operator_name", tm.getNetworkOperatorName());
+        } catch (Throwable ignored) {}
+        // GSF (Google Services Framework) ID — readable via its content provider without root, if GSF is
+        // present. Guarded: absent on non-GAPPS devices, and a query failure must never crash the harvest.
+        try {
+            android.net.Uri uri = android.net.Uri.parse("content://com.google.android.gsf.gservices");
+            String[] q = {"android_id"};
+            // try-with-resources: the cursor closes even if moveToFirst/getString throws.
+            try (android.database.Cursor c = getContentResolver().query(uri, null, null, q, null)) {
+                if (c != null && c.moveToFirst() && c.getColumnCount() >= 2) {
+                    String hex = c.getString(1);
+                    if (hex != null && !hex.isEmpty()) {
+                        // The app stores gsf_id as a DECIMAL string; only emit it if the provider gave a
+                        // parseable hex value (omit rather than store raw, to respect that validation).
+                        try { p.put("gsf_id", String.valueOf(Long.parseLong(hex, 16))); }
+                        catch (NumberFormatException ignoredNfe) { /* not a hex GSF id — omit, never fake */ }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
         return p;
+    }
+
+    /** Headless EGL 2.0 pbuffer context → GL_RENDERER / GL_VENDOR / GL_VERSION. No root, no permission.
+     *  Best-effort: any failure just omits the GPU fields (never fakes them). */
+    private void collectGpu(Map<String, String> p) {
+        android.opengl.EGLDisplay dpy = android.opengl.EGL14.eglGetDisplay(android.opengl.EGL14.EGL_DEFAULT_DISPLAY);
+        if (dpy == android.opengl.EGL14.EGL_NO_DISPLAY) return;
+        int[] ver = new int[2];
+        if (!android.opengl.EGL14.eglInitialize(dpy, ver, 0, ver, 1)) return;
+        try {
+            int[] cfgAttr = {
+                android.opengl.EGL14.EGL_SURFACE_TYPE, android.opengl.EGL14.EGL_PBUFFER_BIT,
+                android.opengl.EGL14.EGL_RENDERABLE_TYPE, android.opengl.EGL14.EGL_OPENGL_ES2_BIT,
+                android.opengl.EGL14.EGL_RED_SIZE, 8, android.opengl.EGL14.EGL_GREEN_SIZE, 8,
+                android.opengl.EGL14.EGL_BLUE_SIZE, 8, android.opengl.EGL14.EGL_NONE
+            };
+            android.opengl.EGLConfig[] cfg = new android.opengl.EGLConfig[1];
+            int[] num = new int[1];
+            if (!android.opengl.EGL14.eglChooseConfig(dpy, cfgAttr, 0, cfg, 0, 1, num, 0) || num[0] < 1) return;
+            int[] pbAttr = { android.opengl.EGL14.EGL_WIDTH, 1, android.opengl.EGL14.EGL_HEIGHT, 1,
+                    android.opengl.EGL14.EGL_NONE };
+            android.opengl.EGLSurface surf = android.opengl.EGL14.eglCreatePbufferSurface(dpy, cfg[0], pbAttr, 0);
+            int[] ctxAttr = { android.opengl.EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, android.opengl.EGL14.EGL_NONE };
+            android.opengl.EGLContext ctx = android.opengl.EGL14.eglCreateContext(
+                    dpy, cfg[0], android.opengl.EGL14.EGL_NO_CONTEXT, ctxAttr, 0);
+            try {
+                if (android.opengl.EGL14.eglMakeCurrent(dpy, surf, surf, ctx)) {
+                    put(p, "hw_gpu_renderer", android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_RENDERER));
+                    put(p, "hw_gpu_vendor",   android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_VENDOR));
+                    String glv = android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_VERSION);
+                    if (glv != null) {  // "OpenGL ES 3.2 V@..." → keep just the "3.2" the app stores
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+\\.\\d+)").matcher(glv);
+                        if (m.find()) p.put("hw_gles_version", m.group(1));
+                    }
+                    android.opengl.EGL14.eglMakeCurrent(dpy, android.opengl.EGL14.EGL_NO_SURFACE,
+                            android.opengl.EGL14.EGL_NO_SURFACE, android.opengl.EGL14.EGL_NO_CONTEXT);
+                }
+            } finally {   // destroy context/surface even if makeCurrent or a GL read threw
+                if (ctx != null) try { android.opengl.EGL14.eglDestroyContext(dpy, ctx); } catch (Throwable ignored) {}
+                if (surf != null) try { android.opengl.EGL14.eglDestroySurface(dpy, surf); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            try { android.opengl.EGL14.eglTerminate(dpy); } catch (Throwable ignored) {}
+        }
     }
 
     /** Build the Specter portable envelope — MUST match the app's VaultPortable format (version + sorted-

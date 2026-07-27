@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Ad ID (Advertising ID) is read via a service in Play services; no dangerous perms.
-         Writing the harvested profile goes to the app's OWN external files dir (no storage permission). -->
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+    <!-- READ_GSERVICES is a NORMAL (install-time, no user prompt) permission that the GSF gservices
+         content provider requires; without it the gsf_id read throws SecurityException and is silently
+         omitted. Everything else is read via a no-permission API (Settings.Secure, Build.*,
+         ActivityManager, SensorManager, EGL, TelephonyManager operator strings) or omitted if
+         unreadable. The profile is written to the app's OWN external files dir (no storage permission).
+         Fields needing a privileged permission to read (IMEI/serial/IMSI/ICCID) are left for the user to
+         hand-enter in Specter, never faked. -->
+    <uses-permission android:name="com.google.android.providers.gsf.permission.READ_GSERVICES" />
 
     <application
         android:label="Specter Lite"
