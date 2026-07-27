@@ -74,7 +74,7 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   struct forgery, same safety profile as the glGetString hook. PROVEN on-device (Galaxy A70 profile): the
   native ASensor read returns `LSM6DSO Acceleration Sensor|STMicroelectronics;...` — the profile's Samsung
   sensors, NOT the real Pixel 4's Bosch BMI160. Probe reads it via a new `nativeSensors()` NDK JNI.
-- **2026-07-26 · FOLLOW-UP: native ACameraManager hooks (the camera half).** — status: `idea`.
+- **2026-07-26 · FOLLOW-UP: native ACameraManager hooks (the camera half).** — status: `MEASURED-not-needed (2026-07-27)`. The dlsym tracer confirms libfp.so resolves NO native camera symbol (only __system_property_read_callback, which we hook). FPJS reads the count via the legacy Java Camera.getNumberOfCameras (now hooked, 0.10.1). No native bypass exists — skip the crash-risky NDK hook.
   `ACameraManager_getCameraIdList` ALLOCATES an `ACameraIdList` struct (higher crash risk than the sensor
   accessors, which only return a string), and camera COUNT is the main signal. The Java
   CameraManager.getCameraIdList hook covers the framework path today. Add the NDK camera hook only if a
