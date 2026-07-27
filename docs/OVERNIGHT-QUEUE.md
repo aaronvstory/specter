@@ -541,3 +541,7 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   NOTE: codex on the 0.11.0 export was killed mid-run (hung); reasoned the concerns through manually
   (no injection - fixed path + decimal ts; safe volatile publish; null-guarded tested DiagReport). Low risk;
   re-run codex next iter if warranted.
+
+- [2026-07-27 AFK iter] Codex gauntlet re-run on the 0.11.0 coverage-report export (was killed mid-run last
+  iter): NO high-confidence bugs — no injection (fixed app path + decimal ts, single-quoted), safe volatile
+  publish, correct DiagReport, proper cleanup. Gauntlet loop properly closed on eb6e1c4.
