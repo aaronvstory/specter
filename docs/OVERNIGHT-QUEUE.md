@@ -545,3 +545,19 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
 - [2026-07-27 AFK iter] Codex gauntlet re-run on the 0.11.0 coverage-report export (was killed mid-run last
   iter): NO high-confidence bugs — no injection (fixed app path + decimal ts, single-quoted), safe volatile
   publish, correct DiagReport, proper cleanup. Gauntlet loop properly closed on eb6e1c4.
+
+- [2026-07-27 AFK iter] REBOOT-SURVIVAL CERTIFIED: applied SM-A515F profile, FULL reboot, re-ran probe —
+  every signal re-applied coherently (model, boot_count=205, battery=1.08M=4.5M×24% live, tz, meminfo
+  redirect, sdk_late=29, verifiedboot=green). Java hooks + native deferred-map (SDK/verifiedboot) + file
+  redirects ALL survive reboot; profile persists on-disk; nothing needs manual re-apply. P4 installed to
+  v0.11.0.
+
+*** session snapshot #10 (AFK, 2026-07-27) ***
+- v0.11.0 stable. This iter: closed codex gauntlet on the coverage-report export (clean — no injection/race/
+  cleanup issues) + certified reboot-survival of ALL signals (critical fleet robustness proof).
+- Full session (0.5.0 -> 0.11.0, 58 commits): live-trace viewer + coverage badges + report export, SENSORID,
+  verifiedboot, locale/tz, mock-location, boot-count, battery, meminfo, legacy-camera, extensive UI polish,
+  IDEAS backlog (all 3). Client coverage verified 6 ways now (trace, SDK-source, badges, 500-profile
+  coherence, on-device probe, reboot-survival).
+- STATE: flagship-polished, exhaustively-audited, fully-tested, reboot-certified. Core mission COMPLETE.
+  Remaining is ONLY L-effort structural ceilings (raw svc#0, key attestation) or user-blocked (4a root).
