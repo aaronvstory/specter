@@ -448,3 +448,9 @@ pushed to PR #20 (or follow-up PRs), docs updated. Leave a crisp handoff.
   IDEAS backlog ALL shipped (vault export/import, custom fields, Specter Lite harvester).
 - Client signal coverage verified complete THREE ways (empirical trace, SDK source, coverage badges).
   Remaining: L-effort structural (raw-syscall, attestation) + 4a provisioning (user-blocked on root).
+
+- [2026-07-27 AFK iter] Coverage badges HARDENED per codex: exact key/path sets (66+ props + exact file
+  set + strict cpu<digits>/cpu_capacity parser) — eliminated ALL prefix over-matches (ro.build.date.utc,
+  ro.boot.slot_suffix, ro.hardware.gralloc, cpuXYZ, etc. no longer false-"spoofed"). Added a Python drift-
+  guard test (every HookEntry alias must be in Coverage.SPOOFED_PROPS). Python 111 + JVM (Coverage) green.
+  The flagship viewer is now precise + drift-protected. main @ v0.10.0.
