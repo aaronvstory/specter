@@ -21,8 +21,9 @@ import java.util.Map;
 /**
  * Specter Lite — a root-FREE harvester. Reads every identifier + device field obtainable WITHOUT root on
  * this device, then exports a Specter profile envelope (same format the main app's vault import consumes)
- * to the app's external files dir. Copy that file into another device's Download and import it in Specter
- * to clone this device as closely as the root layer allows.
+ * to public Download/Specter-exports/ with a readable name (Specter-<mfr>-<model>-<stamp>.json). Copy that
+ * file to another device (or it's already in Download on this one) and import it in Specter to clone this
+ * device as closely as the root layer allows.
  *
  * Deliberately minimal + honest: fields that need root or a privileged permission to READ on modern
  * Android (IMEI, serial, IMSI, ICCID) are NOT invented — they're listed as "hand-enter in Specter", so
@@ -104,11 +105,10 @@ public class HarvestActivity extends Activity {
         new Thread(() -> {
             Map<String, String> p = collect();
             String env = buildEnvelope(p);
-            File dest = new File(getExternalFilesDir(null), "specter-harvest-" + safeStamp() + ".json");
+            String name = exportName(p);
             String err = null;
-            try (FileOutputStream fos = new FileOutputStream(dest)) {
-                fos.write(env.getBytes("UTF-8"));
-                lastPath = dest.getAbsolutePath();
+            try {
+                lastPath = writeExport(name, env);
             } catch (Throwable t) { err = String.valueOf(t); }
             final String fErr = err;
             runOnUiThread(() -> {
@@ -119,8 +119,8 @@ public class HarvestActivity extends Activity {
                 }
                 StringBuilder sb = new StringBuilder();
                 sb.append("Exported ").append(p.size()).append(" fields to:\n").append(lastPath).append("\n\n");
-                sb.append("Copy this file to the target device's Download folder, then open Specter -> Saved -> "
-                        + "Import from Download.\n\n--- harvested ---\n");
+                sb.append("On the target device open Specter -> Saved -> Import from Download (the file is "
+                        + "in Download/" + EXPORT_DIR + ").\n\n--- harvested ---\n");
                 for (Map.Entry<String, String> e : p.entrySet())
                     sb.append(e.getKey()).append(" = ").append(e.getValue()).append('\n');
                 out.setText(sb.toString());
@@ -313,5 +313,48 @@ public class HarvestActivity extends Activity {
     private static String get(Map<String, String> m, String k) { String v = m.get(k); return v == null ? "" : v; }
     private static void put(Map<String, String> m, String k, String v) { if (v != null && !v.isEmpty()) m.put(k, v); }
     private String safeStamp() { return String.valueOf(System.currentTimeMillis()); }
+
+    /** Public Download subfolder for exports — the user asked for a clearly-named place, not the app sandbox. */
+    static final String EXPORT_DIR = "Specter-exports";
+
+    /** A human-readable filename: "Specter-<Manufacturer>-<Model>-<MMDDYY_HHMM>.json", sanitized to a safe
+     *  filesystem token (spaces/parens/slashes -> '-'). Falls back to a timestamp if device fields are absent. */
+    private String exportName(Map<String, String> p) {
+        String dev = (get(p, "build_manufacturer") + "-" + get(p, "build_model")).trim();
+        dev = dev.replaceAll("[^A-Za-z0-9]+", "-").replaceAll("(^-+|-+$)", "");
+        String stamp = new java.text.SimpleDateFormat("MMddyy_HHmm", java.util.Locale.US)
+                .format(new java.util.Date());
+        String base = dev.isEmpty() ? ("device-" + safeStamp()) : dev;
+        return "Specter-" + base + "-" + stamp + ".json";
+    }
+
+    /** Write the envelope to public Download/Specter-exports/<name>. API 29+ uses MediaStore (scoped
+     *  storage — no permission needed to write the app's own Downloads entry); API 24–28 writes the file
+     *  directly. Returns a user-facing location string. */
+    private String writeExport(String name, String content) throws Exception {
+        byte[] bytes = content.getBytes("UTF-8");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            android.content.ContentValues cv = new android.content.ContentValues();
+            cv.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name);
+            cv.put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/json");
+            cv.put(android.provider.MediaStore.Downloads.RELATIVE_PATH,
+                    android.os.Environment.DIRECTORY_DOWNLOADS + "/" + EXPORT_DIR);
+            android.content.ContentResolver cr = getContentResolver();
+            android.net.Uri uri = cr.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+            if (uri == null) throw new java.io.IOException("MediaStore insert returned null");
+            try (java.io.OutputStream os = cr.openOutputStream(uri)) {
+                if (os == null) throw new java.io.IOException("openOutputStream returned null");
+                os.write(bytes);
+            }
+            return "Download/" + EXPORT_DIR + "/" + name;
+        }
+        // Legacy (API 24–28): direct write to public Downloads.
+        File dir = new File(android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS), EXPORT_DIR);
+        if (!dir.exists() && !dir.mkdirs()) throw new java.io.IOException("could not create " + dir);
+        File dest = new File(dir, name);
+        try (FileOutputStream fos = new FileOutputStream(dest)) { fos.write(bytes); }
+        return dest.getAbsolutePath();
+    }
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
 }

@@ -7,8 +7,12 @@
          ActivityManager, SensorManager, EGL, TelephonyManager operator strings) or omitted if
          unreadable. The profile is written to the app's OWN external files dir (no storage permission).
          Fields needing a privileged permission to read (IMEI/serial/IMSI/ICCID) are left for the user to
-         hand-enter in Specter, never faked. -->
+         hand-enter in Specter, never faked. The export now lands in public Download/Specter-exports/:
+         API 29+ writes it via MediaStore (scoped storage, no permission); API 24–28 needs legacy
+         WRITE_EXTERNAL_STORAGE (declared with maxSdkVersion=28 so it's inert on modern Android). -->
     <uses-permission android:name="com.google.android.providers.gsf.permission.READ_GSERVICES" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:label="Specter Lite"

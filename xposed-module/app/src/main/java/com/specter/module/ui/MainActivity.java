@@ -194,11 +194,13 @@ public class MainActivity extends Activity {
         Button btn = new Button(this);
         btn.setText(text);
         btn.setAllCaps(false);
-        btn.setTextSize(13);
-        // Kill the default Button's chunky min-height (was making the tab row absurdly tall) + elevation.
-        btn.setMinWidth(0); btn.setMinHeight(0);
-        btn.setMinimumWidth(0); btn.setMinimumHeight(0);
-        btn.setPadding(dp(8), dp(5), dp(8), dp(5));
+        btn.setTextSize(14);
+        // Kill the default Button's chunky min-height (was making the tab row absurdly tall) + elevation,
+        // but keep a comfortable ~48dp tap target — the tabs were too short to hit reliably.
+        btn.setMinWidth(0); btn.setMinHeight(dp(44));
+        btn.setMinimumWidth(0); btn.setMinimumHeight(dp(44));
+        btn.setPadding(dp(8), dp(11), dp(8), dp(11));
+        btn.setGravity(android.view.Gravity.CENTER);
         btn.setStateListAnimator(null);
         btn.setLineSpacing(0f, 0.9f);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,

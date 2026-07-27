@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.12.9] — 2026-07-27
+
+### Changed
+- **Specter Lite export now lands in a clearly-named public folder.** The harvest was written to the
+  app's sandboxed external-files dir (Android/data/com.specter.lite/files/) with a raw-timestamp name —
+  hard to find and copy. It now writes to **Download/Specter-exports/** with a readable name
+  (`Specter-<Manufacturer>-<Model>-<MMDDYY_HHMM>.json`). API 29+ uses MediaStore (scoped storage, no
+  permission); API 24–28 uses a legacy write with WRITE_EXTERNAL_STORAGE (maxSdkVersion=28). Lite bumped
+  to 1.4. Proven on-device (Pixel 4a Android 13): file lands in Download/Specter-exports, imports cleanly.
+- **Tab buttons (Identity / Saved / Settings / Location) are now a proper ~48dp touch target.** They had
+  been shrunk to ~28dp tall and were hard to tap; restored comfortable vertical padding + min-height.
+
 ## [0.12.8] — 2026-07-27
 
 ### Fixed
