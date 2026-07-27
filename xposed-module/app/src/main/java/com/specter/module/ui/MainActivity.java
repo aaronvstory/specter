@@ -53,7 +53,6 @@ public class MainActivity extends Activity {
     private int tab = 0;            // 0=Identity 1=Saved 2=Settings 3=Location
     private Vault vault;
     private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
-    private android.widget.CheckBox clearBeforeApply;  // "clear each target's data+cache before APPLY"
     private boolean widevineBusy = false;              // guards the Widevine-L3 toggle's failure-rollback re-fire
     private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
     private String appliedTargets = "";                 // comma-sep pkgs the CURRENT profile was applied to
@@ -62,6 +61,7 @@ public class MainActivity extends Activity {
                                                         // successful apply — so a second APPLY of the SAME
                                                         // unchanged identity says "already applied" instead
                                                         // of silently re-doing it + re-prompting to save.
+    private String seededRecentGroup = null;   // the most-recent date group we auto-expanded (so it opens once, per key)
     private final Set<String> expandedGroups = new java.util.HashSet<>();  // date groups the user EXPANDED
                                                                           // (Saved profiles collapse by default)
 
@@ -177,21 +177,19 @@ public class MainActivity extends Activity {
         saveOnRandomize.setLayoutParams(cp);
         col.addView(saveOnRandomize);
 
-        // "Clear data + cache before APPLY": the fleet-workflow start-clean step in one tap. When checked,
-        // APPLY runs `pm clear` on each target app first (wipes storage AND cache — same as doing it by hand
-        // in app settings), then applies the identity to a fresh install. Destructive + off by default.
-        clearBeforeApply = new android.widget.CheckBox(this);
-        clearBeforeApply.setText("Clear data + cache before APPLY");
-        clearBeforeApply.setTextColor(Theme.SOFT);
-        clearBeforeApply.setTextSize(13);
-        clearBeforeApply.setChecked(prefs.getBoolean("clear_before_apply", false));
-        clearBeforeApply.setOnCheckedChangeListener((v, on) ->
-                prefs.edit().putBoolean("clear_before_apply", on).apply());
+        // APPLY/RESTORE ALWAYS deep-clean (pm clear: storage + cache) each target before writing the profile —
+        // it's not optional, because applying an identity over a prior one's data links the accounts. This is a
+        // fixed info line, not a toggle (a toggle here would be a footgun / dead control now that it's mandatory).
+        TextView autoClear = new TextView(this);
+        autoClear.setText("🧹 Auto deep-clean: every APPLY / RESTORE wipes each target's storage + cache first, so "
+                + "no data carries over between identities.");
+        autoClear.setTextColor(Theme.DIM);
+        autoClear.setTextSize(12);
         LinearLayout.LayoutParams cp2 = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cp2.setMargins(dp(16), 0, dp(16), dp(4));
-        clearBeforeApply.setLayoutParams(cp2);
-        col.addView(clearBeforeApply);
+        autoClear.setLayoutParams(cp2);
+        col.addView(autoClear);
         return col;
     }
 
@@ -321,47 +319,52 @@ public class MainActivity extends Activity {
             return;
         }
         final List<String> pkgs = new ArrayList<>(targets);
-        final boolean clearFirst = clearBeforeApply != null && clearBeforeApply.isChecked();
-        // Already-applied guard: if THIS exact identity is already applied to THIS exact target set, don't
-        // silently re-apply + re-prompt to save. Users forget whether they hit Apply — tell them plainly.
-        // (Skipped when clearing first — a wipe changes device state, so re-applying is a real action.)
-        // Sign off `profile` (the full pre-toggle map), NOT `toApply`: android_id is a per-identifier
-        // toggle, so a user who disabled it drops the key from toApply and every identity would collapse
-        // to the same "?" signature — false "already applied". profile always carries android_id.
+        // Already-applied guard: re-APPLYING the SAME identity to the SAME targets is a no-op we skip (so we
+        // don't needlessly wipe + re-prompt to save). Any DIFFERENT identity always goes through the full
+        // clear below — applying a new profile over a dirty install is the exact identity-link we must avoid.
+        // Sign off `profile` (the full pre-toggle map), NOT `toApply` (android_id may be toggled out of toApply).
         final String sig = applySignature(profile, targets);
-        if (!clearFirst && !appliedSig.isEmpty() && appliedSig.equals(sig)) {
+        if (!appliedSig.isEmpty() && appliedSig.equals(sig)) {
             String msg = "Already applied to " + pkgs.size() + " app(s). "
                     + "Relaunch them to see it, or RANDOMIZE ALL for a new identity.";
             status.setText(msg); toast(msg);
             return;
         }
-        status.setText(clearFirst ? "Clearing + applying to " + pkgs.size() + " app(s)…"
-                                  : "Applying to " + pkgs.size() + " app(s)…");
+        status.setText("Deep-cleaning + applying to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
-            int ok = 0; String lastErr = null; int cleared = 0; String clearErr = null;
+            int cleared = 0, ok = 0; String lastErr = null; String clearErr = null;
+            java.util.List<String> okPkgs = new ArrayList<>();
             for (String pkg : pkgs) {
-                if (clearFirst) {
-                    // Wipe data+cache first so the identity applies to a fresh install (fleet start-clean).
-                    try { com.specter.module.gen.SessionMigrator.clearData(pkg); cleared++; }
-                    catch (Throwable t) { clearErr = t.getMessage(); }
-                }
-                try { svc.apply(pkg, toApply); ok++; }
+                // ALWAYS wipe data+cache before writing the profile. Applying an identity onto an install that
+                // still holds a PRIOR identity's data links the two accounts (the app carries over ids/session)
+                // — the single worst cross-identity leak. So if the clear FAILS we do NOT apply to that app
+                // (better to leave it un-spoofed than to write a new identity onto dirty, linkable data).
+                boolean clean = false;
+                try { com.specter.module.gen.SessionMigrator.clearData(pkg); cleared++; clean = true; }
+                catch (Throwable t) { clearErr = t.getMessage(); }
+                if (!clean) continue;   // clear failed -> skip apply for this pkg
+                try { svc.apply(pkg, toApply); ok++; okPkgs.add(pkg); }
                 catch (Throwable t) { lastErr = t.getMessage(); }
             }
-            final int clearedN = cleared; final String clrErr = clearErr;
-            final int okN = ok; final String err = lastErr;
+            final int clearedN = cleared, okN = ok; final String clrErr = clearErr, err = lastErr;
+            final boolean allClean = clearedN == pkgs.size();   // every target wiped -> the no-carry-over claim holds
+            final boolean allApplied = okN == pkgs.size();      // every target cleared AND applied
             runOnUiThread(() -> {
-                String m = (clearFirst ? "Cleared " + clearedN + "/" + pkgs.size() + ", applied " + okN + "/" + pkgs.size() + " app(s)."
-                                       : "Applied to " + okN + "/" + pkgs.size() + " app(s).")
-                        + (err != null ? " Apply error: " + err + " (grant root in Magisk?)"
-                           : clrErr != null ? " Clear error: " + clrErr
-                           : " Relaunch them to see it.");
+                // Only claim "no carry-over" when EVERY target was actually cleared.
+                if (allClean) toast("🧹 Deep-cleaned cache + storage on all " + pkgs.size()
+                        + " app(s) before applying — no carry-over from the previous identity.");
+                else if (clearedN > 0) toast("⚠️ Deep-cleaned only " + clearedN + "/" + pkgs.size()
+                        + " app(s) — the rest were NOT cleared or applied (grant root in Magisk?).");
+                String m = "Cleared " + clearedN + "/" + pkgs.size() + ", applied " + okN + "/" + pkgs.size() + " app(s)."
+                        + (clrErr != null ? " Clear error: " + clrErr : "")
+                        + (err != null ? " Apply error: " + err + " (grant root in Magisk?)" : "")
+                        + (clrErr == null && err == null ? " Relaunch them to see it." : "");
                 status.setText(m); toast(m);
-                if (okN > 0) {
-                    appliedTargets = String.join(",", pkgs);   // this profile is now applied to these apps
-                    appliedSig = sig;                          // remember it so a repeat Apply is a no-op
-                    // Save to vault ONLY after a successful apply (a vault entry represents an applied
-                    // identity), recording which apps it reached.
+                if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
+                // Record the applied signature (so a repeat Apply is a no-op) ONLY when the WHOLE set fully
+                // cleared+applied — else a partial failure must remain retryable, not be suppressed as "done".
+                if (allApplied) {
+                    appliedSig = sig;
                     if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName(appliedTargets);
                 }
             });
@@ -1109,10 +1112,21 @@ public class MainActivity extends Activity {
             savedListHolder.addView(none);
             return;
         }
+        // The MOST RECENT group (first in newest-first order) starts EXPANDED so the latest profiles are
+        // visible without a tap; older groups collapse by default. Seed it into expandedGroups when it's a NEW
+        // most-recent group (tracked by key) so a freshly-saved profile's day auto-opens too — while a user
+        // collapse still sticks (we don't re-seed the same key). Skipped during search (q force-expands anyway).
+        if (q.isEmpty() && !groups.isEmpty()) {
+            String recent = groups.keySet().iterator().next();
+            if (!recent.equals(seededRecentGroup)) {
+                expandedGroups.add(recent);
+                seededRecentGroup = recent;
+            }
+        }
         for (Map.Entry<String, java.util.List<Vault.Entry>> g : groups.entrySet()) {
             final String groupKey = g.getKey();
-            // Collapsed BY DEFAULT — a group is open only if the user expanded it (or a search is active,
-            // which force-expands so matches are visible).
+            // Collapsed BY DEFAULT (except the seeded most-recent group) — a group is open only if the user
+            // expanded it (or a search is active, which force-expands so matches are visible).
             final boolean collapsed = !expandedGroups.contains(groupKey) && q.isEmpty();
             // Group header (tap to collapse/expand). Shows the date/day + count.
             TextView header = new TextView(this);
@@ -1258,18 +1272,33 @@ public class MainActivity extends Activity {
         }
         final Map<String, String> toApply = enabledProfile();   // applies protection gates too
         final List<String> pkgs = new ArrayList<>(targets);
-        status.setText("Restoring " + labelStr + " to " + pkgs.size() + " app(s)…");
+        status.setText("Clearing + restoring " + labelStr + " to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
-            int ok = 0; String lastErr = null;
+            int cleared = 0, ok = 0; String lastErr = null; String clearErr = null;
+            java.util.List<String> okPkgs = new ArrayList<>();
             for (String pkg : pkgs) {
-                try { svc.apply(pkg, toApply); ok++; }
+                // Restore ALWAYS wipes data+cache first so the restored identity lands on a fresh install. If
+                // the clear FAILS, we do NOT restore onto that app (a KNOWN device written over a dirty install
+                // leaves the prior account's linkable state — the exact thing we're preventing).
+                boolean clean = false;
+                try { com.specter.module.gen.SessionMigrator.clearData(pkg); cleared++; clean = true; }
+                catch (Throwable t) { clearErr = t.getMessage(); }
+                if (!clean) continue;
+                try { svc.apply(pkg, toApply); ok++; okPkgs.add(pkg); }
                 catch (Throwable t) { lastErr = t.getMessage(); }
             }
-            final int okN = ok; final String err = lastErr;
+            final int clearedN = cleared, okN = ok; final String err = lastErr, clrErr = clearErr;
+            final boolean allClean = clearedN == pkgs.size();
             runOnUiThread(() -> {
-                if (okN > 0) appliedTargets = String.join(",", pkgs);   // restored profile is now applied
-                status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size()
-                    + " app(s)." + (err != null ? " Last error: " + err : " Relaunch them to see it."));
+                if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
+                if (allClean) toast("🧹 Deep-cleaned cache + storage on all " + pkgs.size()
+                        + " app(s) before restoring — no carry-over from the previous identity.");
+                else if (clearedN > 0) toast("⚠️ Deep-cleaned only " + clearedN + "/" + pkgs.size()
+                        + " app(s) — the rest were NOT restored (grant root in Magisk?).");
+                String tail = (clrErr != null ? " Clear error: " + clrErr : "")
+                        + (err != null ? " Apply error: " + err : "")
+                        + (clrErr == null && err == null ? " Relaunch them to see it." : "");
+                status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size() + " app(s)." + tail);
             });
         }).start();
     }
@@ -1292,6 +1321,9 @@ public class MainActivity extends Activity {
                             : vault.save(typed, profile, targets);      // custom -> timestamp + sanitized name
                     status.setText("Saved as " + label);
                     toast("Saved to vault: " + label);
+                    // If we're on the Saved tab, refresh the list so the new profile appears immediately (and
+                    // its date group auto-expands via the seed logic). No-op from the Identity tab (post-APPLY).
+                    if (tab == 1) render();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();

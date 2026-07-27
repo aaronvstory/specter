@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [0.14.0] — 2026-07-28
 
+### Changed
+- **Deep clean is now MANDATORY on every APPLY and RESTORE** (was an opt-in checkbox). Writing an identity
+  onto an install that still holds a PRIOR identity's data links the two accounts (the app carries over
+  ids/session) — the worst cross-identity leak — so each target's storage + cache is `pm clear`ed before the
+  profile is written, unconditionally. A toast confirms the deep-clean each time, and the Identity tab shows
+  a fixed “Auto deep-clean” note (the old toggle was removed — it would be a footgun now that it's required).
+  If a target's clear FAILS, its apply is SKIPPED (better un-spoofed than a new identity written onto dirty,
+  linkable data), the “no carry-over” confirmation only shows when EVERY target was cleaned, and the applied
+  signature is recorded only on full success so a partial failure stays retryable.
+- **Saved profiles: the most-recent date group starts EXPANDED** (older groups still collapse by default), so
+  the latest profiles are visible without a tap; a freshly-saved profile's day auto-opens too.
+
 ### Fixed
 - **Profile load is now immune to another LSPosed module poisoning it (fixes a cross-identity device-link
   leak).** When a second module (e.g. GeerGit) is scoped to the same target app, it hooks JSONObject.getString

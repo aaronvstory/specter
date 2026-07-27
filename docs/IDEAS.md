@@ -27,10 +27,19 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 - **2026-07-28 - adopt byedentity's other native tricks for broad coverage** - status: `partial`.
   (2) GSF re-registration is SHIPPED (0.14.0): `GsfReset` force-stops + `pm clear`s gms/gsf/vending + reboots
   (Settings > Advanced (root) > "Reset GSF + reboot", confirmed), so Google re-registers a fresh device id -
-  attacks the server-side re-link anchor (same class as the Dasher number leak). 14 JVM tests. STILL OPEN:
-  (1) boot-time resetprop in service.d as belt-and-suspenders under the Zygisk prop hook (covers a process
-  reading a prop before the hook attaches). The `Clear data+cache before APPLY` checkbox (0.14.0) + GSF-reset
-  cover the app-data + Google-side anchors; boot resetprop is the remaining native belt-and-suspenders.
+  attacks the server-side re-link anchor (same class as the Dasher number leak). 14 JVM tests.
+  DEFERRED (1) boot-time resetprop in service.d — status: `deferred (per-app conflict, needs investigation)`.
+  ARCHITECTURE CONFLICT found 2026-07-28: `resetprop` sets props DEVICE-WIDE (one value for every process),
+  but Specter is PER-APP (each target gets a DIFFERENT profile) — a single global resetprop can't carry
+  per-app model/serial/etc. and would break both the per-app model and every other app on the device.
+  byedentity can do global resetprop because it's SINGLE-identity (one device = one fake device). The
+  per-app Zygisk hook already covers PROP_ALIASES at postAppSpecialize (before the app's own code runs), and
+  the 2 init-unsafe props (sdk/first_api) use the deferred late-map. TO INVESTIGATE LATER: does byedentity
+  really pin the WHOLE device to one identity via boot resetprop? If so, the buildable-for-Specter shape is
+  an OPT-IN "single-identity device mode" (a toggle: boot-lock the device to ONE chosen profile's props),
+  which coexists with per-app mode — NOT a global always-on resetprop. Also worth measuring first (g_trace
+  timing): whether any target actually reads a spoofed prop BEFORE the Zygisk hook attaches — if nothing
+  reads that early, boot resetprop adds risk with zero benefit. Passed on for now (higher-value work queued).
 
 - **2026-07-27 · audit the remaining sm6150-mapped devices for SoC accuracy** — status: `open`.
   Fixing the Pixel 4a (sm6150→sm7150) surfaced that several other devices are mapped to sm6150 in
