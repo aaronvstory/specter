@@ -100,28 +100,152 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Theme.BG);
 
-        root.addView(header());
-        root.addView(actionBar());
-        root.addView(tabBar());
+        root.addView(appBar());
 
+        // Status is now a transient banner (hidden until there's something to say), not a permanent empty
+        // strip taking header space. Kept as the same `status` TextView so existing setText(...) calls work.
         status = new TextView(this);
         status.setTextColor(Theme.SOFT);
-        status.setPadding(dp(16), dp(4), dp(16), dp(4));
-        status.setTextSize(12);
+        status.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S4), dp(Theme.S2));
+        status.setTextSize(Theme.T_CAPTION);
+        status.setVisibility(View.GONE);
+        status.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                status.setVisibility(s.length() == 0 ? View.GONE : View.VISIBLE);
+            }
+        });
         root.addView(status);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        scroll.setClipToPadding(false);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(4), dp(12), dp(24));
+        content.setPadding(0, dp(Theme.S1), 0, dp(Theme.S6) * 2);   // side padding now lives on cards; big bottom pad
         scroll.addView(content);
         root.addView(scroll);
+
+        root.addView(bottomNav());
 
         setContentView(root);
         regenerate();
         checkZygisk();
+    }
+
+    // ---- New chrome: a slim app bar + a bottom navigation bar (3 destinations). ----
+
+    /** Slim 56dp app bar: logo + wordmark + version. Quiet — no actions crammed in. */
+    private View appBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setMinimumHeight(dp(56));
+        bar.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S4), dp(Theme.S2));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(com.specter.module.R.drawable.ic_specter_logo);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(26), dp(26));
+        lp.setMargins(0, 0, dp(Theme.S2), 0);
+        logo.setLayoutParams(lp);
+        bar.addView(logo);
+
+        TextView word = new TextView(this);
+        word.setText("Specter");
+        word.setTextColor(Theme.INK);
+        word.setTextSize(Theme.T_TITLE);
+        word.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        word.setLetterSpacing(-0.02f);
+        bar.addView(word);
+
+        TextView ver = new TextView(this);
+        String v = "";
+        try { v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Throwable ignored) {}
+        ver.setText(v);
+        ver.setTextColor(Theme.DIM);
+        ver.setTextSize(Theme.T_CAPTION);
+        LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        vlp.setMargins(dp(Theme.S2), dp(6), 0, 0);
+        ver.setLayoutParams(vlp);
+        ver.setGravity(Gravity.BOTTOM);
+        bar.addView(ver);
+        return bar;
+    }
+
+    private LinearLayout bottomNavBar;   // rebuilt tint on tab change
+
+    /** Bottom navigation: 3 true destinations (Identity / Vault / Settings). Icon + label, gold when active. */
+    private View bottomNav() {
+        bottomNavBar = new LinearLayout(this);
+        bottomNavBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomNavBar.setBackgroundColor(Theme.CARD);
+        bottomNavBar.setMinimumHeight(dp(60));
+        // a hairline top edge so it reads as a bar
+        View edge = new View(this);
+        edge.setBackgroundColor(Theme.LINE);
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.addView(edge, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(0.5f))));
+        wrap.addView(bottomNavBar);
+        rebuildBottomNav();
+        return wrap;
+    }
+
+    private final String[] NAV = {"Identity", "Vault", "Settings"};
+    private void rebuildBottomNav() {
+        if (bottomNavBar == null) return;
+        bottomNavBar.removeAllViews();
+        for (int i = 0; i < NAV.length; i++) {
+            final int idx = i;
+            boolean active = tab == i;
+            LinearLayout item = new LinearLayout(this);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setGravity(Gravity.CENTER);
+            item.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+            item.setBackground(ripple(0));
+            item.setPadding(0, dp(Theme.S2), 0, dp(Theme.S2));
+            ImageView ic = new ImageView(this);
+            ic.setImageDrawable(navIcon(idx, dp(22)));
+            ic.setColorFilter(active ? Theme.GOLD : Theme.DIM);
+            item.addView(ic, new LinearLayout.LayoutParams(dp(24), dp(24)));
+            TextView lbl = new TextView(this);
+            lbl.setText(NAV[idx]);
+            lbl.setTextSize(11);
+            lbl.setTextColor(active ? Theme.GOLD : Theme.DIM);
+            lbl.setPadding(0, dp(3), 0, 0);
+            item.addView(lbl);
+            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; rebuildBottomNav(); render(); } });
+            bottomNavBar.addView(item);
+        }
+    }
+
+    /** Simple line icons for the 3 nav destinations. 0=Identity (person), 1=Vault (lock), 2=Settings (gear). */
+    private android.graphics.drawable.Drawable navIcon(final int which, final int px) {
+        return new StrokeIcon(px) {
+            @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
+                float cx = s * 0.5f;
+                if (which == 0) {                     // person: head + shoulders
+                    c.drawCircle(cx, s * 0.36f, s * 0.15f, p);
+                    android.graphics.RectF r = new android.graphics.RectF(s * 0.22f, s * 0.56f, s * 0.78f, s * 0.92f);
+                    c.drawArc(r, 200, 140, false, p);
+                } else if (which == 1) {              // lock: body + shackle
+                    android.graphics.RectF body = new android.graphics.RectF(s * 0.28f, s * 0.46f, s * 0.72f, s * 0.80f);
+                    c.drawRoundRect(body, s * 0.06f, s * 0.06f, p);
+                    android.graphics.RectF sh = new android.graphics.RectF(s * 0.36f, s * 0.26f, s * 0.64f, s * 0.58f);
+                    c.drawArc(sh, 180, 180, false, p);
+                } else {                              // gear-ish: circle + ticks
+                    c.drawCircle(cx, cx, s * 0.16f, p);
+                    for (int k = 0; k < 8; k++) {
+                        double a = Math.PI * k / 4.0;
+                        float x1 = cx + (float) Math.cos(a) * s * 0.30f, y1 = cx + (float) Math.sin(a) * s * 0.30f;
+                        float x2 = cx + (float) Math.cos(a) * s * 0.40f, y2 = cx + (float) Math.sin(a) * s * 0.40f;
+                        c.drawLine(x1, y1, x2, y2, p);
+                    }
+                }
+            }
+        };
     }
 
     @Override protected void onResume() {
@@ -426,6 +550,7 @@ public class MainActivity extends Activity {
                         appliedSig = sig;
                         if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName(appliedTargets);
                     }
+                    render();   // refresh the summary card so its state flips to "Applied to N apps"
                 } finally {
                     opBusy = false;
                 }
@@ -478,7 +603,6 @@ public class MainActivity extends Activity {
             case 0: renderIdentity(); break;
             case 1: renderSaved(); break;
             case 2: renderSettings(); break;
-            case 3: renderLocation(); break;
         }
     }
 
@@ -547,15 +671,199 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    private boolean detailsExpanded = false;   // Identity screen: is the full field editor expanded?
+
     private void renderIdentity() {
-        // GeerGit-style flow: (1) pick the target app, (2) see what will be randomized (all on by
-        // default), (3) hit RANDOMIZE ALL. The target header sits at the top so the app you're
-        // spoofing is always in view alongside its identifiers.
-        content.addView(targetHeader());
-        content.addView(sectionLabel("Device simulation"));
-        content.addView(deviceSpecCard());
-        content.addView(sectionLabel("Identifiers"));
-        for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
+        // Summary-first: what the identity IS + the one primary action, THEN targets, THEN (collapsed)
+        // the full field editor. A user applies in 2 taps; power users expand details when they want them.
+        content.addView(identitySummaryCard());
+
+        // Target apps — one group card, plain rows.
+        content.addView(section("Target apps"));
+        content.addView(targetAppsCard());
+
+        // Full device + identifier editor, collapsed behind a disclosure row.
+        content.addView(section("Identity details"));
+        LinearLayout discCard = card();
+        int n = countEnabledIdentifiers();
+        discCard.addView(row(detailsExpanded ? "Hide details" : "Show all fields",
+                n + " identifier" + (n == 1 ? "" : "s") + " included · tap to " + (detailsExpanded ? "collapse" : "customize"),
+                chevronTrailing(detailsExpanded), v -> { detailsExpanded = !detailsExpanded; render(); }));
+        content.addView(discCard);
+        if (detailsExpanded) {
+            content.addView(section("Device"));
+            content.addView(deviceSpecCard());
+            content.addView(section("Identifiers"));
+            for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
+        }
+    }
+
+    /** The hero card: current identity summary + the primary Apply action + Generate-another. This is the
+     *  "one dominant task per screen" the design brief calls for. */
+    private View identitySummaryCard() {
+        LinearLayout c = card();
+        c.setPadding(dp(Theme.S4), dp(Theme.S4), dp(Theme.S4), dp(Theme.S4));
+
+        // Title + state
+        TextView title = new TextView(this);
+        title.setText("Current identity");
+        title.setTextColor(Theme.SOFT);
+        title.setTextSize(Theme.T_LABEL);
+        c.addView(title);
+
+        String device = deviceString();
+        String carrier = profile.getOrDefault("sim_operator_name", "");
+        TextView dev = new TextView(this);
+        dev.setText(device + (carrier.isEmpty() ? "" : "  ·  " + carrier));
+        dev.setTextColor(Theme.INK);
+        dev.setTextSize(Theme.T_HEADING);
+        dev.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        dev.setPadding(0, dp(Theme.S1), 0, 0);
+        c.addView(dev);
+
+        boolean applied = !appliedTargets.isEmpty()
+                && appliedSig.equals(applySignature(enabledProfile(), Targets.get(prefs)));
+        TextView state = new TextView(this);
+        Set<String> tgts = Targets.get(prefs);
+        state.setText(applied ? "Applied to " + tgts.size() + " app" + (tgts.size() == 1 ? "" : "s")
+                : "New identity · not applied yet");
+        state.setTextColor(applied ? Theme.SAGE : Theme.SOFT);
+        state.setTextSize(Theme.T_CAPTION);
+        state.setPadding(0, dp(Theme.S1), 0, dp(Theme.S3));
+        c.addView(state);
+
+        // Primary: Apply to N apps
+        int napps = tgts.size();
+        c.addView(primaryButton(napps == 0 ? "Select target apps" : "Apply to " + napps + " app" + (napps == 1 ? "" : "s"),
+                v -> { if (napps == 0) startActivity(new Intent(this, AppPickerActivity.class)); else apply(); }));
+        // Secondary quiet: generate another
+        c.addView(textButton("Generate another identity", Theme.SOFT, v -> regenerate()));
+        return c;
+    }
+
+    /** Target apps as ONE group card: a "Change" disclosure row, then a plain row per selected app that
+     *  expands its actions (Monitor / Save-AppData). Replaces the old one-card-per-app "card soup". */
+    private View targetAppsCard() {
+        LinearLayout c = card();
+        final Set<String> targets = Targets.get(prefs);
+        // Change row (opens the picker)
+        TextView changeVal = new TextView(this);
+        changeVal.setText(targets.isEmpty() ? "None" : targets.size() + " selected");
+        changeVal.setTextColor(Theme.SOFT); changeVal.setTextSize(Theme.T_LABEL);
+        changeVal.setPadding(0, 0, dp(Theme.S2), 0);
+        LinearLayout changeTrailing = new LinearLayout(this);
+        changeTrailing.setOrientation(LinearLayout.HORIZONTAL);
+        changeTrailing.setGravity(Gravity.CENTER_VERTICAL);
+        changeTrailing.addView(changeVal);
+        changeTrailing.addView(chevronTrailing(false));
+        c.addView(row("Change apps", null, changeTrailing,
+                v -> startActivity(new Intent(this, AppPickerActivity.class))));
+
+        if (targets.isEmpty()) return c;
+        for (final String pkg : targets) {
+            c.addView(hairlineInset());
+            c.addView(targetAppRow(pkg));
+        }
+        return c;
+    }
+
+    /** One target-app row inside the group card: icon + name + (live-monitor dot) + expand chevron + remove.
+     *  Expanding reveals the per-app actions (Monitor reads / Save AppData / Restore AppData). */
+    private View targetAppRow(final String pkg) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+
+        final boolean expanded = expandedApps.contains(pkg);
+        final boolean monitoring = pkg.equals(monitoringPkg);
+
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setMinimumHeight(dp(56));
+        r.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S2), dp(Theme.S2));
+        r.setBackground(ripple(0));
+        View.OnClickListener toggle = v -> {
+            if (expandedApps.contains(pkg)) expandedApps.remove(pkg); else expandedApps.add(pkg);
+            render();
+        };
+        r.setOnClickListener(toggle);
+
+        try {
+            ImageView iv = new ImageView(this);
+            iv.setImageDrawable(getPackageManager().getApplicationIcon(pkg));
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(30), dp(30));
+            ilp.setMargins(0, 0, dp(Theme.S3), 0);
+            iv.setLayoutParams(ilp);
+            r.addView(iv);
+        } catch (Throwable ignored) {}
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView name = new TextView(this);
+        name.setText(Targets.label(this, pkg));
+        name.setTextColor(Theme.INK); name.setTextSize(Theme.T_BODY);
+        name.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        col.addView(name);
+        TextView sub = new TextView(this);
+        sub.setText(monitoring ? "● Monitoring reads" : pkg);
+        sub.setTextColor(monitoring ? Theme.GOLD : Theme.DIM); sub.setTextSize(Theme.T_CAPTION);
+        col.addView(sub);
+        // scoped-in-LSPosed warning (async)
+        final TextView warn = new TextView(this);
+        warn.setTextSize(Theme.T_CAPTION); warn.setTextColor(Theme.RED); warn.setVisibility(View.GONE);
+        col.addView(warn);
+        new Thread(() -> { final boolean scoped = Targets.isScoped(pkg);
+            runOnUiThread(() -> { if (!scoped) { warn.setText("Not enabled in LSPosed"); warn.setVisibility(View.VISIBLE); } }); }).start();
+        r.addView(col);
+
+        ImageView chev = new ImageView(this);
+        chev.setImageDrawable(icChevron(expanded ? 1 : 0, dp(18)));
+        chev.setColorFilter(monitoring ? Theme.GOLD : Theme.DIM);
+        chev.setLayoutParams(new LinearLayout.LayoutParams(dp(28), dp(28)));
+        r.addView(chev);
+        r.addView(iconButton(icClose(dp(16)), Theme.DIM, v -> {
+            Set<String> cur = Targets.get(prefs); cur.remove(pkg); Targets.set(prefs, cur);
+            toast("Removed " + Targets.label(this, pkg)); render();
+        }));
+        box.addView(r);
+
+        if (expanded) {
+            final TextView sessStatus = new TextView(this);
+            sessStatus.setTextSize(Theme.T_CAPTION); sessStatus.setTextColor(Theme.DIM);
+            LinearLayout actions = new LinearLayout(this);
+            actions.setOrientation(LinearLayout.VERTICAL);
+            actions.setPadding(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));
+            LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
+            row1.addView(wideButton(monitoring ? "Stop monitoring" : "Monitor reads", monitoring, v -> toggleMonitor(pkg, sessStatus)));
+            actions.addView(row1);
+            LinearLayout row2 = new LinearLayout(this); row2.setOrientation(LinearLayout.HORIZONTAL);
+            row2.setPadding(0, dp(Theme.S2), 0, 0);
+            Button save = halfButton("Save AppData", v -> runSession(pkg, true, sessStatus));
+            View gap = new View(this); gap.setLayoutParams(new LinearLayout.LayoutParams(dp(Theme.S2), 1));
+            Button rest = halfButton("Restore AppData", v -> runSession(pkg, false, sessStatus));
+            row2.addView(save); row2.addView(gap); row2.addView(rest);
+            actions.addView(row2);
+            actions.addView(sessStatus);
+            box.addView(actions);
+        }
+        return box;
+    }
+
+    private int countEnabledIdentifiers() {
+        int n = 0;
+        for (IdentityFields.Field f : IdentityFields.IDENTIFIERS)
+            if (Toggles.isEnabled(prefs, f.key)) n++;
+        return n;
+    }
+
+    /** A right-chevron trailing view (rotated down when expanded) for disclosure rows. */
+    private View chevronTrailing(boolean expanded) {
+        ImageView iv = new ImageView(this);
+        iv.setImageDrawable(icChevron(expanded ? 1 : 0, dp(18)));
+        iv.setColorFilter(Theme.DIM);
+        iv.setLayoutParams(new LinearLayout.LayoutParams(dp(24), dp(24)));
+        return iv;
     }
 
     /** The device fields (manufacturer/model/brand/device/fingerprint/carrier) as ONE compact spec-sheet
@@ -2055,5 +2363,235 @@ public class MainActivity extends Activity {
         t.setTextIsSelectable(true);
         t.setPadding(0, dp(2), 0, dp(4));
         return t;
+    }
+
+    // ============================================================================================
+    // DESIGN SYSTEM v2 — one card, one row, one button system, drawn icons, press feedback.
+    // (Replaces the "card-soup" + emoji-icon + ad-hoc-spacing look. Uses Theme's S*/T_*/R_* scales.)
+    // ============================================================================================
+
+    /** A grouped container card: soft radius, subtle surface, NO heavy border (surface contrast is enough).
+     *  Put plain hairline-separated rows inside — not more cards. This is THE card; stop nesting cards. */
+    private LinearLayout card() {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Theme.CARD);
+        bg.setCornerRadius(dp(Theme.R_CARD));
+        c.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));   // 16 side inset, 12 between cards
+        c.setLayoutParams(lp);
+        return c;
+    }
+
+    /** A 1px hairline separator for use BETWEEN rows inside a card (inset from the left like iOS lists). */
+    private View hairlineInset() {
+        View v = new View(this);
+        v.setBackgroundColor(Theme.LINE);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(0.5f)));
+        lp.setMargins(dp(Theme.S4), 0, 0, 0);
+        v.setLayoutParams(lp);
+        return v;
+    }
+
+    /** A section header ABOVE a card: sentence-case, SOFT, medium weight — quiet, not a gold shout. */
+    private TextView section(String s) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextColor(Theme.SOFT);
+        t.setTextSize(Theme.T_LABEL);
+        t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        t.setPadding(dp(Theme.S4) + dp(Theme.S1), dp(Theme.S5), dp(Theme.S4), dp(Theme.S2));
+        return t;
+    }
+
+    /** A tappable list row inside a card: title (+ optional subtitle) on the left, an optional trailing view
+     *  (chevron / switch / value) on the right, ripple feedback, ≥52dp tall. Tapping runs onClick. */
+    private LinearLayout row(String title, String subtitle, View trailing, View.OnClickListener onClick) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setMinimumHeight(dp(52));
+        r.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        if (onClick != null) { r.setBackground(ripple(0)); r.setOnClickListener(onClick); }
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView t = new TextView(this);
+        t.setText(title); t.setTextColor(Theme.INK); t.setTextSize(Theme.T_BODY);
+        t.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        col.addView(t);
+        if (subtitle != null && !subtitle.isEmpty()) {
+            TextView s = new TextView(this);
+            s.setText(subtitle); s.setTextColor(Theme.SOFT); s.setTextSize(Theme.T_CAPTION);
+            s.setPadding(0, dp(1), 0, 0);
+            col.addView(s);
+        }
+        r.addView(col);
+        if (trailing != null) r.addView(trailing);
+        return r;
+    }
+
+    // ---- Buttons: four kinds, all ≥48dp touch, ripple, consistent radius ----
+
+    /** Full-width PRIMARY action (gold fill, dark ink). The one dominant action per screen. */
+    private View primaryButton(String text, View.OnClickListener onClick) {
+        return themedButton(text, Theme.GOLD, Theme.ON_GOLD, 0, true, onClick);
+    }
+
+    /** Full-width SECONDARY action (quiet surface, ink text, hairline edge). */
+    private View secondaryButton(String text, View.OnClickListener onClick) {
+        return themedButton(text, Theme.CARD2, Theme.INK, Theme.LINE_HI, true, onClick);
+    }
+
+    /** A quiet TEXT button (no fill) — for tertiary actions like "Generate another". */
+    private View textButton(String text, int color, View.OnClickListener onClick) {
+        TextView b = new TextView(this);
+        b.setText(text); b.setTextColor(color); b.setTextSize(Theme.T_BODY);
+        b.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        b.setGravity(Gravity.CENTER);
+        b.setMinimumHeight(dp(48));
+        b.setPadding(dp(Theme.S3), dp(Theme.S3), dp(Theme.S3), dp(Theme.S3));
+        b.setBackground(ripple(dp(Theme.R_CTRL)));
+        b.setOnClickListener(onClick);
+        b.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return b;
+    }
+
+    private View themedButton(String text, int fill, int textColor, int edge, boolean fullWidth, View.OnClickListener onClick) {
+        TextView b = new TextView(this);
+        b.setText(text); b.setTextColor(textColor); b.setTextSize(Theme.T_BODY);
+        b.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        b.setGravity(Gravity.CENTER);
+        b.setMinimumHeight(dp(48));
+        b.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        GradientDrawable base = new GradientDrawable();
+        base.setColor(fill);
+        base.setCornerRadius(dp(Theme.R_CTRL));
+        if (edge != 0) base.setStroke(Math.max(1, dp(1)), edge);
+        // ripple on press, over the filled base
+        android.content.res.ColorStateList rc = android.content.res.ColorStateList.valueOf(0x33FFFFFF);
+        b.setBackground(new android.graphics.drawable.RippleDrawable(rc, base, null));
+        b.setOnClickListener(onClick);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                fullWidth ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    /** A 48x48 icon button: a drawn glyph (see icon()) centered in a ripple circle — for row-trailing actions
+     *  like remove/overflow. No emoji. */
+    private ImageView iconButton(android.graphics.drawable.Drawable glyph, int tint, View.OnClickListener onClick) {
+        ImageView iv = new ImageView(this);
+        iv.setImageDrawable(glyph);
+        iv.setColorFilter(tint);
+        iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        int pad = dp(12);
+        iv.setPadding(pad, pad, pad, pad);
+        iv.setBackground(ripple(dp(Theme.R_PILL)));
+        iv.setOnClickListener(onClick);
+        iv.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
+        return iv;
+    }
+
+    /** A translucent ripple background (for rows / icon buttons) with the given corner radius. */
+    private android.graphics.drawable.Drawable ripple(int radius) {
+        GradientDrawable mask = new GradientDrawable();
+        mask.setColor(0xFFFFFFFF);
+        mask.setCornerRadius(radius);
+        return new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x22FFFFFF), null, mask);
+    }
+
+    // ---- Drawn vector icons (no emoji). Each returns a Drawable sized to `px`, stroked in the current tint. ----
+
+    /** A chevron (›). dir: 0=right, 1=down. Used for "expandable" / "navigates" affordances. */
+    private android.graphics.drawable.Drawable icChevron(final int dir, final int px) {
+        return new StrokeIcon(px) {
+            @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
+                float a = s * 0.34f, b = s * 0.66f;
+                android.graphics.Path path = new android.graphics.Path();
+                if (dir == 1) { path.moveTo(a, s * 0.42f); path.lineTo(s * 0.5f, s * 0.60f); path.lineTo(b, s * 0.42f); }
+                else { path.moveTo(s * 0.42f, a); path.lineTo(s * 0.60f, s * 0.5f); path.lineTo(s * 0.42f, b); }
+                c.drawPath(path, p);
+            }
+        };
+    }
+
+    /** A close/remove (×). */
+    private android.graphics.drawable.Drawable icClose(final int px) {
+        return new StrokeIcon(px) {
+            @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
+                float a = s * 0.32f, b = s * 0.68f;
+                c.drawLine(a, a, b, b, p); c.drawLine(b, a, a, b, p);
+            }
+        };
+    }
+
+    /** A plus (+) for "add". */
+    private android.graphics.drawable.Drawable icPlus(final int px) {
+        return new StrokeIcon(px) {
+            @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
+                float a = s * 0.28f, b = s * 0.72f, m = s * 0.5f;
+                c.drawLine(a, m, b, m, p); c.drawLine(m, a, m, b, p);
+            }
+        };
+    }
+
+    /** An overflow (⋯) three-dot for row menus. */
+    private android.graphics.drawable.Drawable icMore(final int px) {
+        return new StrokeIcon(px) {
+            @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
+                p.setStyle(android.graphics.Paint.Style.FILL);
+                float r = s * 0.05f, y = s * 0.5f;
+                c.drawCircle(s * 0.28f, y, r, p); c.drawCircle(s * 0.5f, y, r, p); c.drawCircle(s * 0.72f, y, r, p);
+            }
+        };
+    }
+
+    /** Base class: a Drawable that draws a stroked glyph on a square canvas. Colour comes from setColorFilter. */
+    private abstract class StrokeIcon extends android.graphics.drawable.Drawable {
+        final int px; final android.graphics.Paint paint;
+        int filter = 0xFFFFFFFF;
+        StrokeIcon(int px) {
+            this.px = px;
+            paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            paint.setStyle(android.graphics.Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(2f, px * 0.09f));
+            paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+            paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+        }
+        abstract void draw(android.graphics.Canvas c, android.graphics.Paint p, float sizePx);
+        @Override public void draw(android.graphics.Canvas canvas) {
+            paint.setColor(filter);
+            android.graphics.Rect b = getBounds();
+            canvas.save();
+            canvas.translate(b.left, b.top);
+            draw(canvas, paint, Math.min(b.width(), b.height()));
+            canvas.restore();
+        }
+        @Override public void setColorFilter(android.graphics.ColorFilter cf) {}
+        @Override public void setColorFilter(int color, android.graphics.PorterDuff.Mode mode) { filter = color; invalidateSelf(); }
+        @Override public void setAlpha(int a) {}
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
+        @Override public int getIntrinsicWidth() { return px; }
+        @Override public int getIntrinsicHeight() { return px; }
+    }
+
+    /** A properly-tinted Switch (matches gold accent when on; quiet when off) — not the raw platform teal. */
+    private android.widget.Switch themedSwitch(boolean checked, android.widget.CompoundButton.OnCheckedChangeListener l) {
+        android.widget.Switch sw = new android.widget.Switch(this);
+        sw.setChecked(checked);
+        int[][] states = {{android.R.attr.state_checked}, {}};
+        int[] thumb = {Theme.GOLD, 0xFFCFCFD6};
+        int[] track = {0x66E7B94E, 0x33FFFFFF};
+        sw.setThumbTintList(new android.content.res.ColorStateList(states, thumb));
+        sw.setTrackTintList(new android.content.res.ColorStateList(states, track));
+        sw.setOnCheckedChangeListener(l);
+        return sw;
     }
 }

@@ -41,4 +41,26 @@ public final class Theme {
     public static final int RED   = 0xFFEF8A8A; // error / destructive / warning
     public static final int AMBER = 0xFFF0B562; // warning
     public static final int BLUE  = 0xFF6CC4E8; // info
+
+    // ---- SPACING SCALE (dp) — an 8pt-ish grid so the whole UI shares one rhythm. Use these, not ad-hoc
+    // numbers. (A pro layout has ~5 spacing steps, not 22 different values.)
+    public static final int S1 = 4;    // hairline gaps / inline
+    public static final int S2 = 8;    // default gap between related items
+    public static final int S3 = 12;   // padding inside a control
+    public static final int S4 = 16;   // card padding / section inset (the standard edge margin)
+    public static final int S5 = 24;   // between sections
+    public static final int S6 = 32;   // big breaks
+
+    // ---- TYPE SCALE (sp) — 5 steps, not 8 random sizes. title > heading > body > label > caption.
+    public static final int T_TITLE   = 22;  // screen title (the wordmark)
+    public static final int T_HEADING = 17;  // card title / primary value
+    public static final int T_BODY    = 15;  // body text / button label
+    public static final int T_LABEL   = 13;  // secondary / row label
+    public static final int T_CAPTION = 12;  // captions / meta / hints
+
+    // ---- RADIUS (dp) — one soft radius for cards, one tighter for controls. Consistent rounding reads as
+    // "designed"; mixed random corners read as patched-together.
+    public static final int R_CARD = 14;   // cards / sheets
+    public static final int R_CTRL = 10;   // buttons / inputs / chips
+    public static final int R_PILL = 999;  // fully-round (toggles, small chips)
 }
