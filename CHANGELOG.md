@@ -13,7 +13,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   new build_first_api profile field the native deferred prop path serves. Unmapped models fall back to sdk
   (unchanged), and first_api is clamped ≤ sdk. PROVEN on-device (Pixel 4): a Galaxy A50s profile (launched
   Android 9, dataset release 10) now reads ro.product.first_api_level=28 while ro.build.version.sdk=29 — the
-  real relationship. Byte-parity (Python+Java), pinned by coherence tests.
+  real relationship. Byte-parity (Python+Java), pinned by coherence tests. Launch-OS coverage: 61 models
+  across Samsung, Xiaomi/Redmi/POCO, Motorola and OnePlus (GSMArena-sourced; only models whose launch OS <
+  dataset release are mapped, the rest correctly default to first_api==sdk).
 - **5 devices' SoC/GPU corrected (dataset audit, kernel-DT grounded).** a71naxx (Galaxy A71), bonito/sargo
   (Pixel 3a XL/3a), kiev/nairo (Moto G 5G / One 5G) were all mislabelled to the sm6150/Adreno-612 default.
   Real: a71naxx=sm7150/618, bonito+sargo=sdm670/615 (added sdm670 topology), kiev=lito/619, nairo=lito/620.

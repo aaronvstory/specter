@@ -58,7 +58,7 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   into the target, capture → restore onto a second rooted device with the matching fingerprint applied →
   see if it opens logged in. Until then, session migration is 'files proven, login-survival unverified'.
 
-- **2026-07-27 · first_api_level should reflect the device's LAUNCH API, not the current SDK** — status: `shipped for Samsung (2026-07-28); other brands TODO`.
+- **2026-07-27 · first_api_level should reflect the device's LAUNCH API, not the current SDK** — status: `shipped: Samsung+Xiaomi+Motorola+OnePlus (2026-07-28, 61 models); remaining brands optional`.
   2026-07-28 analysis: scanned all ~350 selectable devices. MANY have dataset_release > real launch OS, so
   first_api==sdk is a real coherence tell for them — e.g. Galaxy A70 (SM-A705FN) dataset release=10 but
   launched Android 9 => first_api should be 28 not 29; S10 (SM-G970F) release=11 but launched 9 => 28.

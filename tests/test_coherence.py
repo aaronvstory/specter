@@ -96,7 +96,10 @@ def test_known_launch_apis_are_pinned():
     API is a FACT of the model. Note8=25 (not 26), S8=24, A70=28 are the careful cases."""
     from specter import generators as G
     for model, want in [("SM-N950F", 25), ("SM-G950F", 24), ("SM-A705FN", 28),
-                        ("SM-G970F", 28), ("SM-N960F", 27), ("SM-A600F", 26)]:
+                        ("SM-G970F", 28), ("SM-N960F", 27), ("SM-A600F", 26),
+                        # Xiaomi/Moto/OnePlus MIUI-vs-Android traps + launch-OS facts (2026-07-28):
+                        ("POCOPHONE F1", 27), ("Redmi Note 5 Pro", 25), ("Mi MIX 2", 25),
+                        ("moto g(6)", 26), ("moto x4", 25), ("ONEPLUS A3000", 23), ("GM1900", 28)]:
         assert G.launch_api_for(model, 35) == want, f"{model} launch API should be {want}"
     # an unmapped model falls back to the current sdk (first_api == sdk)
     assert G.launch_api_for("Totally Unknown", 30) == 30

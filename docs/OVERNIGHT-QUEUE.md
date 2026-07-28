@@ -58,6 +58,8 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
   do NOT build a global always-on resetprop). See the IDEAS entry.
 
 ## Log (append as you go — newest first)
+- 2026-07-28 T1b EXPANDED: launch-API map now 61 models (added Xiaomi/Redmi/POCO + Motorola + OnePlus, 30
+  impactful entries via 2 parallel research agents, GSMArena-sourced, MIUI traps handled). Byte-parity 61/61.
 - 2026-07-28 T1b DONE (Samsung): first_api_level = LAUNCH API. Built the plumbing (build_first_api field +
   native deferred read + launch_api_for) and the Samsung launch-OS set (31 models, researched). PROVEN on P4:
   A50s reads ro.product.first_api_level=28 while ro.build.version.sdk=29. Other brands' launch OS = future pass.

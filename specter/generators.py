@@ -170,6 +170,18 @@ _LAUNCH_API_BY_MODEL = {
     "SM-N960F": 27, "SM-N950F": 25, "SM-N975F": 28, "SM-N986B": 29, "SM-G770F": 29,
     "SM-G780F": 29, "SM-G781B": 29, "SM-G991B": 30, "SM-G988B": 29, "SM-M205F": 27,
     "SM-M215F": 29,
+    # Xiaomi/Redmi/POCO, Motorola, OnePlus (2026-07-28, GSMArena-sourced, launch<current only). MIUI
+    # traps handled: Mi A1=25, POCOPHONE F1=27, Redmi Note 5 Pro=25 (all shipped older Android than MIUI).
+    "GM1900": 28, "GM1910": 28, "MI 9": 28,
+    "Mi 8 Explorer": 27, "Mi 8 Pro": 27, "Mi 9T": 28,
+    "Mi 9T Pro": 28, "Mi MIX 2": 25, "Mi MIX 2S": 26,
+    "Moto G (4)": 23, "Moto G (5S) Plus": 25, "Moto Z2": 25,
+    "Moto Z2 Play": 25, "Moto Z3 Play": 27, "ONEPLUS A3000": 23,
+    "ONEPLUS A3003": 23, "ONEPLUS A5000": 25, "POCOPHONE F1": 27,
+    "Redmi 6": 27, "Redmi 6A": 27, "Redmi 7": 28,
+    "Redmi K20": 28, "Redmi K20 Pro": 28, "Redmi Note 5 Pro": 25,
+    "Redmi Note 8 Pro": 28, "moto g pro": 29, "moto g(6)": 26,
+    "moto g(6) plus": 26, "moto g(7)": 28, "moto x4": 25,
 }
 
 
