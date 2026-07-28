@@ -214,6 +214,8 @@ public class MainActivity extends Activity {
             item.setPadding(0, dp(Theme.S2), 0, dp(Theme.S2));
             ImageView ic = new ImageView(this);
             ic.setImageDrawable(navIcon(idx, dp(24)).tint(active ? Theme.GOLD : Theme.SOFT));
+            ic.setContentDescription(NAV[idx]);
+            item.setContentDescription(NAV[idx] + (active ? ", selected" : ""));
             LinearLayout.LayoutParams iclp = new LinearLayout.LayoutParams(dp(26), dp(26));
             iclp.gravity = Gravity.CENTER_HORIZONTAL;
             item.addView(ic, iclp);
@@ -423,9 +425,9 @@ public class MainActivity extends Activity {
         btn.setText(text);
         btn.setAllCaps(false);
         btn.setTextSize(13);
-        btn.setMinWidth(0); btn.setMinHeight(0);
-        btn.setMinimumWidth(0); btn.setMinimumHeight(0);
-        btn.setPadding(dp(13), dp(6), dp(13), dp(6));
+        btn.setMinWidth(0); btn.setMinimumWidth(0);
+        btn.setMinHeight(dp(44)); btn.setMinimumHeight(dp(44));   // accessible touch target (was 0)
+        btn.setPadding(dp(14), dp(8), dp(14), dp(8));
         btn.setStateListAnimator(null);
         btn.setBackground(pill(primary ? Theme.GOLD : Theme.CARD2, primary ? Theme.GOLD : Theme.BTN_EDGE));
         btn.setTextColor(primary ? Theme.ON_GOLD : Theme.SOFT);
@@ -471,8 +473,8 @@ public class MainActivity extends Activity {
     private GradientDrawable pill(int fill, int stroke) {
         GradientDrawable g = new GradientDrawable();
         g.setColor(fill);
-        g.setCornerRadius(dp(3));    // square-ish corners (user preference)
-        g.setStroke(dp(1), stroke);
+        g.setCornerRadius(dp(Theme.R_CTRL));   // consistent tight control radius
+        g.setStroke(Math.max(1, dp(1)), stroke);
         return g;
     }
 
@@ -858,14 +860,15 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> { if (!scoped) { warn.setText("Not enabled in LSPosed"); warn.setVisibility(View.VISIBLE); } }); }).start();
         r.addView(col);
 
+        // Just a chevron in the collapsed row — the Remove action lives INSIDE the expanded actions, so a
+        // stray tap next to "expand" can't delete a target (accidental-delete guard).
         ImageView chev = new ImageView(this);
         chev.setImageDrawable(icChevron(expanded ? 1 : 0, dp(18)).tint(monitoring ? Theme.GOLD : Theme.DIM));
-        chev.setLayoutParams(new LinearLayout.LayoutParams(dp(28), dp(28)));
+        chev.setContentDescription(expanded ? "Collapse" : "Expand");
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(40), dp(40));
+        clp.gravity = Gravity.CENTER; chev.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        chev.setLayoutParams(clp);
         r.addView(chev);
-        r.addView(iconButton(icClose(dp(16)), Theme.DIM, v -> {
-            Set<String> cur = Targets.get(prefs); cur.remove(pkg); Targets.set(prefs, cur);
-            toast("Removed " + Targets.label(this, pkg)); render();
-        }));
         box.addView(r);
 
         if (expanded) {
@@ -879,12 +882,20 @@ public class MainActivity extends Activity {
             actions.addView(row1);
             LinearLayout row2 = new LinearLayout(this); row2.setOrientation(LinearLayout.HORIZONTAL);
             row2.setPadding(0, dp(Theme.S2), 0, 0);
-            Button save = halfButton("Save AppData", v -> runSession(pkg, true, sessStatus));
+            Button save = halfButton("Save login", v -> runSession(pkg, true, sessStatus));
             View gap = new View(this); gap.setLayoutParams(new LinearLayout.LayoutParams(dp(Theme.S2), 1));
-            Button rest = halfButton("Restore AppData", v -> runSession(pkg, false, sessStatus));
+            Button rest = halfButton("Restore login", v -> runSession(pkg, false, sessStatus));
             row2.addView(save); row2.addView(gap); row2.addView(rest);
             actions.addView(row2);
             actions.addView(sessStatus);
+            // Remove target — lives here (expanded) so it can't be tapped by accident from the collapsed row.
+            View remove = textButton("Remove from targets", Theme.RED, v -> {
+                Set<String> cur = Targets.get(prefs); cur.remove(pkg); Targets.set(prefs, cur);
+                toast("Removed " + Targets.label(this, pkg)); render();
+            });
+            ((TextView) remove).setGravity(Gravity.START);
+            ((TextView) remove).setPadding(0, dp(Theme.S2), 0, 0);
+            actions.addView(remove);
             box.addView(actions);
         }
         return box;
