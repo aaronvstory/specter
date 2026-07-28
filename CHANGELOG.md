@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.14.1] — 2026-07-28
+
+### Changed
+- **UI declutter — Apple-clean copy.** Cut every multi-line control description down to one short,
+  plain-language line (no OkHttp/OEMCrypto/GLES/first_api jargon in the primary text). Shortened the
+  native-layer banner, the Auto deep-clean line, the Advanced-root (Widevine/GSF) cards, the Protections
+  rows, the Location + Saved cards, the apply/restore toasts, and the confirm dialogs. Every control stays
+  fully functional; only the surface copy changed.
+
 ## [0.14.0] — 2026-07-28
 
 ### Added

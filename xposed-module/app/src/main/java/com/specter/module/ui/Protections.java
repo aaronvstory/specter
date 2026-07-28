@@ -40,23 +40,25 @@ public final class Protections {
     }
 
     // Order = display order in the Settings "Protections" section.
+    // desc = ONE short line for the primary UI (Apple-clean); the mechanism detail lives in the comments
+    // above / the design docs, not on-screen.
     public static final P[] ALL = {
-        new P("hide_root",     "Hide root",          "Makes su / Magisk / Zygisk / Frida paths read as absent AND filters Magisk out of /proc/mounts + mountinfo, so a root or bind-mount check finds nothing."),
-        new P("hide_dev",      "Hide developer mode","Reports ADB and Developer Options as OFF (adb_enabled / development_settings_enabled = 0)."),
-        new P("hide_apps",     "Hide My AppList",    "Drops Specter, root managers, and anti-fingerprint tools from the installed-app list an app can enumerate."),
-        new P("spoof_ua",      "Spoof User-Agent",   "Rebuilds the HTTP + WebView User-Agent from the applied device, so the UA no longer leaks the real phone."),
-        new P("spoof_apktime", "Spoof install time", "Rewrites the app's own APK install timestamps to a per-identity value (the FingerprintJS FileTimestamps signal)."),
-        new P("spoof_sysfs",   "Spoof hardware profile", "Aligns the deep hardware signature with the applied device: /sys cpu_capacity, gpu_model and present, plus /proc/version and the screen resolution/density (getDisplayMetrics)."),
+        new P("hide_root",     "Hide root",          "Root and jailbreak tools read as absent."),
+        new P("hide_dev",      "Hide developer mode","ADB and Developer Options read as off."),
+        new P("hide_apps",     "Hide app list",      "Keeps Specter and root tools out of the installed-app list."),
+        new P("spoof_ua",      "Match browser signature", "The web User-Agent matches the applied device."),
+        new P("spoof_apktime", "Randomize install time", "The app's install date reads as a fresh, per-identity value."),
+        new P("spoof_sysfs",   "Match hardware profile", "Deep hardware signals and screen size match the applied device."),
         // Media codecs have no single identity value, so their toggle lives here (not in the Identity
         // list). Default ON like the other hardware spoofs — leaving the real OMX.qcom.* codec set is a
         // per-SoC leak. Toggleable per-app: the only apps this could affect are ones that create a codec
         // by its (now-relabeled) name, so turn it off for a specific target only if media playback breaks.
         // (Google-account masking's toggle lives on the Gmail row in the Identity tab, next to its value.)
-        new P("spoof_codecs",   "Spoof media codecs", "Relabels the media-codec list (a per-SoC signal that otherwise leaks the real SoC). On by default. If a specific app's media playback breaks, turn it off just for that app.", true),
+        new P("spoof_codecs",   "Match media codecs", "Codec names match the applied device. Turn off per-app if playback breaks.", true),
         // OPT-IN diagnostics (default OFF). READ-ONLY — makes the hooks LOG what each scoped app reads +
         // what value we returned, to /data/local/tmp/specter/diag.log (via a background logcat capture).
         // Changes NOTHING the app sees, so it's safe; a slight perf/log cost is why it's off by default.
-        new P("trace",          "Diagnostics logging", "Logs what each Specter-scoped app READS (props, files, IDs) and the value returned, to /data/local/tmp/specter/diag.log — so you can verify spoofs are landing. Read-only: applies nothing. Off by default (perf/log cost).", false),
+        new P("trace",          "Diagnostics logging", "Logs what each app reads, so you can verify spoofs land. Read-only.", false),
     };
 
     /** Look up a protection by its gate key (e.g. "trace"). Returns null if unknown. */

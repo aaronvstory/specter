@@ -184,8 +184,7 @@ public class MainActivity extends Activity {
         // it's not optional, because applying an identity over a prior one's data links the accounts. This is a
         // fixed info line, not a toggle (a toggle here would be a footgun / dead control now that it's mandatory).
         TextView autoClear = new TextView(this);
-        autoClear.setText("🧹 Auto deep-clean: every APPLY / RESTORE wipes each target's storage + cache first, so "
-                + "no data carries over between identities.");
+        autoClear.setText("🧹 Each target is wiped clean before every apply.");
         autoClear.setTextColor(Theme.DIM);
         autoClear.setTextSize(12);
         LinearLayout.LayoutParams cp2 = new LinearLayout.LayoutParams(
@@ -328,8 +327,7 @@ public class MainActivity extends Activity {
         // Sign off `profile` (the full pre-toggle map), NOT `toApply` (android_id may be toggled out of toApply).
         final String sig = applySignature(profile, targets);
         if (!appliedSig.isEmpty() && appliedSig.equals(sig)) {
-            String msg = "Already applied to " + pkgs.size() + " app(s). "
-                    + "Relaunch them to see it, or RANDOMIZE ALL for a new identity.";
+            String msg = "Already applied. Relaunch the app(s), or RANDOMIZE ALL for a new one.";
             status.setText(msg); toast(msg);
             return;
         }
@@ -354,11 +352,10 @@ public class MainActivity extends Activity {
             final boolean allApplied = okN == pkgs.size();      // every target cleared AND applied
             runOnUiThread(() -> {
                 // Only claim "no carry-over" when EVERY target was actually cleared.
-                if (allClean) toast("🧹 Deep-cleaned cache + storage on all " + pkgs.size()
-                        + " app(s) before applying — no carry-over from the previous identity.");
-                else if (clearedN > 0) toast("⚠️ Deep-cleaned only " + clearedN + "/" + pkgs.size()
-                        + " app(s) — the rest were NOT cleared or applied (grant root in Magisk?).");
-                String m = "Cleared " + clearedN + "/" + pkgs.size() + ", applied " + okN + "/" + pkgs.size() + " app(s)."
+                if (allClean) toast("🧹 Wiped clean and applied to " + pkgs.size() + " app(s).");
+                else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
+                        + " app(s) done — grant root in Magisk?");
+                String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
                         + (clrErr != null ? " Clear error: " + clrErr : "")
                         + (err != null ? " Apply error: " + err + " (grant root in Magisk?)" : "")
                         + (clrErr == null && err == null ? " Relaunch them to see it." : "");
@@ -435,12 +432,8 @@ public class MainActivity extends Activity {
         lab.setTextColor(Theme.AMBER); lab.setTextSize(14);
         card.addView(lab);
         TextView d = value(stale
-                ? "The Specter Zygisk native layer is " + zygiskStatus.installedVersion + " but this app bundles "
-                  + zygiskStatus.bundledVersion + ". Update it so the native read-paths (props/reset-time/GLES a "
-                  + "fingerprinter reads below the Java hooks) stay covered."
-                : "The Specter Zygisk native layer isn't installed. Without it, a fingerprinter reading device "
-                  + "props / reset-time / GLES NATIVELY (below the Java hooks) sees the real device. Install it "
-                  + "in one tap — no separate Magisk flash needed.");
+                ? "An update is available. Install it to keep deep signals covered."
+                : "Without it, some deep signals still read the real device. One tap installs it.");
         d.setTextColor(Theme.DIM); d.setTextSize(12);
         card.addView(d);
         Button go = button(stale ? "Update native layer" : "Install native layer", true, v -> installZygisk());
@@ -468,7 +461,7 @@ public class MainActivity extends Activity {
                     status.setText("Native layer installed — REBOOT to activate it.");
                     new AlertDialog.Builder(this)
                             .setTitle("Native layer installed")
-                            .setMessage("The Specter Zygisk native layer is in place. It loads at boot — reboot now to activate it?")
+                            .setMessage("It activates on boot. Reboot now?")
                             .setPositiveButton("Reboot now", (dl, w) -> {
                                 new Thread(() -> { try { new com.specter.module.gen.RootWriter.SuShell().run("svc power reboot || reboot", ""); } catch (Throwable ignored) {} }).start();
                             })
@@ -570,7 +563,7 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(this, AppPickerActivity.class))));
         headCard.addView(head);
         if (targets.isEmpty()) {
-            TextView none = value("None selected — tap Change to pick the app(s) to spoof.");
+            TextView none = value("None yet — tap Change to pick apps.");
             none.setTextColor(Theme.DIM);
             headCard.addView(none);
         }
@@ -788,9 +781,7 @@ public class MainActivity extends Activity {
         box.addView(in);
         if (COUPLED_DEVICE_FIELDS.contains(f.key)) {
             TextView warn = new TextView(this);
-            warn.setText("⚠ Device fields are coupled — changing only this one may not match the others "
-                    + "(model/brand/device/fingerprint). To clone a whole device coherently, edit them all "
-                    + "to the same real handset.");
+            warn.setText("⚠ Device fields go together — edit them all to match one real phone.");
             warn.setTextColor(Theme.AMBER);
             warn.setTextSize(11);
             warn.setPadding(0, dp(8), 0, 0);
@@ -833,10 +824,7 @@ public class MainActivity extends Activity {
         content.addView(sectionLabel("Anti-fingerprinting"));
         LinearLayout info = cardBox();
         info.addView(label("Core spoofing — always on"));
-        TextView desc = value("Coherent identity + deep signal spoofing applies on every identity: Build.* + "
-                + "props, bootloader/radio/kernel, HARDWARE/BOARD, SoC, GPU/GLES, /proc/cpuinfo, sensor list "
-                + "AND raw calibration values, verified-boot / lock state, US timezone + locale, boot count, "
-                + "and battery capacity — all aligned to the applied device.");
+        TextView desc = value("Every device signal is aligned to the applied phone.");
         desc.setTextColor(Theme.DIM);
         info.addView(desc);
         content.addView(info);
@@ -870,15 +858,13 @@ public class MainActivity extends Activity {
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView lab = label("Widevine L1 -> L3 (native)");
+        TextView lab = label("Downgrade Widevine to L3");
         lab.setTextColor(Theme.INK); lab.setTextSize(14);
         titleRow.addView(lab);
         final TextView chip = statusChip(prefs.getBoolean("widevine_l3", false));
         titleRow.addView(chip);
         txt.addView(titleRow);
-        TextView d = value("Bind-mounts an empty liboemcrypto.so over the vendor lib so hardware Widevine drops "
-                + "to software L3 — coherent for a native securityLevel/deviceUniqueId read (below the Java hook). "
-                + "Device-wide, survives reboot. WARNING: breaks DRM HD playback (Netflix/Prime) while on. Root.");
+        TextView d = value("Reports software DRM, device-wide. Breaks HD Netflix/Prime while on.");
         d.setTextColor(Theme.DIM); d.setTextSize(12); d.setTextIsSelectable(false);
         txt.addView(d);
         head.addView(txt);
@@ -908,9 +894,8 @@ public class MainActivity extends Activity {
                             prefs.edit().putBoolean("widevine_l3", on).apply();
                             styleChip(chip, on);
                             status.setText(on
-                                    ? "Widevine L3 installed — native reads report L3. Reboot to be safe. If a DRM app "
-                                      + "or boot misbehaves, turn this OFF (or boot to safe mode to disable all modules)."
-                                    : "Widevine L3 removed — reboot to fully restore hardware Widevine.");
+                                    ? "Widevine set to L3 — reboot to be safe."
+                                    : "Widevine restored — reboot to finish.");
                         } else {
                             // revert the switch to the real (unchanged) state — no cosmetic ON without the module.
                             // widevineBusy stays true across this setChecked so the re-fired listener no-ops.
@@ -934,19 +919,16 @@ public class MainActivity extends Activity {
      *  A button (not a toggle) behind a confirm, because it signs the device out of Google and forces a reboot. */
     private View gsfResetRow() {
         LinearLayout card = cardBox();
-        TextView gsfLab = label("Reset Google identity (GSF)");   // match the Widevine card's header emphasis
+        TextView gsfLab = label("Reset Google identity");   // match the Widevine card's header emphasis
         gsfLab.setTextColor(Theme.INK); gsfLab.setTextSize(14);
         card.addView(gsfLab);
-        TextView d = value("Wipes Play Services + Services Framework + Play Store and reboots, so Google "
-                + "re-registers a FRESH device id. Attacks the server-side re-link anchor that survives an app's "
-                + "own data clear. WARNING: signs the device out of Google, drops Play state, and REBOOTS. Root.");
+        TextView d = value("Gives the device a fresh Google id. Signs out of Google and reboots.");
         d.setTextColor(Theme.DIM); d.setTextSize(12); d.setTextIsSelectable(false);
         card.addView(d);
         Button go = button("Reset GSF + reboot", false, v ->
                 new AlertDialog.Builder(this)
                         .setTitle("Reset Google identity?")
-                        .setMessage("This clears Play Services / Framework / Store and REBOOTS now. The device "
-                                + "signs out of Google and re-registers a new id on boot. Continue?")
+                        .setMessage("Signs out of Google, resets the device id, and reboots now. Continue?")
                         .setPositiveButton("Reset + reboot", (dl, w) -> {
                             status.setText("Resetting Google identity — device will reboot…");
                             new Thread(() -> {
@@ -1065,8 +1047,7 @@ public class MainActivity extends Activity {
         boolean on = Protections.isOn(prefs, Protections.byKey("hide_root"));
         head.addView(statusChip(on));
         mockCard.addView(head);
-        TextView d = value("Location.isFromMockProvider() / isMock() report false to scoped targets, so a "
-                + "driver/fraud SDK can't detect a mocked GPS. Tied to the Hide-root toggle (Settings).");
+        TextView d = value("Mocked GPS reads as real. Follows the Hide-root toggle.");
         d.setTextColor(Theme.DIM);
         d.setTextSize(12);
         mockCard.addView(d);
@@ -1076,8 +1057,7 @@ public class MainActivity extends Activity {
         // not-yet-built so it never reads as a working control (no fake UI).
         LinearLayout soon = cardBox();
         soon.addView(label("Coordinate spoofing"));
-        TextView s = value("Planned — lat/long fields will drive a LocationManager/FusedLocation hook, "
-                + "coordinate-matched with the profile's US region. Not built yet.");
+        TextView s = value("Planned — set a fixed location. Not built yet.");
         s.setTextColor(Theme.DIM);
         s.setTextSize(12);
         soon.addView(s);
@@ -1088,9 +1068,7 @@ public class MainActivity extends Activity {
     private void renderSaved() {
         content.addView(sectionLabel("Save current identity"));
         LinearLayout saveCard = cardBox();
-        saveCard.addView(value("Save the currently-APPLIED identity so you can re-apply this exact device "
-                + "later. Only appears after you APPLY (saving an un-applied identity is pointless). A unique "
-                + "name is prefilled from the date/time — edit it if you like."));
+        saveCard.addView(value("Save the applied identity to re-apply it later."));
         LinearLayout saveRow = new LinearLayout(this);
         saveRow.setOrientation(LinearLayout.HORIZONTAL);
         saveRow.addView(button("Save current to vault", true, v -> {
@@ -1104,8 +1082,7 @@ public class MainActivity extends Activity {
         // Import a profile shared by another user (a specter-profile-*.json in /sdcard/Download).
         content.addView(sectionLabel("Import a shared profile"));
         LinearLayout importCard = cardBox();
-        TextView idesc = value("Import a profile someone shared with you (a specter-profile-*.json in "
-                + "Download). It's validated + checksummed, then added to your vault to apply.");
+        TextView idesc = value("Add a profile someone shared with you (from Download).");
         idesc.setTextColor(Theme.DIM);
         idesc.setTextSize(12);
         importCard.addView(idesc);
@@ -1370,10 +1347,9 @@ public class MainActivity extends Activity {
             final boolean allClean = clearedN == pkgs.size();
             runOnUiThread(() -> {
                 if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
-                if (allClean) toast("🧹 Deep-cleaned cache + storage on all " + pkgs.size()
-                        + " app(s) before restoring — no carry-over from the previous identity.");
-                else if (clearedN > 0) toast("⚠️ Deep-cleaned only " + clearedN + "/" + pkgs.size()
-                        + " app(s) — the rest were NOT restored (grant root in Magisk?).");
+                if (allClean) toast("🧹 Wiped clean and restored to " + pkgs.size() + " app(s).");
+                else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
+                        + " app(s) done — grant root in Magisk?");
                 String tail = (clrErr != null ? " Clear error: " + clrErr : "")
                         + (err != null ? " Apply error: " + err : "")
                         + (clrErr == null && err == null ? " Relaunch them to see it." : "");
@@ -1390,7 +1366,7 @@ public class MainActivity extends Activity {
         in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         new AlertDialog.Builder(this)
                 .setTitle("Save identity as")
-                .setMessage("A unique date/time name is prefilled. Add or replace with your own if you like.")
+                .setMessage("A name is prefilled — edit it if you like.")
                 .setView(in)
                 .setPositiveButton("Save", (d, w) -> {
                     // If the user kept the prefilled label, save under it as-is; else treat their text as the name.
