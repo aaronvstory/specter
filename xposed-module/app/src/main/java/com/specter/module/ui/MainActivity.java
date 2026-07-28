@@ -125,6 +125,12 @@ public class MainActivity extends Activity {
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(0, dp(Theme.S1), 0, dp(Theme.S6) * 2);   // side padding now lives on cards; big bottom pad
+        // Restrained motion: animate row/card insert+remove so expanding a section or switching tabs fades in
+        // instead of snapping. LayoutTransition is the one-liner that honours the system animator scale
+        // (respects "remove animations"/reduced-motion), so no extra reduced-motion handling needed.
+        android.animation.LayoutTransition lt = new android.animation.LayoutTransition();
+        lt.enableTransitionType(android.animation.LayoutTransition.CHANGING);
+        content.setLayoutTransition(lt);
         scroll.addView(content);
         root.addView(scroll);
 
@@ -519,6 +525,7 @@ public class MainActivity extends Activity {
         // (UI thread); the su work runs as the FIRST thing on the wipe thread, so it completes before the wipe.
         final String flushPkg = beginFlushBeforeWipe(pkgs);
         opBusy = true;
+        render();   // reflect the busy state immediately (hero button -> "Applying…", disabled)
         status.setText("Deep-cleaning + applying to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
             finishFlush(flushPkg);   // disarm trace + archive the capture BEFORE anything is wiped
@@ -757,21 +764,21 @@ public class MainActivity extends Activity {
 
         boolean applied = !appliedTargets.isEmpty()
                 && appliedSig.equals(applySignature(enabledProfile(), Targets.get(prefs)));
-        TextView state = new TextView(this);
         Set<String> tgts = Targets.get(prefs);
-        state.setText(applied ? "Applied to " + tgts.size() + " app" + (tgts.size() == 1 ? "" : "s")
-                : "New identity · not applied yet");
-        state.setTextColor(applied ? Theme.SAGE : Theme.SOFT);
-        state.setTextSize(Theme.T_CAPTION);
-        state.setPadding(0, dp(Theme.S1), 0, dp(Theme.S3));
-        c.addView(state);
+        // Status pill (icon-dot + word) so state reads at a glance, not text alone.
+        c.addView(statusPill(opBusy ? "Applying…" : applied ? "Applied" : "Ready",
+                opBusy ? Theme.GOLD : applied ? Theme.SAGE : Theme.SOFT));
 
-        // Primary: Apply to N apps
+        // Primary: Apply to N apps — disabled + progress label while an apply/restore is running.
         int napps = tgts.size();
-        c.addView(primaryButton(napps == 0 ? "Select target apps" : "Apply to " + napps + " app" + (napps == 1 ? "" : "s"),
-                v -> { if (napps == 0) startActivity(new Intent(this, AppPickerActivity.class)); else apply(); }));
+        if (opBusy) {
+            c.addView(disabledButton("Applying…"));
+        } else {
+            c.addView(primaryButton(napps == 0 ? "Select target apps" : "Apply to " + napps + " app" + (napps == 1 ? "" : "s"),
+                    v -> { if (napps == 0) startActivity(new Intent(this, AppPickerActivity.class)); else apply(); }));
+        }
         // Secondary quiet: generate another
-        c.addView(textButton("Generate another identity", Theme.SOFT, v -> regenerate()));
+        c.addView(textButton("Generate another identity", Theme.SOFT, v -> { if (!opBusy) regenerate(); }));
         return c;
     }
 
@@ -2534,6 +2541,43 @@ public class MainActivity extends Activity {
     /** Full-width SECONDARY action (quiet surface, ink text, hairline edge). */
     private View secondaryButton(String text, View.OnClickListener onClick) {
         return themedButton(text, Theme.CARD2, Theme.INK, Theme.LINE_HI, true, onClick);
+    }
+
+    /** A disabled primary button (dimmed, non-interactive) shown while an operation runs. */
+    private View disabledButton(String text) {
+        TextView b = new TextView(this);
+        b.setText(text); b.setTextColor(0x88211B02); b.setTextSize(Theme.T_BODY);
+        b.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        b.setGravity(Gravity.CENTER);
+        b.setMinimumHeight(dp(48));
+        b.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        GradientDrawable base = new GradientDrawable();
+        base.setColor(0x66FFD54A);   // dimmed gold
+        base.setCornerRadius(dp(Theme.R_CTRL));
+        b.setBackground(base);
+        b.setEnabled(false);
+        b.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return b;
+    }
+
+    /** A small status pill: a colored dot + a word (Ready / Applying… / Applied). Reads at a glance. */
+    private View statusPill(String text, int color) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(Theme.S1), 0, dp(Theme.S3));
+        View dot = new View(this);
+        GradientDrawable d = new GradientDrawable();
+        d.setShape(GradientDrawable.OVAL); d.setColor(color);
+        dot.setBackground(d);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(7), dp(7));
+        dlp.setMargins(0, 0, dp(Theme.S2), 0);
+        row.addView(dot, dlp);
+        TextView t = new TextView(this);
+        t.setText(text); t.setTextColor(color); t.setTextSize(Theme.T_CAPTION);
+        t.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        row.addView(t);
+        return row;
     }
 
     /** A quiet TEXT button (no fill) — for tertiary actions like "Generate another". */
