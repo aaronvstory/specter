@@ -50,6 +50,23 @@ public class AppDataVaultTest {
                 "copy-out copies the vault tar back to staging");
         check(out.contains("mkdir -p '/data/local/tmp/specter'"), "copy-out ensures the staging dir exists");
 
+        // ---- export/import bundle commands ----
+        String exp = AppDataVault.buildExportCommand("/data/data/com.specter/files/appdata",
+                "072926-Sun-1924-razr", "/sdcard/Download/specter-login-072926-Sun-1924-razr.tar");
+        check(exp.contains("tar cf '/sdcard/Download/specter-login-072926-Sun-1924-razr.tar'"), "export builds the bundle tar");
+        check(exp.contains("'072926-Sun-1924-razr.tgz' '072926-Sun-1924-razr.meta'"), "export bundles BOTH tgz + meta");
+        check(exp.contains("test -f") && exp.indexOf("test -f") < exp.indexOf("tar cf"), "export guards missing source");
+
+        String imp = AppDataVault.buildImportCommand("/sdcard/Download/specter-login-x.tar",
+                "/data/data/com.specter/files/appdata");
+        check(imp.contains("tar xf '/sdcard/Download/specter-login-x.tar'"), "import extracts the bundle");
+        // import REFUSES anything that isn't <name>.tgz/.meta (root extraction into the app dir).
+        check(imp.contains("grep -qvE '^[A-Za-z0-9_.-]+[.](tgz|meta)$'"), "import refuses unexpected entries");
+
+        // ---- name sanitizer ----
+        check(AppDataVault.sanitizeName("Bob's Phone!").equals("Bobs_Phone"), "sanitizeName strips punctuation, space->_");
+        check(AppDataVault.sanitizeName("").isEmpty(), "sanitizeName empty");
+
         System.out.println("AppDataVault: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

@@ -138,6 +138,56 @@ public final class AppDataVault {
     /** The package a saved app-data belongs to (needed to run SessionMigrator.restore after restoreToStaging). */
     public String pkgOf(String label) { Entry e = get(label); return e == null ? null : e.pkg; }
 
+    /** su command: bundle a saved login's tarball + meta into a single portable tar in /sdcard/Download so it
+     *  can be moved to another device. Named specter-login-&lt;label&gt;.tar. Returns the command; both the vault
+     *  dir and the label are validated before this is built. */
+    public static String buildExportCommand(String vaultDir, String label, String dest) {
+        return "test -f '" + vaultDir + "/" + label + ".tgz' || { echo 'no such login'; exit 3; }; "
+                + "tar cf '" + dest + "' -C '" + vaultDir + "' '" + label + ".tgz' '" + label + ".meta' && "
+                + "chmod 644 '" + dest + "' && echo exported $(stat -c %s '" + dest + "') bytes";
+    }
+
+    /** Export a saved login (tarball + meta) to /sdcard/Download. Returns the dest path, or null on failure.
+     *  Runs blocking su — call off the UI thread. */
+    public String exportToDownloads(String label) {
+        if (!validLabel(label) || get(label) == null) return null;
+        String dest = "/sdcard/Download/specter-login-" + label + ".tar";
+        String vaultDir = dir.getAbsolutePath();
+        if (!isSafe(vaultDir) || !isSafe(dest)) return null;
+        try {
+            String out = new SessionMigrator.SuShell().run(buildExportCommand(vaultDir, label, dest)).output;
+            return out != null && out.contains("exported") ? dest : null;
+        } catch (Exception e) { return null; }
+    }
+
+    /** su command: extract a portable login bundle (from {@link #buildExportCommand}) back INTO the vault dir.
+     *  Refuses any entry that isn't exactly {@code <something>.tgz}/{@code <something>.meta} (extraction runs as
+     *  root into the app's dir, so no traversal / other files). */
+    public static String buildImportCommand(String srcTar, String vaultDir) {
+        return "test -f '" + srcTar + "' || { echo 'no such bundle'; exit 3; }; "
+                + "tar tf '" + srcTar + "' | grep -qvE '^[A-Za-z0-9_.-]+[.](tgz|meta)$' && { echo 'bundle has unexpected entries'; exit 4; }; "
+                + "tar xf '" + srcTar + "' -C '" + vaultDir + "' && echo imported";
+    }
+
+    /** Import a portable login bundle from /sdcard/Download into the vault. Returns the imported label on
+     *  success, or null. Runs blocking su — call off the UI thread. */
+    public String importFromDownloads(java.io.File src) {
+        if (src == null) return null;
+        String path = src.getAbsolutePath();
+        // the bundle name encodes the label: specter-login-<label>.tar
+        String name = src.getName();
+        if (!name.startsWith("specter-login-") || !name.endsWith(".tar")) return null;
+        String label = name.substring("specter-login-".length(), name.length() - 4);
+        if (!validLabel(label)) return null;
+        String vaultDir = dir.getAbsolutePath();
+        if (!path.startsWith("/sdcard/Download/") || path.contains("..") || !isSafe(path) || !isSafe(vaultDir)) return null;
+        try {
+            String out = new SessionMigrator.SuShell().run(buildImportCommand(path, vaultDir)).output;
+            // The extracted .tgz lands root-owned; the app can still read it (dir is app-owned, mode 644).
+            return out != null && out.contains("imported") && metaFile(label).exists() ? label : null;
+        } catch (Exception e) { return null; }
+    }
+
     public Entry get(String label) {
         if (!validLabel(label)) return null;
         java.io.File mf = metaFile(label);
@@ -162,12 +212,69 @@ public final class AppDataVault {
         return out;
     }
 
-    /** Delete a saved app-data (tarball + meta). Returns true if anything was removed. */
+    /** Delete a saved app-data (tarball + meta). Returns true if anything was removed. Note: the tarball may
+     *  be root-owned (copied in via su), but it lives in this app-owned dir, so unlink succeeds. */
     public boolean delete(String label) {
         if (!validLabel(label)) return false;
         boolean a = tarFile(label).delete();
         boolean b = metaFile(label).delete();
         return a || b;
+    }
+
+    /** Rename a saved app-data's NAME (after the label's timestamp prefix), keeping the timestamp. Renames the
+     *  .tgz + .meta pair. Returns the new label, or null if the source is missing / target exists / rename
+     *  failed. The link to the fingerprint (stored INSIDE the meta) is preserved unchanged. */
+    public String rename(String oldLabel, String newName) {
+        if (!validLabel(oldLabel) || metaFile(oldLabel).exists() == false) return null;
+        String[] p = oldLabel.split("-");
+        String prefix = p.length >= 3 ? p[0] + "-" + p[1] + "-" + p[2] : oldLabel;
+        String clean = sanitizeName(newName);
+        String base = clean.isEmpty() ? prefix : prefix + "-" + clean;
+        if (base.equals(oldLabel)) return oldLabel;
+        String target = base;
+        for (int i = 2; metaFile(target).exists() && i < 1000; i++) target = base + "-" + i;
+        if (!validLabel(target)) return null;
+        // Move the tarball first; if it exists, move meta too. Roll back the tarball move on meta failure.
+        java.io.File srcTar = tarFile(oldLabel), dstTar = tarFile(target);
+        java.io.File srcMeta = metaFile(oldLabel), dstMeta = metaFile(target);
+        boolean tarMoved = !srcTar.exists() || srcTar.renameTo(dstTar);
+        if (!tarMoved) return null;
+        if (!srcMeta.renameTo(dstMeta)) {
+            //noinspection ResultOfMethodCallIgnored
+            if (dstTar.exists()) dstTar.renameTo(srcTar);   // roll back
+            return null;
+        }
+        return target;
+    }
+
+    /** When a FINGERPRINT is renamed, point every app-data that linked to the old label at the new one, so the
+     *  bundle stays intact. Returns how many metas were updated. */
+    public int relinkFingerprint(String oldFpLabel, String newFpLabel) {
+        int n = 0;
+        java.io.File[] metas = dir.listFiles((d, name) -> name.endsWith(".meta"));
+        if (metas == null) return 0;
+        for (java.io.File mf : metas) {
+            String label = mf.getName().substring(0, mf.getName().length() - 5);
+            Entry e = parseMeta(label, readFile(mf));
+            if (e == null || !oldFpLabel.equals(e.fingerprint)) continue;
+            String meta = serializeMeta(e.pkg, e.savedAt, e.sizeBytes, newFpLabel, e.device);
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(mf)) {
+                fos.write(meta.getBytes("UTF-8")); n++;
+            } catch (Exception ignored) {}
+        }
+        return n;
+    }
+
+    /** Sanitize a user-typed name to the label charset (letters/digits/_.-), space -> _, capped at 40. */
+    static String sanitizeName(String name) {
+        if (name == null) return "";
+        StringBuilder b = new StringBuilder();
+        for (char ch : name.trim().toCharArray()) {
+            if (Character.isLetterOrDigit(ch) || ch == '_' || ch == '.' || ch == '-') b.append(ch);
+            else if (ch == ' ') b.append('_');
+            if (b.length() >= 40) break;
+        }
+        return b.toString();
     }
 
     // A path is safe to interpolate into su if it's absolute and has no shell metacharacter / quote / traversal.

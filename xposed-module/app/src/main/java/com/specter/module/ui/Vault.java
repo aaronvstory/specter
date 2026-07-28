@@ -136,6 +136,23 @@ public final class Vault {
         return new File(dir, label + ".json").delete();
     }
 
+    /** Rename a saved fingerprint's NAME (the part after the {@code MMDDYY-Day-HHMM} timestamp prefix), keeping
+     *  the timestamp so it still sorts/groups by date. Returns the new label, or null if the source is missing
+     *  or the target label already exists. The stored profile bytes are unchanged — only the filename moves. */
+    public String rename(String oldLabel, String newName) {
+        File src = new File(dir, oldLabel + ".json");
+        if (!src.exists()) return null;
+        // Keep the first three dash-parts (MMDDYY, Day, HHMM) as the immutable timestamp; replace the rest.
+        String[] p = oldLabel.split("-");
+        String prefix = p.length >= 3 ? p[0] + "-" + p[1] + "-" + p[2] : oldLabel;
+        String clean = sanitize(newName);
+        String base = clean.isEmpty() ? prefix : prefix + "-" + clean;
+        if (base.equals(oldLabel)) return oldLabel;   // no-op rename
+        String target = base;
+        for (int i = 2; new File(dir, target + ".json").exists() && i < 1000; i++) target = base + "-" + i;
+        return src.renameTo(new File(dir, target + ".json")) ? target : null;
+    }
+
     /** Export a saved profile as a portable, checksummed envelope written to /sdcard/Download so it can be
      *  shared with another user. Returns the destination path, or null on failure (missing entry / no write).
      *  The file is named specter-profile-&lt;label&gt;.json. Vault-local metadata is stripped by the envelope. */

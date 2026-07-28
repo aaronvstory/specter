@@ -316,6 +316,21 @@ public class MainActivity extends Activity {
         return b;
     }
 
+    /** Equal-weight third-width button — three of these share a row. */
+    private Button thirdButton(String text, View.OnClickListener onClick) {
+        Button b = compactButton(text, false, onClick);
+        b.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(6), dp(6), dp(6), dp(6));   // tighter h-padding so 3 short labels fit
+        return b;
+    }
+
+    private void addGap(LinearLayout row) {
+        View g = new View(this);
+        g.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
+        row.addView(g);
+    }
+
     private GradientDrawable pill(int fill, int stroke) {
         GradientDrawable g = new GradientDrawable();
         g.setColor(fill);
@@ -1464,18 +1479,25 @@ public class MainActivity extends Activity {
         top.addView(col);
         card.addView(top);
 
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(8), 0, 0);
-        Button restore = halfButton("Restore login", v -> restoreAppData(e));
-        View gap = new View(this); gap.setLayoutParams(new LinearLayout.LayoutParams(dp(8), 1));
-        Button del = halfButton("Delete", v -> {
+        // Primary action full-width, secondary actions as equal thirds below — never overflows.
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setPadding(0, dp(8), 0, 0);
+        row1.addView(wideButton("Restore login", true, v -> restoreAppData(e)));
+        card.addView(row1);
+
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setPadding(0, dp(6), 0, 0);
+        Button rename = thirdButton("Rename", v -> promptRenameAppData(e.label));
+        Button export = thirdButton("Export", v -> exportAppData(e));
+        Button del = thirdButton("Delete", v -> {
             if (appDataVault.delete(e.label)) { toast("Deleted saved login."); render(); }
             else toast("Could not delete.");
         });
         del.setTextColor(Theme.RED);
-        row.addView(restore); row.addView(gap); row.addView(del);
-        card.addView(row);
+        row2.addView(rename); addGap(row2); row2.addView(export); addGap(row2); row2.addView(del);
+        card.addView(row2);
         return card;
     }
 
@@ -1519,6 +1541,59 @@ public class MainActivity extends Activity {
                 else { status.setText("Restore failed: " + fErr); toast("Restore failed: " + fErr); }
             });
         }, "specter-appdata-restore").start();
+    }
+
+    /** Rename a saved fingerprint (keeps the timestamp prefix) + relink any AppData that pointed at it, so the
+     *  bundle stays intact. */
+    private void promptRenameFingerprint(final String oldLabel) {
+        final EditText in = new EditText(this);
+        in.setText(labelName(oldLabel));
+        in.setHint("New name");
+        in.setSingleLine(true);
+        new AlertDialog.Builder(this)
+                .setTitle("Rename fingerprint")
+                .setView(in)
+                .setPositiveButton("Rename", (d, w) -> {
+                    String neu = vault.rename(oldLabel, in.getText().toString());
+                    if (neu == null) { toast("Rename failed."); return; }
+                    int relinked = appDataVault.relinkFingerprint(oldLabel, neu);
+                    if (activeVaultLabel.equals(oldLabel)) activeVaultLabel = neu;
+                    status.setText("Renamed to " + neu + (relinked > 0 ? " (" + relinked + " login(s) relinked)" : ""));
+                    render();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Rename a saved login (AppData). Keeps its link to the fingerprint (stored inside the meta). */
+    private void promptRenameAppData(final String oldLabel) {
+        final EditText in = new EditText(this);
+        in.setText(labelName(oldLabel));
+        in.setHint("New name");
+        in.setSingleLine(true);
+        new AlertDialog.Builder(this)
+                .setTitle("Rename saved login")
+                .setView(in)
+                .setPositiveButton("Rename", (d, w) -> {
+                    String neu = appDataVault.rename(oldLabel, in.getText().toString());
+                    if (neu == null) { toast("Rename failed."); return; }
+                    status.setText("Renamed login to " + neu);
+                    render();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Export a saved login bundle (tarball + meta) to /sdcard/Download so it can be moved to another device. */
+    private void exportAppData(final com.specter.module.gen.AppDataVault.Entry e) {
+        status.setText("Exporting " + Targets.label(this, e.pkg) + " login…");
+        new Thread(() -> {
+            final String dest = appDataVault.exportToDownloads(e.label);
+            runOnUiThread(() -> {
+                if (dest != null) { toast("Exported → " + dest); status.setText("Exported login → " + dest); }
+                else { toast("Export failed (grant root?)."); status.setText("Export failed for " + e.label); }
+            });
+        }, "specter-appdata-export").start();
     }
 
     private static String fmtSize(long b) {
@@ -1755,6 +1830,7 @@ public class MainActivity extends Activity {
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
         btns.addView(button("RESTORE", true, v -> restoreSaved(e.label)));
+        btns.addView(compactButton("Rename", false, v -> promptRenameFingerprint(e.label)));
         btns.addView(compactButton("Share", false, v -> {
             new Thread(() -> {
                 final String path = vault.exportToDownloads(e.label);
@@ -1792,6 +1868,7 @@ public class MainActivity extends Activity {
                 // Download/Specter-exports/ subfolder Lite writes to. -M (mount-master) for the namespace.
                 pr = Runtime.getRuntime().exec(new String[]{"su", "-M", "-c",
                         "ls -1t /sdcard/Download/specter-profile-*.json "
+                        + "/sdcard/Download/specter-login-*.tar "     // AppData login bundles
                         + "/sdcard/Download/Specter-*.json "
                         + "/sdcard/Download/Specter-exports/*.json 2>/dev/null"});
                 try (java.io.BufferedReader r = new java.io.BufferedReader(
@@ -1818,12 +1895,23 @@ public class MainActivity extends Activity {
                         .setTitle("Import which file?")
                         .setItems(labels, (d, which) -> {
                             final java.io.File src = new java.io.File(names.get(which));
-                            // Strip whichever prefix this file has (shared export or Lite harvest) + .json.
-                            final String stem = labels[which].replace("specter-profile-", "")
-                                    .replace("Specter-", "").replace(".json", "");
-                            // Import off the UI thread — a single su read (importOnce), not two blocking
-                            // su calls on the main thread (which could ANR if su is slow to grant).
+                            final String base = labels[which];
                             status.setText("Importing…");
+                            // A specter-login-*.tar is an AppData (login) bundle → the AppData vault; anything
+                            // else is a fingerprint profile → the fingerprint vault.
+                            if (base.startsWith("specter-login-") && base.endsWith(".tar")) {
+                                new Thread(() -> {
+                                    final String lbl = appDataVault.importFromDownloads(src);
+                                    runOnUiThread(() -> {
+                                        if (lbl != null) { status.setText("Imported login " + lbl); toast("Imported login " + lbl); render(); }
+                                        else { status.setText("Login import failed (grant root? valid bundle?)"); toast("Login import failed."); }
+                                    });
+                                }, "specter-appdata-import").start();
+                                return;
+                            }
+                            // Strip whichever prefix this file has (shared export or Lite harvest) + .json.
+                            final String stem = base.replace("specter-profile-", "")
+                                    .replace("Specter-", "").replace(".json", "");
                             new Thread(() -> {
                                 final Vault.ImportResult r = vault.importOnce(src, "imported-" + stem);
                                 runOnUiThread(() -> {

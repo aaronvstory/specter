@@ -32,6 +32,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   on the matching device identity. New AppDataVault store (durable, app-owned; tarball copied out of volatile
   tmp), 22 JVM tests. Verified end-to-end on Dasher: save → wipe → restore → authenticated home.
 
+- **Rename + export/import for vault items.** Saved fingerprints and saved logins can both be renamed
+  (keeps the timestamp prefix; renaming a fingerprint relinks its logins so the bundle stays intact).
+  Saved logins now export as a portable `specter-login-<label>.tar` bundle (tarball + link metadata) to
+  Download and re-import from there — import refuses any bundle entry that isn’t a `.tgz`/`.meta` (root
+  extraction guard). Fingerprint export/import already existed; the import picker now handles both kinds.
+
 ### Security
 - Hardened app-data restore against a tampered archive (extraction runs as root): refuse symlink/hardlink
   entries (a name-only tar listing hides a symlink target), keep the absolute/.. path guard, swap the whole
