@@ -92,3 +92,35 @@ present incl. arm64_v8a with libpairipcore.so) behaves differently by OS:
   its process, so Specter (and everything) would no longer apply. Denylist = give up spoofing Dasher.
 - STATUS: environment blocker on the 4a; Specter itself is proven-correct on A11. To use the 4a for Dasher
   testing, the A13 PairIP/integrity environment must be fixed first (separate from Specter).
+
+## 2026-07-28 (session 2): controlled clean-Dasher experiment — CONFIRMED Specter-independent
+Re-ran the A13 blocker with a proper control after the user asked to make the 4a usable for Dasher. New,
+sharper evidence (all PROVEN on-device, Pixel 4a, Dasher 8.88.6, A13 / patch 2023-08-05):
+
+- **Installed the P4's Play-SIGNED Dasher onto the 4a** (pulled all 4 splits from the P4, `install-multiple`).
+  This fixed the Play-Protect "app not recognized / could harm your device" screen — the 4a's Dasher now
+  carries the genuine Play signature `93:6F:83:B9:14:21:...` (the prior sideloaded copy had a different sig).
+  So the "not recognized" screen was a SIGNATURE issue, now resolved. Separate from the crash below.
+- **Two crash MODES observed, nondeterministically, on the SAME binary:**
+  1. Native: `libpairipcore.so` loads → **SIGSEGV** (SEGV_MAPERR) in libpairipcore.so (offset ~0x5998000).
+  2. Java: `com.pairip.licensecheck.LicenseActivity` starts → finishes immediately → system `SIG: 9` kill.
+  Both end the process on every launch. PairIP has BOTH an AIP LicenseActivity (Java, Play-install/license
+  check) and the native VM anti-tamper; either can fire.
+- **CONTROL — Dasher fully CLEAN still crashes.** Removed Dasher from EVERY LSPosed module's scope AND deleted
+  its SpecterZygisk profile (`/data/local/tmp/specter/com.doordash.driverapp.json`) so NEITHER the Java hooks
+  NOR the native companion attach (verified in logcat: no "hooks installed for com.doordash" line). Dasher
+  STILL died at LicenseActivity → SIG 9. **This is the decisive proof: the A13 crash is 100% environmental
+  (rooted A13 + stale 2023-08-05 patch failing PairIP's integrity gate), NOT caused by Specter.** (Note:
+  SpecterZygisk gates on the PROFILE FILE existing, NOT on LSPosed scope — to unhook it you must remove the
+  json, not just the scope row.)
+- **pairipfix (ahmedmani, LSPosed) installed + tested** — it bypasses the SIGNATURE sub-check but did NOT
+  stop the LicenseActivity kill / native SIGSEGV in this env. (Research consensus: the native libpairipcore
+  VM bypass is "not possible right now"; pairipfix only spoofs install-source/signature.)
+- **Integrity Box v39 (PlayIntegrityFork family) IS installed** with a `custom.pif.prop`, BUT: (a) it targets
+  the Play Integrity API (`com.google.android.play.core.integrity`), which the APKiD maintainers confirm is a
+  DIFFERENT check from PairIP's AIP (`com.pairip`), so it doesn't gate PairIP's LicenseActivity; and (b) its
+  pif is a **CANARY (beta) Pixel 10 Pro fingerprint, "Estimated Expiry 2026-07-15" → EXPIRED** (today 07-28).
+- **NET:** the 4a Dasher crash is a rooted-A13-vs-PairIP-AIP problem, orthogonal to Specter. The only known
+  levers left are all crash-sensitive + attended: a CURRENT non-beta pif + valid keybox via TrickyStore to
+  pass the integrity gate WITHOUT hiding (so Specter can still inject), OR accept the 4a can't run Dasher and
+  keep it for probe/DevInfo/FPJS/dataset testing. **P4 (A11) remains the fleet device — Dasher runs there.**
