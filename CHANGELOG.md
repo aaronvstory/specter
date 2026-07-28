@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.14.6] â 2026-07-29
+
+### Added
+- **Per-app âMonitor readsâ toggle** (in-app version of the manual logcat trace). On a target's card, tap
+  âMonitor readsâ â it arms trace on that app's live profile + starts the capture; the button shows
+  âMonitoringâ¦ (tap to stop)â. Use the app (login/session), then tap Stop â trace disarms, capture stops,
+  and the read report opens (what the app read + spoofed/real per signal). 30-min auto-stop safety net. You
+  decide the window (start on tap, stop on tap) since a login can take 1 min or 1 hour.
+### Changed
+- **Renamed the session-migration buttons** âCapture/Restore sessionâ â âCopy login / Paste loginâ â the old
+  name collided with read-monitoring; these move a LOGIN between devices, not a trace.
+
 ## [0.14.5] â 2026-07-29
 
 ### Fixed

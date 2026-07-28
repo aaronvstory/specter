@@ -69,6 +69,10 @@ public class MainActivity extends Activity {
                                                         // of silently re-doing it + re-prompting to save.
     private String seededRecentGroup = null;   // the most-recent date group we auto-expanded (so it opens once, per key)
     private final Set<String> expandedGroups = new java.util.HashSet<>();  // date groups the user EXPANDED
+    private String monitoringPkg = null;       // the pkg currently being trace-monitored (null = not monitoring).
+                                               // The button toggles "Monitor reads" -> "Monitoring…"; a second tap
+                                               // (or the 30-min auto-stop) ends it and opens the read report.
+    private final android.os.Handler monitorTimeout = new android.os.Handler(android.os.Looper.getMainLooper());
                                                                           // (Saved profiles collapse by default)
 
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density); }
@@ -654,11 +658,6 @@ public class MainActivity extends Activity {
             r.addView(rm);
             appCard.addView(r);
 
-            // Session actions (opt-in, per app): capture this app's login on a rooted device, restore it on
-            // another rooted device so the app opens already logged in. Fingerprint clone makes the device
-            // LOOK the same; this carries the actual session. Root-only — both buttons no-op-with-a-reason
-            // if su is denied. Copying a session copies real account data, so it's a deliberate button, never
-            // automatic.
             LinearLayout sess = new LinearLayout(this);
             sess.setOrientation(LinearLayout.HORIZONTAL);
             sess.setPadding(0, dp(8), 0, 0);
@@ -666,19 +665,89 @@ public class MainActivity extends Activity {
             sessStatus.setTextSize(11);
             sessStatus.setTextColor(Theme.DIM);
             sessStatus.setPadding(0, dp(4), 0, 0);
-            sess.addView(compactButton("Capture session", false,
-                    v -> runSession(pkg, true, sessStatus)));
+
+            // MONITOR READS: tap to record every device signal THIS app reads (android_id, Widevine, files,
+            // accounts, mock-location) during a real session — so you can see what it checked + whether any
+            // real value leaked. Tap again (or after a 30-min auto-stop) to end + open the report. This is the
+            // in-app version of a manual logcat trace: start when you tap, YOU decide when to stop.
+            final boolean isMonitoring = pkg.equals(monitoringPkg);
+            sess.addView(compactButton(isMonitoring ? "Monitoring… (tap to stop)" : "Monitor reads",
+                    isMonitoring, v -> toggleMonitor(pkg, sessStatus)));
+
+            // Copy/Paste login: migrate a logged-in session to another rooted device (the fingerprint clone
+            // makes the device LOOK the same; this carries the actual login). Root-only; copies real account
+            // data so it's a deliberate button. (Renamed from "Capture/Restore session" — that name collided
+            // with read-monitoring; these move a LOGIN, not a trace.)
             View gap = new View(this);
             gap.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
             sess.addView(gap);
-            sess.addView(compactButton("Restore session", false,
-                    v -> runSession(pkg, false, sessStatus)));
+            sess.addView(compactButton("Copy login", false, v -> runSession(pkg, true, sessStatus)));
+            View gap2 = new View(this);
+            gap2.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
+            sess.addView(gap2);
+            sess.addView(compactButton("Paste login", false, v -> runSession(pkg, false, sessStatus)));
             appCard.addView(sess);
             appCard.addView(sessStatus);
 
             wrap.addView(appCard);
         }
         return wrap;
+    }
+
+    /** Start/stop trace-monitoring what {@code pkg} reads. YOU decide the window: tap to start (arms trace on
+     *  the app's live profile + starts the capture service), tap again to stop + open the read report. A
+     *  30-minute auto-stop is a safety net so a forgotten capture can't log for days. */
+    private void toggleMonitor(final String pkg, final TextView statusView) {
+        if (pkg.equals(monitoringPkg)) { stopMonitor(true); return; }
+        if (monitoringPkg != null) { toast("Already monitoring " + Targets.label(this, monitoringPkg) + " — stop it first."); return; }
+        statusView.setTextColor(Theme.DIM);
+        statusView.setText("Starting monitor…");
+        new Thread(() -> {
+            String err = armTrace(pkg, true);   // add "trace":"1" to the app's applied profile (su)
+            runOnUiThread(() -> {
+                if (err != null) { statusView.setTextColor(Theme.RED); statusView.setText("Monitor failed: " + err); return; }
+                monitoringPkg = pkg;
+                DiagnosticsService.start(this);   // background capture -> diag.log
+                statusView.setTextColor(Theme.SAGE);
+                statusView.setText("Monitoring — relaunch " + Targets.label(this, pkg) + ", use it, then tap Stop.");
+                // 30-min auto-stop safety net.
+                monitorTimeout.removeCallbacksAndMessages(null);
+                monitorTimeout.postDelayed(() -> { if (pkg.equals(monitoringPkg)) { toast("Monitor auto-stopped after 30 min."); stopMonitor(true); } }, 30 * 60 * 1000L);
+                render();   // redraw so the button shows "Monitoring…"
+            });
+        }, "specter-mon-start").start();
+    }
+
+    /** Stop the active monitor: disarm trace, stop the capture, and (if {@code openReport}) show what the app read. */
+    private void stopMonitor(final boolean openReport) {
+        final String pkg = monitoringPkg;
+        if (pkg == null) return;
+        monitorTimeout.removeCallbacksAndMessages(null);
+        monitoringPkg = null;
+        DiagnosticsService.stop(this);
+        status.setText("Stopping monitor…");
+        new Thread(() -> {
+            armTrace(pkg, false);   // remove "trace":"1" so we don't keep logging that app
+            runOnUiThread(() -> {
+                status.setText("Monitor stopped for " + Targets.label(this, pkg) + ".");
+                render();
+                if (openReport) startActivity(new Intent(this, DiagnosticsActivity.class));   // reads diag.log -> spoofed/real report
+            });
+        }, "specter-mon-stop").start();
+    }
+
+    /** Add/remove {@code "trace":"1"} in the app's live profile file via su. Returns null on success, else an error. */
+    private String armTrace(String pkg, boolean on) {
+        if (!com.specter.module.gen.RootWriter.validPkg(pkg)) return "invalid package";
+        String path = com.specter.module.gen.RootWriter.PROFILE_DIR + "/" + pkg + ".json";
+        // on: insert "trace":"1", after the opening brace IF not already present. off: strip it. Idempotent seds.
+        String cmd = on
+                ? "grep -q '\"trace\"' " + path + " || sed -i 's/^{/{\"trace\":\"1\",/' " + path
+                : "sed -i 's/\"trace\":\"1\",//; s/,\"trace\":\"1\"//' " + path;
+        try {
+            int code = new com.specter.module.gen.RootWriter.SuShell().run(cmd, "");
+            return code == 0 ? null : "su exited " + code + " (is there an applied profile for this app? APPLY first)";
+        } catch (Exception e) { return e.getMessage(); }
     }
 
     /** Capture (or restore) a target app's login session off the UI thread, updating {@code statusView}.
