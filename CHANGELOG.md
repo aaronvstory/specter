@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [0.14.0] — 2026-07-28
 
+### Added
+- **The app self-installs the Zygisk native layer — no manual Magisk flash.** The APK now bundles the
+  native `.so` + module.prop + sepolicy.rule as assets; on launch the app checks whether the
+  `specter_zygisk` Magisk module is present AND version-current, and shows an amber banner (“Native layer
+  not installed / out of date”) with a one-tap **Install/Update** button when it isn't. Install writes the
+  module atomically via su (stage + rename, rollback on failure) and prompts a reboot to activate it. So a
+  fresh device or an app update carrying a newer native layer is handled automatically instead of leaving
+  the native read-paths silently unhooked. VERIFIED on-device (Pixel 4): removed the module → app detected
+  it missing → one-tap install wrote a byte-identical module (perms/owner match the proven flash script) +
+  reboot prompt. (Full load-after-reboot via the probe dual-read is the remaining on-device check.)
+
 ### Fixed
 - **ro.product.first_api_level now reflects the device's LAUNCH API, not the current SDK.** Specter set
   first_api_level == build_sdk, but a device that shipped on an older OS and updated has first_api < sdk —

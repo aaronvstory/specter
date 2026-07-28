@@ -54,6 +54,8 @@ public class MainActivity extends Activity {
     private Vault vault;
     private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
     private boolean widevineBusy = false;              // guards the Widevine-L3 toggle's failure-rollback re-fire
+    private com.specter.module.gen.ZygiskInstaller.Status zygiskStatus;   // native-layer health (async, null until checked)
+    private boolean zygiskBusy = false;                // guards the native-layer install button
     private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
     private String appliedTargets = "";                 // comma-sep pkgs the CURRENT profile was applied to
                                                         // ("" until Apply succeeds — vault saves only applied)
@@ -102,6 +104,7 @@ public class MainActivity extends Activity {
 
         setContentView(root);
         regenerate();
+        checkZygisk();
     }
 
     @Override protected void onResume() {
@@ -398,12 +401,86 @@ public class MainActivity extends Activity {
     // ---------- rendering ----------
     private void render() {
         content.removeAllViews();
+        // Native-layer health banner — shown on every tab ONLY when the Zygisk layer is missing or stale, so
+        // the user can't silently run with the native read-paths unhooked (a real coverage gap). Hidden when OK.
+        if (zygiskStatus != null && !zygiskStatus.current && zygiskStatus.bundledVersion != null) {
+            content.addView(zygiskBanner());
+        }
         switch (tab) {
             case 0: renderIdentity(); break;
             case 1: renderSaved(); break;
             case 2: renderSettings(); break;
             case 3: renderLocation(); break;
         }
+    }
+
+    /** Read the on-device native-layer status off the UI thread (su can block), then re-render so the banner
+     *  reflects it. Runs on launch; the install flow re-runs it after a successful install. */
+    private void checkZygisk() {
+        new Thread(() -> {
+            com.specter.module.gen.ZygiskInstaller.Status st;
+            try { st = com.specter.module.gen.ZygiskInstaller.status(getApplicationContext(), new com.specter.module.gen.RootWriter.SuShell()); }
+            catch (Throwable t) { st = null; }
+            final com.specter.module.gen.ZygiskInstaller.Status f = st;
+            runOnUiThread(() -> { zygiskStatus = f; if (svc != null) render(); });
+        }).start();
+    }
+
+    /** The missing/stale-native-layer banner: an amber card explaining the gap + a one-tap install button.
+     *  Install writes the module from the bundled asset via su, then prompts a reboot. */
+    private View zygiskBanner() {
+        LinearLayout card = cardBox();
+        boolean stale = zygiskStatus.installed;   // installed but wrong version vs missing entirely
+        TextView lab = label(stale ? "Native layer out of date" : "Native layer not installed");
+        lab.setTextColor(Theme.AMBER); lab.setTextSize(14);
+        card.addView(lab);
+        TextView d = value(stale
+                ? "The Specter Zygisk native layer is " + zygiskStatus.installedVersion + " but this app bundles "
+                  + zygiskStatus.bundledVersion + ". Update it so the native read-paths (props/reset-time/GLES a "
+                  + "fingerprinter reads below the Java hooks) stay covered."
+                : "The Specter Zygisk native layer isn't installed. Without it, a fingerprinter reading device "
+                  + "props / reset-time / GLES NATIVELY (below the Java hooks) sees the real device. Install it "
+                  + "in one tap — no separate Magisk flash needed.");
+        d.setTextColor(Theme.DIM); d.setTextSize(12);
+        card.addView(d);
+        Button go = button(stale ? "Update native layer" : "Install native layer", true, v -> installZygisk());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(8), 0, 0);
+        go.setLayoutParams(lp);
+        card.addView(go);
+        return card;
+    }
+
+    /** Install/update the bundled Zygisk native layer via su, off-thread, then prompt a reboot. */
+    private void installZygisk() {
+        if (zygiskBusy) return;
+        zygiskBusy = true;
+        status.setText("Installing native layer…");
+        new Thread(() -> {
+            String err = null;
+            try { com.specter.module.gen.ZygiskInstaller.install(getApplicationContext()); }
+            catch (Throwable t) { err = t.getMessage(); }
+            final String e = err;
+            runOnUiThread(() -> {
+                zygiskBusy = false;
+                if (e == null) {
+                    status.setText("Native layer installed — REBOOT to activate it.");
+                    new AlertDialog.Builder(this)
+                            .setTitle("Native layer installed")
+                            .setMessage("The Specter Zygisk native layer is in place. It loads at boot — reboot now to activate it?")
+                            .setPositiveButton("Reboot now", (dl, w) -> {
+                                new Thread(() -> { try { new com.specter.module.gen.RootWriter.SuShell().run("svc power reboot || reboot", ""); } catch (Throwable ignored) {} }).start();
+                            })
+                            .setNegativeButton("Later", null)
+                            .show();
+                    checkZygisk();   // refresh status (it'll still show stale until reboot, but confirms the write)
+                } else {
+                    status.setText("Native-layer install failed: " + e);
+                    toast("Native-layer install failed: " + e);
+                }
+            });
+        }).start();
     }
 
     private void renderIdentity() {

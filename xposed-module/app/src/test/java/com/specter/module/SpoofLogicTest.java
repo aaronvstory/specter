@@ -191,6 +191,25 @@ public class SpoofLogicTest {
         SpoofLogic.parseFlatJson("{\"u\":\"\\u12", mm);                      // truncated unicode escape
         check("b".equals(mm.get("a")), "parseFlatJson recovers valid pairs amid garbage, never throws/loops");
 
+        // Zygisk self-installer pure logic (used by ZygiskInstaller, the Android glue).
+        check("v0.14.0".equals(SpoofLogic.modulePropVersion("id=specter_zygisk\nversion=v0.14.0\nversionCode=0140\n")),
+                "modulePropVersion reads version=");
+        check(SpoofLogic.modulePropVersion("id=x\nname=y\n") == null, "modulePropVersion null when absent");
+        check(SpoofLogic.modulePropVersion(null) == null, "modulePropVersion null-safe");
+        check("v0.9".equals(SpoofLogic.modulePropVersion("  version=v0.9  \nother=1")), "modulePropVersion trims");
+        String zins = SpoofLogic.zygiskInstallScript("/data/adb/modules/specter_zygisk",
+                "/d/files/zygisk_arm64-v8a.so", "/d/files/zygisk_module.prop", "/d/files/zygisk_sepolicy.rule");
+        check(zins.contains("mkdir -p /data/adb/modules/specter_zygisk.stage/zygisk"), "zygisk install stages the dir");
+        check(zins.contains(".stage/zygisk/arm64-v8a.so"), "zygisk install copies the .so into staging");
+        check(zins.contains(".stage/module.prop") && zins.contains(".stage/sepolicy.rule"), "zygisk install copies prop+sepolicy");
+        check(zins.contains("mv /data/adb/modules/specter_zygisk.stage /data/adb/modules/specter_zygisk"), "zygisk install atomic rename");
+        // dir perms + ownership must match the proven reference or Magisk won't load the module
+        check(zins.contains("chown -R 0:0") && zins.contains("chmod 0755 /data/adb/modules/specter_zygisk.stage /data/adb/modules/specter_zygisk.stage/zygisk"),
+                "zygisk install sets dir 0755 + chown root (Magisk load requirement)");
+        check(zins.contains(".bak") && zins.contains("mv $BAK"), "zygisk install backs up + rolls back on mv failure");
+        check(zins.contains("set -e") && zins.indexOf("mv /data/adb/modules/specter_zygisk.stage ") > zins.indexOf("arm64-v8a.so"),
+                "zygisk install aborts on error + renames after staging");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

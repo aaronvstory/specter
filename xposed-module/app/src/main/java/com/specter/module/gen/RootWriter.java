@@ -48,6 +48,10 @@ public final class RootWriter {
     public interface Shell {
         /** Run {@code su -c <command>}, feed {@code stdinData}, return the exit code. */
         int run(String command, String stdinData) throws Exception;
+
+        /** Run {@code su -c <command>} and return its stdout (for a status probe). Default returns "" so a
+         *  single-method test fake / lambda still satisfies the interface; SuShell overrides it for real. */
+        default String runCapture(String command) throws Exception { return ""; }
     }
 
     /** Default shell: spawn a real {@code su} process. */
@@ -59,6 +63,17 @@ public final class RootWriter {
                 os.flush();
             }
             return p.waitFor();
+        }
+
+        @Override public String runCapture(String command) throws Exception {
+            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream is = p.getInputStream()) {
+                byte[] buf = new byte[4096]; int n;
+                while ((n = is.read(buf)) != -1) bos.write(buf, 0, n);
+            }
+            p.waitFor();
+            return new String(bos.toByteArray(), "UTF-8");
         }
     }
 

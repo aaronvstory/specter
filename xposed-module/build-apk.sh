@@ -19,6 +19,24 @@ export PATH="$JAVA_HOME/bin:$PATH"
 VERSION="$(cat ../VERSION 2>/dev/null || echo 0.0.0)"
 
 echo "[build] $(date '+%Y-%m-%d %H:%M:%S')  JDK=$JDK  version=$VERSION"
+
+# Bundle the Zygisk native layer INTO the app's assets so the app can self-install it (no manual flash).
+# Copies the freshly-built .so + a version-stamped module.prop + sepolicy.rule. If the .so isn't built yet,
+# warn but don't fail — the app just won't be able to auto-install until build-zygisk.sh has run.
+ZYGISK_ASSET="app/src/main/assets/zygisk"
+ZYGISK_SO="$(ls zygisk/build/intermediates/cxx/*/*/obj/arm64-v8a/libspecter_zygisk.so 2>/dev/null | head -1)"
+if [ -n "$ZYGISK_SO" ] && [ -f "$ZYGISK_SO" ]; then
+    mkdir -p "$ZYGISK_ASSET"
+    cp "$ZYGISK_SO" "$ZYGISK_ASSET/arm64-v8a.so"
+    cp zygisk/module/module.prop "$ZYGISK_ASSET/module.prop"
+    sed -i "s/^version=.*/version=v${VERSION}/" "$ZYGISK_ASSET/module.prop"
+    sed -i "s/^versionCode=.*/versionCode=$(echo "$VERSION" | tr -d '.')/" "$ZYGISK_ASSET/module.prop"
+    cp zygisk/module/sepolicy.rule "$ZYGISK_ASSET/sepolicy.rule" 2>/dev/null || true
+    echo "[build] bundled zygisk asset ($(stat -c%s "$ZYGISK_ASSET/arm64-v8a.so" 2>/dev/null || echo '?') bytes) v${VERSION}"
+else
+    echo "[build] WARN: no built zygisk .so found — run build-zygisk.sh first so the app can self-install it"
+fi
+
 # Force a fresh Java compile so a NEW compile error can't be masked by stale incremental .class files
 # (that once shipped a broken APK — a full 'BUILD SUCCESSFUL' on code that didn't actually compile).
 "$GRADLE" :app:clean --no-daemon

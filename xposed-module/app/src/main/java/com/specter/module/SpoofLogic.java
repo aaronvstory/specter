@@ -287,6 +287,49 @@ public final class SpoofLogic {
     }
 
 
+    // ---- Zygisk self-installer pure logic (Android-free so it's JVM-tested; ZygiskInstaller is the glue) ----
+
+    /** The {@code version=} value from a module.prop text (trimmed), or null. */
+    public static String modulePropVersion(String moduleProp) {
+        if (moduleProp == null) return null;
+        for (String line : moduleProp.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("version=")) return t.substring("version=".length()).trim();
+        }
+        return null;
+    }
+
+    /**
+     * The {@code su} program that installs a Magisk module ATOMICALLY: build the layout under {@code
+     * moduleDir + ".stage"} from the app-extracted files, then rename into place (back up + roll back on
+     * failure, so a failed rename never leaves a half-written module). Only our own dir + the app-private
+     * extracted paths are interpolated (no external input) → no injection surface.
+     */
+    public static String zygiskInstallScript(String moduleDir, String soPath, String propPath, String sePath) {
+        String stage = moduleDir + ".stage";
+        StringBuilder s = new StringBuilder();
+        s.append("set -e\n");
+        s.append("rm -rf ").append(stage).append("\n");
+        s.append("mkdir -p ").append(stage).append("/zygisk\n");
+        s.append("cp \"").append(soPath).append("\" ").append(stage).append("/zygisk/arm64-v8a.so\n");
+        s.append("cp \"").append(propPath).append("\" ").append(stage).append("/module.prop\n");
+        s.append("cp \"").append(sePath).append("\" ").append(stage).append("/sepolicy.rule\n");
+        // Perms + ownership MUST match the proven reference (dev-scripts/spz_install.sh) or Magisk's Zygisk
+        // loader may refuse the module at boot: dirs 0755, files 0644, everything owned by root (0:0).
+        s.append("chown -R 0:0 ").append(stage).append("\n");
+        s.append("chmod 0755 ").append(stage).append(" ").append(stage).append("/zygisk\n");
+        s.append("chmod 0644 ").append(stage).append("/module.prop ").append(stage).append("/sepolicy.rule ")
+         .append(stage).append("/zygisk/arm64-v8a.so\n");
+        s.append("BAK=").append(moduleDir).append(".bak\n");
+        s.append("rm -rf $BAK\n");
+        s.append("[ -d ").append(moduleDir).append(" ] && mv ").append(moduleDir).append(" $BAK || true\n");
+        s.append("if ! mv ").append(stage).append(" ").append(moduleDir).append("; then ")
+         .append("[ -d $BAK ] && mv $BAK ").append(moduleDir).append("; echo mv_failed >&2; exit 4; fi\n");
+        s.append("rm -rf $BAK\n");
+        s.append("echo specter_zygisk_installed\n");
+        return s.toString();
+    }
+
     /** Read a JSON string body from `start` (char after the opening quote) into sb; return index past the
      *  closing quote, or -1 if unterminated. Handles standard escapes incl. 4-hex-digit unicode. */
     static int readJsonString(String s, int start, StringBuilder sb) {
