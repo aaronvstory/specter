@@ -1369,7 +1369,7 @@ public class MainActivity extends Activity {
         head.setGravity(Gravity.CENTER_VERTICAL);
         TextView lab = label(f.label);
         lab.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        final Switch en = new Switch(this);
+        final Switch en = new Switch(this); tintSwitch(en);
         en.setChecked(Toggles.isEnabled(prefs, f.key));
         head.addView(lab);
         head.addView(en);
@@ -1525,7 +1525,7 @@ public class MainActivity extends Activity {
         txt.addView(d);
         head.addView(txt);
 
-        final Switch sw = new Switch(this);
+        final Switch sw = new Switch(this); tintSwitch(sw);
         sw.setChecked(prefs.getBoolean("widevine_l3", false));
         sw.setOnCheckedChangeListener((v, on) -> {
             // widevineBusy suppresses the recursive listener fire when we programmatically revert the switch
@@ -1638,7 +1638,7 @@ public class MainActivity extends Activity {
         txt.addView(d);
         head.addView(txt);
 
-        final Switch sw = new Switch(this);
+        final Switch sw = new Switch(this); tintSwitch(sw);
         sw.setChecked(Protections.isOn(prefs, prot));
         sw.setOnCheckedChangeListener((v, on) -> {
             Protections.set(prefs, prot, on);
@@ -1670,23 +1670,17 @@ public class MainActivity extends Activity {
         return card;
     }
 
+    // The ON/OFF chip next to a switch is a redundant duplicate indicator (the switch position already says
+    // state) — the design brief calls it out as clutter. statusChip() now returns a zero-size hidden view so
+    // every caller drops the chip without touching each call site, and styleChip() is a no-op.
     private TextView statusChip(boolean on) {
         TextView chip = new TextView(this);
-        chip.setTextSize(10);
-        chip.setPadding(dp(6), dp(1), dp(6), dp(1));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dp(8), 0, 0, 0);
-        chip.setLayoutParams(lp);
-        styleChip(chip, on);
+        chip.setVisibility(View.GONE);
+        chip.setLayoutParams(new LinearLayout.LayoutParams(0, 0));
         return chip;
     }
 
-    private void styleChip(TextView chip, boolean on) {
-        chip.setText(on ? "ON" : "OFF");
-        chip.setTextColor(on ? Theme.ON_GOLD : Theme.SOFT);
-        chip.setBackground(pill(on ? Theme.GOLD : Theme.CARD2, on ? Theme.GOLD : Theme.LINE));
-    }
+    private void styleChip(TextView chip, boolean on) { /* no-op: chips removed (see statusChip) */ }
 
     private void renderLocation() {
         // Mock-location HIDING is real (gated with the Hide-root protection): a driver/fraud SDK reading
@@ -2592,12 +2586,16 @@ public class MainActivity extends Activity {
     private android.widget.Switch themedSwitch(boolean checked, android.widget.CompoundButton.OnCheckedChangeListener l) {
         android.widget.Switch sw = new android.widget.Switch(this);
         sw.setChecked(checked);
-        int[][] states = {{android.R.attr.state_checked}, {}};
-        int[] thumb = {Theme.GOLD, 0xFFCFCFD6};
-        int[] track = {0x66E7B94E, 0x33FFFFFF};
-        sw.setThumbTintList(new android.content.res.ColorStateList(states, thumb));
-        sw.setTrackTintList(new android.content.res.ColorStateList(states, track));
+        tintSwitch(sw);
         sw.setOnCheckedChangeListener(l);
         return sw;
+    }
+
+    /** Tint an existing Switch to the gold accent (on) / quiet grey (off) — kills the raw platform teal that
+     *  reads as "borrowed from another app". Apply to every Switch created inline. */
+    private void tintSwitch(android.widget.Switch sw) {
+        int[][] states = {{android.R.attr.state_checked}, {}};
+        sw.setThumbTintList(new android.content.res.ColorStateList(states, new int[]{Theme.GOLD, 0xFFCFCFD6}));
+        sw.setTrackTintList(new android.content.res.ColorStateList(states, new int[]{0x66E7B94E, 0x33FFFFFF}));
     }
 }
