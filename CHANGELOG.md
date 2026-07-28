@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [0.16.0] — 2026-07-29
 
+- **UI polish (round 2)**: bright pastel-yellow accent (#FFD54A) not dim orange; tight corners (no
+  over-rounded look); real drawn-icon tinting (icons were rendering white); grouped identifiers AND
+  protections each into ONE card with hairline rows (last card-soup surfaces); Identity hero status pill
+  (Ready/Applying…/Applied) + disabled busy state; native-layer banner rebuilt (clean card + inline Update);
+  per-app actions renamed Save login/Restore login, the remove-target moved into the expanded actions
+  (no accidental delete), 44dp touch targets, subtle expand/tab motion, screen-reader descriptions.
 ### Changed
 - **Professional UI redesign** toward a real-product feel (DoorDash/Cash App level), from a dedicated design
   review that called the old UI “card soup” + “developer control panel”:
