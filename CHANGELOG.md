@@ -3,6 +3,21 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.15.0] — 2026-07-29
+
+### Changed
+- **App-data capture is now app-AGNOSTIC and login-complete.** SessionMigrator used to grab only
+  `databases` + `shared_prefs`; it now captures the WHOLE `/data/data/<pkg>` minus a junk deny-list
+  (`cache`, `code_cache`, `oat`, `app_textures`, `lib`) and our own `.specter_*` probe files. That carries
+  whatever actually holds a login for ANY app — databases (with -wal/-shm), shared_prefs, `files/`,
+  `no_backup/`, `app_webview` cookies — without hardcoding per-app dirs. Restore’s security guard changed
+  from a two-dir allow-list to an absolute/`..` traversal guard; the safe move-aside/rollback swap now
+  covers exactly the archive’s top-level entries.
+
+### Verified
+- **A real logged-in DoorDash Dasher account survived a full save → `pm clear` wipe → restore → relaunch**
+  — the app came back up on its authenticated home. App-data migration proven on-device.
+
 ## [0.14.7] — 2026-07-29
 
 ### Added

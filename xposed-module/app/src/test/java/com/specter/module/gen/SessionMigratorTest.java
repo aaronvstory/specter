@@ -23,12 +23,22 @@ public class SessionMigratorTest {
         try { SessionMigrator.tarPath("bad;rm"); } catch (SessionMigrator.SessionException e) { tarThrew = true; }
         check(tarThrew, "tarPath rejects bad pkg");
 
-        // capture command: tars the session subdirs (whole databases/ dir -> includes -wal/-shm where the
-        // live token lives), targets the right tar, and guards app-not-installed / never-logged-in.
+        // capture command: app-AGNOSTIC — tars the WHOLE data dir ('.') minus junk/probe files, so it carries
+        // whatever holds the login (databases incl. -wal/-shm, shared_prefs, files, no_backup, app_webview…)
+        // for ANY app, not just a hardcoded couple of dirs.
         String cap = SessionMigrator.buildCaptureCommand("com.doordash.driverapp");
         check(cap.contains("tar czf " + tar), "capture writes the tarball");
         check(cap.contains("-C /data/data/com.doordash.driverapp"), "capture -C into the data dir");
-        check(cap.contains("databases") && cap.contains("shared_prefs"), "capture includes both session dirs");
+        // takes the whole dir contents ('.'), not a fixed subdir list
+        check(cap.matches("(?s).*-C /data/data/com.doordash.driverapp .*\\. .*"), "capture tars the whole dir ('.')");
+        // excludes every junk/device-specific top-level dir (deny-list, not allow-list)
+        check(cap.contains("--exclude='./cache'"), "capture excludes cache");
+        check(cap.contains("--exclude='./code_cache'"), "capture excludes code_cache");
+        check(cap.contains("--exclude='./oat'"), "capture excludes oat");
+        check(cap.contains("--exclude='./app_textures'"), "capture excludes app_textures");
+        check(cap.contains("--exclude='./lib'"), "capture excludes the lib symlink");
+        // excludes OUR probe artifacts so they never ride into a restored login
+        check(cap.contains("--exclude='./files/.specter_*'"), "capture excludes .specter_* probe files");
         check(cap.contains("test -d /data/data/com.doordash.driverapp"), "capture guards app-not-installed");
         check(cap.contains("chmod 644 " + tar), "capture chmods the tarball readable");
         // it must NOT restrict to *.db (that would drop the -wal where the live token is) — we tar dirs.
@@ -36,6 +46,8 @@ public class SessionMigratorTest {
         // capture stops the app first so the SQLite WAL isn't mid-write (coherent snapshot), and requires it.
         check(cap.contains("am force-stop com.doordash.driverapp"), "capture stops the app before tarring");
         check(cap.indexOf("am force-stop") < cap.indexOf("tar czf"), "capture stops BEFORE the tar");
+        // refuses to produce an empty archive (never-logged-in / no-data guard is real)
+        check(cap.contains("empty archive"), "capture rejects an empty archive");
 
         // restore command: SAFE-BY-CONSTRUCTION — validates the archive, extracts to staging, then swaps
         // with rollback. It must NEVER rm the live session before the new one is proven good.
@@ -47,15 +59,19 @@ public class SessionMigratorTest {
         check(res.contains("test -f " + tar), "restore guards missing staged session");
         // (1) integrity: a `tar tzf` readability check gates everything destructive.
         check(res.contains("tar tzf " + tar + " >/dev/null"), "restore verifies the archive is readable first");
-        // (2) traversal: refuse any entry not confined to the two session dirs (extraction runs as root).
-        check(res.contains("grep -qvE '^(databases|shared_prefs)(/|$)'"), "restore refuses entries outside the session dirs");
+        // (2) traversal guard: refuse absolute paths or ../ components (extraction runs as root). Now that we
+        // carry the whole data dir, the guard is path-safety, not a two-dir allow-list.
+        check(res.contains("grep -qE '(^/|(^|/)[.][.](/|$))'"), "restore refuses absolute/../ entries");
         // (3) staging: extract to a staging dir, not straight into the data dir.
         check(res.contains("tar xzf " + tar + " -C /data/local/tmp/specter/restore-com.doordash.driverapp"),
                 "restore extracts to a staging dir, not the live data dir");
+        // the swap set is whatever the archive holds (app-agnostic), resolved from the staging dir listing.
+        check(res.contains("entries=$(ls -A /data/local/tmp/specter/restore-com.doordash.driverapp)"),
+                "restore swaps exactly the archive's top-level entries");
         // (4)/(5) NO destructive rm of the live dirs before the swap — the old dirs are moved ASIDE, and a
         // failed swap rolls them back. The only `rm -rf` of a data-dir path is the rollback wipe, which is
         // immediately followed by a restore of the aside copy.
-        check(res.contains("mv /data/data/com.doordash.driverapp/$d $aside/$d"), "restore moves current dirs aside (not delete)");
+        check(res.contains("mv /data/data/com.doordash.driverapp/$d $aside/$d"), "restore moves current entries aside (not delete)");
         check(res.contains("rolling back"), "restore has a rollback path");
         check(!res.contains("rm -rf /data/data/com.doordash.driverapp/$d; tar xzf"),
                 "restore never rm's the live dir immediately before untar (the old destructive shape)");
@@ -70,10 +86,10 @@ public class SessionMigratorTest {
         check(resThrew, "restore rejects bad pkg at build");
 
         // capture()/restore() fail LOUDLY on a non-zero exit (never a silent no-op), surfacing the output
-        SessionMigrator.Shell denied = command -> new SessionMigrator.Result(4, "no session dirs (never logged in?)");
+        SessionMigrator.Shell denied = command -> new SessionMigrator.Result(4, "no app-data dirs (never opened/logged in?)");
         boolean loud = false;
         try { SessionMigrator.capture(denied, "com.doordash.driverapp"); }
-        catch (SessionMigrator.SessionException e) { loud = e.getMessage().contains("never logged in"); }
+        catch (SessionMigrator.SessionException e) { loud = e.getMessage().contains("never opened/logged in"); }
         check(loud, "non-zero exit -> SessionException carrying the shell output");
 
         // exec exception (su absent) surfaces mentioning root

@@ -769,3 +769,30 @@ The trace proves the device layer; it CANNOT see Cash's server-side risk decisio
 **GAP FOUND + FIXED (v0.14.5):** the hide_apps list did NOT include GPS-spoofers (Lockito etc.) or proxy/
 tunnel apps. Low risk for Cash specifically (no QUERY_ALL_PACKAGES on A11) but a real hole for any SDK that
 CAN enumerate. Added them (mainstream VPNs kept). Full trace saved: handoffs/cash-traces/.
+
+## 2026-07-29 — PROVEN: app-agnostic app-data save→wipe→restore keeps a real login (Dasher)
+
+STATUS: **PROVEN on-device** (not a hypothesis). Pixel 4 (9B151FFAZ00FPF), Specter v0.15.0.
+
+The deep app-data capture (SessionMigrator, rewritten to be app-AGNOSTIC — tar the whole
+`/data/data/<pkg>` minus a junk deny-list `{cache, code_cache, oat, app_textures, lib}` + our own
+`.specter_*` probe files, instead of an allow-list of `{databases, shared_prefs}`) was tested end-to-end
+against a live logged-in DoorDash Dasher account (AMITY J):
+
+1. Captured app-data → 671 KB tarball containing databases (incl. `dasher_database`/`identity_database`
+   with their `-wal`/`-shm`), shared_prefs, files, no_backup, app_webview, app_segment-disk-queue.
+   Verified NO cache/oat/app_textures and NO `.specter_*` leaked in.
+2. `pm clear com.doordash.driverapp` — full wipe, DB confirmed gone.
+3. Restored the tarball via the safe-by-construction path (readable-tar check → traversal guard →
+   extract to staging → force-stop → move-aside/rollback swap → chown to the new uid + restorecon).
+4. Relaunched Dasher → came up on the **authenticated home** ("Get ready to dash", "WI: Glendale",
+   dasher name AMITY J, full nav) — identical to the pre-wipe state. Login survived.
+
+Implication: the login/session is a plain file-level artifact for these apps (no hardware-Keystore-bound
+token that would break on a root file copy to the SAME device). Cross-DEVICE survival (does the app's
+server-side attestation accept the restored session on a DIFFERENT phone) is a SEPARATE question — the
+linked fingerprint+appdata vault (restore appdata onto the exact device identity it was captured under)
+is the design that gives it the best chance, but cross-device is still HYPOTHESIS until measured.
+
+Safety: a full byte-perfect backup of the pre-test Dasher data dir was pulled to the PC first
+(md5-verified), so the account was never actually at risk.

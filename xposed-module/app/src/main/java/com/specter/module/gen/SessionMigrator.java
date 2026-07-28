@@ -35,9 +35,17 @@ public final class SessionMigrator {
     /** Where session tarballs are staged (world-readable tmp, same rationale as {@link RootWriter}). */
     public static final String SESSION_DIR = "/data/local/tmp/specter";
 
-    /** The only session-bearing subdirs of an app's data. Cache/oat/code_cache are junk or device-specific
-     *  and are deliberately excluded — copying them risks importing stale device state, not the login. */
-    static final String[] SESSION_SUBDIRS = {"databases", "shared_prefs"};
+    /** Top-level entries under /data/data/&lt;pkg&gt; that we NEVER carry across a migration: regenerable
+     *  caches, device/ABI-specific compiled code, GPU texture caches, and the native-lib symlink. Excluding
+     *  these (rather than allow-listing a couple of dirs) makes the capture app-AGNOSTIC — it takes whatever
+     *  holds the login for ANY app (databases, shared_prefs, files, no_backup, app_webview cookies, …), not
+     *  just the two dirs a specific app happened to use. Copying the excluded ones risks importing stale
+     *  device state, bloats the tarball, or (oat/lib) is meaningless on another install. */
+    static final String[] EXCLUDE_DIRS = {"cache", "code_cache", "oat", "app_textures", "lib"};
+
+    /** Glob for our OWN probe artifacts dropped in files/ by the read-monitor/native layer — they must never
+     *  ride along into a restored login (they'd re-seed a stale device profile). */
+    static final String SPECTER_PROBE_GLOB = ".specter_*";
 
     // Android package-name grammar — the ONLY thing interpolated into the su command line.
     private static final Pattern PKG = Pattern.compile("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+");
@@ -66,18 +74,28 @@ public final class SessionMigrator {
     public static String buildCaptureCommand(String pkg) {
         String dataDir = "/data/data/" + pkg;   // pkg validated above via tarPath
         String tar = tarPath(pkg);
-        // -C into the data dir so the tar holds relative paths (databases/, shared_prefs/), then only add
-        // the subdirs that actually exist (a target may have shared_prefs but an empty databases, etc.).
+        // App-AGNOSTIC capture: tar the WHOLE data dir (relative paths, via -C) minus the junk/device-specific
+        // top-level dirs and our own .specter_* probe files. This carries whatever holds the login for any app
+        // — databases (incl. -wal/-shm where the live token lives), shared_prefs, files/, no_backup/,
+        // app_webview cookies, etc. — without hardcoding a per-app dir list.
         // Force-stop the app FIRST so the SQLite .db/-wal/-shm aren't mid-write during the tar — a live
         // snapshot can be an incoherent WAL state. Require the stop to succeed (don't tar a running app).
+        StringBuilder excl = new StringBuilder();
+        for (String d : EXCLUDE_DIRS) excl.append("--exclude='./").append(d).append("' ");
+        excl.append("--exclude='./files/").append(SPECTER_PROBE_GLOB).append("' ");
         return "set -e; "
                 + "test -d " + dataDir + " || { echo 'no data dir for " + pkg + " (app not installed)'; exit 3; }; "
                 + "am force-stop " + pkg + " || { echo 'could not stop " + pkg + " before capture'; exit 5; }; "
                 + "mkdir -p " + SESSION_DIR + "; "
-                + "present=''; for d in " + join(SESSION_SUBDIRS) + "; do "
-                + "  [ -d " + dataDir + "/$d ] && present=\"$present $d\"; done; "
-                + "[ -n \"$present\" ] || { echo 'no session dirs (never logged in?)'; exit 4; }; "
-                + "tar czf " + tar + " -C " + dataDir + " $present; "
+                // Guard 'never logged in': require at least one login-bearing dir to exist, else the tar would
+                // be an empty shell. (files OR databases OR shared_prefs OR no_backup — any real app has one.)
+                + "present=''; for d in databases shared_prefs files no_backup app_webview; do "
+                + "  [ -d " + dataDir + "/$d ] && present=1; done; "
+                + "[ -n \"$present\" ] || { echo 'no app-data dirs (never opened/logged in?)'; exit 4; }; "
+                // tar the dir contents ('.') with the excludes. `--warning=no-file-changed` + tolerating a
+                // benign exit-1 (files vanishing under a stopped-but-just-killed app) so a race can't fail us.
+                + "tar czf " + tar + " -C " + dataDir + " " + excl + " . 2>/dev/null || [ -s " + tar + " ]; "
+                + "[ -s " + tar + " ] || { echo 'capture produced an empty archive'; exit 6; }; "
                 + "chmod 644 " + tar + "; "
                 + "echo captured $(stat -c %s " + tar + ") bytes";
     }
@@ -103,33 +121,35 @@ public final class SessionMigrator {
         String dataDir = "/data/data/" + pkg;
         String tar = tarPath(pkg);
         String stage = SESSION_DIR + "/restore-" + pkg;   // staging + aside live in the same world-tmp dir
-        String subdirs = join(SESSION_SUBDIRS);
         return "set -e; "
                 + "test -f " + tar + " || { echo 'no staged session for " + pkg + "'; exit 3; }; "
                 + "test -d " + dataDir + " || { echo 'app " + pkg + " not installed here'; exit 4; }; "
                 // (1) archive must be a readable tar before we touch anything destructive.
                 + "tar tzf " + tar + " >/dev/null 2>&1 || { echo 'staged session is corrupt/unreadable — aborting, nothing touched'; exit 5; }; "
-                // (2) every entry must stay under databases/ or shared_prefs/ (extraction runs as root). Any
-                // line NOT matching that prefix — an absolute path, a ../ traversal, or another top-level
-                // dir — trips the refusal. (grep -vE = lines that don't match; -q = just the exit status.)
-                + "if tar tzf " + tar + " | grep -qvE '^(databases|shared_prefs)(/|$)'; then echo 'archive has entries outside the session dirs — refusing to extract as root'; exit 6; fi; "
+                // (2) traversal guard: the archive is extracted as ROOT into app data, so no entry may be an
+                // absolute path or contain a '..' component. We tar with relative './' paths, so every
+                // legitimate entry starts './' and has no '..'. Anything else is refused. (This replaces the
+                // old two-dir allow-list, which can't work now that we carry the whole data dir.)
+                + "if tar tzf " + tar + " | grep -qE '(^/|(^|/)[.][.](/|$))'; then echo 'archive has an absolute or ../ path — refusing to extract as root'; exit 6; fi; "
                 + "uid=$(stat -c %u " + dataDir + "); "
                 // (3) extract to a clean staging dir and confirm something came out.
                 + "rm -rf " + stage + "; mkdir -p " + stage + "; "
                 + "tar xzf " + tar + " -C " + stage + "; "
-                + "got=''; for d in " + subdirs + "; do [ -e " + stage + "/$d ] && got=1; done; "
-                + "[ -n \"$got\" ] || { rm -rf " + stage + "; echo 'archive yielded no session dirs'; exit 7; }; "
-                // (4) stop the app — REQUIRED; never swap session dirs under a running writer.
+                + "[ -n \"$(ls -A " + stage + " 2>/dev/null)\" ] || { rm -rf " + stage + "; echo 'archive yielded nothing'; exit 7; }; "
+                // The set of top-level entries to swap = whatever the archive actually contains (app-agnostic).
+                + "entries=$(ls -A " + stage + "); "
+                // (4) stop the app — REQUIRED; never swap data dirs under a running writer.
                 + "am force-stop " + pkg + " || { rm -rf " + stage + "; echo 'could not stop " + pkg + " — aborting, nothing touched'; exit 8; }; "
-                // (5) atomic-ish swap with rollback: move current aside, move staged in; on failure restore aside.
+                // (5) atomic-ish swap with rollback: move each current top-level entry aside, move the staged
+                // one in; on any failure roll every aside entry back so the app's login is never lost.
                 + "aside=" + stage + ".aside; rm -rf $aside; mkdir -p $aside; "
-                + "for d in " + subdirs + "; do [ -e " + dataDir + "/$d ] && mv " + dataDir + "/$d $aside/$d; done; "
-                + "if ! ( for d in " + subdirs + "; do [ -e " + stage + "/$d ] && mv " + stage + "/$d " + dataDir + "/$d; done ); then "
+                + "for d in $entries; do [ -e " + dataDir + "/$d ] && mv " + dataDir + "/$d $aside/$d; done; "
+                + "if ! ( for d in $entries; do mv " + stage + "/$d " + dataDir + "/$d; done ); then "
                 + "  echo 'swap failed — rolling back'; "
-                + "  for d in " + subdirs + "; do rm -rf " + dataDir + "/$d; [ -e $aside/$d ] && mv $aside/$d " + dataDir + "/$d; done; "
+                + "  for d in $entries; do rm -rf " + dataDir + "/$d; [ -e $aside/$d ] && mv $aside/$d " + dataDir + "/$d; done; "
                 + "  rm -rf " + stage + " $aside; exit 9; fi; "
-                // success: re-own to THIS install's uid, recompute SELinux, drop the aside copy + staging.
-                + "for d in " + subdirs + "; do [ -e " + dataDir + "/$d ] && chown -R $uid:$uid " + dataDir + "/$d; done; "
+                // success: re-own the restored entries to THIS install's uid, recompute SELinux, clean up.
+                + "for d in $entries; do [ -e " + dataDir + "/$d ] && chown -R $uid:$uid " + dataDir + "/$d; done; "
                 + "restorecon -R " + dataDir + " 2>/dev/null || true; "
                 + "rm -rf " + stage + " $aside; "
                 + "echo restored to uid $uid";
@@ -158,12 +178,6 @@ public final class SessionMigrator {
 
     /** Convenience: wipe via a real su process. */
     public static String clearData(String pkg) { return clearData(new SuShell(), pkg); }
-
-    private static String join(String[] items) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < items.length; i++) { if (i > 0) sb.append(' '); sb.append(items[i]); }
-        return sb.toString();
-    }
 
     /** Abstraction over process exec so tests can drive command-building without a real device. */
     public interface Shell {
