@@ -48,3 +48,7 @@ resources/*.zip
 /dist/specter-zygisk-v*.zip
 /xposed-module/app/src/main/assets/zygisk/
 backups/
+
+# Real account-data backups — NEVER commit (login tokens live here)
+/handoffs/dasher-backup/
+*.tgz
