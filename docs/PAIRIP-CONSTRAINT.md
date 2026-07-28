@@ -124,3 +124,25 @@ sharper evidence (all PROVEN on-device, Pixel 4a, Dasher 8.88.6, A13 / patch 202
   levers left are all crash-sensitive + attended: a CURRENT non-beta pif + valid keybox via TrickyStore to
   pass the integrity gate WITHOUT hiding (so Specter can still inject), OR accept the 4a can't run Dasher and
   keep it for probe/DevInfo/FPJS/dataset testing. **P4 (A11) remains the fleet device — Dasher runs there.**
+
+## 2026-07-28 (session 2, cont.): TrickyStore/pif route TESTED — does NOT fix it (native VM, not integrity)
+User asked to try the TrickyStore/PlayIntegrityFork/pif lever. Tested it properly; it does NOT work, and now
+we know precisely WHY:
+- The 4a ALREADY has a full stack: **TrickyStore** (keybox.xml present, `teeBroken=false`, Dasher in
+  target.txt, `security_patch.txt=all=2026-07-05`) + **Integrity Box v39** (PlayIntegrityFork family) with a
+  `custom.pif.prop`. So the integrity/attestation side is already spoofed to a current patch.
+- Tried the most-plausible pif fix: flipped **`spoofApps=0 -> 1`** (so the pif's current-patch BUILD PROPS
+  reach Dasher's OWN process, where PairIP's native code reads them — not just GMS). Rebooted, retested.
+- **RESULT: no change.** Dasher still SIGSEGVs in `libpairipcore.so` at the SAME fixed offset (pc 0x41dc4,
+  fault addr `0x4f49be035927e1` — a non-canonical/garbage pointer, i.e. the VM's deliberate crash-on-detect).
+  Reverted the pif change (back to spoofApps=0, as-found).
+- **PROVEN CONCLUSION: the A13 crash is `libpairipcore.so`'s native VM anti-tamper detecting the rooted/
+  mounted environment and crashing on purpose — it is NOT gated by the fingerprint, security_patch, keybox,
+  or Play Integrity verdict.** Fingerprint/pif/TrickyStore tuning cannot fix it (they address a DIFFERENT
+  check). This matches the reversing-community consensus that the libpairipcore VM bypass is "not currently
+  possible." The only thing that hides mounts from Dasher's process is DenyList/Shamiko — which also unmounts
+  Specter (the documented dead-end).
+- **FINAL STATUS (A13 / Pixel 4a):** Dasher cannot run with root+modules mounted, independent of Specter and
+  independent of integrity spoofing. Options that remain are all heavy/out-of-scope: (a) wait for a public
+  libpairipcore VM bypass, (b) a non-rooted / differently-rooted A13, or (c) accept it. **Fleet stays on the
+  Pixel 4 (A11), where Dasher runs.** The 4a is best used for probe/DevInfo/FPJS/dataset/A11-vs-A13 tests.
