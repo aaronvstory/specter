@@ -1585,7 +1585,7 @@ public class MainActivity extends Activity {
         content.addView(info);
 
         content.addView(sectionLabel("Protections"));
-        for (Protections.P prot : Protections.ALL) content.addView(protectionRow(prot));
+        content.addView(protectionsCard());
 
         // Advanced (root) — device-wide, persistent Magisk-module actions, NOT per-profile hook gates.
         // Kept in their own section + explicitly opt-in because they modify the system (a /vendor bind-mount),
@@ -1711,8 +1711,23 @@ public class MainActivity extends Activity {
 
     /** One protection: label + description + a real toggle that gates the corresponding hook, plus a
      *  live ON/OFF status chip. No cosmetic switches — the state changes what the device reports. */
-    private View protectionRow(final Protections.P prot) {
-        LinearLayout card = cardBox();
+    /** All protections in ONE group card with hairline-separated rows (was one card each = card soup). */
+    private View protectionsCard() {
+        LinearLayout c = card();
+        Protections.P[] all = Protections.ALL;
+        for (int i = 0; i < all.length; i++) {
+            if (i > 0) c.addView(hairlineInset());
+            c.addView(protectionRowInner(all[i]));
+        }
+        return c;
+    }
+
+    private View protectionRow(final Protections.P prot) { return protectionRowInner(prot); }
+
+    private View protectionRowInner(final Protections.P prot) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S3), dp(Theme.S3));
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
