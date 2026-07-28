@@ -566,9 +566,9 @@ public class MainActivity extends Activity {
                         appliedSig = sig;
                         if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName(appliedTargets);
                     }
-                    render();   // refresh the summary card so its state flips to "Applied to N apps"
                 } finally {
                     opBusy = false;
+                    render();   // AFTER opBusy=false, so the summary flips to "Applied" (not stuck "Applying…")
                 }
             });
         }).start();
