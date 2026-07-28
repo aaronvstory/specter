@@ -679,3 +679,26 @@ Measured on the 4a (A11) with trace=1, launching Dasher (com.doordash.driverapp 
 - **VERDICT: Dasher sees two genuinely different devices with ZERO carryover A→B.** The mandatory deep-clean
   on APPLY breaks the link — exactly what fleet per-account isolation needs. This is the core fleet guarantee,
   now proven end-to-end against the real Dasher.
+
+## 2026-07-29 (corrected + comprehensive) — full leak scan with a MAXIMALLY-DIFFERENT profile
+Redid the Dasher test properly: applied a **Samsung Galaxy S20 Ultra (SM-G988B)** profile — maximally unlike
+the real **Pixel 4a / sunfish** — so any real-device leak stands out. Scanned ALL signals, not just android_id:
+- **LEAK SCAN (real values that MUST NOT appear in Dasher's data): all ZERO** — "Pixel 4a"=0, "sunfish"=0,
+  real android_id 717378e3…=0, real serial 17031JEC…=0, "google/sunfish"=0.
+- **Positive: Dasher STORED the spoofed identity** — android_id 28e7d9ac… (7×), model SM-G988B (4×).
+- **CORRECTION to the prior note: Dasher DOES read Widevine** — this launch logged
+  `MediaDrm deviceUniqueId -> 9cf435a3…` (the SPOOFED value). It's not read on EVERY launch (0 the first run,
+  1 this run), but it IS read, and the spoof lands. So the Widevine media_drm_id spoof matters for Dasher and
+  is working. (The deep "Downgrade Widevine to L3" native bind-mount is a SEPARATE, deeper signal — securityLevel
+  via native OEMCrypto — which is only needed if a fingerprinter reads securityLevel natively; unverified for
+  Dasher. The Java media_drm_id path, which Dasher DID read, is always covered.)
+- Reads this session: android_id 6×, MediaDrm 1×, file-timestamps 160× — all spoofed, 0 leaks.
+- STILL UNTESTED: the LOGIN/verification flow (heaviest fingerprinting). Launch-only so far. A live login trace
+  is the last gap.
+
+## Specter Lite (non-root harvest) — what it CAN and CANNOT get (for the import→apply workflow)
+Lite harvests without root: android_id, ALL Build.* (mfr/model/fp/bootloader/board/hardware/…), MediaDrm
+Widevine deviceUniqueId, GSF ID, RAM, GPU renderer/GLES, sensor list, locale/timezone, carrier MCC/MNC+name.
+It CANNOT read (privileged/root-only) and deliberately does NOT fake: **IMEI, serial, IMSI, ICCID** — these are
+listed as "hand-enter in Specter". So the workflow is: harvest a real device non-root → import the JSON into
+rooted Specter → hand-enter the 4 privileged IDs.
