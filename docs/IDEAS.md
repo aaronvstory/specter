@@ -661,3 +661,15 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   REAL. Full fix: ship a real ~30-40-sensor list per device in data/hardware.json (harvested from real
   devices) so EVERY native sensor is spoofed with zero passthrough. Byte-parity change (Java+Python). Lower
   priority than the derivation fix which removed the impossible-multiset tell.
+
+- **2026-07-29 · UI: a TRUE Apple-like overhaul (bigger pass, later).** status: `idea`. The current UI is
+  still too cluttered even after the v0.14.1 declutter. User wants a genuine Apple-design-language rethink of
+  the whole approach — not just shorter copy. Concrete gripes: the emoji + broom "🧹 Each target is wiped
+  clean before every apply" line reads as un-Apple (emoji-in-primary-text, states an implementation detail as
+  a banner). Rethink: remove decorative emoji from primary text, move mechanism notes behind an (i), calmer
+  hierarchy, more whitespace, fewer always-visible labels. NOT urgent — after the current Cash/fleet testing.
+- **2026-07-29 · Lock the hardware-anchor identifiers ON (Widevine/serial/etc.).** status: `idea -> should-do`.
+  media_drm_id (+ serial, and arguably the other stable hardware anchors) default ON but are user-toggleable
+  off. Turning Widevine off re-introduces the exact intermittent-leak failure mode we think caused GeerGit's
+  non-deterministic bans (see ANTI-FINGERPRINT-STRATEGY 2026-07-29). Either lock these ON (no off switch) or
+  hard-warn on toggle-off. Small, high-value robustness change.
