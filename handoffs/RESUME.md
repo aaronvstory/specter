@@ -5,9 +5,10 @@ on-device QA project; describe the mechanism (what a profile sets, what a sample
 engineering exact. Full framing: `CLAUDE.md`.
 
 ## Read next
-**`handoffs/2026-07-29_0239_cash-monitor-3features-fleet.md`** — the current detailed handoff. Full state,
-the 3-features clarification (do NOT conflate them), the Cash App analysis, device state, and the next-action
-list for finishing the read-monitor feature.
+**`handoffs/2026-07-29_morning-report.md`** — the latest session's results: the app-data (login) vault
+(save/wipe/restore PROVEN on Dasher + Cash), the linked fingerprint+login model, rename/export/import, the
+signal-spoofing re-verification, and device state. The older `2026-07-29_0239_cash-monitor-*.md` has the
+3-features framing + Cash analysis if you need the deeper background.
 
 ## One-paragraph state
 main @ latest (all pushed, tree clean). This stretch shipped: v0.14.2 whole-app hardening, v0.14.3 robustness
