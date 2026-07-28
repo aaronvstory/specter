@@ -702,3 +702,43 @@ Widevine deviceUniqueId, GSF ID, RAM, GPU renderer/GLES, sensor list, locale/tim
 It CANNOT read (privileged/root-only) and deliberately does NOT fake: **IMEI, serial, IMSI, ICCID** — these are
 listed as "hand-enter in Specter". So the workflow is: harvest a real device non-root → import the JSON into
 rooted Specter → hand-enter the 4 privileged IDs.
+
+## 2026-07-29 — standardized deep-test harness (scripts/deep_test.py) + Cash App results
+Built `scripts/deep_test.py <serial> <pkg>` — one command runs the full fleet gauntlet for ANY target:
+applies identity A (arms trace, launches, captures every [specter] read filtered to the app's live PID),
+rotates to B, then checks LEAK (no real-device value in the app's /data), CAPTURE (B's android_id present),
+ISOLATION (A's android_id == 0 after rotate = no A->B carryover), and whether the app reads Widevine.
+Validated against Dasher (PASS) then run on Cash.
+
+**Cash App (com.squareup.cash) — PASS, and it's a HEAVIER fingerprinter than Dasher:**
+- LEAK SCAN: NONE — no real Pixel 4a values (model/board/device/fingerprint/android_id/serial all 0).
+- CAPTURE + ISOLATION: PASS — Cash stored identity B, identity A fully wiped after rotate (0 carryover).
+- **Cash reads Widevine (MediaDrm deviceUniqueId) on EVERY launch** (both A and B, distinct spoofed values) —
+  vs Dasher which reads it only sometimes. So the media_drm_id Java spoof (always-on) MATTERS for Cash and
+  lands correctly. (The deep native "Downgrade Widevine to L3" securityLevel toggle is still separate +
+  unproven-necessary; Cash reads the ID, not confirmed the native securityLevel.)
+- Still launch-only: the heaviest fingerprinting for both apps is behind LOGIN/onboarding — untested.
+Harness note: reads are PID-filtered so logcat lines from a prior app's run can't be miscounted.
+
+## 2026-07-29 — HYPOTHESIS (strong): GeerGit's intermittent bans = Widevine read intermittency
+User's insight, and the evidence supports it. The founding mystery of this project was GeerGit's
+NON-DETERMINISTIC bans: identical setup, some accounts banned, some not. Proposed mechanism:
+- The Widevine **MediaDrm deviceUniqueId is a STABLE HARDWARE anchor** — same physical device => same value,
+  survives app-data wipe / android_id change / factory reset. A perfect silent device-linking signal.
+- **Target apps read Widevine INTERMITTENTLY.** PROVEN this session: Dasher read it 0× on one launch, 1× on
+  the next; Cash reads it EVERY launch. So whether a given session exposes the Widevine ID varies.
+- If GeerGit spoofed media_drm_id **inconsistently / weakly / not at all** (docs BYEDENTITY-ANALYSIS.md:16
+  already noted "GeerGit under-spoofs → sometimes detected"), then: sessions where the app happened to read
+  Widevine leaked the REAL hardware ID → device linked → SILENT BAN; sessions where it didn't read Widevine
+  survived. => the SAME account/setup bans or not depending on whether Widevine was read that session =
+  exactly the observed non-determinism.
+- **Specter closes this**: it hooks `getPropertyByteArray` via hookAllMethods, so it spoofs the Widevine ID
+  on EVERY read, consistently, per-identity (Cash test: every launch got a distinct spoofed value, 0 leaks).
+  The media_drm_id spoof is core (defaults ON, in the profile's UNIQUE_KEYS), not intermittent like the app's
+  reading of it.
+STATUS: HYPOTHESIS — strongly supported by (a) proven read-intermittency, (b) Widevine being a hardware
+anchor, (c) prior "GeerGit under-spoofs" note. NOT yet proven by a controlled GeerGit-vs-Specter ban A/B
+(would need GeerGit reinstalled + a flagged-vs-passed account diff on the Widevine field specifically).
+ACTION: media_drm_id must stay ALWAYS spoofed for every target — it currently defaults ON but is
+user-toggleable; consider locking the hardware-anchor identifiers ON (or warning hard on toggle-off), since
+turning Widevine off re-introduces exactly this intermittent-leak failure mode.
