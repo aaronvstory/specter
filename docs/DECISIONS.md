@@ -403,3 +403,37 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   (coherent, 0 leaks, device stable). So the deep native-OEMCrypto path (below the Java MediaDrm hook) is
   covered when the toggle is on. Also confirmed: on this rooted A11, Dasher launches clean (no libpairipcore
   load / no PairIP crash) — the A13-only PairIP blocker is gone on A11, as predicted.
+
+- 2026-07-29 — Read-capture archiving + auto-save-before-wipe (v0.14.7). The capture is a SINGLE fixed
+  file (/data/local/tmp/specter/diag.log) because logcat -f owns the write; that means a second monitor
+  TRUNCATES the first one'''s data. Rather than reworking the capture into per-session files (logcat -f
+  can'''t rotate by session, and the viewer/parser/export all key off the one path), stopMonitor now just
+  copies the finished log out to /sdcard/Download/specter-reads-<pkg>-<ts>.log. Cheap, reuses the same
+  su-cp the Export button already does, and leaves the live-viewer plumbing untouched. Empty captures are
+  skipped () so a monitor that recorded nothing leaves no misleading file.
+  Companion decision: APPLY/Restore-saved wipe the target before writing the profile, which ENDS the very
+  session being monitored — so flushMonitorBeforeWipe() stops+archives an in-progress monitor first. It
+  does NOT open the read report (the user asked to APPLY, not to read a trace), and it reports via toast
+  instead of the shared status line so the late worker callback can'''t clobber the apply status. The
+  disarm sed racing the new atomic profile write is harmless: apply() rewrites the WHOLE file, so a late
+  sed either edits the old file pre-mv or no-ops on a fresh profile that has no trace flag.
+
+- 2026-07-29 — Gauntlet on the v0.14.7 flush (code-reviewer + /codex, both independently flagged the same
+  critical): the FIRST cut of flushMonitorBeforeWipe() called stopMonitor(), which spawns a detached thread
+  and returns immediately — so the "flush BEFORE the wipe" was a race, not an ordering. It happened to pass
+  on-device because su latency favoured it. Fixed by splitting the flush in two: beginFlushBeforeWipe() does
+  the UI-thread state teardown (clears monitoringPkg, kills the 30-min timer, stops the service, re-renders)
+  and RETURNS the pkg; finishFlush() runs synchronously as the FIRST statement inside the existing wipe
+  thread, so disarm+archive genuinely complete before the first clearData(). No second thread = no race.
+  Side effect: stopMonitor() lost its openReport flag (the pre-wipe path no longer routes through it), which
+  also removes the "boolean quietly means two things" trap the reviewer flagged as latent.
+- 2026-07-29 — Do NOT fold the logcat kill into the archive command. /codex correctly flagged that the
+  archive could copy a still-writing diag.log (DiagnosticsService.stop() is async; its onDestroy pkills on
+  yet another thread). The obvious fix — prepend DiagnosticsCmd.killCommand() to the cp — is WRONG and was
+  caught only by testing it on-device: `pkill -f` matches the FULL cmdline, and the archive command
+  necessarily contains the log path, so the pkill kills its own su. Measured: rc=143 "Terminated", nothing
+  copied — it would have silently broken archiving entirely. Instead archiveCapture() POLLS for the capture
+  to disappear (`ps -Ao args | grep -c '[d]iag[.]log'`, 10 × 200ms, best-effort) and then copies. The [d]
+  bracket keeps the grep from matching itself; a probe only reads the process table, so it can't self-kill.
+  Verified: probe reads 1 while capturing and 0 after the kill, and the archive came out LONGER than the
+  live log sampled moments earlier (194 vs 180 lines, ending on a complete line) — i.e. no truncation.

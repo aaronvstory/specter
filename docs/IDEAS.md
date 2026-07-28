@@ -693,3 +693,17 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   (capture per-app data dir) + Vault. Needs: a "include app data" checkbox on save, bigger vault entries, and
   restore that lays the data back with correct perms/uid + restorecon. Per-app (Dasher/Cash) only, opt-in
   (copies real account data). High value — makes the vault a true "clone this working account" tool.
+
+- **2026-07-29 · Read-capture archiving + auto-save before a wipe.** status: `shipped` (v0.14.7).
+  Closes the two gaps left in the "Monitor reads" toggle (feature #2 of the three capture concepts — this
+  one records WHAT THE APP READS; it is NOT the vault-fingerprint save, and NOT the app-data/login
+  migration). (a) The capture went to one fixed diag.log that logcat TRUNCATES, so a second monitor
+  destroyed the first session's data — stopping a monitor now archives it to
+  `/sdcard/Download/specter-reads-<pkg>-<ts>.log`, so back-to-back captures are each preserved.
+  (b) APPLY / Restore-saved wipe the target, which ends the monitored session — so an in-progress monitor
+  is now auto-finalized (stopped + archived) BEFORE the wipe. Two applications back-to-back therefore
+  leave two separate saved captures instead of one lost one.
+  Verified on-device (4a): monitor DevInfo → 3644 lines captured → RANDOMIZE + APPLY → button reverted,
+  278 KB archive written pre-wipe, apply reported 1/1, trace disarmed; manual Stop still opens the read
+  report and writes its own distinct timestamped archive.
+  Still open for this feature: nothing blocking. The 30-min auto-stop also archives (same code path).

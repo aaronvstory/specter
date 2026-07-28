@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.14.7] — 2026-07-29
+
+### Added
+- **Read captures are archived + auto-saved.** Stopping a monitor now copies the raw capture to
+  `/sdcard/Download/specter-reads-<pkg>-<ts>.log` — logcat writes one fixed `diag.log`, so back-to-back
+  captures used to overwrite each other. Empty captures write no file.
+- **Applying a new identity auto-finalizes an in-progress capture.** APPLY and Restore-saved wipe the target,
+  which ends the session being monitored — so the monitor is now stopped and archived BEFORE the wipe
+  instead of being lost to it. The flush runs on the wipe thread itself, so it genuinely completes first.
+- Stopping a monitor now reports a failed trace-disarm instead of silently claiming the monitor stopped, and
+  says so plainly when a session recorded no reads.
+
 ## [0.14.6] â 2026-07-29
 
 ### Added

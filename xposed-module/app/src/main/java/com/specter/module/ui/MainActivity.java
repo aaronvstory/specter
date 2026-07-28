@@ -342,9 +342,13 @@ public class MainActivity extends Activity {
             status.setText(msg); toast(msg);
             return;
         }
+        // The wipe ends the session being monitored — flush that capture first. State teardown happens here
+        // (UI thread); the su work runs as the FIRST thing on the wipe thread, so it completes before the wipe.
+        final String flushPkg = beginFlushBeforeWipe(pkgs);
         opBusy = true;
         status.setText("Deep-cleaning + applying to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
+            finishFlush(flushPkg);   // disarm trace + archive the capture BEFORE anything is wiped
             int cleared = 0, ok = 0; String lastErr = null; String clearErr = null;
             java.util.List<String> okPkgs = new ArrayList<>();
             for (String pkg : pkgs) {
@@ -698,7 +702,7 @@ public class MainActivity extends Activity {
      *  the app's live profile + starts the capture service), tap again to stop + open the read report. A
      *  30-minute auto-stop is a safety net so a forgotten capture can't log for days. */
     private void toggleMonitor(final String pkg, final TextView statusView) {
-        if (pkg.equals(monitoringPkg)) { stopMonitor(true); return; }
+        if (pkg.equals(monitoringPkg)) { stopMonitor(); return; }
         if (monitoringPkg != null) { toast("Already monitoring " + Targets.label(this, monitoringPkg) + " — stop it first."); return; }
         statusView.setTextColor(Theme.DIM);
         statusView.setText("Starting monitor…");
@@ -712,14 +716,17 @@ public class MainActivity extends Activity {
                 statusView.setText("Monitoring — relaunch " + Targets.label(this, pkg) + ", use it, then tap Stop.");
                 // 30-min auto-stop safety net.
                 monitorTimeout.removeCallbacksAndMessages(null);
-                monitorTimeout.postDelayed(() -> { if (pkg.equals(monitoringPkg)) { toast("Monitor auto-stopped after 30 min."); stopMonitor(true); } }, 30 * 60 * 1000L);
+                monitorTimeout.postDelayed(() -> { if (pkg.equals(monitoringPkg)) { toast("Monitor auto-stopped after 30 min."); stopMonitor(); } }, 30 * 60 * 1000L);
                 render();   // redraw so the button shows "Monitoring…"
             });
         }, "specter-mon-start").start();
     }
 
-    /** Stop the active monitor: disarm trace, stop the capture, and (if {@code openReport}) show what the app read. */
-    private void stopMonitor(final boolean openReport) {
+    /** Stop the active monitor (user-initiated, or the 30-min auto-stop): disarm trace, stop the capture,
+     *  archive the raw capture so the NEXT monitor can't overwrite it, then open the read report.
+     *  The pre-wipe flush does NOT go through here — it needs the work to complete before the wipe runs,
+     *  so it uses {@link #beginFlushBeforeWipe} + {@link #finishFlush} instead. */
+    private void stopMonitor() {
         final String pkg = monitoringPkg;
         if (pkg == null) return;
         monitorTimeout.removeCallbacksAndMessages(null);
@@ -727,13 +734,89 @@ public class MainActivity extends Activity {
         DiagnosticsService.stop(this);
         status.setText("Stopping monitor…");
         new Thread(() -> {
-            armTrace(pkg, false);   // remove "trace":"1" so we don't keep logging that app
+            final String msg = disarmAndArchive(pkg);
             runOnUiThread(() -> {
-                status.setText("Monitor stopped for " + Targets.label(this, pkg) + ".");
+                status.setText(msg);
                 render();
-                if (openReport) startActivity(new Intent(this, DiagnosticsActivity.class));   // reads diag.log -> spoofed/real report
+                startActivity(new Intent(this, DiagnosticsActivity.class));   // reads diag.log -> spoofed/real report
             });
         }, "specter-mon-stop").start();
+    }
+
+    /** The actual stop work, off the UI thread: disarm the trace flag, then archive the capture. Returns the
+     *  user-facing result line. A FAILED disarm is reported, not swallowed — it means the app is still being
+     *  logged even though the UI says the monitor stopped, which is exactly the state you'd want to know about. */
+    private String disarmAndArchive(String pkg) {
+        final String disarmErr = armTrace(pkg, false);   // remove "trace":"1" so we don't keep logging that app
+        final String saved = archiveCapture(pkg);
+        return "Monitor stopped for " + Targets.label(this, pkg) + "."
+                + (saved != null ? " Capture saved → " + saved : " No reads captured.")
+                + (disarmErr != null ? " ⚠️ Trace still armed (" + disarmErr + ") — re-APPLY to clear it." : "");
+    }
+
+    /** Copy the raw capture out to /sdcard/Download with a timestamped name. logcat -f TRUNCATES the single
+     *  fixed diag.log, so back-to-back captures would otherwise clobber each other; the archive is what makes
+     *  each session's reads recoverable. Returns the dest path, or null if nothing was written.
+     *
+     *  Waits for the capture to actually stop first. DiagnosticsService.stop() only ASKS the service to stop,
+     *  and its onDestroy pkills the logcat child on yet another thread — so copying immediately can catch a
+     *  still-writing logcat and archive a truncated file. We poll for the capture process to disappear
+     *  (bounded, ~2s) instead of folding the kill into this command: `pkill -f` matches on the full cmdline,
+     *  and this command necessarily CONTAINS the log path, so a kill here terminates our own su
+     *  (verified on-device: rc=143, nothing copied). Let the service own the kill; we just wait for it.
+     *
+     *  `cp -n` (no-clobber) keeps two captures landing in the same millisecond from overwriting each other. */
+    private String archiveCapture(String pkg) {
+        if (!com.specter.module.gen.RootWriter.validPkg(pkg)) return null;
+        String dest = "/sdcard/Download/specter-reads-" + pkg + "-" + System.currentTimeMillis() + ".log";
+        try {
+            com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
+            waitForCaptureToStop(sh);
+            // -s: only copy a NON-EMPTY capture, so a monitor that recorded nothing leaves no misleading file.
+            int code = sh.run("[ -s '" + DiagnosticsCmd.LOG_PATH + "' ] && cp -n '" + DiagnosticsCmd.LOG_PATH
+                            + "' '" + dest + "' && chmod 644 '" + dest + "'", "");
+            return code == 0 ? dest : null;
+        } catch (Exception e) { return null; }
+    }
+
+    /** Poll (bounded) until no logcat capture is writing our log, so the archive can't catch a partial file.
+     *  Best-effort: if it's still up after the budget we archive anyway — a slightly-short capture beats none.
+     *  The probe greps the process table, so it never signals anything and can't self-kill. */
+    private void waitForCaptureToStop(com.specter.module.gen.RootWriter.Shell sh) {
+        for (int i = 0; i < 10; i++) {   // ~2s budget; the service's pkill normally lands well inside this
+            try {
+                // The [d] bracket keeps the grep's OWN cmdline from matching itself.
+                String out = sh.runCapture("ps -Ao args | grep -c '[d]iag[.]log' || true");
+                if (out != null && out.trim().startsWith("0")) return;
+            } catch (Exception e) { return; }   // can't probe -> don't stall the stop
+            try { Thread.sleep(200); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+        }
+    }
+
+    /** UI-thread half of the pre-wipe flush: if a monitor is running on a package that's about to be wiped,
+     *  tear the monitor state down NOW (so the button + 30-min timer are correct immediately) and return that
+     *  package so the caller's worker can finish the flush. Returns null when there's nothing to flush.
+     *  Call this on the UI thread, BEFORE spawning the wipe thread; pass the result to {@link #finishFlush}. */
+    private String beginFlushBeforeWipe(List<String> pkgs) {
+        final String pkg = monitoringPkg;
+        if (pkg == null || !pkgs.contains(pkg)) return null;
+        monitorTimeout.removeCallbacksAndMessages(null);
+        monitoringPkg = null;
+        DiagnosticsService.stop(this);   // tear the capture down before the wipe thread starts
+        toast("Saving the in-progress read capture for " + Targets.label(this, pkg) + " first.");
+        render();   // the button must stop saying "Monitoring…" now, not at some later redraw
+        return pkg;
+    }
+
+    /** Worker half of the pre-wipe flush — MUST run on the wipe thread, before the first clearData(), so the
+     *  disarm + archive genuinely COMPLETE before the wipe touches anything. (Spawning a second thread here
+     *  would only race the wipe, which is the bug this shape exists to avoid.) No report is opened: the user
+     *  asked to APPLY, not to read a trace. */
+    private void finishFlush(String pkg) {
+        if (pkg == null) return;
+        final String msg = disarmAndArchive(pkg);
+        // Toast, not the status line: the caller (APPLY/RESTORE) owns `status` from here on.
+        runOnUiThread(() -> toast(msg));
     }
 
     /** Add/remove {@code "trace":"1"} in the app's live profile file via su. Returns null on success, else an error. */
@@ -1468,9 +1551,12 @@ public class MainActivity extends Activity {
         final String sig = applySignature(toApply, targets);   // record on full success so an immediate APPLY
                                                                 // of the just-restored identity is a no-op (not
                                                                 // a needless second deep-clean of the same apps)
+        // Same as APPLY: tear the monitor state down here, finish the su work on the wipe thread (see apply()).
+        final String flushPkg = beginFlushBeforeWipe(pkgs);
         opBusy = true;
         status.setText("Clearing + restoring " + labelStr + " to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
+            finishFlush(flushPkg);   // disarm trace + archive the capture BEFORE anything is wiped
             int cleared = 0, ok = 0; String lastErr = null; String clearErr = null;
             java.util.List<String> okPkgs = new ArrayList<>();
             for (String pkg : pkgs) {
