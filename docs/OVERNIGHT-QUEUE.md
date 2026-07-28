@@ -26,7 +26,7 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
 ## Queue (top-down; each is its own commit/PR + gauntlet)
 
 ### T1 — dataset coherence (data-only, byte-parity-safe, low-risk) — DO FIRST
-- [ ] **sm6150 SoC audit.** Fix a71naxx (Galaxy A71 → SD730G = sm7150/Adreno 618, same as the Pixel 4a fix
+- [x] **sm6150 SoC audit.** (DONE 2026-07-28, merged 6256986) Fix a71naxx (Galaxy A71 → SD730G = sm7150/Adreno 618, same as the Pixel 4a fix
       that already shipped). Verify bonito/sargo (Pixel 3a XL/3a = SD670/Adreno 615 — add sm670 topology if
       missing) and kiev/nairo (Motorola — verify real SoC). Correct each model's renderer string so the
       dataset gpu-renderer coherence test (tests/test_coherence.py) flags any remaining mismatch. Pin the
@@ -58,6 +58,7 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
   do NOT build a global always-on resetprop). See the IDEAS entry.
 
 ## Log (append as you go — newest first)
+- 2026-07-28 T1a MERGED (6256986): SoC audit + gpu_model-from-renderer (gen + harvest), codex HIGH (harvest coherence) fixed. Next: T1b first_api_level.
 - 2026-07-28 T1a DONE: sm6150 SoC audit — fixed a71naxx/bonito/sargo/kiev/nairo (kernel-DT grounded),
   added sdm670 topology, gpu_model now derived from renderer (handles lito multi-Adreno), pinned in tests.
   Both hardware.json copies + generators.py + Profile.java + soc_topology.json updated. Tests green.
