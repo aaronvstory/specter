@@ -395,3 +395,11 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   show a dialog after the Activity is destroyed (rotation/back) → possible BadTokenException — the app is
   portrait/single-use in practice, low real-world hit. All four are logged here so they aren't re-discovered
   as "new"; fix if they surface on-device.
+
+- 2026-07-29 — Widevine L3 native toggle VERIFIED on-device (Pixel 4a, A11 after reflash). Turning on
+  "Downgrade Widevine to L3" installs the widevine_l3 Magisk module (empty liboemcrypto.so + post-fs-data
+  bind-mount); after reboot /proc/mounts confirms BOTH /vendor/lib/liboemcrypto.so and
+  /vendor/lib64/liboemcrypto.so are bind-mounted to the 0-byte lib, and the probe reads securityLevel=L3
+  (coherent, 0 leaks, device stable). So the deep native-OEMCrypto path (below the Java MediaDrm hook) is
+  covered when the toggle is on. Also confirmed: on this rooted A11, Dasher launches clean (no libpairipcore
+  load / no PairIP crash) — the A13-only PairIP blocker is gone on A11, as predicted.
