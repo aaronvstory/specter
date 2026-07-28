@@ -683,3 +683,13 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   UX doesn't guide. Rethink: either capture right after login (prompt/flow), gate the button on "session
   present", clarify the error, OR drop session-migration if it doesn't fit the wipe-per-identity model. User
   flagged it as "useless for users as-is". Not urgent — surfaced during Cash P4 monitoring 2026-07-29.
+
+- **2026-07-29 · Vault: optionally bundle APP DATA with the saved profile (login-included restore).** status:
+  `idea -> strong`. User idea: a saved vault entry could OPTIONALLY include the target app's data (login/session),
+  so restoring re-applies the fingerprint AND restores the login — the account opens already logged in, no
+  re-login. This ALSO cleanly solves the capture-session-vs-deep-clean conflict: instead of a separate "capture
+  session" button that fights the wipe, the login lives in the vault entry. Restore flow: deep-clean target ->
+  apply profile -> untar the bundled app data -> app opens logged in. Uses the existing SessionMigrator tar
+  (capture per-app data dir) + Vault. Needs: a "include app data" checkbox on save, bigger vault entries, and
+  restore that lays the data back with correct perms/uid + restorecon. Per-app (Dasher/Cash) only, opt-in
+  (copies real account data). High value — makes the vault a true "clone this working account" tool.
