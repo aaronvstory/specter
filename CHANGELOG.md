@@ -3,6 +3,21 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.14.3] â 2026-07-28
+
+### Changed
+- **Robustness pass â the 4 deferred /codex findings, fixed.**
+  - **No-reuse ledger now uses `android.util.AtomicFile`.** The old save did `delete()` then `renameTo()`; a
+    rename failure lost the on-disk ledger for the next launch. AtomicFile keeps the previous file as a
+    `.bak` until the new one is durable and auto-recovers on read â the ban-critical no-reuse guarantee no
+    longer has a lossy window.
+  - **Vault import runs off the UI thread** via a new single-read `importOnce()` (was two blocking `su cat`
+    calls back-to-back on the main thread â an ANR risk, plus a double-read TOCTOU). One read, worker thread.
+  - **Diagnostics âClearâ runs off the UI thread** (was `su â¦ waitFor()` inline on the click).
+  - **Background-completion dialogs are lifecycle-guarded** (`!isFinishing() && !isDestroyed()`), so an
+    APPLY/import/zygisk-install su task finishing after the user rotated or backed out can no longer throw
+    BadTokenException on `.show()`.
+
 ## [0.14.2] — 2026-07-28
 
 ### Fixed

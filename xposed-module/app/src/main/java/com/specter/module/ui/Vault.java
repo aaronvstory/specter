@@ -189,6 +189,27 @@ public final class Vault {
         return parsed.isOk() ? null : parsed.error;
     }
 
+    /** Result of a one-shot import: either {@code label} (success) or {@code error} (why it failed). */
+    public static final class ImportResult {
+        public final String label;   // non-null on success
+        public final String error;   // non-null on failure
+        ImportResult(String label, String error) { this.label = label; this.error = error; }
+        public boolean ok() { return label != null; }
+    }
+
+    /** Validate + import in a SINGLE su read (no double-read / TOCTOU), returning label-or-error. Call this
+     *  off the UI thread — it runs a blocking {@code su cat}. Replaces the importError()+importFromFile()
+     *  pair the UI used to run back-to-back on the main thread. */
+    public ImportResult importOnce(File src, String name) {
+        String text = readViaSu(src);
+        if (text == null) return new ImportResult(null, "could not read file (grant root?)");
+        VaultPortable.Parsed parsed = VaultPortable.parseEnvelope(text);
+        if (!parsed.isOk()) return new ImportResult(null, parsed.error);
+        String label = save(name, parsed.profile, "");
+        return label != null ? new ImportResult(label, null)
+                             : new ImportResult(null, "could not write to the vault");
+    }
+
     /** Read a file the app itself can't (no storage permission) via su. Returns null on failure. Restricted
      *  to /sdcard/Download and shell-safe paths so a crafted filename can't inject or escape the directory. */
     private static String readViaSu(File src) {

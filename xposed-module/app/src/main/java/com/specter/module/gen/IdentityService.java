@@ -126,18 +126,21 @@ public final class IdentityService {
 
     private File ledgerFile() { return new File(ctx.getFilesDir(), "used_ids.json"); }
 
-    /** Load the no-reuse ledger; FAILS CLOSED (quarantine + throw) on a corrupt file. */
+    /** Load the no-reuse ledger; FAILS CLOSED (quarantine + throw) on a corrupt file. Read via AtomicFile so
+     *  the read stays symmetric with the AtomicFile write. IMPORTANT: AtomicFile's on-disk scheme differs by
+     *  platform version — newer frameworks write `<base>.new` (rename-over on commit, no backup), but OLDER
+     *  ones (reachable via minSdk 24) use the `.bak` protocol where an interrupted write can leave ONLY
+     *  `<base>.bak`, which openRead()/readFully() then recovers. So "first run => empty" must require BOTH the
+     *  base AND the `.bak` to be absent — checking only the base could discard a recoverable `.bak` and load
+     *  an empty ledger, permitting id reuse (the ban-critical hole). */
     UsedStore loadLedger() {
         File f = ledgerFile();
-        if (!f.exists()) return new UsedStore();
+        File bak = new File(f.getParentFile(), f.getName() + ".bak");
+        if (!f.exists() && !bak.exists()) return new UsedStore();   // truly nothing on disk => first run
+        android.util.AtomicFile af = new android.util.AtomicFile(f);
         String text;
         try {
-            byte[] b = new byte[(int) f.length()];
-            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
-                int off = 0, r;
-                while (off < b.length && (r = in.read(b, off, b.length - off)) != -1) off += r;
-            }
-            text = new String(b, "UTF-8");
+            text = new String(af.readFully(), "UTF-8");   // recovers from .bak on old-scheme frameworks
         } catch (Exception e) {
             throw new UsedStore.CorruptLedger("cannot read ledger: " + e.getMessage(), e);
         }
@@ -171,20 +174,44 @@ public final class IdentityService {
     private static final Object LEDGER_LOCK = new Object();
 
     void saveLedger(UsedStore store) {
+        // android.util.AtomicFile writes to a temp and commits by renaming OVER the live file — it never
+        // delete()s the live file first. If the write fails (killed process, full disk), failWrite() drops
+        // the temp and the OLD ledger is untouched. This closes the old delete()-then-renameTo() window where
+        // a delete-succeeds-but-rename-FAILS left NO ledger for the next launch (id reuse — the ban-critical
+        // guarantee). (Temp/backup naming differs by framework version: newer = `<base>.new` with no backup,
+        // older = the `.bak` protocol; loadLedger() handles both.)
+        //
+        // CAVEAT: finishWrite() returns void and SWALLOWS a failed fsync/close/rename (logs only). So below we
+        // read the committed bytes back and FAIL CLOSED on mismatch — that catches a swallowed rename/close
+        // failure (readFully() would return the OLD base content => mismatch => throw). It does NOT catch a
+        // swallowed fsync failure whose bytes are still correct in the page cache (only lost on power-loss
+        // before writeback) — an acceptable residual: the realistic failures (denied write, full disk, rename
+        // failure) are all caught, and a mid-write power loss simply keeps the prior complete ledger.
+        android.util.AtomicFile af = new android.util.AtomicFile(ledgerFile());
+        FileOutputStream out = null;
+        byte[] payload;
         try {
             JSONObject j = new JSONObject();
             for (Map.Entry<String, Set<String>> e : store.snapshot().entrySet())
                 j.put(e.getKey(), new JSONArray(e.getValue()));
-            File tmp = new File(ctx.getFilesDir(), "used_ids.json.tmp");
-            try (FileOutputStream out = new FileOutputStream(tmp)) {
-                out.write(j.toString(2).getBytes("UTF-8"));
-            }
-            File dest = ledgerFile();
-            dest.delete(); // renameTo won't overwrite on some filesystems; clear first
-            if (!tmp.renameTo(dest)) {
-                // FAIL CLOSED: an unpersisted ledger means new ids could be reissued — never swallow.
-                throw new java.io.IOException("could not replace ledger " + dest.getName());
-            }
+            payload = j.toString(2).getBytes("UTF-8");
+            out = af.startWrite();
+            out.write(payload);
+            af.finishWrite(out);   // renames <base>.new over the live file
+        } catch (Exception e) {
+            if (out != null) af.failWrite(out);   // discard the partial temp, keep the old ledger
+            // FAIL CLOSED: an unpersisted ledger means new ids could be reissued — never swallow.
+            throw new RuntimeException("failed to persist ledger: " + e.getMessage(), e);
+        }
+        // finishWrite() returns void and SWALLOWS a failed fsync/close/rename (it only logs internally) — so
+        // a silent commit failure would leave the OLD ledger while we believe the new ids were recorded, and
+        // they'd be reusable next launch. Read the committed file back and verify it matches what we wrote;
+        // FAIL CLOSED if it doesn't. (Cheap: the ledger is tens of KB, written only on generate/randomize.)
+        try {
+            byte[] committed = af.readFully();
+            if (!java.util.Arrays.equals(committed, payload))
+                throw new java.io.IOException("ledger commit not durable (read-back mismatch: wrote "
+                        + payload.length + " bytes, read " + (committed == null ? -1 : committed.length) + ")");
         } catch (Exception e) {
             throw new RuntimeException("failed to persist ledger: " + e.getMessage(), e);
         }

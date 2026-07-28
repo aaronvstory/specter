@@ -411,6 +411,11 @@ public class MainActivity extends Activity {
 
     private void toast(String m) { Toast.makeText(this, m, Toast.LENGTH_LONG).show(); }
 
+    /** True if it's safe to show a dialog / touch views right now. A background su task can finish AFTER the
+     *  user rotated or backed out — calling .show() on a finishing/destroyed Activity throws BadTokenException.
+     *  Guard every dialog raised from a runOnUiThread completion with this. */
+    private boolean alive() { return !isFinishing() && !isDestroyed(); }
+
     // ---------- rendering ----------
     private void render() {
         content.removeAllViews();
@@ -475,7 +480,7 @@ public class MainActivity extends Activity {
                 zygiskBusy = false;
                 if (e == null) {
                     status.setText("Native layer installed — REBOOT to activate it.");
-                    new AlertDialog.Builder(this)
+                    if (alive()) new AlertDialog.Builder(this)
                             .setTitle("Native layer installed")
                             .setMessage("It activates on boot. Reboot now?")
                             .setPositiveButton("Reboot now", (dl, w) -> {
@@ -1299,6 +1304,7 @@ public class MainActivity extends Activity {
             } catch (Throwable ignored) {}
             finally { if (pr != null) pr.destroy(); }
             runOnUiThread(() -> {
+                if (!alive()) return;   // su listing finished after the user left — don't raise a dialog
                 if (names.isEmpty()) {
                     toast("No profile found. Put a shared specter-profile-*.json or a Specter Lite harvest "
                             + "(Specter-*.json) in Download or Download/Specter-exports.");
@@ -1312,18 +1318,26 @@ public class MainActivity extends Activity {
                 new AlertDialog.Builder(this)
                         .setTitle("Import which file?")
                         .setItems(labels, (d, which) -> {
-                            java.io.File src = new java.io.File(names.get(which));
-                            String err = vault.importError(src);
-                            if (err != null) { toast("Import failed: " + err); return; }
+                            final java.io.File src = new java.io.File(names.get(which));
                             // Strip whichever prefix this file has (shared export or Lite harvest) + .json.
-                            String stem = labels[which].replace("specter-profile-", "")
+                            final String stem = labels[which].replace("specter-profile-", "")
                                     .replace("Specter-", "").replace(".json", "");
-                            String label = vault.importFromFile(src, "imported-" + stem);
-                            if (label != null) {
-                                status.setText("Imported " + label + " — restore it to apply.");
-                                toast("Imported into vault as " + label);
-                                render();
-                            } else toast("Import failed.");
+                            // Import off the UI thread — a single su read (importOnce), not two blocking
+                            // su calls on the main thread (which could ANR if su is slow to grant).
+                            status.setText("Importing…");
+                            new Thread(() -> {
+                                final Vault.ImportResult r = vault.importOnce(src, "imported-" + stem);
+                                runOnUiThread(() -> {
+                                    if (r.ok()) {
+                                        status.setText("Imported " + r.label + " — restore it to apply.");
+                                        toast("Imported into vault as " + r.label);
+                                        render();
+                                    } else {
+                                        status.setText("Import failed: " + r.error);
+                                        toast("Import failed: " + r.error);
+                                    }
+                                });
+                            }, "specter-import").start();
                         })
                         .setNegativeButton("Cancel", null)
                         .show();
@@ -1386,6 +1400,7 @@ public class MainActivity extends Activity {
     }
 
     private void promptSaveName(final String targets) {
+        if (!alive()) return;   // may be called from apply()'s background completion after the user left
         final EditText in = new EditText(this);
         in.setText(Vault.makeLabel(""));   // prefill with the unique date/time label
         in.setSelection(in.getText().length());

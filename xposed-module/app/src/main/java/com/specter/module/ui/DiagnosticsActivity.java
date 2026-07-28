@@ -97,7 +97,11 @@ public final class DiagnosticsActivity extends Activity {
         exportBtn.setOnClickListener(v -> exportLog());
         btns.addView(exportBtn);
         Button clearBtn = flatButton("Clear");
-        clearBtn.setOnClickListener(v -> { clearLog(); refresh(); });
+        // Clear off the UI thread — `su -c : > log` + waitFor() blocks; inline it would ANR if su is slow.
+        clearBtn.setOnClickListener(v -> new Thread(() -> {
+            clearLog();
+            runOnUiThread(this::refresh);
+        }, "specter-diag-clear").start());
         btns.addView(clearBtn);
         root.addView(btns);
 
