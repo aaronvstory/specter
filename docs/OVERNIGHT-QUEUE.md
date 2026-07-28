@@ -37,7 +37,7 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
       g_prop_spoof_late native path already serves first_api). Byte-parity safe. Add a coherence test. (IDEAS)
 
 ### T2 — UX polish sweep (make it feel shippable)
-- [ ] **Full UI audit for dead/unclear controls.** Walk every tab (Identity/Saved/Settings/Location) on a
+- [x] **Full UI audit for dead/unclear controls.** (DONE 2026-07-28) Walk every tab (Identity/Saved/Settings/Location) on a
       real device screenshot. Confirm every control does something + shows honest status; no cosmetic
       toggles; consistent wording; the new "Auto deep-clean" + Advanced(root) sections read clearly. Fix any
       rough edge. (No fake non-functional UI — the standing rule.)
@@ -58,6 +58,11 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
   do NOT build a global always-on resetprop). See the IDEAS entry.
 
 ## Log (append as you go — newest first)
+- 2026-07-28 T2 UI audit: screenshotted Identity/Settings/Advanced/Location on the 4a. App is polished +
+  shippable — every control real or clearly 'Planned/not built' (Location coord-spoof), no dead UI. Only fix:
+  GSF card header emphasis (was DIM, now INK to match the Widevine card). Status-line-persists-across-tabs
+  left as-is (a valid global status log, not misleading). first_api_level (T1b) DEFERRED — needs a per-model
+  launch-OS dataset (research-heavy) + it's explicitly lower-priority; noted for a focused pass.
 - 2026-07-28 T1a MERGED (6256986): SoC audit + gpu_model-from-renderer (gen + harvest), codex HIGH (harvest coherence) fixed. Next: T1b first_api_level.
 - 2026-07-28 T1a DONE: sm6150 SoC audit — fixed a71naxx/bonito/sargo/kiev/nairo (kernel-DT grounded),
   added sdm670 topology, gpu_model now derived from renderer (handles lito multi-Adreno), pinned in tests.

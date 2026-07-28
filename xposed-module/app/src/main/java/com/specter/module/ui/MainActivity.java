@@ -857,7 +857,9 @@ public class MainActivity extends Activity {
      *  A button (not a toggle) behind a confirm, because it signs the device out of Google and forces a reboot. */
     private View gsfResetRow() {
         LinearLayout card = cardBox();
-        card.addView(label("Reset Google identity (GSF)"));
+        TextView gsfLab = label("Reset Google identity (GSF)");   // match the Widevine card's header emphasis
+        gsfLab.setTextColor(Theme.INK); gsfLab.setTextSize(14);
+        card.addView(gsfLab);
         TextView d = value("Wipes Play Services + Services Framework + Play Store and reboots, so Google "
                 + "re-registers a FRESH device id. Attacks the server-side re-link anchor that survives an app's "
                 + "own data clear. WARNING: signs the device out of Google, drops Play state, and REBOOTS. Root.");
