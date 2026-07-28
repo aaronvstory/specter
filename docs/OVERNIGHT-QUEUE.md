@@ -58,6 +58,13 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
   do NOT build a global always-on resetprop). See the IDEAS entry.
 
 ## Log (append as you go — newest first)
+- 2026-07-28 RUN COMPLETE (~09:00). 5 units shipped, all gauntlet-clean + on-device-verified where
+  applicable: T1a SoC audit (6256986), T2 UI polish (2ef2755), T1b first_api=launch-API Samsung (42b3d78,
+  PROVEN on P4), launch-API map -> 61 models (7a0a1b9). Dataset has ZERO remaining SoC/renderer coherence
+  issues. STOPPED before T3 (glGetStringi GL-capability hook) deliberately — it's crash-sensitive native
+  work (a wrong extension list bricks GL init) unsuitable for unattended execution; needs a focused,
+  attended session with a per-GPU extension dataset. Remaining launch-OS brands (Huawei/Sony/LG/Nokia)
+  are diminishing-returns + safely default to first_api==sdk. Queue for next session: T3 (attended).
 - 2026-07-28 T1b EXPANDED: launch-API map now 61 models (added Xiaomi/Redmi/POCO + Motorola + OnePlus, 30
   impactful entries via 2 parallel research agents, GSMArena-sourced, MIUI traps handled). Byte-parity 61/61.
 - 2026-07-28 T1b DONE (Samsung): first_api_level = LAUNCH API. Built the plumbing (build_first_api field +
