@@ -240,6 +240,12 @@ public final class Profile {
         // profile.py _soc_topology_fields(). Embedded table (SOC_TOPOLOGY) — same values as
         // data/soc_topology.json — so no extra asset load and both sides stay in lockstep.
         p.putAll(socTopologyFields(p.get("soc_platform")));
+        // The /sys KGSL gpu_model IS the device's actual GPU, which the GL renderer names. When a SoC
+        // platform serves MULTIPLE Adreno models (e.g. "lito" = Adreno 619 on SD750G kiev AND 620 on SD765G
+        // nairo), the per-SoC topology can't distinguish them — so derive gpu_model from the per-model
+        // renderer when it names an Adreno number. Same helper the harvest/backfill path uses. Mirrors
+        // profile.py in lockstep (byte-parity).
+        adreneGpuModelFromRenderer(p);
         // API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
         // ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
         p.put("build_sdk", String.valueOf(Generators.sdkForRelease(release)));
@@ -339,7 +345,24 @@ public final class Profile {
             for (Map.Entry<String, String> t : socTopologyFields(socPlat).entrySet())
                 if (!p.containsKey(t.getKey()) && t.getValue() != null && !t.getValue().isEmpty())
                     p.put(t.getKey(), t.getValue());
+        // Same renderer-derived gpu_model coherence as the fresh-generation path (build()): the topology
+        // default can be wrong for a multi-Adreno SoC (lito = 619 kiev / 620 nairo), so if the harvested
+        // renderer names an Adreno, OVERRIDE gpu_model to match it (a harvested kiev must read 619, not the
+        // lito default 620). Overwrite here (not "if absent") — the whole point is to correct a wrong default.
+        adreneGpuModelFromRenderer(p);
         return p;
+    }
+
+    // The GL renderer's Adreno number IS the device's real GPU. When present, set gpu_model to it so the
+    // /sys KGSL number always matches the renderer (needed because a SoC platform like "lito" ships more
+    // than one Adreno). [0-9] not \\d — ASCII-only, so it can never diverge from profile.py's [0-9] on a
+    // Unicode digit (byte-parity). No-op when the renderer isn't an Adreno string (Mali/Exynos).
+    private static final java.util.regex.Pattern ADRENO_NUM = java.util.regex.Pattern.compile("Adreno.*?([0-9]{3})");
+    static void adreneGpuModelFromRenderer(Map<String, String> p) {
+        String rnd = p.get("hw_gpu_renderer");
+        if (rnd == null) return;
+        java.util.regex.Matcher m = ADRENO_NUM.matcher(rnd);
+        if (m.find()) p.put("gpu_model", m.group(1));
     }
 
     // soc -> "cpu_capacity|gpu_model". MUST stay byte-identical to data/soc_topology.json. cpu_present
@@ -358,6 +381,7 @@ public final class Profile {
         SOC_TOPOLOGY.put("msm8998",    "455 455 455 455 1024 1024 1024 1024|540");
         SOC_TOPOLOGY.put("sdm660",     "417 417 417 417 1024 1024 1024 1024|512");
         SOC_TOPOLOGY.put("sdm665",     "313 313 313 313 313 313 313 313|610");
+        SOC_TOPOLOGY.put("sdm670",     "256 256 256 256 256 256 1024 1024|615");
         SOC_TOPOLOGY.put("bengal",     "313 313 313 313 313 313 313 313|610");
         SOC_TOPOLOGY.put("trinket",    "313 313 313 313 313 313 313 313|610");
         SOC_TOPOLOGY.put("exynos9820", "260 260 260 260 636 636 1024 1024|");

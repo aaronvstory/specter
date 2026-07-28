@@ -9,6 +9,7 @@ Coherence rules (a fingerprint that fails these is a fraud flag, per the GeerGit
 """
 import json
 import os
+import re
 import secrets
 import tempfile
 import threading
@@ -275,6 +276,14 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     # Per-SoC CPU-capacity vector + GPU model — the /sys hardware signals FPJS reads directly.
     # Keyed on the already-computed soc_platform; pure constant, no RNG (byte-parity safe).
     p.update(_soc_topology_fields(p["soc_platform"]))
+    # The /sys KGSL gpu_model IS the device's actual GPU, which the GL renderer names. When a SoC
+    # platform serves MULTIPLE Adreno models (e.g. "lito" = Adreno 619 on SD750G kiev AND 620 on SD765G
+    # nairo), the per-SoC topology gpu_model can't distinguish them — so derive gpu_model from the
+    # per-model renderer string when it names an Adreno number, keeping gpu_model == renderer coherent.
+    # Pure constant (regex over a constant string), no RNG — byte-parity safe.
+    _m = re.search(r"Adreno.*?([0-9]{3})", p.get("hw_gpu_renderer") or "")
+    if _m:
+        p["gpu_model"] = _m.group(1)
     # API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
     # ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
     p["build_sdk"] = str(G.sdk_for_release(release))

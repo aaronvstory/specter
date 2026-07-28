@@ -276,6 +276,21 @@ public class ProfileTest {
                 "backfillHardware derives soc_platform from the entry's soc");
         check(harv.containsKey("cpu_capacity") || harv.containsKey("gpu_model"),
                 "backfillHardware fills soc-topology fields");
+        // Harvest of a MULTI-ADRENO SoC (lito = Adreno 619 kiev / 620 nairo): gpu_model must be derived from
+        // the harvested renderer, NOT left at the lito topology default (620). A harvested kiev must read 619.
+        java.util.Map<String, String> kievHw = new java.util.HashMap<>();
+        kievHw.put("soc", "lito");
+        kievHw.put("hw_gpu_renderer", "Adreno (TM) 619"); kievHw.put("hw_gpu_vendor", "Qualcomm");
+        kievHw.put("hw_gles_version", "3.2"); kievHw.put("hw_cores", "8");
+        kievHw.put("hw_sensors", "x|y|1"); kievHw.put("hw_cameras", "48MP");
+        kievHw.put("hw_codecs", "OMX"); kievHw.put("hw_input_devices", "ts");
+        kievHw.put("proc_cpuinfo", "processor : 0");
+        hw.put("kiev", kievHw);
+        java.util.Map<String, String> kievHarv = new java.util.LinkedHashMap<>();
+        kievHarv.put("build_device", "kiev");
+        Profile.backfillHardware(kievHarv, hw);
+        check("619".equals(kievHarv.get("gpu_model")),
+                "backfillHardware derives gpu_model=619 from a harvested kiev renderer (not the lito default 620)");
         // Unknown codename -> no-op (never fabricate a mismatched bundle).
         java.util.Map<String, String> unk = new java.util.LinkedHashMap<>();
         unk.put("build_device", "not_in_dataset");

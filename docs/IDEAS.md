@@ -41,7 +41,7 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   timing): whether any target actually reads a spoofed prop BEFORE the Zygisk hook attaches — if nothing
   reads that early, boot resetprop adds risk with zero benefit. Passed on for now (higher-value work queued).
 
-- **2026-07-27 · audit the remaining sm6150-mapped devices for SoC accuracy** — status: `open`.
+- **2026-07-27 · audit the remaining sm6150-mapped devices for SoC accuracy** — status: `shipped` (2026-07-28).
   Fixing the Pixel 4a (sm6150→sm7150) surfaced that several other devices are mapped to sm6150 in
   hardware.json. a71naxx (Galaxy A71) is genuinely SD730G = sm7150/Adreno 618 and should move too (same
   fix, low risk). bonito/sargo (Pixel 3a XL / 3a) are SD670 = Adreno 615 — close to 612 but not exact,

@@ -148,6 +148,13 @@ def test_dataset_gpu_renderer_matches_soc_topology():
     """
     hardware = P._load_hardware()
     topo = P._load_soc_topology()
+    # A few Qualcomm platforms serve MORE THAN ONE Adreno across their SKUs (e.g. "lito" = Adreno 619 on
+    # SD750G / 620 on SD765G). For those the /sys gpu_model is derived from the per-model renderer at
+    # generate time (Profile.socTopologyFields override), so the renderer's Adreno just has to be one the
+    # SoC really ships — not the single topology default. This set records those legit multi-Adreno SoCs.
+    MULTI_ADRENO_SOC = {
+        "lito": {"618", "619", "620"},   # SD765G/750G/768G family
+    }
     for codename, e in hardware.items():
         if codename.startswith("_"):
             continue
@@ -157,11 +164,17 @@ def test_dataset_gpu_renderer_matches_soc_topology():
             soc = e.get("soc", "")
             soc_entry = topo.get(soc)
             assert soc_entry is not None, f"{codename}: soc {soc!r} has no topology entry"
-            gpu_model = soc_entry.get("gpu_model", "")
-            assert gpu_model == m.group(1), (
-                f"{codename}: renderer says Adreno {m.group(1)} but SoC {soc!r} topology gpu_model is "
-                f"{gpu_model!r} — incoherent /sys-vs-GL (check the SoC mapping AND the renderer string)"
-            )
+            if soc in MULTI_ADRENO_SOC:
+                assert m.group(1) in MULTI_ADRENO_SOC[soc], (
+                    f"{codename}: renderer says Adreno {m.group(1)} but SoC {soc!r} only ships "
+                    f"{sorted(MULTI_ADRENO_SOC[soc])}"
+                )
+            else:
+                gpu_model = soc_entry.get("gpu_model", "")
+                assert gpu_model == m.group(1), (
+                    f"{codename}: renderer says Adreno {m.group(1)} but SoC {soc!r} topology gpu_model is "
+                    f"{gpu_model!r} — incoherent /sys-vs-GL (check the SoC mapping AND the renderer string)"
+                )
 
 
 # Authoritative device -> (soc_platform, Adreno gpu number) for models we've verified against a real
@@ -171,7 +184,17 @@ def test_dataset_gpu_renderer_matches_soc_topology():
 _KNOWN_DEVICE_SOC = {
     "sunfish": ("sm7150", "618"),   # Pixel 4a = SD730G — DT "qcom,sm7150", real cpuinfo "SDMMAGPIE"
     "flame":   ("msmnile", "640"),  # Pixel 4  = SD855
+    # 2026-07-28 audit (kernel-DT/teardown grounded) — were mislabelled to the sm6150/Adreno-612 default:
+    "a71naxx": ("sm7150", "618"),   # Galaxy A71 = SD730 (sm7150, Adreno 618)
+    "bonito":  ("sdm670", "615"),   # Pixel 3a XL = SD670 — DT "qcom,sdm670" (NOT sm670)
+    "sargo":   ("sdm670", "615"),   # Pixel 3a = SD670 — DT "sdm670-google-sargo.dts"
+    "kiev":    ("lito", "619"),     # Moto G 5G = SD750G (lito platform, Adreno 619)
+    "nairo":   ("lito", "620"),     # Moto One 5G = SD765G (lito platform, Adreno 620)
 }
+
+# SoCs whose topology gpu_model is a single default even though the platform ships multiple Adrenos — for
+# these the renderer (not the topology default) is the authority, so skip the topology==gpu assert below.
+_MULTI_ADRENO_TOPO = {"lito"}
 
 
 def test_known_device_socs():
@@ -189,8 +212,11 @@ def test_known_device_socs():
         assert m and m.group(1) == want_gpu, (
             f"{codename}: renderer {e.get('gpu_renderer')!r} != real Adreno {want_gpu}"
         )
-        gpu_model = topo.get(want_soc, {}).get("gpu_model", "")
-        assert gpu_model == want_gpu, f"{want_soc} topology gpu_model {gpu_model!r} != {want_gpu!r}"
+        # For a multi-Adreno platform (lito) the topology gpu_model is one default; the renderer is what the
+        # runtime uses (Profile.socTopologyFields override), so don't require the topology default to match.
+        if want_soc not in _MULTI_ADRENO_TOPO:
+            gpu_model = topo.get(want_soc, {}).get("gpu_model", "")
+            assert gpu_model == want_gpu, f"{want_soc} topology gpu_model {gpu_model!r} != {want_gpu!r}"
         # The /proc/cpuinfo "Hardware" line must not name a chip the device isn't. It uses marketing
         # codenames (SD730G = "SDMMAGPIE", not "SM7150"), so we only assert it doesn't leak a KNOWN-wrong
         # SoC id — for sunfish, the old bug baked "SM6150" into cpuinfo. Guard against that regressing.

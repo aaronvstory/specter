@@ -58,5 +58,8 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
   do NOT build a global always-on resetprop). See the IDEAS entry.
 
 ## Log (append as you go — newest first)
+- 2026-07-28 T1a DONE: sm6150 SoC audit — fixed a71naxx/bonito/sargo/kiev/nairo (kernel-DT grounded),
+  added sdm670 topology, gpu_model now derived from renderer (handles lito multi-Adreno), pinned in tests.
+  Both hardware.json copies + generators.py + Profile.java + soc_topology.json updated. Tests green.
 - 2026-07-28 run started. Baseline: main @ c9a5370 (crash fix + number-leak immunity + Widevine L3 + GSF
   reset + mandatory deep-clean all shipped this session, all gauntlet-clean).

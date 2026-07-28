@@ -195,6 +195,14 @@ public final class Generators {
         SOC_BY_DEVICE.put("redfin", "lito");     // Pixel 5  = SD765G
         SOC_BY_DEVICE.put("bramble", "lito");    // Pixel 4a 5G
         SOC_BY_DEVICE.put("sunfish", "sm7150");  // Pixel 4a = SD730G (sm7150, Adreno 618)
+        // Corrected SoCs (2026-07-28 dataset audit, kernel-DT/teardown grounded) — were mislabelled to the
+        // sm6150 default. gpu_model is derived from the per-model renderer (Profile.socTopologyFields override)
+        // so the lito-shared kiev(619)/nairo(620) split stays coherent.
+        SOC_BY_DEVICE.put("a71naxx", "sm7150");  // Galaxy A71 (SD730, Adreno 618)
+        SOC_BY_DEVICE.put("bonito", "sdm670");   // Pixel 3a XL (SD670, Adreno 615)
+        SOC_BY_DEVICE.put("sargo", "sdm670");    // Pixel 3a (SD670, Adreno 615)
+        SOC_BY_DEVICE.put("kiev", "lito");       // Moto G 5G (SD750G, Adreno 619)
+        SOC_BY_DEVICE.put("nairo", "lito");      // Moto One 5G (SD765G, Adreno 620)
         SOC_BY_DEVICE.put("barbet", "lito");     // Pixel 5a
         SOC_BY_DEVICE.put("oriole", "gs101");    // Pixel 6  = Tensor
         SOC_BY_DEVICE.put("raven", "gs101");     // Pixel 6 Pro

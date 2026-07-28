@@ -13,6 +13,7 @@
   "msm8998":    { "cpu_capacity": "455 455 455 455 1024 1024 1024 1024", "gpu_model": "540" },
   "sdm660":     { "cpu_capacity": "417 417 417 417 1024 1024 1024 1024", "gpu_model": "512" },
   "sdm665":     { "cpu_capacity": "313 313 313 313 313 313 313 313", "gpu_model": "610" },
+  "sdm670":     { "cpu_capacity": "256 256 256 256 256 256 1024 1024", "gpu_model": "615" },
   "bengal":     { "cpu_capacity": "313 313 313 313 313 313 313 313", "gpu_model": "610" },
   "trinket":    { "cpu_capacity": "313 313 313 313 313 313 313 313", "gpu_model": "610" },
 

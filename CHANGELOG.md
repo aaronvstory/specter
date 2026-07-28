@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [0.14.0] — 2026-07-28
 
+### Fixed
+- **5 devices' SoC/GPU corrected (dataset audit, kernel-DT grounded).** a71naxx (Galaxy A71), bonito/sargo
+  (Pixel 3a XL/3a), kiev/nairo (Moto G 5G / One 5G) were all mislabelled to the sm6150/Adreno-612 default.
+  Real: a71naxx=sm7150/618, bonito+sargo=sdm670/615 (added sdm670 topology), kiev=lito/619, nairo=lito/620.
+  Since “lito” ships MULTIPLE Adrenos (619 vs 620), gpu_model is now derived from the per-model GL renderer
+  at generate time (a pure constant, byte-parity-safe both languages) so /sys gpu_model always == the renderer
+  Adreno number — the exact /sys-vs-GL coherence a fingerprinter cross-checks. Pinned in test_known_device_socs;
+  the dataset gpu-renderer coherence test now understands multi-Adreno SoCs. The renderer-derived gpu_model
+  applies to BOTH the fresh-generation and the harvest/import (backfillHardware) paths, so a harvested/cloned
+  kiev reads Adreno 619 (not the lito default 620) — pinned by a JVM test. Regex is ASCII [0-9] on both sides
+  (byte-parity). Both hardware.json copies updated identically.
+
 ### Changed
 - **Deep clean is now MANDATORY on every APPLY and RESTORE** (was an opt-in checkbox). Writing an identity
   onto an install that still holds a PRIOR identity's data links the two accounts (the app carries over

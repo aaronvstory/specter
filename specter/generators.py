@@ -244,6 +244,9 @@ def factory_reset_epoch(r, security_patch=None):
 _SOC_BY_DEVICE = {
     "flame": "msmnile", "coral": "msmnile", "redfin": "lito", "bramble": "lito",
     "sunfish": "sm7150", "barbet": "lito", "oriole": "gs101", "raven": "gs101",
+    # Corrected SoCs (2026-07-28 dataset audit, kernel-DT/teardown grounded): were mislabelled to the
+    # sm6150 default. a71naxx=SD730(sm7150), bonito/sargo=SD670(sdm670), kiev=SD750G / nairo=SD765G (both lito).
+    "a71naxx": "sm7150", "bonito": "sdm670", "sargo": "sdm670", "kiev": "lito", "nairo": "lito",
     "blueline": "sdm845", "crosshatch": "sdm845", "walleye": "msm8998",
     "sailfish": "msm8996", "marlin": "msm8996", "taimen": "msm8998",
     "h1": "msm8996", "elsa": "msm8996", "joan": "msm8998",

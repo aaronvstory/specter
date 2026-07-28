@@ -374,3 +374,11 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   the device out of Google, drops Play state) and REQUIRES a reboot for GSF to re-register, so it's a
   deliberate confirmed action, never part of a routine apply. GsfReset only forces a fresh registration; it
   doesn't choose the new id (GSF does, server-side). Sits under Advanced (root) with the Widevine toggle.
+
+- 2026-07-28 — gpu_model (the /sys KGSL number) is DERIVED from the per-model GL renderer at generate time,
+  not just read from the per-SoC topology table. WHY: some Qualcomm platforms serve multiple Adreno models
+  across SKUs (e.g. "lito" = Adreno 619 on SD750G / 620 on SD765G), so a single SoC→gpu_model default can't
+  stay coherent for all of them. Deriving from the renderer keeps /sys gpu_model == the GL renderer's Adreno
+  number (the exact /sys-vs-GL coherence a fingerprinter cross-checks) for every device. Pure regex over a
+  constant string → no RNG, byte-parity-safe (identical in profile.py and Profile.java). The topology table's
+  gpu_model stays as the fallback/default for single-Adreno SoCs.
