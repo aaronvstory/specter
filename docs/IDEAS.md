@@ -58,7 +58,7 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   into the target, capture → restore onto a second rooted device with the matching fingerprint applied →
   see if it opens logged in. Until then, session migration is 'files proven, login-survival unverified'.
 
-- **2026-07-27 · first_api_level should reflect the device's LAUNCH API, not the current SDK** — status: `confirmed-widespread, needs launch-OS dataset`.
+- **2026-07-27 · first_api_level should reflect the device's LAUNCH API, not the current SDK** — status: `shipped for Samsung (2026-07-28); other brands TODO`.
   2026-07-28 analysis: scanned all ~350 selectable devices. MANY have dataset_release > real launch OS, so
   first_api==sdk is a real coherence tell for them — e.g. Galaxy A70 (SM-A705FN) dataset release=10 but
   launched Android 9 => first_api should be 28 not 29; S10 (SM-G970F) release=11 but launched 9 => 28.
@@ -67,6 +67,10 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   instead of build_sdk). Deferred from the overnight run: doing it RIGHT needs each model's real launch OS
   verified (a wrong first_api is itself a new incoherence — no-copout), which is a focused research pass, not
   an overnight quick win. Best done per-brand (Samsung SM- launch OS is well documented).
+  DONE 2026-07-28: plumbing (build_first_api field + native deferred read + launch_api_for) + the Samsung set
+  (31 models, GSMArena-sourced) shipped + PROVEN on-device (A50s reads first_api 28 / sdk 29). REMAINING:
+  research + add the launch API for Xiaomi/Redmi/POCO, Motorola, OnePlus, Huawei/Honor, Sony, LG, Nokia, etc.
+  (same _LAUNCH_API_BY_MODEL map, keyed by Build.MODEL; unmapped models correctly fall back to first_api==sdk).
   Specter sets `ro.product.first_api_level` = the current `build_sdk` (derived from the dataset release).
   Real devices that shipped on an older OS and updated have first_api < sdk (e.g. Galaxy A70 launched on
   Android 9 -> first_api 28, but may run Android 10 -> sdk 29). Whenever the dataset release is newer than

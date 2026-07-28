@@ -58,7 +58,10 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
   do NOT build a global always-on resetprop). See the IDEAS entry.
 
 ## Log (append as you go — newest first)
-- 2026-07-28 RUN WOUND DOWN (~08:15). Shipped clean: T1a SoC audit (6256986) + T2 UI polish (2ef2755).
+- 2026-07-28 T1b DONE (Samsung): first_api_level = LAUNCH API. Built the plumbing (build_first_api field +
+  native deferred read + launch_api_for) and the Samsung launch-OS set (31 models, researched). PROVEN on P4:
+  A50s reads ro.product.first_api_level=28 while ro.build.version.sdk=29. Other brands' launch OS = future pass.
+- 2026-07-28 (superseded — kept working past this) earlier wind-down note: Shipped clean: T1a SoC audit (6256986) + T2 UI polish (2ef2755).
   Verified the dataset now has ZERO remaining SoC/renderer coherence issues. STOPPED before T1b/T3
   deliberately: T1b (first_api launch-OS map) needs per-model launch-OS RESEARCH (~350 devices; a wrong
   value is a new incoherence, no-copout) and T3 (glGetStringi GL-capability hook) is crash-sensitive

@@ -53,7 +53,7 @@ public final class Profile {
             // LAST, same order as profile.py's _soc_topology_fields(), byte-parity in lockstep.
             "cpu_capacity", "gpu_model", "cpu_present",
             // API level coherent with the Android release — appended last (matches profile.py).
-            "build_sdk",
+            "build_sdk", "build_first_api",
             // Screen metrics (getDisplayMetrics signal) — appended last, matches profile.py.
             "screen_width", "screen_height", "screen_density",
             // ro.build.flavor / ro.build.description composites — appended last, matches profile.py.
@@ -249,6 +249,10 @@ public final class Profile {
         // API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
         // ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
         p.put("build_sdk", String.valueOf(Generators.sdkForRelease(release)));
+        // ro.product.first_api_level = the device's LAUNCH API (<= build_sdk for an updated device). Known
+        // models map to their real launch API; unknown -> build_sdk (first_api==sdk, prior behaviour). Mirrors
+        // profile.py launch_api_for(). Pure lookup, no RNG (byte-parity safe).
+        p.put("build_first_api", String.valueOf(Generators.launchApiFor(model, Integer.parseInt(p.get("build_sdk")))));
         // Screen resolution + density (getDisplayMetrics signal). Keyed on the device codename; pure
         // lookup/hash, no RNG (byte-parity safe). Mirrors profile.py.
         int[] scr = Generators.screenForDevice(device);

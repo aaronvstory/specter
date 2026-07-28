@@ -829,11 +829,17 @@ public:
         // (FingerprintJS reads both — proven via the trace). They can't go in the always-on map: ART/libc
         // read them during process init and spoofing then SIGSEGVs the zygote. So spoof them LATE — only
         // after g_props_ready flips (a detached ~1s timer below), which is long after init but well before
-        // any user-triggered fingerprint read. Value = the profile's build_sdk (the claimed Android API).
+        // any user-triggered fingerprint read.
         auto sdk = profile.find("build_sdk");
         if (sdk != profile.end() && !sdk->second.empty()) {
+            // ro.build.version.sdk = the CURRENT OS the profile claims (build_sdk).
             g_prop_spoof_late["ro.build.version.sdk"] = sdk->second;
-            g_prop_spoof_late["ro.product.first_api_level"] = sdk->second;
+            // ro.product.first_api_level = the device's LAUNCH API — build_first_api when the profile carries
+            // it (a device that shipped on an older OS and updated has first_api < sdk), else fall back to the
+            // current sdk (== the old behaviour; correct for devices whose launch OS == the claimed release).
+            auto fa = profile.find("build_first_api");
+            g_prop_spoof_late["ro.product.first_api_level"] =
+                (fa != profile.end() && !fa->second.empty()) ? fa->second : sdk->second;
         }
         // Verified-boot / lock-state props (native path). A rooted device leaks unlocked/orange/test-keys
         // here — a heavy root flag independent of the model spoof. OEM-agnostic device STATE (a stock

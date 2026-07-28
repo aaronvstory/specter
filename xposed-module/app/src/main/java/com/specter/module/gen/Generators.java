@@ -287,6 +287,35 @@ public final class Generators {
         return m != null ? m : 30;
     }
 
+    // Real LAUNCH API level per model (Build.MODEL) — the Android the device SHIPPED with. MUST stay
+    // byte-identical to generators._LAUNCH_API_BY_MODEL. See that map for sourcing/notes. Missing model ->
+    // launchApiFor falls back to the current sdk (first_api==sdk, prior behaviour).
+    private static final Map<String, Integer> LAUNCH_API_BY_MODEL = new java.util.HashMap<>();
+    static {
+        LAUNCH_API_BY_MODEL.put("SM-A013G", 29); LAUNCH_API_BY_MODEL.put("SM-A205W", 28);
+        LAUNCH_API_BY_MODEL.put("SM-A405FN", 28); LAUNCH_API_BY_MODEL.put("SM-A505F", 28);
+        LAUNCH_API_BY_MODEL.put("SM-A507FN", 28); LAUNCH_API_BY_MODEL.put("SM-A515F", 29);
+        LAUNCH_API_BY_MODEL.put("SM-A525F", 30); LAUNCH_API_BY_MODEL.put("SM-A600F", 26);
+        LAUNCH_API_BY_MODEL.put("SM-A605G", 26); LAUNCH_API_BY_MODEL.put("SM-A705FN", 28);
+        LAUNCH_API_BY_MODEL.put("SM-A715F", 29); LAUNCH_API_BY_MODEL.put("SM-A750GN", 26);
+        LAUNCH_API_BY_MODEL.put("SM-G970F", 28); LAUNCH_API_BY_MODEL.put("SM-G973F", 28);
+        LAUNCH_API_BY_MODEL.put("SM-G975F", 28); LAUNCH_API_BY_MODEL.put("SM-G977B", 28);
+        LAUNCH_API_BY_MODEL.put("SM-G960F", 26); LAUNCH_API_BY_MODEL.put("SM-G965F", 26);
+        LAUNCH_API_BY_MODEL.put("SM-G950F", 24); LAUNCH_API_BY_MODEL.put("SM-G955F", 24);
+        LAUNCH_API_BY_MODEL.put("SM-N960F", 27); LAUNCH_API_BY_MODEL.put("SM-N950F", 25);
+        LAUNCH_API_BY_MODEL.put("SM-N975F", 28); LAUNCH_API_BY_MODEL.put("SM-N986B", 29);
+        LAUNCH_API_BY_MODEL.put("SM-G770F", 29); LAUNCH_API_BY_MODEL.put("SM-G780F", 29);
+        LAUNCH_API_BY_MODEL.put("SM-G781B", 29); LAUNCH_API_BY_MODEL.put("SM-G991B", 30);
+        LAUNCH_API_BY_MODEL.put("SM-G988B", 29); LAUNCH_API_BY_MODEL.put("SM-M205F", 27);
+        LAUNCH_API_BY_MODEL.put("SM-M215F", 29);
+    }
+
+    public static int launchApiFor(String model, int currentSdk) {
+        Integer la = LAUNCH_API_BY_MODEL.get(model);
+        if (la == null || la > currentSdk) return currentSdk;
+        return la;
+    }
+
     // Screen (width,height,densityDpi) — mirrors generators.screen_for_device. Known models use their
     // real spec; unknown codenames map deterministically into a pool via codenameHash (== Python
     // _codename_hash). Pure, no RNG (byte-parity safe).

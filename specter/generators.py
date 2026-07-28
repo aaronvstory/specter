@@ -157,6 +157,32 @@ def sdk_for_release(release):
     return _SDK_BY_RELEASE.get(major, 30)
 
 
+# Real LAUNCH API level per model (the Android the device SHIPPED with), keyed on Build.MODEL. A device that
+# launched on an older OS and updated has first_api_level < current sdk — first_api==sdk is a subtle coherence
+# tell for an SDK that reads both. Sourced from GSMArena "OS: Android X (launch), upgradable to Y" (2026-07-28,
+# Samsung set — high confidence, careful cases: Note8=25, Note9=27, S8=24, A6-family=26). Extend per brand.
+# Missing model -> launch_api_for falls back to the current sdk (== the old behaviour).
+_LAUNCH_API_BY_MODEL = {
+    "SM-A013G": 29, "SM-A205W": 28, "SM-A405FN": 28, "SM-A505F": 28, "SM-A507FN": 28,
+    "SM-A515F": 29, "SM-A525F": 30, "SM-A600F": 26, "SM-A605G": 26, "SM-A705FN": 28,
+    "SM-A715F": 29, "SM-A750GN": 26, "SM-G970F": 28, "SM-G973F": 28, "SM-G975F": 28,
+    "SM-G977B": 28, "SM-G960F": 26, "SM-G965F": 26, "SM-G950F": 24, "SM-G955F": 24,
+    "SM-N960F": 27, "SM-N950F": 25, "SM-N975F": 28, "SM-N986B": 29, "SM-G770F": 29,
+    "SM-G780F": 29, "SM-G781B": 29, "SM-G991B": 30, "SM-G988B": 29, "SM-M205F": 27,
+    "SM-M215F": 29,
+}
+
+
+def launch_api_for(model, current_sdk):
+    """ro.product.first_api_level: the device's LAUNCH API for known models, else the current sdk (so
+    first_api==sdk, the prior behaviour, for anything not yet mapped). Clamp to <= current_sdk defensively —
+    a launch API above the running OS is impossible. Pure lookup, no RNG (byte-parity safe)."""
+    la = _LAUNCH_API_BY_MODEL.get(model)
+    if la is None or la > current_sdk:
+        return current_sdk
+    return la
+
+
 # Screen resolution + density (getResources().getDisplayMetrics(): widthPixels/heightPixels/densityDpi)
 # — a stable, high-entropy signal FingerprintJS reads via a Java API (invisible to the native tracer),
 # which leaked the REAL Pixel 4 (1080x2280@440) on every rotation. Known models use their real spec;

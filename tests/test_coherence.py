@@ -80,6 +80,28 @@ def test_build_sdk_matches_the_android_release():
         assert p["build_sdk"].isdigit() and 19 <= int(p["build_sdk"]) <= 36, f"implausible SDK {p['build_sdk']}"
 
 
+def test_first_api_level_is_launch_api_and_never_above_sdk():
+    """ro.product.first_api_level (build_first_api) = the device's LAUNCH API. It must NEVER exceed build_sdk
+    (a launch API above the running OS is impossible) and equals the real launch API for mapped models."""
+    from specter import generators as G
+    for p in _profiles():
+        fa, sdk = int(p["build_first_api"]), int(p["build_sdk"])
+        assert fa <= sdk, f"first_api {fa} > sdk {sdk} — impossible (model {p['build_model']})"
+        assert fa == G.launch_api_for(p["build_model"], sdk), \
+            f"first_api {fa} != launch_api_for({p['build_model']}, {sdk})"
+
+
+def test_known_launch_apis_are_pinned():
+    """Pin a few researched launch APIs so a regression (or a wrong dataset release) is caught: the launch
+    API is a FACT of the model. Note8=25 (not 26), S8=24, A70=28 are the careful cases."""
+    from specter import generators as G
+    for model, want in [("SM-N950F", 25), ("SM-G950F", 24), ("SM-A705FN", 28),
+                        ("SM-G970F", 28), ("SM-N960F", 27), ("SM-A600F", 26)]:
+        assert G.launch_api_for(model, 35) == want, f"{model} launch API should be {want}"
+    # an unmapped model falls back to the current sdk (first_api == sdk)
+    assert G.launch_api_for("Totally Unknown", 30) == 30
+
+
 def test_every_dataset_release_has_a_real_sdk_mapping():
     """Guard against the self-consistency blind spot: a release NOT in the SDK map falls through to the
     default (30), so a KitKat device would report API 30 — incoherent. Assert EVERY distinct release
