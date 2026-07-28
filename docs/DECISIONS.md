@@ -462,3 +462,16 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   OWN capture, staged in a root-only-writable dir, never imported from an untrusted source; the symlink +
   traversal + type guards already cover a tampered-tar scenario. Login-detection semantics (#6) left as
   "at least one app-data dir exists" — honest enough; a truly empty dir fails the empty-archive guard.
+
+- 2026-07-29 — Gauntlet on AppDataVault (/codex). CRITICAL closed: the login-bundle IMPORT is the one
+  untrusted-input path (a specter-login-*.tar from /sdcard, extracted as ROOT into the app dir). Same
+  symlink-in-tar primitive as SessionMigrator: a bundle with a symlinked <label>.tgz would let a later root
+  cp write THROUGH it. Fixed with (a) a TYPE guard (tar tvf | grep ^[lh] refuses symlink/hardlink), (b) an
+  EXACT-SET guard (members must be exactly <label>.meta + <label>.tgz, sorted-compared — no extra files, no
+  traversal since a label can’t contain / or ..), and (c) parseMeta now enforces validPkg/validLabel on the
+  imported pkg + fingerprint (they flow into su paths) and rejects control chars. restoreToStaging
+  re-validates pkg. All three guards verified on-device (valid passes, symlink + extra-file rejected).
+  DEFERRED (lower severity, app’s OWN vault dir, not an attack surface — crash-during-write robustness only):
+  save() cp is a non-atomic overwrite; rename() rollback has edge cases if the process dies mid-move;
+  export tar cf truncates dest. Acceptable for a single-user on-device vault; revisit with temp+rename+lock
+  if corruption is ever observed.

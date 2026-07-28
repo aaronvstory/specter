@@ -176,8 +176,8 @@ public class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setPadding(dp(12), dp(4), dp(12), dp(2));
-        bar.addView(button("RANDOMIZE ALL", false, v -> regenerate()));
-        bar.addView(button("APPLY", true, v -> apply()));
+        bar.addView(button("Randomize", false, v -> regenerate()));
+        bar.addView(button("Apply", true, v -> apply()));
         col.addView(bar);
 
         // "Save to vault" checkbox: when checked, a successful APPLY prompts to save the identity (name
@@ -361,7 +361,7 @@ public class MainActivity extends Activity {
 
     private void apply() {
         if (opBusy) { toast("Busy — wait for the current apply/restore to finish."); return; }
-        if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
+        if (profile.isEmpty()) { toast("No identity yet — tap Randomize first."); return; }
         Set<String> targets = Targets.get(prefs);
         if (targets.isEmpty()) { toast("No target apps selected — pick some in Settings."); return; }
         // enabled-only profile: disabled ids are omitted so the hook leaves them REAL.
@@ -380,7 +380,7 @@ public class MainActivity extends Activity {
         // no-op: "Already applied", nothing pushed).
         final String sig = applySignature(toApply, targets);
         if (!appliedSig.isEmpty() && appliedSig.equals(sig)) {
-            String msg = "Already applied. Relaunch the app(s), or RANDOMIZE ALL for a new one.";
+            String msg = "Already applied. Relaunch the app(s), or tap Randomize for a new one.";
             status.setText(msg); toast(msg);
             return;
         }
@@ -597,7 +597,7 @@ public class MainActivity extends Activity {
                 row.addView(lab); row.addView(val);
             }
             row.setOnClickListener(x -> {
-                if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
+                if (profile.isEmpty()) { toast("No identity yet — tap Randomize first."); return; }
                 editField(f, val);
             });
             card.addView(row);
@@ -1078,11 +1078,11 @@ public class MainActivity extends Activity {
         valRow.addView(val);
 
         Button edit = compactButton("Edit", false, v -> {
-            if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
+            if (profile.isEmpty()) { toast("No identity yet — tap Randomize first."); return; }
             editField(f, val);
         });
         Button rnd = compactButton("⟳", false, v -> {
-            if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
+            if (profile.isEmpty()) { toast("No identity yet — tap Randomize first."); return; }
             final Map<String, String> ctx = new LinkedHashMap<>(profile);
             new Thread(() -> {
                 try {
@@ -1829,7 +1829,7 @@ public class MainActivity extends Activity {
 
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
-        btns.addView(button("RESTORE", true, v -> restoreSaved(e.label)));
+        btns.addView(button("Restore", true, v -> restoreSaved(e.label)));
         btns.addView(compactButton("Rename", false, v -> promptRenameFingerprint(e.label)));
         btns.addView(compactButton("Share", false, v -> {
             new Thread(() -> {

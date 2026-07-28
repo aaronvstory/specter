@@ -60,7 +60,10 @@ public final class AppDataVault {
                 + "device=" + (device == null ? "" : device) + "\n";
     }
 
-    /** Parse a sidecar back into an Entry (label comes from the filename). Returns null if the text is junk. */
+    /** Parse a sidecar back into an Entry (label comes from the filename). Returns null if the text is junk OR
+     *  fails validation — an IMPORTED meta is untrusted, and its {@code pkg}/{@code fingerprint} flow into
+     *  su-command paths, so they must clear the same grammar as a freshly-built entry. Rejects an invalid pkg,
+     *  an invalid (non-empty) fingerprint label, and any control char / negative number. */
     public static Entry parseMeta(String label, String text) {
         if (text == null) return null;
         String pkg = "", fingerprint = "", device = "";
@@ -69,6 +72,7 @@ public final class AppDataVault {
             int eq = line.indexOf('=');
             if (eq < 0) continue;
             String k = line.substring(0, eq), v = line.substring(eq + 1);
+            if (hasControlChar(v)) return null;   // no newlines/control chars in a value
             switch (k) {
                 case "pkg": pkg = v; break;
                 case "savedAt": try { savedAt = Long.parseLong(v.trim()); } catch (Exception ignored) {} break;
@@ -78,8 +82,15 @@ public final class AppDataVault {
                 default: break;
             }
         }
-        if (pkg.isEmpty()) return null;
+        if (!validPkg(pkg)) return null;                                   // pkg flows into tarPath() — must be valid
+        if (!fingerprint.isEmpty() && !validLabel(fingerprint)) return null;   // linked-label flows into vault.load
+        if (savedAt < 0 || sizeBytes < 0) return null;
         return new Entry(label, pkg, savedAt, sizeBytes, fingerprint, device);
+    }
+
+    private static boolean hasControlChar(String s) {
+        for (int i = 0; i < s.length(); i++) if (s.charAt(i) < 0x20) return true;
+        return false;
     }
 
     /** su command: copy the staged (root-owned) capture INTO the vault + make it app-readable. Both paths are
@@ -126,6 +137,7 @@ public final class AppDataVault {
     public String restoreToStaging(String label) {
         Entry e = get(label);
         if (e == null) return "no such saved app-data";
+        if (!validPkg(e.pkg)) return "saved app-data has an invalid package";   // defense-in-depth (parseMeta already checks)
         String vaultTar = tarFile(label).getAbsolutePath();
         String staged = SessionMigrator.tarPath(e.pkg);
         if (!isSafe(vaultTar) || !isSafe(staged)) return "unsafe path";
@@ -161,11 +173,19 @@ public final class AppDataVault {
     }
 
     /** su command: extract a portable login bundle (from {@link #buildExportCommand}) back INTO the vault dir.
-     *  Refuses any entry that isn't exactly {@code <something>.tgz}/{@code <something>.meta} (extraction runs as
-     *  root into the app's dir, so no traversal / other files). */
-    public static String buildImportCommand(String srcTar, String vaultDir) {
+     *  The bundle is UNTRUSTED (it came from /sdcard) and is extracted as ROOT into the app's own dir, so the
+     *  guards are strict — the bundle must contain EXACTLY the two REGULAR files {@code <label>.tgz} and
+     *  {@code <label>.meta} for the expected label, and NOTHING else:
+     *   - TYPE guard: `tar tvf` prefixes symlinks with 'l' and hardlinks with 'h'; refuse either (a name-only
+     *     listing hides a symlink target, so a symlinked `<label>.tgz` would let a later root `cp` write
+     *     THROUGH it out of the vault — the same class of bug closed in SessionMigrator).
+     *   - EXACT-SET guard: the sorted member list must be exactly `<label>.meta\n<label>.tgz` — no extra
+     *     entries, no traversal (`/` and `..` can't appear in a label), no mismatched label. */
+    public static String buildImportCommand(String srcTar, String vaultDir, String label) {
         return "test -f '" + srcTar + "' || { echo 'no such bundle'; exit 3; }; "
-                + "tar tf '" + srcTar + "' | grep -qvE '^[A-Za-z0-9_.-]+[.](tgz|meta)$' && { echo 'bundle has unexpected entries'; exit 4; }; "
+                + "if tar tvf '" + srcTar + "' 2>/dev/null | grep -qE '^[lh]'; then echo 'bundle has a symlink/hardlink'; exit 5; fi; "
+                + "got=$(tar tf '" + srcTar + "' | sort | tr '\\n' '|'); "
+                + "[ \"$got\" = '" + label + ".meta|" + label + ".tgz|' ] || { echo 'bundle members are not exactly " + label + ".{tgz,meta}'; exit 4; }; "
                 + "tar xf '" + srcTar + "' -C '" + vaultDir + "' && echo imported";
     }
 
@@ -182,9 +202,12 @@ public final class AppDataVault {
         String vaultDir = dir.getAbsolutePath();
         if (!path.startsWith("/sdcard/Download/") || path.contains("..") || !isSafe(path) || !isSafe(vaultDir)) return null;
         try {
-            String out = new SessionMigrator.SuShell().run(buildImportCommand(path, vaultDir)).output;
+            String out = new SessionMigrator.SuShell().run(buildImportCommand(path, vaultDir, label)).output;
             // The extracted .tgz lands root-owned; the app can still read it (dir is app-owned, mode 644).
-            return out != null && out.contains("imported") && metaFile(label).exists() ? label : null;
+            // Re-validate via parseMeta (which now enforces pkg/fingerprint grammar) — a bundle can't smuggle
+            // a bad pkg into a later restoreToStaging path.
+            if (out == null || !out.contains("imported")) return null;
+            return get(label) != null ? label : null;
         } catch (Exception e) { return null; }
     }
 

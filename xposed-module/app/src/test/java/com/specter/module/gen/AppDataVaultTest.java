@@ -58,10 +58,12 @@ public class AppDataVaultTest {
         check(exp.contains("test -f") && exp.indexOf("test -f") < exp.indexOf("tar cf"), "export guards missing source");
 
         String imp = AppDataVault.buildImportCommand("/sdcard/Download/specter-login-x.tar",
-                "/data/data/com.specter/files/appdata");
+                "/data/data/com.specter/files/appdata", "072926-Sun-1924-razr");
         check(imp.contains("tar xf '/sdcard/Download/specter-login-x.tar'"), "import extracts the bundle");
-        // import REFUSES anything that isn't <name>.tgz/.meta (root extraction into the app dir).
-        check(imp.contains("grep -qvE '^[A-Za-z0-9_.-]+[.](tgz|meta)$'"), "import refuses unexpected entries");
+        // import TYPE guard: refuse symlink/hardlink entries (root extraction into the app dir).
+        check(imp.contains("tar tvf") && imp.contains("grep -qE '^[lh]'"), "import refuses symlink/hardlink entries");
+        // import EXACT-SET guard: members must be exactly <label>.meta + <label>.tgz for the expected label.
+        check(imp.contains("072926-Sun-1924-razr.meta|072926-Sun-1924-razr.tgz|"), "import requires exactly the label's two files");
 
         // ---- name sanitizer ----
         check(AppDataVault.sanitizeName("Bob's Phone!").equals("Bobs_Phone"), "sanitizeName strips punctuation, space->_");
