@@ -74,6 +74,9 @@ public class MainActivity extends Activity {
                                                // (or the 30-min auto-stop) ends it and opens the read report.
     private final android.os.Handler monitorTimeout = new android.os.Handler(android.os.Looper.getMainLooper());
                                                                           // (Saved profiles collapse by default)
+    private final Set<String> expandedApps = new java.util.HashSet<>();   // per-target cards whose actions the
+                                                                          // user expanded (collapsed by default so
+                                                                          // the 3 actions never overflow the row)
 
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
@@ -192,7 +195,7 @@ public class MainActivity extends Activity {
         // it's not optional, because applying an identity over a prior one's data links the accounts. This is a
         // fixed info line, not a toggle (a toggle here would be a footgun / dead control now that it's mandatory).
         TextView autoClear = new TextView(this);
-        autoClear.setText("🧹 Each target is wiped clean before every apply.");
+        autoClear.setText("Each target is wiped before every apply.");
         autoClear.setTextColor(Theme.DIM);
         autoClear.setTextSize(12);
         LinearLayout.LayoutParams cp2 = new LinearLayout.LayoutParams(
@@ -289,6 +292,24 @@ public class MainActivity extends Activity {
         return btn;
     }
 
+    /** Full-width variant of {@link #compactButton} — used for the widest action (Monitor reads / Monitoring…)
+     *  so its label never gets clipped or forces a sibling to wrap. */
+    private Button wideButton(String text, boolean primary, View.OnClickListener onClick) {
+        Button b = compactButton(text, primary, onClick);
+        b.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        b.setGravity(Gravity.CENTER);
+        return b;
+    }
+
+    /** Equal-weight half-width button — two of these share a row without either overflowing. */
+    private Button halfButton(String text, View.OnClickListener onClick) {
+        Button b = compactButton(text, false, onClick);
+        b.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        b.setGravity(Gravity.CENTER);
+        return b;
+    }
+
     private GradientDrawable pill(int fill, int stroke) {
         GradientDrawable g = new GradientDrawable();
         g.setColor(fill);
@@ -369,7 +390,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 try {
                     // Only claim "no carry-over" when EVERY target was actually cleared.
-                    if (allClean) toast("🧹 Wiped clean and applied to " + pkgs.size() + " app(s).");
+                    if (allClean) toast("Wiped and applied to " + pkgs.size() + " app(s).");
                     else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
                             + " app(s) done — grant root in Magisk?");
                     String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
@@ -659,39 +680,70 @@ public class MainActivity extends Activity {
                 status.setText("Removed " + Targets.label(this, pkg) + " from targets.");
                 render();
             });
+            // Chevron: expands/collapses this card's actions. Collapsed by default so three actions can never
+            // overflow the header row (the old flat row split "Paste login" in half when Monitoring… widened).
+            final boolean expanded = expandedApps.contains(pkg);
+            final boolean isMonitoring = pkg.equals(monitoringPkg);
+            TextView chev = new TextView(this);
+            chev.setText(expanded ? "⌄" : "›");
+            chev.setTextSize(18);
+            chev.setTextColor(isMonitoring ? Theme.GOLD : Theme.DIM);   // gold hint when a session is live
+            chev.setGravity(Gravity.CENTER);
+            chev.setLayoutParams(new LinearLayout.LayoutParams(dp(32), dp(32)));
+            View.OnClickListener toggle = v -> {
+                if (expandedApps.contains(pkg)) expandedApps.remove(pkg); else expandedApps.add(pkg);
+                render();
+            };
+            chev.setOnClickListener(toggle);
+            col.setOnClickListener(toggle);   // tapping the name area also expands (bigger hit target)
+            r.addView(chev);
             r.addView(rm);
             appCard.addView(r);
 
-            LinearLayout sess = new LinearLayout(this);
-            sess.setOrientation(LinearLayout.HORIZONTAL);
-            sess.setPadding(0, dp(8), 0, 0);
-            final TextView sessStatus = new TextView(this);
-            sessStatus.setTextSize(11);
-            sessStatus.setTextColor(Theme.DIM);
-            sessStatus.setPadding(0, dp(4), 0, 0);
+            // A one-line hint under the header when collapsed + a session is live, so state is visible without
+            // expanding. (Apple pattern: the collapsed row still tells you what's happening.)
+            if (!expanded && isMonitoring) {
+                TextView live = new TextView(this);
+                live.setText("● Monitoring reads — tap to stop");
+                live.setTextSize(11);
+                live.setTextColor(Theme.GOLD);
+                live.setPadding(dp(40), dp(2), 0, 0);
+                live.setOnClickListener(toggle);
+                appCard.addView(live);
+            }
 
-            // MONITOR READS: tap to record every device signal THIS app reads (android_id, Widevine, files,
-            // accounts, mock-location) during a real session — so you can see what it checked + whether any
-            // real value leaked. Tap again (or after a 30-min auto-stop) to end + open the report. This is the
-            // in-app version of a manual logcat trace: start when you tap, YOU decide when to stop.
-            final boolean isMonitoring = pkg.equals(monitoringPkg);
-            sess.addView(compactButton(isMonitoring ? "Monitoring… (tap to stop)" : "Monitor reads",
-                    isMonitoring, v -> toggleMonitor(pkg, sessStatus)));
+            if (expanded) {
+                final TextView sessStatus = new TextView(this);
+                sessStatus.setTextSize(11);
+                sessStatus.setTextColor(Theme.DIM);
+                sessStatus.setPadding(0, dp(6), 0, 0);
 
-            // Copy/Paste login: migrate a logged-in session to another rooted device (the fingerprint clone
-            // makes the device LOOK the same; this carries the actual login). Root-only; copies real account
-            // data so it's a deliberate button. (Renamed from "Capture/Restore session" — that name collided
-            // with read-monitoring; these move a LOGIN, not a trace.)
-            View gap = new View(this);
-            gap.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
-            sess.addView(gap);
-            sess.addView(compactButton("Copy login", false, v -> runSession(pkg, true, sessStatus)));
-            View gap2 = new View(this);
-            gap2.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
-            sess.addView(gap2);
-            sess.addView(compactButton("Paste login", false, v -> runSession(pkg, false, sessStatus)));
-            appCard.addView(sess);
-            appCard.addView(sessStatus);
+                // Actions stacked so they NEVER overflow: Monitor reads on its own row (its "Monitoring…"
+                // label is the widest), then Save/Restore AppData sharing the next row equally.
+                LinearLayout row1 = new LinearLayout(this);
+                row1.setOrientation(LinearLayout.HORIZONTAL);
+                row1.setPadding(0, dp(8), 0, 0);
+                // MONITOR READS: record every device signal THIS app reads during a real session, then open a
+                // spoofed/real report. Tap to start, tap (or a 30-min auto-stop) to end + archive the capture.
+                Button mon = wideButton(isMonitoring ? "Monitoring… (tap to stop)" : "Monitor reads",
+                        isMonitoring, v -> toggleMonitor(pkg, sessStatus));
+                row1.addView(mon);
+                appCard.addView(row1);
+
+                LinearLayout row2 = new LinearLayout(this);
+                row2.setOrientation(LinearLayout.HORIZONTAL);
+                row2.setPadding(0, dp(6), 0, 0);
+                // Save / Restore AppData: capture the app's whole logged-in data (databases, prefs, files,
+                // cookies) to a tarball, and restore it later — the app comes back already logged in. Root-only;
+                // copies real account data, so each is a deliberate button. (Formerly "Copy/Paste login".)
+                Button save = halfButton("Save AppData", v -> runSession(pkg, true, sessStatus));
+                View gap = new View(this);
+                gap.setLayoutParams(new LinearLayout.LayoutParams(dp(8), 1));
+                Button restore = halfButton("Restore AppData", v -> runSession(pkg, false, sessStatus));
+                row2.addView(save); row2.addView(gap); row2.addView(restore);
+                appCard.addView(row2);
+                appCard.addView(sessStatus);
+            }
 
             wrap.addView(appCard);
         }
@@ -1583,7 +1635,7 @@ public class MainActivity extends Activity {
                 try {
                     if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
                     if (okN == pkgs.size()) appliedSig = sig;   // every target restored -> a repeat APPLY is a no-op
-                    if (allClean) toast("🧹 Wiped clean and restored to " + pkgs.size() + " app(s).");
+                    if (allClean) toast("Wiped and restored to " + pkgs.size() + " app(s).");
                     else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
                             + " app(s) done — grant root in Magisk?");
                     String tail = (clrErr != null ? " Clear error: " + clrErr : "")

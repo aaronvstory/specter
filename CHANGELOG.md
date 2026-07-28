@@ -14,6 +14,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   from a two-dir allow-list to an absolute/`..` traversal guard; the safe move-aside/rollback swap now
   covers exactly the archive’s top-level entries.
 
+- **Rebuilt the per-target card as a collapsible section.** Collapsed by default (icon + name + a chevron),
+  so a target’s three actions can never overflow the row — the old flat row split “Paste login” in half once
+  the “Monitoring…” label widened. Expanded, “Monitor reads” gets its own full-width row and Save/Restore
+  AppData share the next as equal halves. A collapsed card with a live monitor still shows a “● Monitoring” hint.
+- **Renamed “Copy login” / “Paste login” → “Save AppData” / “Restore AppData”** — clearer, and matches the
+  deepened app-data capture (it moves the whole logged-in data, not just a “login”).
+- Dropped the emoji from the “wiped before every apply” line and the apply/restore toasts (Apple-clean copy).
+
 ### Verified
 - **A real logged-in DoorDash Dasher account survived a full save → `pm clear` wipe → restore → relaunch**
   — the app came back up on its authenticated home. App-data migration proven on-device.
