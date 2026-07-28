@@ -659,3 +659,23 @@ it's a real injection tell a stricter target scans for, so worth closing for the
 Tools: true` similarly is NOT read via Settings.Global (0 hook hits) — both appear server-inferred, not
 client-side leaks we can close. So the demo visitorId anchor remains unisolated among {rootApps, devTools,
 IP, non-extension GPU vector}; the client surface keeps getting cleaner (RWX pages now closed).
+
+## 2026-07-29 — What Dasher ACTUALLY reads on launch (live trace) + two-identity isolation PROVEN
+Measured on the 4a (A11) with trace=1, launching Dasher (com.doordash.driverapp 8.88.6) and reading the
+`[specter]` logcat hooks that fired. This is what Dasher reads on LAUNCH (pre-login):
+- **android_id: read 6×** → returned the SPOOFED value every time (no real leak). Java `Settings.Secure`.
+- **User-Agent** → spoofed to the applied device ("...Android 11; Pixel 4a (5G)...").
+- **File timestamps: ~101 reads** (`lastmod`/`osstat`) — its own APK + framework jars + Firebase/Crashlytics/
+  Facebook/Mapbox/DoorDash pref files. The FingerprintJS FileTimestamps signal; all intercepted.
+- **Native layer**: `hooks installed ... (19 syms, props=60, reset, bootid, hwcap)` — 60 native props armed.
+- **Widevine / MediaDrm: 0 reads.** Dasher does NOT read Widevine on launch. So the "Downgrade Widevine to L3"
+  toggle, while it WORKS (bind-mount verified, native securityLevel=L3), is coverage Dasher does not use —
+  don't enable it for Dasher. (Caveat: this is pre-login; a login/verification flow could differ — untested.)
+
+**Two-identity isolation test (the account-linking risk) — PROVEN CLEAN:**
+- Applied identity A (android_id a8254e…, Pixel 4a 5G) → Dasher stored a8254e… (1 occurrence).
+- `rotate` to identity B (android_id 4b15f9f3…, Pixel 5a) — rotate does new + deep-clean (pm clear) + apply.
+- After B: A's android_id a8254e… = **0 occurrences** in all of Dasher's data (fully wiped), B's = 6.
+- **VERDICT: Dasher sees two genuinely different devices with ZERO carryover A→B.** The mandatory deep-clean
+  on APPLY breaks the link — exactly what fleet per-account isolation needs. This is the core fleet guarantee,
+  now proven end-to-end against the real Dasher.
