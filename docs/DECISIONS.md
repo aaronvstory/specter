@@ -382,3 +382,16 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   number (the exact /sys-vs-GL coherence a fingerprinter cross-checks) for every device. Pure regex over a
   constant string → no RNG, byte-parity-safe (identical in profile.py and Profile.java). The topology table's
   gpu_model stays as the fallback/default for single-Adreno SoCs.
+
+- 2026-07-28 — whole-app /codex review: fixed the 6 high-value defects (APPLY signature, MediaDrm crash-
+  safety, atomic profile write, APPLY/RESTORE serialization, honest vault save/delete, su stream drain);
+  DEFERRED 4 lower-severity ones as known/acceptable for now, not worth the scope right now:
+  (1) `IdentityService.saveLedger()` does `dest.delete()` then `renameTo()` — a same-dir rename is atomic on
+  the device's ext4, the delete→rename window is two adjacent syscalls with no I/O between, and the in-memory
+  ledger still holds this run; only a rename FAILURE (rare) loses the on-disk ledger for the NEXT launch.
+  Low risk; revisit with AtomicFile only if it ever bites. (2) Vault import does root `cat` on the UI thread
+  (potential ANR if su is slow) — acceptable for a manual, user-initiated import. (3) Diagnostics "Clear"
+  blocks the UI thread on `su.waitFor()` — small, user-initiated. (4) APPLY/Zygisk background completions can
+  show a dialog after the Activity is destroyed (rotation/back) → possible BadTokenException — the app is
+  portrait/single-use in practice, low real-world hit. All four are logged here so they aren't re-discovered
+  as "new"; fix if they surface on-device.

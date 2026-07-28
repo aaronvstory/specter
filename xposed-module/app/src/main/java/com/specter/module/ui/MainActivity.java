@@ -54,6 +54,10 @@ public class MainActivity extends Activity {
     private Vault vault;
     private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
     private boolean widevineBusy = false;              // guards the Widevine-L3 toggle's failure-rollback re-fire
+    private boolean opBusy = false;                     // one guard for the destructive APPLY/RESTORE paths —
+                                                        // both `pm clear` + write a profile, so two running at
+                                                        // once could clear/overwrite each other's target. Set on
+                                                        // entry, cleared when the worker finishes (UI thread).
     private com.specter.module.gen.ZygiskInstaller.Status zygiskStatus;   // native-layer health (async, null until checked)
     private boolean zygiskBusy = false;                // guards the native-layer install button
     private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
@@ -310,6 +314,7 @@ public class MainActivity extends Activity {
     }
 
     private void apply() {
+        if (opBusy) { toast("Busy — wait for the current apply/restore to finish."); return; }
         if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL first."); return; }
         Set<String> targets = Targets.get(prefs);
         if (targets.isEmpty()) { toast("No target apps selected — pick some in Settings."); return; }
@@ -321,16 +326,19 @@ public class MainActivity extends Activity {
             return;
         }
         final List<String> pkgs = new ArrayList<>(targets);
-        // Already-applied guard: re-APPLYING the SAME identity to the SAME targets is a no-op we skip (so we
-        // don't needlessly wipe + re-prompt to save). Any DIFFERENT identity always goes through the full
-        // clear below — applying a new profile over a dirty install is the exact identity-link we must avoid.
-        // Sign off `profile` (the full pre-toggle map), NOT `toApply` (android_id may be toggled out of toApply).
-        final String sig = applySignature(profile, targets);
+        // Already-applied guard: re-APPLYING the SAME thing to the SAME targets is a no-op we skip (so we
+        // don't needlessly wipe + re-prompt to save). Any DIFFERENT input always goes through the full clear
+        // below. Sign off the EXACT bytes that get applied (`toApply`) + the target set — so editing ANY
+        // field, flipping ANY identifier toggle, or changing ANY protection gate changes the signature and
+        // a re-APPLY actually re-applies (the old android_id-only signature made all those edits a silent
+        // no-op: "Already applied", nothing pushed).
+        final String sig = applySignature(toApply, targets);
         if (!appliedSig.isEmpty() && appliedSig.equals(sig)) {
             String msg = "Already applied. Relaunch the app(s), or RANDOMIZE ALL for a new one.";
             status.setText(msg); toast(msg);
             return;
         }
+        opBusy = true;
         status.setText("Deep-cleaning + applying to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
             int cleared = 0, ok = 0; String lastErr = null; String clearErr = null;
@@ -351,21 +359,25 @@ public class MainActivity extends Activity {
             final boolean allClean = clearedN == pkgs.size();   // every target wiped -> the no-carry-over claim holds
             final boolean allApplied = okN == pkgs.size();      // every target cleared AND applied
             runOnUiThread(() -> {
-                // Only claim "no carry-over" when EVERY target was actually cleared.
-                if (allClean) toast("🧹 Wiped clean and applied to " + pkgs.size() + " app(s).");
-                else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
-                        + " app(s) done — grant root in Magisk?");
-                String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
-                        + (clrErr != null ? " Clear error: " + clrErr : "")
-                        + (err != null ? " Apply error: " + err + " (grant root in Magisk?)" : "")
-                        + (clrErr == null && err == null ? " Relaunch them to see it." : "");
-                status.setText(m); toast(m);
-                if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
-                // Record the applied signature (so a repeat Apply is a no-op) ONLY when the WHOLE set fully
-                // cleared+applied — else a partial failure must remain retryable, not be suppressed as "done".
-                if (allApplied) {
-                    appliedSig = sig;
-                    if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName(appliedTargets);
+                try {
+                    // Only claim "no carry-over" when EVERY target was actually cleared.
+                    if (allClean) toast("🧹 Wiped clean and applied to " + pkgs.size() + " app(s).");
+                    else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
+                            + " app(s) done — grant root in Magisk?");
+                    String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
+                            + (clrErr != null ? " Clear error: " + clrErr : "")
+                            + (err != null ? " Apply error: " + err + " (grant root in Magisk?)" : "")
+                            + (clrErr == null && err == null ? " Relaunch them to see it." : "");
+                    status.setText(m); toast(m);
+                    if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
+                    // Record the applied signature (so a repeat Apply is a no-op) ONLY when the WHOLE set fully
+                    // cleared+applied — else a partial failure must remain retryable, not be suppressed as "done".
+                    if (allApplied) {
+                        appliedSig = sig;
+                        if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName(appliedTargets);
+                    }
+                } finally {
+                    opBusy = false;
                 }
             });
         }).start();
@@ -385,12 +397,16 @@ public class MainActivity extends Activity {
         return out;
     }
 
-    /** Signature identifying "this identity applied to this target set" — the android_id (unique per
-     *  generated identity) plus the sorted package set. Two Applies match iff the identity AND the targets
-     *  are both unchanged, which is exactly when a re-apply would be a no-op. */
+    /** Signature identifying "exactly THIS applied to this target set" — every key=value in the applied
+     *  map (sorted, so order-independent) plus the sorted package set. Two Applies match iff the applied
+     *  bytes AND the targets are both unchanged, which is exactly when a re-apply would be a true no-op.
+     *  Hashing the whole applied map (not just android_id) means a field edit, an identifier toggle, or a
+     *  protection-gate change all shift the signature and make the next APPLY actually push. */
     private String applySignature(Map<String, String> applied, Set<String> targets) {
-        String aid = applied.get("android_id");
-        return (aid == null ? "?" : aid) + "|" + new java.util.TreeSet<>(targets);
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : new java.util.TreeMap<>(applied).entrySet())
+            sb.append(e.getKey()).append('=').append(e.getValue()).append('\n');
+        return sb.append('|').append(new java.util.TreeSet<>(targets)).toString();
     }
 
     private void toast(String m) { Toast.makeText(this, m, Toast.LENGTH_LONG).show(); }
@@ -1249,8 +1265,8 @@ public class MainActivity extends Activity {
                     .setTitle("Delete saved profile?")
                     .setMessage(e.label)
                     .setPositiveButton("Delete", (d, w) -> {
-                        vault.delete(e.label);
-                        status.setText("Deleted " + e.label);
+                        boolean gone = vault.delete(e.label);
+                        status.setText(gone ? "Deleted " + e.label : "Could not delete " + e.label);
                         render();   // refresh the list
                     })
                     .setNegativeButton("Cancel", null)
@@ -1317,9 +1333,11 @@ public class MainActivity extends Activity {
 
     /** Load a saved profile into the current identity AND apply it to the selected target app(s). */
     private void restoreSaved(final String labelStr) {
+        if (opBusy) { toast("Busy — wait for the current apply/restore to finish."); return; }
         final Map<String, String> saved = vault.load(labelStr);
         if (saved == null || saved.isEmpty()) { toast("Could not read that saved profile."); return; }
         profile = new LinkedHashMap<>(saved);
+        appliedSig = "";   // a restored identity is new state — force the next APPLY/RESTORE to actually run
         Set<String> targets = Targets.get(prefs);
         if (targets.isEmpty()) {
             status.setText("Restored " + labelStr + " — pick a target app (Settings), then it will apply.");
@@ -1328,6 +1346,10 @@ public class MainActivity extends Activity {
         }
         final Map<String, String> toApply = enabledProfile();   // applies protection gates too
         final List<String> pkgs = new ArrayList<>(targets);
+        final String sig = applySignature(toApply, targets);   // record on full success so an immediate APPLY
+                                                                // of the just-restored identity is a no-op (not
+                                                                // a needless second deep-clean of the same apps)
+        opBusy = true;
         status.setText("Clearing + restoring " + labelStr + " to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
             int cleared = 0, ok = 0; String lastErr = null; String clearErr = null;
@@ -1346,14 +1368,19 @@ public class MainActivity extends Activity {
             final int clearedN = cleared, okN = ok; final String err = lastErr, clrErr = clearErr;
             final boolean allClean = clearedN == pkgs.size();
             runOnUiThread(() -> {
-                if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
-                if (allClean) toast("🧹 Wiped clean and restored to " + pkgs.size() + " app(s).");
-                else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
-                        + " app(s) done — grant root in Magisk?");
-                String tail = (clrErr != null ? " Clear error: " + clrErr : "")
-                        + (err != null ? " Apply error: " + err : "")
-                        + (clrErr == null && err == null ? " Relaunch them to see it." : "");
-                status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size() + " app(s)." + tail);
+                try {
+                    if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
+                    if (okN == pkgs.size()) appliedSig = sig;   // every target restored -> a repeat APPLY is a no-op
+                    if (allClean) toast("🧹 Wiped clean and restored to " + pkgs.size() + " app(s).");
+                    else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
+                            + " app(s) done — grant root in Magisk?");
+                    String tail = (clrErr != null ? " Clear error: " + clrErr : "")
+                            + (err != null ? " Apply error: " + err : "")
+                            + (clrErr == null && err == null ? " Relaunch them to see it." : "");
+                    status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size() + " app(s)." + tail);
+                } finally {
+                    opBusy = false;
+                }
             });
         }).start();
     }
@@ -1374,6 +1401,7 @@ public class MainActivity extends Activity {
                     String label = typed.equals(Vault.makeLabel("")) || typed.isEmpty()
                             ? vault.save("", profile, targets)          // prefilled/empty -> pure timestamp label
                             : vault.save(typed, profile, targets);      // custom -> timestamp + sanitized name
+                    if (label == null) { status.setText("Save failed — could not write the vault file."); toast("Save failed."); return; }
                     status.setText("Saved as " + label);
                     toast("Saved to vault: " + label);
                     // If we're on the Saved tab, refresh the list so the new profile appears immediately (and

@@ -3,6 +3,31 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.14.2] — 2026-07-28
+
+### Fixed
+- **Whole-app hardening pass (from a full /codex review).** Six real defects fixed:
+  - **APPLY now re-applies after ANY edit.** The already-applied guard signed only `android_id + targets`,
+    so editing a device field, flipping an identifier toggle, or changing a protection gate left the
+    signature unchanged — the next APPLY said "Already applied" and pushed nothing. It now hashes the exact
+    applied map + sorted targets, so any change re-applies.
+  - **Malformed profile can no longer crash a target.** A non-hex `media_drm_id` (e.g. from a hand-edited /
+    imported profile) reached `hexToBytes()` inside the MediaDrm hook, throwing an uncaught exception into
+    the scoped app. Parsing is now fail-safe (`hexToBytesOrNull`): on bad input the hook leaves the real
+    result instead of crashing.
+  - **Atomic profile write.** The su write did `cat > final.json`, truncating the live file before stdin
+    finished — a killed su / full disk left an empty or partial profile the target then loaded (real-value
+    leak). It now writes a `.tmp`, verifies it non-empty, then `mv -f`s it over the final path (atomic
+    same-dir rename); on any failure the `.tmp` is dropped and the live file is untouched. Proven on-device.
+  - **No concurrent APPLY/RESTORE.** Both `pm clear` + write a profile; two at once could clear/overwrite
+    each other's target. A single `opBusy` guard serializes them (a second tap is refused with a message).
+  - **Vault reports the truth.** `save()` swallowed all exceptions and always returned a label (UI always
+    said "Saved"); it now returns null on write failure and the UI reports it. Delete now uses its real
+    success boolean instead of always claiming "Deleted".
+  - **su streams drained + process destroyed.** `SuShell` didn't drain stderr or destroy the process — a
+    command printing enough to an unread pipe could deadlock su. Both streams are now drained concurrently
+    and the process is destroyed in `finally`.
+
 ## [0.14.1] — 2026-07-28
 
 ### Changed

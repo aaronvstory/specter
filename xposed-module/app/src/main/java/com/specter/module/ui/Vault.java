@@ -72,7 +72,8 @@ public final class Vault {
     }
 
     /** Save {@code profile} (which was APPLIED to {@code targets}) under a label derived from {@code name}.
-     *  Returns the label used. Only applied profiles are saved (see the caller) — a vault entry always
+     *  Returns the label used, or {@code null} if the write FAILED (so the caller reports the truth instead
+     *  of a false "Saved"). Only applied profiles are saved (see the caller) — a vault entry always
      *  represents an identity that actually reached at least one app. */
     public String save(String name, Map<String, String> profile, String targets) {
         String base = makeLabel(name);
@@ -90,8 +91,10 @@ public final class Vault {
             try (FileOutputStream out = new FileOutputStream(f)) {
                 out.write(j.toString().getBytes("UTF-8"));
             }
-        } catch (Throwable ignored) {}
-        return label;
+            return label;
+        } catch (Throwable t) {
+            return null;   // write failed — do NOT claim success
+        }
     }
 
     /** All saved entries, newest first. */

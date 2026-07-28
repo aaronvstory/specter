@@ -1430,8 +1430,14 @@ public class HookEntry implements IXposedHookLoadPackage {
                     if (drmTrace && param.args.length > 0)
                         XposedBridge.log("[specter][drm] getPropertyByteArray " + param.args[0]);
                     if (param.args.length > 0 && "deviceUniqueId".equals(String.valueOf(param.args[0]))) {
-                        XposedBridge.log("[specter][idtrace] MediaDrm deviceUniqueId -> " + drm);
-                        param.setResult(hexToBytes(drm));
+                        // Parse defensively: a malformed (non-hex) media_drm_id from an imported profile must
+                        // NEVER throw here — an uncaught exception in afterHookedMethod propagates into the
+                        // target and crashes it during a Widevine read. On bad input, leave the real result.
+                        byte[] spoofed = hexToBytesOrNull(drm);
+                        if (spoofed != null) {
+                            XposedBridge.log("[specter][idtrace] MediaDrm deviceUniqueId -> " + drm);
+                            param.setResult(spoofed);
+                        }
                     }
                 }
             });
@@ -1480,10 +1486,16 @@ public class HookEntry implements IXposedHookLoadPackage {
         a[params.length] = hook;
         return a;
     }
-    private static byte[] hexToBytes(String s) {
+    /** Hex -> bytes, or null if {@code s} isn't clean even-length hex. Fail-safe: never throws, so a bad
+     *  imported value leaves the target's real result in place instead of crashing it. */
+    private static byte[] hexToBytesOrNull(String s) {
+        if (s == null || s.length() < 2 || (s.length() & 1) != 0) return null;
         int n = s.length() / 2; byte[] b = new byte[n];
-        for (int i = 0; i < n; i++)
-            b[i] = (byte) Integer.parseInt(s.substring(i*2, i*2+2), 16);
+        for (int i = 0; i < n; i++) {
+            int hi = Character.digit(s.charAt(i*2), 16), lo = Character.digit(s.charAt(i*2+1), 16);
+            if (hi < 0 || lo < 0) return null;
+            b[i] = (byte) ((hi << 4) | lo);
+        }
         return b;
     }
 }

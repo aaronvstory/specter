@@ -33,15 +33,25 @@ public final class RootWriter {
 
     /**
      * The shell command run under {@code su -c}. JSON is fed via stdin (never interpolated), so the
-     * only thing on the command line is the validated pkg. Creates the dir, writes the file from
-     * stdin, and chmods it 644 so the target app can read it.
+     * only thing on the command line is the validated pkg.
+     *
+     * ATOMIC: writes to a per-pkg {@code .tmp}, verifies it's non-empty, chmods it, then {@code mv}s it
+     * over the final path (a same-directory rename is atomic on the device's filesystem). So a killed
+     * {@code su}, a full disk, or an interrupted write can only leave a stale {@code .tmp} — the live
+     * profile the hook reads is either the OLD complete file or the NEW complete file, never a truncated
+     * one. Truncating the live file with {@code cat > final} first (the old behaviour) could leave the
+     * target loading an empty/partial profile => real-value leak.
      */
     public static String buildShellCommand(String pkg) {
         if (!validPkg(pkg)) throw new WriteException("invalid package name: " + pkg);
         String path = PROFILE_DIR + "/" + pkg + ".json";
+        String tmp = path + ".tmp";
         return "mkdir -p " + PROFILE_DIR
-                + " && cat > " + path
-                + " && chmod 644 " + path;
+                + " && cat > " + tmp
+                + " && [ -s " + tmp + " ]"          // non-empty, else fail (don't clobber the live file)
+                + " && chmod 644 " + tmp
+                + " && mv -f " + tmp + " " + path    // atomic same-dir rename
+                + " || { rm -f " + tmp + "; exit 1; }";   // on any failure, drop the tmp and report failure
     }
 
     /** Abstraction over process exec so tests can drive it without a real device. */
@@ -58,22 +68,48 @@ public final class RootWriter {
     public static final class SuShell implements Shell {
         @Override public int run(String command, String stdinData) throws Exception {
             Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
-            try (OutputStream os = p.getOutputStream()) {
-                os.write(stdinData.getBytes("UTF-8"));
-                os.flush();
+            try {
+                // Drain stdout+stderr concurrently while we feed stdin: if the command prints enough to a
+                // pipe we never read, that pipe fills and su blocks forever (classic exec deadlock).
+                Thread out = drain(p.getInputStream()), err = drain(p.getErrorStream());
+                try (OutputStream os = p.getOutputStream()) {
+                    os.write(stdinData.getBytes("UTF-8"));
+                    os.flush();
+                }
+                int code = p.waitFor();
+                out.join(2000); err.join(2000);
+                return code;
+            } finally {
+                p.destroy();
             }
-            return p.waitFor();
         }
 
         @Override public String runCapture(String command) throws Exception {
             Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
-            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-            try (java.io.InputStream is = p.getInputStream()) {
-                byte[] buf = new byte[4096]; int n;
-                while ((n = is.read(buf)) != -1) bos.write(buf, 0, n);
+            try {
+                Thread err = drain(p.getErrorStream());   // drain stderr so it can't deadlock the read below
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                try (java.io.InputStream is = p.getInputStream()) {
+                    byte[] buf = new byte[4096]; int n;
+                    while ((n = is.read(buf)) != -1) bos.write(buf, 0, n);
+                }
+                p.waitFor();
+                err.join(2000);
+                return new String(bos.toByteArray(), "UTF-8");
+            } finally {
+                p.destroy();
             }
-            p.waitFor();
-            return new String(bos.toByteArray(), "UTF-8");
+        }
+
+        /** Spawn a daemon thread that reads {@code is} to EOF and discards it — just to keep the pipe empty. */
+        private static Thread drain(final java.io.InputStream is) {
+            Thread t = new Thread(() -> {
+                try { byte[] b = new byte[4096]; while (is.read(b) != -1) { /* discard */ } }
+                catch (Exception ignored) {}
+            });
+            t.setDaemon(true);
+            t.start();
+            return t;
         }
     }
 

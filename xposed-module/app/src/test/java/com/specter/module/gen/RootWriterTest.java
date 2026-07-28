@@ -19,12 +19,21 @@ public class RootWriterTest {
         check(!RootWriter.validPkg(""), "reject empty");
         check(!RootWriter.validPkg(null), "reject null");
 
-        // command targets the exact hook-read path, feeds JSON via stdin, chmods 644
+        // command targets the exact hook-read path, feeds JSON via stdin, chmods 644, writes atomically
         String cmd = RootWriter.buildShellCommand("com.liuzh.deviceinfo");
-        check(cmd.contains("/data/local/tmp/specter/com.liuzh.deviceinfo.json"), "command targets hook path");
+        String finalPath = "/data/local/tmp/specter/com.liuzh.deviceinfo.json";
+        check(cmd.contains(finalPath), "command targets hook path");
         check(cmd.contains("mkdir -p /data/local/tmp/specter"), "command mkdirs the dir");
         check(cmd.contains("chmod 644"), "command chmods world-readable");
         check(cmd.startsWith("mkdir"), "no pkg interpolation before validated path");
+        // ATOMIC: writes to a .tmp, and mv's it over the final path (never truncates the live file).
+        check(cmd.contains(finalPath + ".tmp"), "writes to a .tmp first");
+        check(cmd.contains("cat > " + finalPath + ".tmp"), "stdin lands in the .tmp, not the live file");
+        check(cmd.contains("mv -f " + finalPath + ".tmp " + finalPath), "atomically mv .tmp over final");
+        check(cmd.contains("[ -s " + finalPath + ".tmp ]"), "verifies .tmp non-empty before mv");
+        check(cmd.contains("rm -f " + finalPath + ".tmp"), "cleans the .tmp on failure");
+        // the live file is only ever named on the mv target / non-empty check — never `cat >`-truncated
+        check(!cmd.contains("cat > " + finalPath + " "), "never truncates the live file with cat");
 
         // invalid pkg throws at command-build (never reaches a shell)
         boolean threw = false;
