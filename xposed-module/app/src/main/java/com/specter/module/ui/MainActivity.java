@@ -779,14 +779,21 @@ public class MainActivity extends Activity {
         } catch (Exception e) { return null; }
     }
 
-    /** Poll (bounded) until no logcat capture is writing our log, so the archive can't catch a partial file.
+    /** Poll (bounded) until no logcat capture is WRITING our log, so the archive can't catch a partial file.
      *  Best-effort: if it's still up after the budget we archive anyway — a slightly-short capture beats none.
-     *  The probe greps the process table, so it never signals anything and can't self-kill. */
+     *  The probe only greps the process table, so it never signals anything and can't self-kill.
+     *
+     *  Match `logcat` AND `-f <log>` — i.e. the writer only. Matching the bare log path instead would also
+     *  hit every READER of it: DiagnosticsActivity polls with `tail -c 1048576 <log>` every 2s while the
+     *  report is open, and Magisk's su-logger echoes that command in its own cmdline. Verified on-device:
+     *  with the viewer open the broad pattern reads 1 forever (so every archive burned the full budget for
+     *  nothing), while this one correctly reads 0. */
     private void waitForCaptureToStop(com.specter.module.gen.RootWriter.Shell sh) {
         for (int i = 0; i < 10; i++) {   // ~2s budget; the service's pkill normally lands well inside this
             try {
-                // The [d] bracket keeps the grep's OWN cmdline from matching itself.
-                String out = sh.runCapture("ps -Ao args | grep -c '[d]iag[.]log' || true");
+                // The [l] bracket keeps the grep's OWN cmdline from matching itself.
+                String out = sh.runCapture("ps -Ao args | grep '[l]ogcat' | grep -c -- '-f "
+                        + DiagnosticsCmd.LOG_PATH + "' || true");
                 if (out != null && out.trim().startsWith("0")) return;
             } catch (Exception e) { return; }   // can't probe -> don't stall the stop
             try { Thread.sleep(200); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
