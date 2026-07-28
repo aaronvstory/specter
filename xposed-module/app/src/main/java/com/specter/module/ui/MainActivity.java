@@ -52,6 +52,10 @@ public class MainActivity extends Activity {
     private final Button[] tabButtons = new Button[4];
     private int tab = 0;            // 0=Identity 1=Saved 2=Settings 3=Location
     private Vault vault;
+    private com.specter.module.gen.AppDataVault appDataVault;
+    private String activeVaultLabel = "";   // the fingerprint vault-label active now (set on save/restore of a
+                                            // fingerprint) — an AppData capture links to it so restore re-applies
+                                            // the SAME device identity + login together. "" if none saved yet.
     private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
     private boolean widevineBusy = false;              // guards the Widevine-L3 toggle's failure-rollback re-fire
     private boolean opBusy = false;                     // one guard for the destructive APPLY/RESTORE paths —
@@ -61,6 +65,7 @@ public class MainActivity extends Activity {
     private com.specter.module.gen.ZygiskInstaller.Status zygiskStatus;   // native-layer health (async, null until checked)
     private boolean zygiskBusy = false;                // guards the native-layer install button
     private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
+    private String appDataFilter = "";                  // Saved-logins filter: "" = all apps, else a pkg
     private String appliedTargets = "";                 // comma-sep pkgs the CURRENT profile was applied to
                                                         // ("" until Apply succeeds — vault saves only applied)
     private String appliedSig = "";                      // signature (android_id + target set) of the LAST
@@ -84,6 +89,7 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         svc = new IdentityService(getApplicationContext());
         vault = new Vault(getApplicationContext());
+        appDataVault = new com.specter.module.gen.AppDataVault(getFilesDir());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         svc.setCountry(Country.of(prefs.getString("country", "US")));
         // Resume diagnostics capture if the user left it on (the service is START_STICKY but a full app
@@ -903,7 +909,19 @@ public class MainActivity extends Activity {
             try {
                 String out = capture ? SessionMigrator.capture(pkg) : SessionMigrator.restore(pkg);
                 if (capture) {
-                    msg = "Session captured → " + SessionMigrator.tarPath(pkg) + " (" + out + ")";
+                    // Snapshot the WHOLE logged-in state: the login tarball AND the fingerprint the app is
+                    // CURRENTLY running under — so an already-logged-in app whose fingerprint was never saved
+                    // can still be captured in one action, and restore re-applies both together.
+                    String fpLabel = ensureFingerprintSaved(pkg);   // saves the live applied fingerprint if new
+                    String device = deviceStringForPkg(pkg);
+                    String label = (fpLabel != null && !fpLabel.isEmpty())
+                            ? uniqueAppDataLabel(fpLabel + "-" + shortPkg(pkg))
+                            : uniqueAppDataLabel(Vault.makeLabel(shortPkg(pkg)));
+                    String verr = appDataVault.save(label, pkg, fpLabel == null ? "" : fpLabel, device);
+                    msg = verr == null
+                            ? "Saved " + Targets.label(this, pkg) + " login (" + out + ")"
+                                + (fpLabel != null && !fpLabel.isEmpty() ? " + fingerprint " + fpLabel : "")
+                            : "Captured, but vault save failed: " + verr + " (staged at " + SessionMigrator.tarPath(pkg) + ")";
                 } else {
                     // After restore the app was force-stopped; relaunch so it comes up on the new session.
                     try {
@@ -922,6 +940,88 @@ public class MainActivity extends Activity {
                 toast(fMsg);
             });
         }, "specter-session-" + (capture ? "cap" : "res")).start();
+    }
+
+    /** Ensure the fingerprint the app is CURRENTLY running under is in the vault, and return its label.
+     *  Reads the app's live on-device profile JSON (what the hook actually applies), so this works even for an
+     *  app that was logged in before its identity was ever saved. If that exact identity (by android_id) is
+     *  already a saved fingerprint, reuse it — no duplicate. Returns null if there's no applied profile to read
+     *  (then the AppData just saves unlinked). Runs blocking su — call off the UI thread. */
+    private String ensureFingerprintSaved(String pkg) {
+        Map<String, String> live = readLiveProfile(pkg);
+        if (live == null || live.isEmpty()) return null;
+        String liveAid = live.get("android_id");
+        // Already saved? match on android_id (the unique per-identity key). Reuse that label.
+        if (liveAid != null && !liveAid.isEmpty()) {
+            for (Vault.Entry e : vault.list()) {
+                Map<String, String> saved = vault.load(e.label);
+                if (saved != null && liveAid.equals(saved.get("android_id"))) { activeVaultLabel = e.label; return e.label; }
+            }
+        }
+        // New identity -> save it as a fingerprint, named after the app so it's recognizable in the list.
+        String label = vault.save(shortPkg(pkg), live, pkg);
+        if (label != null) activeVaultLabel = label;
+        return label;
+    }
+
+    /** Read the live applied profile JSON for {@code pkg} (what the hook is running) via su, as a flat map.
+     *  Null if the file is absent/unreadable. Uses the GeerGit-proof flat parser (no org.json). */
+    private Map<String, String> readLiveProfile(String pkg) {
+        if (!com.specter.module.gen.RootWriter.validPkg(pkg)) return null;
+        String path = com.specter.module.gen.RootWriter.PROFILE_DIR + "/" + pkg + ".json";
+        try {
+            String json = new com.specter.module.gen.RootWriter.SuShell().runCapture("cat '" + path + "' 2>/dev/null");
+            if (json == null || json.trim().isEmpty()) return null;
+            Map<String, String> m = new LinkedHashMap<>();
+            com.specter.module.SpoofLogic.parseFlatJson(json, m);
+            m.remove(com.specter.module.SpoofLogic.TRUE_ANDROID_ID_KEY);   // internal shadow key, not a profile field
+            m.remove("trace");   // a transient monitor flag, not part of the identity
+            return m.isEmpty() ? null : m;
+        } catch (Exception e) { return null; }
+    }
+
+    /** Device string from an app's live profile (for an AppData entry captured off the on-device fingerprint). */
+    private String deviceStringForPkg(String pkg) {
+        Map<String, String> live = readLiveProfile(pkg);
+        if (live == null) return deviceString();
+        String s = (cap(live.getOrDefault("build_manufacturer", "")) + " "
+                + live.getOrDefault("build_model", "")).trim();
+        return s.isEmpty() ? "(unknown device)" : s;
+    }
+
+    /** Short, filename-safe tail of a package for labelling (e.g. com.doordash.driverapp -> driverapp). */
+    private static String shortPkg(String pkg) {
+        if (pkg == null || pkg.isEmpty()) return "app";
+        int dot = pkg.lastIndexOf('.');
+        String tail = dot >= 0 && dot + 1 < pkg.length() ? pkg.substring(dot + 1) : pkg;
+        StringBuilder b = new StringBuilder();
+        for (char c : tail.toCharArray()) if (Character.isLetterOrDigit(c)) b.append(c);
+        return b.length() == 0 ? "app" : b.toString();
+    }
+
+    /** A vault-label-safe base, made unique against existing AppData entries by appending -2, -3, … */
+    private String uniqueAppDataLabel(String base) {
+        // sanitize to the AppDataVault label charset (letters/digits/_.-)
+        StringBuilder b = new StringBuilder();
+        for (char c : base.toCharArray())
+            if (Character.isLetterOrDigit(c) || c == '_' || c == '.' || c == '-') b.append(c);
+        String clean = b.length() == 0 ? "appdata" : b.toString();
+        if (clean.length() > 70) clean = clean.substring(0, 70);
+        String label = clean;
+        for (int i = 2; appDataVault.get(label) != null && i < 1000; i++) label = clean + "-" + i;
+        return label;
+    }
+
+    /** Human device string for an AppData entry, from the current in-memory profile. */
+    private String deviceString() {
+        String mfr = profile.getOrDefault("build_manufacturer", "");
+        String model = profile.getOrDefault("build_model", "");
+        String s = (cap(mfr) + " " + model).trim();
+        return s.isEmpty() ? "(unknown device)" : s;
+    }
+
+    private static String cap(String s) {
+        return (s == null || s.isEmpty()) ? "" : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     private View sectionLabel(String s) {
@@ -1297,6 +1397,154 @@ public class MainActivity extends Activity {
     }
 
     // ---------- Saved (profile vault): save current, list, restore, delete ----------
+    /** The "Saved logins (AppData)" section: an app-filter chip row + one row per saved login tarball,
+     *  newest first. Each row shows the app, date, size, and the linked fingerprint; RESTORE re-applies that
+     *  fingerprint + the login together. Rendered above the fingerprint list on the Saved tab. */
+    private void renderSavedAppData() {
+        java.util.List<com.specter.module.gen.AppDataVault.Entry> all = appDataVault.list(null);
+        content.addView(sectionLabel("Saved logins (AppData)"));
+        if (all.isEmpty()) {
+            TextView t = value("No saved logins yet. Expand a target on the Identity tab → Save AppData.");
+            t.setTextColor(Theme.DIM); t.setTextSize(12);
+            LinearLayout c = cardBox(); c.addView(t); content.addView(c);
+            return;
+        }
+        // App-filter chips: All + one per distinct pkg present. Tapping re-renders the whole tab (cheap).
+        java.util.LinkedHashSet<String> pkgs = new java.util.LinkedHashSet<>();
+        for (com.specter.module.gen.AppDataVault.Entry e : all) pkgs.add(e.pkg);
+        if (pkgs.size() > 1) {
+            LinearLayout chips = new LinearLayout(this);
+            chips.setOrientation(LinearLayout.HORIZONTAL);
+            chips.setPadding(0, 0, 0, dp(4));
+            chips.addView(filterChip("All", appDataFilter.isEmpty(), v -> { appDataFilter = ""; render(); }));
+            for (final String p : pkgs) {
+                View gap = new View(this); gap.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
+                chips.addView(gap);
+                chips.addView(filterChip(Targets.label(this, p), p.equals(appDataFilter),
+                        v -> { appDataFilter = p; render(); }));
+            }
+            android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+            hs.setHorizontalScrollBarEnabled(false);
+            hs.addView(chips);
+            content.addView(hs);
+        }
+        int shown = 0;
+        for (com.specter.module.gen.AppDataVault.Entry e : all) {
+            if (!appDataFilter.isEmpty() && !appDataFilter.equals(e.pkg)) continue;
+            content.addView(appDataRow(e));
+            shown++;
+        }
+        if (shown == 0) {
+            TextView t = value("No saved logins for that app.");
+            t.setTextColor(Theme.DIM); content.addView(t);
+        }
+    }
+
+    /** One saved-login row: app icon + name, date · size · linked fingerprint, and a RESTORE + delete. */
+    private View appDataRow(final com.specter.module.gen.AppDataVault.Entry e) {
+        LinearLayout card = cardBox();
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        try {
+            android.graphics.drawable.Drawable ic = getPackageManager().getApplicationIcon(e.pkg);
+            ImageView iv = new ImageView(this); iv.setImageDrawable(ic);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(26), dp(26));
+            ilp.setMargins(0, 0, dp(10), 0); iv.setLayoutParams(ilp); top.addView(iv);
+        } catch (Throwable ignored) {}
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView name = value(Targets.label(this, e.pkg)); name.setTextColor(Theme.INK);
+        col.addView(name);
+        String meta = fmtDate(e.savedAt) + " · " + fmtSize(e.sizeBytes)
+                + (e.fingerprint.isEmpty() ? " · no linked fingerprint" : " · " + e.fingerprint);
+        TextView sub = value(meta); sub.setTextColor(Theme.DIM); sub.setTextSize(11);
+        col.addView(sub);
+        top.addView(col);
+        card.addView(top);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(8), 0, 0);
+        Button restore = halfButton("Restore login", v -> restoreAppData(e));
+        View gap = new View(this); gap.setLayoutParams(new LinearLayout.LayoutParams(dp(8), 1));
+        Button del = halfButton("Delete", v -> {
+            if (appDataVault.delete(e.label)) { toast("Deleted saved login."); render(); }
+            else toast("Could not delete.");
+        });
+        del.setTextColor(Theme.RED);
+        row.addView(restore); row.addView(gap); row.addView(del);
+        card.addView(row);
+        return card;
+    }
+
+    /** Restore a saved login: re-apply its LINKED fingerprint (so the device identity matches), then copy the
+     *  tarball back to staging and run the app-data restore, and relaunch. All off the UI thread. */
+    private void restoreAppData(final com.specter.module.gen.AppDataVault.Entry e) {
+        if (opBusy) { toast("Busy — wait for the current operation to finish."); return; }
+        status.setText("Restoring " + Targets.label(this, e.pkg) + " login…");
+        new Thread(() -> {
+            StringBuilder note = new StringBuilder();
+            // 1) Re-apply the linked fingerprint to this app (device identity must match the captured login),
+            //    if one is linked and still in the vault. Non-fatal if missing — the login restore still runs.
+            if (!e.fingerprint.isEmpty()) {
+                Map<String, String> fp = vault.load(e.fingerprint);
+                if (fp != null && !fp.isEmpty()) {
+                    try {
+                        // Applying wipes the app first (clean base), then writes the fingerprint profile.
+                        com.specter.module.gen.SessionMigrator.clearData(e.pkg);
+                        svc.apply(e.pkg, fp);
+                        note.append("fingerprint ").append(e.fingerprint).append(" applied; ");
+                    } catch (Throwable t) { note.append("fingerprint apply failed (").append(t.getMessage()).append("); "); }
+                } else note.append("linked fingerprint missing; ");
+            }
+            // 2) Copy the vaulted tarball back to staging, then run the safe app-data restore.
+            String err = appDataVault.restoreToStaging(e.label);
+            if (err == null) {
+                try {
+                    com.specter.module.gen.SessionMigrator.restore(e.pkg);
+                    note.append("login restored");
+                    try {
+                        Intent li = getPackageManager().getLaunchIntentForPackage(e.pkg);
+                        if (li != null) startActivity(li);
+                    } catch (Throwable ignored) {}
+                } catch (com.specter.module.gen.SessionMigrator.SessionException se) {
+                    err = se.getMessage();
+                }
+            }
+            final String fErr = err; final String fNote = note.toString();
+            runOnUiThread(() -> {
+                if (fErr == null) { status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + "."); toast("Login restored."); }
+                else { status.setText("Restore failed: " + fErr); toast("Restore failed: " + fErr); }
+            });
+        }, "specter-appdata-restore").start();
+    }
+
+    private static String fmtSize(long b) {
+        if (b >= 1024 * 1024) return String.format(java.util.Locale.US, "%.1f MB", b / 1048576.0);
+        if (b >= 1024) return String.format(java.util.Locale.US, "%.0f KB", b / 1024.0);
+        return b + " B";
+    }
+
+    private String fmtDate(long millis) {
+        if (millis <= 0) return "(unknown date)";
+        return new java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.US).format(new java.util.Date(millis));
+    }
+
+    /** A small selectable filter chip (gold when active). */
+    private View filterChip(String text, boolean active, View.OnClickListener onClick) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(12);
+        t.setSingleLine(true);
+        t.setPadding(dp(12), dp(5), dp(12), dp(5));
+        t.setTextColor(active ? Theme.ON_GOLD : Theme.SOFT);
+        t.setBackground(pill(active ? Theme.GOLD : Theme.CARD2, active ? Theme.GOLD : Theme.BTN_EDGE));
+        t.setOnClickListener(onClick);
+        return t;
+    }
+
     private void renderSaved() {
         content.addView(sectionLabel("Save current identity"));
         LinearLayout saveCard = cardBox();
@@ -1324,12 +1572,16 @@ public class MainActivity extends Activity {
         importCard.addView(importRow);
         content.addView(importCard);
 
-        content.addView(sectionLabel("Saved profiles"));
+        // Saved logins (AppData) — a captured login tarball, LINKED to the fingerprint it was taken under.
+        // Restoring one re-applies that fingerprint AND the login together, so the app opens already signed in.
+        renderSavedAppData();
+
+        content.addView(sectionLabel("Saved fingerprints"));
         savedListHolder = null;   // fresh holder per full render (content was cleared by render())
         java.util.List<Vault.Entry> all = vault.list();
         if (all.isEmpty()) {
             LinearLayout empty = cardBox();
-            TextView t = value("No saved profiles yet.");
+            TextView t = value("No saved fingerprints yet.");
             t.setTextColor(Theme.DIM);
             empty.addView(t);
             content.addView(empty);
@@ -1598,6 +1850,7 @@ public class MainActivity extends Activity {
         final Map<String, String> saved = vault.load(labelStr);
         if (saved == null || saved.isEmpty()) { toast("Could not read that saved profile."); return; }
         profile = new LinkedHashMap<>(saved);
+        activeVaultLabel = labelStr;   // restoring a fingerprint makes IT the active one for AppData linkage
         appliedSig = "";   // a restored identity is new state — force the next APPLY/RESTORE to actually run
         Set<String> targets = Targets.get(prefs);
         if (targets.isEmpty()) {
@@ -1674,6 +1927,7 @@ public class MainActivity extends Activity {
                     String typed = in.getText().toString().trim();
                     String label = vault.save(typed, profile, targets);
                     if (label == null) { status.setText("Save failed — could not write the vault file."); toast("Save failed."); return; }
+                    activeVaultLabel = label;   // this fingerprint is now the active one an AppData capture links to
                     status.setText("Saved as " + label);
                     toast("Saved to vault: " + label);
                     // If we're on the Saved tab, refresh the list so the new profile appears immediately (and

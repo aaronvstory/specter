@@ -22,6 +22,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   deepened app-data capture (it moves the whole logged-in data, not just a “login”).
 - Dropped the emoji from the “wiped before every apply” line and the apply/restore toasts (Apple-clean copy).
 
+### Added
+- **Vault now stores logins (AppData), linked to fingerprints.** “Save AppData” on a target snapshots the
+  WHOLE logged-in state in one tap: the login tarball AND the fingerprint the app is currently running under
+  (read from its live on-device profile, so an app logged in before its identity was ever saved still works).
+  If that identity is already a saved fingerprint it links to it, no duplicate. The Saved tab shows a
+  “Saved logins” section with an app-filter, each row showing date · size · linked fingerprint. “Restore
+  login” re-applies the linked fingerprint AND the login together, then relaunches — the app opens signed in
+  on the matching device identity. New AppDataVault store (durable, app-owned; tarball copied out of volatile
+  tmp), 22 JVM tests. Verified end-to-end on Dasher: save → wipe → restore → authenticated home.
+
 ### Security
 - Hardened app-data restore against a tampered archive (extraction runs as root): refuse symlink/hardlink
   entries (a name-only tar listing hides a symlink target), keep the absolute/.. path guard, swap the whole
