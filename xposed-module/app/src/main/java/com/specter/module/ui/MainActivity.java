@@ -894,7 +894,7 @@ public class MainActivity extends Activity {
                 toast("Removed " + Targets.label(this, pkg)); render();
             });
             ((TextView) remove).setGravity(Gravity.START);
-            ((TextView) remove).setPadding(0, dp(Theme.S2), 0, 0);
+            ((TextView) remove).setPadding(0, dp(Theme.S2), dp(Theme.S3), dp(Theme.S2));   // keep v-padding + right inset
             actions.addView(remove);
             box.addView(actions);
         }
@@ -2379,6 +2379,7 @@ public class MainActivity extends Activity {
         // Same as APPLY: tear the monitor state down here, finish the su work on the wipe thread (see apply()).
         final String flushPkg = beginFlushBeforeWipe(pkgs);
         opBusy = true;
+        render();   // reflect busy state immediately, same as apply() (keeps the two wipe paths consistent)
         status.setText("Clearing + restoring " + labelStr + " to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
             finishFlush(flushPkg);   // disarm trace + archive the capture BEFORE anything is wiped
@@ -2410,6 +2411,7 @@ public class MainActivity extends Activity {
                     status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size() + " app(s)." + tail);
                 } finally {
                     opBusy = false;
+                    render();   // clear the busy state on the summary/hero
                 }
             });
         }).start();
