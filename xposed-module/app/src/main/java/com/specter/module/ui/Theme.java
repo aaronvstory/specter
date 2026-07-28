@@ -25,11 +25,11 @@ public final class Theme {
     public static final int SOFT = 0xFFB9B9C4; // secondary
     public static final int DIM  = 0xFF7D7D8A; // captions / labels / placeholders
 
-    // The one warm accent
-    public static final int GOLD    = 0xFFE7B94E; // THE accent / primary fill / active tab
-    public static final int GOLD_HI = 0xFFF2C963; // hover
-    public static final int GOLD_DIM= 0xFFA8862F; // pressed / disabled-ish
-    public static final int ON_GOLD = 0xFF231A05; // DARK ink for text ON a gold fill
+    // The one accent — a BRIGHT pastel yellow (distinctive, not a dim/muddy orange-gold).
+    public static final int GOLD    = 0xFFFFD54A; // THE accent / primary fill / active nav (bright pastel yellow)
+    public static final int GOLD_HI = 0xFFFFE07A; // hover
+    public static final int GOLD_DIM= 0xFFD9B23A; // pressed
+    public static final int ON_GOLD = 0xFF211B02; // DARK ink for text ON a yellow fill
 
     // Secondary "outlined ghost" button
     public static final int BTN      = 0xFF2E2E3A;
@@ -58,9 +58,8 @@ public final class Theme {
     public static final int T_LABEL   = 13;  // secondary / row label
     public static final int T_CAPTION = 12;  // captions / meta / hints
 
-    // ---- RADIUS (dp) — one soft radius for cards, one tighter for controls. Consistent rounding reads as
-    // "designed"; mixed random corners read as patched-together.
-    public static final int R_CARD = 14;   // cards / sheets
-    public static final int R_CTRL = 10;   // buttons / inputs / chips
-    public static final int R_PILL = 999;  // fully-round (toggles, small chips)
+    // ---- RADIUS (dp) — TIGHT, intentional corners (not the soft "AI-slop" over-rounded look). Crisp.
+    public static final int R_CARD = 8;    // cards / sheets
+    public static final int R_CTRL = 6;    // buttons / inputs
+    public static final int R_PILL = 999;  // fully-round (only for genuine pills / icon-button ripple)
 }

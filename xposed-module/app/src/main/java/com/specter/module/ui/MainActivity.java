@@ -207,14 +207,21 @@ public class MainActivity extends Activity {
             item.setBackground(ripple(0));
             item.setPadding(0, dp(Theme.S2), 0, dp(Theme.S2));
             ImageView ic = new ImageView(this);
-            ic.setImageDrawable(navIcon(idx, dp(22)));
-            ic.setColorFilter(active ? Theme.GOLD : Theme.DIM);
-            item.addView(ic, new LinearLayout.LayoutParams(dp(24), dp(24)));
+            ic.setImageDrawable(navIcon(idx, dp(24)).tint(active ? Theme.GOLD : Theme.SOFT));
+            LinearLayout.LayoutParams iclp = new LinearLayout.LayoutParams(dp(26), dp(26));
+            iclp.gravity = Gravity.CENTER_HORIZONTAL;
+            item.addView(ic, iclp);
             TextView lbl = new TextView(this);
             lbl.setText(NAV[idx]);
             lbl.setTextSize(11);
-            lbl.setTextColor(active ? Theme.GOLD : Theme.DIM);
-            lbl.setPadding(0, dp(3), 0, 0);
+            lbl.setTextColor(active ? Theme.GOLD : Theme.SOFT);
+            lbl.setGravity(Gravity.CENTER);
+            lbl.setTypeface(android.graphics.Typeface.create("sans-serif-medium",
+                    active ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL));
+            LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            llp.topMargin = dp(3);
+            lbl.setLayoutParams(llp);
             item.addView(lbl);
             item.setOnClickListener(v -> { if (tab != idx) { tab = idx; rebuildBottomNav(); render(); } });
             bottomNavBar.addView(item);
@@ -222,7 +229,7 @@ public class MainActivity extends Activity {
     }
 
     /** Simple line icons for the 3 nav destinations. 0=Identity (person), 1=Vault (lock), 2=Settings (gear). */
-    private android.graphics.drawable.Drawable navIcon(final int which, final int px) {
+    private StrokeIcon navIcon(final int which, final int px) {
         return new StrokeIcon(px) {
             @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
                 float cx = s * 0.5f;
@@ -621,28 +628,45 @@ public class MainActivity extends Activity {
     /** The missing/stale-native-layer banner: an amber card explaining the gap + a one-tap install button.
      *  Install writes the module from the bundled asset via su, then prompts a reboot. */
     private View zygiskBanner() {
-        LinearLayout c = card();
-        // Amber left-edge accent so it reads as a warning without shouting (a thin colored bar, not a border).
+        // Clean card (same surface as everything else) with a thin bright accent bar on the left edge — reads
+        // as "attention" without a muddy tinted background. Title + inline action, no big block.
+        boolean stale = zygiskStatus.installed;
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.HORIZONTAL);
+        outer.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFF2A2418);   // warm amber-tinted surface
+        bg.setColor(Theme.CARD);
         bg.setCornerRadius(dp(Theme.R_CARD));
-        c.setBackground(bg);
-        c.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
-        boolean stale = zygiskStatus.installed;   // installed but wrong version vs missing entirely
+        outer.setBackground(bg);
+        LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        olp.setMargins(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));
+        outer.setLayoutParams(olp);
+
+        // text column (with a bit of left inset that reads like an accent margin — no separate MATCH_PARENT bar)
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S3), dp(Theme.S3));
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView lab = new TextView(this);
-        lab.setText(stale ? "Native layer out of date" : "Native layer not installed");
-        lab.setTextColor(Theme.AMBER); lab.setTextSize(Theme.T_BODY);
+        lab.setText(stale ? "Native layer update available" : "Native layer not installed");
+        lab.setTextColor(Theme.INK); lab.setTextSize(Theme.T_BODY);
         lab.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
-        c.addView(lab);
+        col.addView(lab);
         TextView d = new TextView(this);
-        d.setText(stale
-                ? "An update is available. Install it to keep deep signals covered."
-                : "Without it, some deep signals still read the real device.");
+        d.setText(stale ? "Install it to keep deep signals covered."
+                : "Some deep signals still read the real device without it.");
         d.setTextColor(Theme.SOFT); d.setTextSize(Theme.T_CAPTION);
-        d.setPadding(0, dp(Theme.S1), 0, dp(Theme.S3));
-        c.addView(d);
-        c.addView(secondaryButton(stale ? "Update native layer" : "Install native layer", v -> installZygisk()));
-        return c;
+        d.setPadding(0, dp(Theme.S1), 0, 0);
+        col.addView(d);
+        outer.addView(col);
+
+        // inline text action on the right
+        View act = textButton(stale ? "Update" : "Install", Theme.GOLD, v -> installZygisk());
+        act.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((TextView) act).setPadding(dp(Theme.S3), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        outer.addView(act);
+        return outer;
     }
 
     /** Install/update the bundled Zygisk native layer via su, off-thread, then prompt a reboot. */
@@ -823,8 +847,7 @@ public class MainActivity extends Activity {
         r.addView(col);
 
         ImageView chev = new ImageView(this);
-        chev.setImageDrawable(icChevron(expanded ? 1 : 0, dp(18)));
-        chev.setColorFilter(monitoring ? Theme.GOLD : Theme.DIM);
+        chev.setImageDrawable(icChevron(expanded ? 1 : 0, dp(18)).tint(monitoring ? Theme.GOLD : Theme.DIM));
         chev.setLayoutParams(new LinearLayout.LayoutParams(dp(28), dp(28)));
         r.addView(chev);
         r.addView(iconButton(icClose(dp(16)), Theme.DIM, v -> {
@@ -865,8 +888,7 @@ public class MainActivity extends Activity {
     /** A right-chevron trailing view (rotated down when expanded) for disclosure rows. */
     private View chevronTrailing(boolean expanded) {
         ImageView iv = new ImageView(this);
-        iv.setImageDrawable(icChevron(expanded ? 1 : 0, dp(18)));
-        iv.setColorFilter(Theme.DIM);
+        iv.setImageDrawable(icChevron(expanded ? 1 : 0, dp(18)).tint(Theme.DIM));
         iv.setLayoutParams(new LinearLayout.LayoutParams(dp(24), dp(24)));
         return iv;
     }
@@ -2487,8 +2509,8 @@ public class MainActivity extends Activity {
      *  like remove/overflow. No emoji. */
     private ImageView iconButton(android.graphics.drawable.Drawable glyph, int tint, View.OnClickListener onClick) {
         ImageView iv = new ImageView(this);
+        if (glyph instanceof StrokeIcon) ((StrokeIcon) glyph).tint(tint);   // tint DIRECTLY (setColorFilter no-ops)
         iv.setImageDrawable(glyph);
-        iv.setColorFilter(tint);
         iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         int pad = dp(12);
         iv.setPadding(pad, pad, pad, pad);
@@ -2510,7 +2532,7 @@ public class MainActivity extends Activity {
     // ---- Drawn vector icons (no emoji). Each returns a Drawable sized to `px`, stroked in the current tint. ----
 
     /** A chevron (›). dir: 0=right, 1=down. Used for "expandable" / "navigates" affordances. */
-    private android.graphics.drawable.Drawable icChevron(final int dir, final int px) {
+    private StrokeIcon icChevron(final int dir, final int px) {
         return new StrokeIcon(px) {
             @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
                 float a = s * 0.34f, b = s * 0.66f;
@@ -2523,7 +2545,7 @@ public class MainActivity extends Activity {
     }
 
     /** A close/remove (×). */
-    private android.graphics.drawable.Drawable icClose(final int px) {
+    private StrokeIcon icClose(final int px) {
         return new StrokeIcon(px) {
             @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
                 float a = s * 0.32f, b = s * 0.68f;
@@ -2533,7 +2555,7 @@ public class MainActivity extends Activity {
     }
 
     /** A plus (+) for "add". */
-    private android.graphics.drawable.Drawable icPlus(final int px) {
+    private StrokeIcon icPlus(final int px) {
         return new StrokeIcon(px) {
             @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
                 float a = s * 0.28f, b = s * 0.72f, m = s * 0.5f;
@@ -2543,7 +2565,7 @@ public class MainActivity extends Activity {
     }
 
     /** An overflow (⋯) three-dot for row menus. */
-    private android.graphics.drawable.Drawable icMore(final int px) {
+    private StrokeIcon icMore(final int px) {
         return new StrokeIcon(px) {
             @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
                 p.setStyle(android.graphics.Paint.Style.FILL);
@@ -2553,7 +2575,9 @@ public class MainActivity extends Activity {
         };
     }
 
-    /** Base class: a Drawable that draws a stroked glyph on a square canvas. Colour comes from setColorFilter. */
+    /** Base class: a Drawable that draws a stroked glyph on a square canvas. Set the colour with {@link #tint}
+     *  DIRECTLY — do NOT rely on ImageView.setColorFilter(int): that routes to setColorFilter(ColorFilter),
+     *  from which the plain color can't be recovered pre-API-29, so the icons would render white. */
     private abstract class StrokeIcon extends android.graphics.drawable.Drawable {
         final int px; final android.graphics.Paint paint;
         int filter = 0xFFFFFFFF;
@@ -2565,6 +2589,7 @@ public class MainActivity extends Activity {
             paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
             paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
         }
+        StrokeIcon tint(int color) { filter = color; invalidateSelf(); return this; }
         abstract void draw(android.graphics.Canvas c, android.graphics.Paint p, float sizePx);
         @Override public void draw(android.graphics.Canvas canvas) {
             paint.setColor(filter);
@@ -2575,7 +2600,6 @@ public class MainActivity extends Activity {
             canvas.restore();
         }
         @Override public void setColorFilter(android.graphics.ColorFilter cf) {}
-        @Override public void setColorFilter(int color, android.graphics.PorterDuff.Mode mode) { filter = color; invalidateSelf(); }
         @Override public void setAlpha(int a) {}
         @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
         @Override public int getIntrinsicWidth() { return px; }

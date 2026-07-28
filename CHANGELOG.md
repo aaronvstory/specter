@@ -3,6 +3,24 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.16.0] — 2026-07-29
+
+### Changed
+- **Professional UI redesign** toward a real-product feel (DoorDash/Cash App level), from a dedicated design
+  review that called the old UI “card soup” + “developer control panel”:
+  - **Bottom navigation** (Identity / Vault / Settings) with drawn line icons, replacing the four gold pill
+    tabs and the congested top stack (header + Randomize/Apply bar + checkbox + wipe line + status strip).
+    The Location tab is gone (its only real control is governed by Hide-root in Settings; the “not built
+    yet” placeholder made the app read as unfinished).
+  - **Identity is summary-first**: a hero “Current identity” card (device · carrier, applied state, one
+    primary “Apply to N apps” + a quiet “Generate another”), then Target apps as ONE group card with plain
+    expandable rows, then the full field editor collapsed behind a “Show all fields” disclosure.
+  - **Design system**: an 8pt spacing scale, a 5-step type scale, and radius tokens in Theme; a component
+    toolkit (one card, hairline rows, quiet section headers, four 48dp button types with ripple, DRAWN
+    vector icons replacing 10 emoji glyphs, gold-tinted switches). Card-soup replaced by grouped cards with
+    hairline-separated rows; the redundant ON/OFF chips next to switches removed; gold reserved for the
+    primary action + active nav instead of decorating every heading.
+
 ## [0.15.0] — 2026-07-29
 
 ### Changed
