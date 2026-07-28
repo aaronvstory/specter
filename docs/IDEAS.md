@@ -58,7 +58,15 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   into the target, capture → restore onto a second rooted device with the matching fingerprint applied →
   see if it opens logged in. Until then, session migration is 'files proven, login-survival unverified'.
 
-- **2026-07-27 · first_api_level should reflect the device's LAUNCH API, not the current SDK** — status: `hypothesis`.
+- **2026-07-27 · first_api_level should reflect the device's LAUNCH API, not the current SDK** — status: `confirmed-widespread, needs launch-OS dataset`.
+  2026-07-28 analysis: scanned all ~350 selectable devices. MANY have dataset_release > real launch OS, so
+  first_api==sdk is a real coherence tell for them — e.g. Galaxy A70 (SM-A705FN) dataset release=10 but
+  launched Android 9 => first_api should be 28 not 29; S10 (SM-G970F) release=11 but launched 9 => 28.
+  Pixels are FINE (Google's dataset release == their launch OS, so first_api==sdk is correct there). The fix
+  is a per-model launch-API map (data-only; profile emits first_api_level, native g_prop_spoof_late reads it
+  instead of build_sdk). Deferred from the overnight run: doing it RIGHT needs each model's real launch OS
+  verified (a wrong first_api is itself a new incoherence — no-copout), which is a focused research pass, not
+  an overnight quick win. Best done per-brand (Samsung SM- launch OS is well documented).
   Specter sets `ro.product.first_api_level` = the current `build_sdk` (derived from the dataset release).
   Real devices that shipped on an older OS and updated have first_api < sdk (e.g. Galaxy A70 launched on
   Android 9 -> first_api 28, but may run Android 10 -> sdk 29). Whenever the dataset release is newer than

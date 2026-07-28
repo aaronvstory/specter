@@ -58,6 +58,12 @@ Pixel 4 `9B151FFAZ00FPF` (A11/SDK30, the user's live-test device) + Pixel 4a `17
   do NOT build a global always-on resetprop). See the IDEAS entry.
 
 ## Log (append as you go — newest first)
+- 2026-07-28 RUN WOUND DOWN (~08:15). Shipped clean: T1a SoC audit (6256986) + T2 UI polish (2ef2755).
+  Verified the dataset now has ZERO remaining SoC/renderer coherence issues. STOPPED before T1b/T3
+  deliberately: T1b (first_api launch-OS map) needs per-model launch-OS RESEARCH (~350 devices; a wrong
+  value is a new incoherence, no-copout) and T3 (glGetStringi GL-capability hook) is crash-sensitive
+  native work (a wrong extension list breaks GL init) — neither is safe/right to rush unattended. Both
+  documented precisely in IDEAS for a focused session. Merged this run: 6256986, 2ef2755 (+ queue docs).
 - 2026-07-28 T2 UI audit: screenshotted Identity/Settings/Advanced/Location on the 4a. App is polished +
   shippable — every control real or clearly 'Planned/not built' (Location coord-spoof), no dead UI. Only fix:
   GSF card header emphasis (was DIM, now INK to match the Widevine card). Status-line-persists-across-tabs
