@@ -65,8 +65,15 @@ public class HarvestActivity extends Activity {
         Button harvest = new Button(this);
         harvest.setText("Harvest + export");
         harvest.setAllCaps(false);
+        harvest.setTextSize(15);
         harvest.setTextColor(0xFF231A05);
-        harvest.setBackgroundColor(GOLD);
+        harvest.setStateListAnimator(null);
+        // Rounded pill to match the main Specter app (was a flat rect).
+        android.graphics.drawable.GradientDrawable pill = new android.graphics.drawable.GradientDrawable();
+        pill.setColor(GOLD);
+        pill.setCornerRadius(dp(3));
+        harvest.setBackground(pill);
+        harvest.setPadding(dp(16), dp(11), dp(16), dp(11));
         harvest.setOnClickListener(v -> doHarvest());
         root.addView(harvest);
 
