@@ -43,6 +43,8 @@ public class AppDataVaultTest {
         check(in.contains("cp '/data/local/tmp/specter/session-com.x.y.tgz'"), "copy-in copies the staged tar");
         check(in.contains("chmod 644"), "copy-in makes the vault copy readable");
         check(in.contains("test -f") && in.indexOf("test -f") < in.indexOf("cp "), "copy-in guards missing source first");
+        // ATOMIC: copy to .tmp then rename over the final path (a partial copy can't be seen as good).
+        check(in.contains(".tgz.tmp") && in.contains("mv -f"), "copy-in is atomic (temp + rename)");
 
         String out = AppDataVault.buildCopyOut("/data/data/com.specter/files/appdata/072926-Sun-1924-razr.tgz",
                 "/data/local/tmp/specter/session-com.x.y.tgz");
@@ -60,8 +62,8 @@ public class AppDataVaultTest {
         String imp = AppDataVault.buildImportCommand("/sdcard/Download/specter-login-x.tar",
                 "/data/data/com.specter/files/appdata", "072926-Sun-1924-razr");
         check(imp.contains("tar xf '/sdcard/Download/specter-login-x.tar'"), "import extracts the bundle");
-        // import TYPE guard: refuse symlink/hardlink entries (root extraction into the app dir).
-        check(imp.contains("tar tvf") && imp.contains("grep -qE '^[lh]'"), "import refuses symlink/hardlink entries");
+        // import TYPE guard: require EVERY entry to be a regular file (rejects symlink/hardlink/device/fifo).
+        check(imp.contains("tar tvf") && imp.contains("grep -qvE '^-'"), "import requires regular-file entries only");
         // import EXACT-SET guard: members must be exactly <label>.meta + <label>.tgz for the expected label.
         check(imp.contains("072926-Sun-1924-razr.meta|072926-Sun-1924-razr.tgz|"), "import requires exactly the label's two files");
 

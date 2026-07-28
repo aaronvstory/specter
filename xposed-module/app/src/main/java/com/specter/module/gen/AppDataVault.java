@@ -96,8 +96,11 @@ public final class AppDataVault {
     /** su command: copy the staged (root-owned) capture INTO the vault + make it app-readable. Both paths are
      *  validated before interpolation. Fails if the staged tarball is missing. */
     public static String buildCopyIn(String stagedTar, String destTar) {
+        // Atomic: copy to a temp then rename over the final path, so a killed/failed cp can only leave a stale
+        // .tmp (cleaned next time), never a truncated destTar that dest.exists() would accept as good.
         return "test -f '" + stagedTar + "' || { echo 'no staged capture'; exit 3; }; "
-                + "cp '" + stagedTar + "' '" + destTar + "' && chmod 644 '" + destTar + "' && "
+                + "cp '" + stagedTar + "' '" + destTar + ".tmp' && chmod 644 '" + destTar + ".tmp' && "
+                + "mv -f '" + destTar + ".tmp' '" + destTar + "' && "
                 + "echo copied $(stat -c %s '" + destTar + "') bytes";
     }
 
@@ -121,9 +124,13 @@ public final class AppDataVault {
         String dest = tarFile(label).getAbsolutePath();
         if (!isSafe(staged) || !isSafe(dest)) return "unsafe path";
         try {
-            String out = new SessionMigrator.SuShell().run(buildCopyIn(staged, dest)).output;
-            if (!new java.io.File(dest).exists()) return "copy failed: " + out;
+            // Check BOTH the exit code AND the success marker — not just dest.exists(): a stale tarball from a
+            // previous save would make exists() true even when THIS cp failed, silently pairing new metadata
+            // with old bytes. buildCopyIn now copies to a temp then renames, so a partial copy can't be seen.
+            SessionMigrator.Result r = new SessionMigrator.SuShell().run(buildCopyIn(staged, dest));
+            if (r.code != 0 || r.output == null || !r.output.contains("copied")) return "copy failed: " + r.output;
             long size = new java.io.File(dest).length();
+            if (size <= 0) return "copy produced an empty file";
             String meta = serializeMeta(pkg, System.currentTimeMillis(), size, fingerprint, device);
             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(metaFile(label))) {
                 fos.write(meta.getBytes("UTF-8"));
@@ -183,7 +190,11 @@ public final class AppDataVault {
      *     entries, no traversal (`/` and `..` can't appear in a label), no mismatched label. */
     public static String buildImportCommand(String srcTar, String vaultDir, String label) {
         return "test -f '" + srcTar + "' || { echo 'no such bundle'; exit 3; }; "
-                + "if tar tvf '" + srcTar + "' 2>/dev/null | grep -qE '^[lh]'; then echo 'bundle has a symlink/hardlink'; exit 5; fi; "
+                // TYPE guard: EVERY entry must be a REGULAR file. `tar tvf` prefixes each line with the type
+                // char ('-' regular, 'd' dir, 'l' symlink, 'h' hardlink, 'c'/'b' device, 'p' fifo, 's' socket).
+                // Anything that isn't '-' is refused (extraction runs as root into the app dir, so a symlink OR
+                // a device/fifo node could be a write primitive / block on open).
+                + "if tar tvf '" + srcTar + "' 2>/dev/null | grep -qvE '^-'; then echo 'bundle has a non-regular-file entry'; exit 5; fi; "
                 + "got=$(tar tf '" + srcTar + "' | sort | tr '\\n' '|'); "
                 + "[ \"$got\" = '" + label + ".meta|" + label + ".tgz|' ] || { echo 'bundle members are not exactly " + label + ".{tgz,meta}'; exit 4; }; "
                 + "tar xf '" + srcTar + "' -C '" + vaultDir + "' && echo imported";
@@ -273,6 +284,9 @@ public final class AppDataVault {
     /** When a FINGERPRINT is renamed, point every app-data that linked to the old label at the new one, so the
      *  bundle stays intact. Returns how many metas were updated. */
     public int relinkFingerprint(String oldFpLabel, String newFpLabel) {
+        // Both must be valid labels: oldFpLabel is compared with .equals (null -> NPE) and newFpLabel is
+        // written INTO the meta (an invalid/control-char value would corrupt it). Reject up front.
+        if (!validLabel(oldFpLabel) || !validLabel(newFpLabel)) return 0;
         int n = 0;
         java.io.File[] metas = dir.listFiles((d, name) -> name.endsWith(".meta"));
         if (metas == null) return 0;

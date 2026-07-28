@@ -723,7 +723,12 @@ public class MainActivity extends Activity {
             content.addView(section("Device"));
             content.addView(deviceSpecCard());
             content.addView(section("Identifiers"));
-            for (IdentityFields.Field f : IdentityFields.IDENTIFIERS) content.addView(identifierCard(f));
+            content.addView(identifiersCard());   // one group card, plain rows (was 15 separate cards)
+            TextView hint = new TextView(this);
+            hint.setText("Tap a row to edit · long-press to randomize just that field");
+            hint.setTextColor(Theme.DIM); hint.setTextSize(Theme.T_CAPTION);
+            hint.setPadding(dp(Theme.S4) + dp(Theme.S1), dp(Theme.S1), dp(Theme.S4), dp(Theme.S2));
+            content.addView(hint);
         }
     }
 
@@ -1268,6 +1273,7 @@ public class MainActivity extends Activity {
                             ? uniqueAppDataLabel(fpLabel + "-" + shortPkg(pkg))
                             : uniqueAppDataLabel(Vault.makeLabel(shortPkg(pkg)));
                     String verr = appDataVault.save(label, pkg, fpLabel == null ? "" : fpLabel, device);
+                    if (verr != null) ok = false;   // the durable save FAILED — report it as an error, not success
                     msg = verr == null
                             ? "Saved " + Targets.label(this, pkg) + " login (" + out + ")"
                                 + (fpLabel != null && !fpLabel.isEmpty() ? " + fingerprint " + fpLabel : "")
@@ -1380,6 +1386,58 @@ public class MainActivity extends Activity {
         return section(s);
     }
 
+    /** ALL identifiers as ONE group card: a plain row each (label + value + include-switch), tap a row to
+     *  edit, long-press to randomize just that field. Replaces the old one-card-per-identifier soup. */
+    private View identifiersCard() {
+        LinearLayout c = card();
+        java.util.List<IdentityFields.Field> ids = IdentityFields.IDENTIFIERS;
+        for (int i = 0; i < ids.size(); i++) {
+            final IdentityFields.Field f = ids.get(i);
+            if (i > 0) c.addView(hairlineInset());
+            final boolean on = Toggles.isEnabled(prefs, f.key);
+            final String v = profile.get(f.key);
+
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.HORIZONTAL);
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            r.setMinimumHeight(dp(56));
+            r.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S3), dp(Theme.S2));
+            r.setBackground(ripple(0));
+            r.setOnClickListener(x -> {
+                if (profile.isEmpty()) { toast("No identity yet — tap Randomize first."); return; }
+                editField(f, null);
+            });
+            r.setOnLongClickListener(x -> {
+                if (profile.isEmpty()) return true;
+                final Map<String, String> ctx = new LinkedHashMap<>(profile);
+                new Thread(() -> { try { final String nv = svc.randomizeField(ctx, f.key);
+                    runOnUiThread(() -> { profile.put(f.key, nv); render(); status.setText(f.label + " randomized — Apply to push."); });
+                } catch (Throwable t) {} }).start();
+                return true;
+            });
+
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView lab = new TextView(this);
+            lab.setText(f.label); lab.setTextColor(Theme.SOFT); lab.setTextSize(Theme.T_CAPTION);
+            col.addView(lab);
+            TextView val = new TextView(this);
+            val.setText(v == null ? "—" : v);
+            val.setTextColor(on ? Theme.INK : Theme.DIM); val.setTextSize(Theme.T_LABEL);
+            val.setSingleLine(true); val.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            col.addView(val);
+            r.addView(col);
+
+            final Switch en = new Switch(this); tintSwitch(en);
+            en.setChecked(on);
+            en.setOnCheckedChangeListener((vw, isOn) -> { Toggles.set(prefs, f.key, isOn); val.setTextColor(isOn ? Theme.INK : Theme.DIM); });
+            r.addView(en);
+            c.addView(r);
+        }
+        return c;
+    }
+
     /** One identifier: label + enable toggle on the top row; the value and two SMALL inline actions
      *  (Edit / ⟳ randomize) on the second row. Compact — no full-width button row — so 15 identifiers
      *  don't dominate the scroll. Disabled (toggle off) dims the value to signal it won't be applied. */
@@ -1459,7 +1517,7 @@ public class MainActivity extends Activity {
         box.addView(in);
         if (COUPLED_DEVICE_FIELDS.contains(f.key)) {
             TextView warn = new TextView(this);
-            warn.setText("⚠ Device fields go together — edit them all to match one real phone.");
+            warn.setText("Device fields go together — edit them all to match one real phone.");
             warn.setTextColor(Theme.AMBER);
             warn.setTextSize(11);
             warn.setPadding(0, dp(8), 0, 0);
@@ -1473,7 +1531,8 @@ public class MainActivity extends Activity {
                     // Format validation applies to identifiers (android_id/imei/…); device fields have no
                     // strict format (validate() returns true) so a hand-entered device value is allowed.
                     if (!Generators.validate(f.key, nv)) { toast("Invalid " + f.label + " format — not saved."); return; }
-                    profile.put(f.key, nv); val.setText(nv);
+                    profile.put(f.key, nv);
+                    if (val != null) val.setText(nv); else render();   // null val (grouped row) -> re-render
                     status.setText(f.label + " set to a custom value — APPLY to push.");
                 })
                 .setNegativeButton("Cancel", null)
@@ -1830,25 +1889,31 @@ public class MainActivity extends Activity {
      *  tarball back to staging and run the app-data restore, and relaunch. All off the UI thread. */
     private void restoreAppData(final com.specter.module.gen.AppDataVault.Entry e) {
         if (opBusy) { toast("Busy — wait for the current operation to finish."); return; }
+        opBusy = true;   // claim the busy state so a second restore can't race this one (was checked but never set)
         status.setText("Restoring " + Targets.label(this, e.pkg) + " login…");
         new Thread(() -> {
             StringBuilder note = new StringBuilder();
-            // 1) Re-apply the linked fingerprint to this app (device identity must match the captured login),
-            //    if one is linked and still in the vault. Non-fatal if missing — the login restore still runs.
-            if (!e.fingerprint.isEmpty()) {
-                Map<String, String> fp = vault.load(e.fingerprint);
-                if (fp != null && !fp.isEmpty()) {
-                    try {
-                        // Applying wipes the app first (clean base), then writes the fingerprint profile.
-                        com.specter.module.gen.SessionMigrator.clearData(e.pkg);
-                        svc.apply(e.pkg, fp);
-                        note.append("fingerprint ").append(e.fingerprint).append(" applied; ");
-                    } catch (Throwable t) { note.append("fingerprint apply failed (").append(t.getMessage()).append("); "); }
-                } else note.append("linked fingerprint missing; ");
-            }
-            // 2) Copy the vaulted tarball back to staging, then run the safe app-data restore.
-            String err = appDataVault.restoreToStaging(e.label);
+            String err = null;
+            // 1) STAGE FIRST — copy the vaulted tarball to the staging path and confirm it's there BEFORE we
+            //    touch (wipe) the live app. If the login can't be staged, we abort with the app untouched
+            //    (the old order wiped via the fingerprint-apply first, so a staging failure destroyed the
+            //    real login with nothing to restore).
+            err = appDataVault.restoreToStaging(e.label);
             if (err == null) {
+                // 2) Re-apply the linked fingerprint (device identity must match the captured login). This
+                //    wipes the app — but the login tarball is already staged, and SessionMigrator.restore
+                //    below is a safe whole-dir swap with rollback.
+                if (!e.fingerprint.isEmpty()) {
+                    Map<String, String> fp = vault.load(e.fingerprint);
+                    if (fp != null && !fp.isEmpty()) {
+                        try {
+                            com.specter.module.gen.SessionMigrator.clearData(e.pkg);
+                            svc.apply(e.pkg, fp);
+                            note.append("fingerprint ").append(e.fingerprint).append(" applied; ");
+                        } catch (Throwable t) { note.append("fingerprint apply failed (").append(t.getMessage()).append("); "); }
+                    } else note.append("linked fingerprint missing; ");
+                }
+                // 3) Restore the staged login (safe swap + rollback).
                 try {
                     com.specter.module.gen.SessionMigrator.restore(e.pkg);
                     note.append("login restored");
@@ -1862,8 +1927,10 @@ public class MainActivity extends Activity {
             }
             final String fErr = err; final String fNote = note.toString();
             runOnUiThread(() -> {
-                if (fErr == null) { status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + "."); toast("Login restored."); }
-                else { status.setText("Restore failed: " + fErr); toast("Restore failed: " + fErr); }
+                try {
+                    if (fErr == null) { status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + "."); toast("Login restored."); }
+                    else { status.setText("Restore failed: " + fErr); toast("Restore failed: " + fErr); }
+                } finally { opBusy = false; }
             });
         }, "specter-appdata-restore").start();
     }
@@ -2425,7 +2492,7 @@ public class MainActivity extends Activity {
         t.setTextColor(Theme.SOFT);
         t.setTextSize(Theme.T_LABEL);
         t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        t.setPadding(dp(Theme.S4) + dp(Theme.S1), dp(Theme.S5), dp(Theme.S4), dp(Theme.S2));
+        t.setPadding(dp(Theme.S4) + dp(Theme.S1), dp(Theme.S4), dp(Theme.S4), dp(Theme.S2));
         return t;
     }
 
