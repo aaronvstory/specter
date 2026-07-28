@@ -1462,8 +1462,8 @@ public class MainActivity extends Activity {
         // Target apps
         // Same polished per-app cards (icon + name + LSPosed-scope warning + red ✕) as the Identity tab —
         // one consistent target UI everywhere, not a plain text list here and rich cards there.
-        content.addView(sectionLabel("Target apps"));
-        content.addView(targetHeader());
+        // Target apps live on the Identity screen (where you apply) — not duplicated here. Settings is
+        // preferences + protections only.
 
         // USA-only build: carrier + phone are always randomized within the US (T-Mobile/Verizon/
         // AT&T/Sprint/US Cellular/MVNOs, NANP numbers). No country picker — one coherent US market.
