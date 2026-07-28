@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.14.4] â 2026-07-28
+
+### Changed
+- **Saved-profile UI cleanup.** Saved entries now read like a phone, not a filename: the title is the
+  device/name and the subtitle is a readable time (âMon 07/26 Â· 2:53 PMâ) instead of the raw
+  â072726-Mon-1453-â¦â label. The Save dialog prefills the device name (blank = date/time) with a hint.
+### Fixed
+- **Save-name doubling bug.** If the clock rolled to a new minute between opening the Save dialog and
+  tapping Save, the prefilled timestamp was mistaken for a custom name and doubled into
+  â072726-Mon-1453-072726_Mon_1452___nameâ. The dialog no longer round-trips the timestamp as a name.
+
 ## [0.14.3] â 2026-07-28
 
 ### Changed

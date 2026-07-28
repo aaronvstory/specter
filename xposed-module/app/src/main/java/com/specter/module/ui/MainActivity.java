@@ -1229,14 +1229,50 @@ public class MainActivity extends Activity {
         return key;
     }
 
+    /** The user-typed NAME part of a "MMDDYY-Day-HHMM[-Name][-N]" label (empty if the entry was unnamed).
+     *  Everything after the HHMM (3rd dash-part) is the name; a trailing "-2/-3" collision suffix is dropped. */
+    private String labelName(String label) {
+        String[] p = label.split("-");
+        if (p.length <= 3) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 3; i < p.length; i++) {
+            if (i == p.length - 1 && p[i].matches("\\d{1,3}")) break;   // drop the -2/-3 dedup suffix
+            if (sb.length() > 0) sb.append('-');
+            sb.append(p[i]);
+        }
+        String name = sb.toString().replace('_', ' ').trim();
+        // Legacy entries (saved before the doubling bug was fixed) have an embedded second timestamp at the
+        // START of the name, e.g. "072726 Mon 1533 A LEHMAN" — strip a leading "MMDDYY Day HHMM" so the old
+        // rows read as cleanly as new ones.
+        name = name.replaceFirst("^\\d{6}\\s+[A-Za-z]{3}\\s+\\d{4}\\s*", "").trim();
+        return name;
+    }
+
+    /** "MMDDYY-Day-HHMM…" -> "Mon 07/26 · 2:53 PM" for the saved-row subtitle. */
+    private String labelWhen(String label) {
+        String[] p = label.split("-");
+        if (p.length < 3 || p[0].length() != 6 || p[2].length() != 4) return prettyGroup(label);
+        String date = p[1] + " " + p[0].substring(0, 2) + "/" + p[0].substring(2, 4);
+        int hh, mm;
+        try { hh = Integer.parseInt(p[2].substring(0, 2)); mm = Integer.parseInt(p[2].substring(2, 4)); }
+        catch (Exception e) { return date; }
+        String ampm = hh < 12 ? "AM" : "PM";
+        int h12 = hh % 12; if (h12 == 0) h12 = 12;
+        return date + "  ·  " + h12 + ":" + String.format(java.util.Locale.US, "%02d", mm) + " " + ampm;
+    }
+
     private View savedRow(final Vault.Entry e) {
         LinearLayout card = cardBox();
-        TextView lab = label(e.label);
+        // Clean hierarchy: the friendly NAME (the label's name part, or the device if unnamed) is the title;
+        // a readable date/time is the subtitle — instead of dumping the raw "072726-Mon-1453-Name" filename.
+        String name = labelName(e.label);
+        TextView lab = label(name.isEmpty() ? e.device : name);
         lab.setTextColor(Theme.INK);
-        lab.setTextSize(14);
+        lab.setTextSize(15);
         card.addView(lab);
-        TextView dev = value(e.device);
+        TextView dev = value(labelWhen(e.label) + (name.isEmpty() ? "" : "  ·  " + e.device));
         dev.setTextColor(Theme.SOFT);
+        dev.setTextSize(12);
         card.addView(dev);
         // Subtly show which apps this profile was applied to (by name), so a saved entry documents its
         // real scope. Empty for legacy entries saved before this was recorded.
@@ -1402,20 +1438,27 @@ public class MainActivity extends Activity {
     private void promptSaveName(final String targets) {
         if (!alive()) return;   // may be called from apply()'s background completion after the user left
         final EditText in = new EditText(this);
-        in.setText(Vault.makeLabel(""));   // prefill with the unique date/time label
+        // Prefill with the DEVICE name (e.g. "Galaxy Note 20") so the saved entry reads like a phone, not a
+        // timestamp. Leaving it blank saves under a pure date/time label. (The old prefill was the raw
+        // timestamp label, which — if the minute rolled over before Save — got treated as a custom name and
+        // doubled up into "072726-Mon-1453-072726_Mon_1452___…". Prefilling a real name avoids that entirely.)
+        String devName = (profile.getOrDefault("build_manufacturer", "") + " "
+                + profile.getOrDefault("build_model", "")).trim();
+        in.setHint("Name (optional) — blank uses the date/time");
+        in.setText(devName);
         in.setSelection(in.getText().length());
         in.setTextColor(Theme.INK);
+        in.setHintTextColor(Theme.DIM);
         in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         new AlertDialog.Builder(this)
                 .setTitle("Save identity as")
                 .setMessage("A name is prefilled — edit it if you like.")
                 .setView(in)
                 .setPositiveButton("Save", (d, w) -> {
-                    // If the user kept the prefilled label, save under it as-is; else treat their text as the name.
+                    // Whatever's typed is the name (blank -> pure date/time label). save() always prefixes the
+                    // timestamp itself, so the label sorts + groups by date regardless of the name.
                     String typed = in.getText().toString().trim();
-                    String label = typed.equals(Vault.makeLabel("")) || typed.isEmpty()
-                            ? vault.save("", profile, targets)          // prefilled/empty -> pure timestamp label
-                            : vault.save(typed, profile, targets);      // custom -> timestamp + sanitized name
+                    String label = vault.save(typed, profile, targets);
                     if (label == null) { status.setText("Save failed — could not write the vault file."); toast("Save failed."); return; }
                     status.setText("Saved as " + label);
                     toast("Saved to vault: " + label);
