@@ -673,3 +673,13 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   off. Turning Widevine off re-introduces the exact intermittent-leak failure mode we think caused GeerGit's
   non-deterministic bans (see ANTI-FINGERPRINT-STRATEGY 2026-07-29). Either lock these ON (no off switch) or
   hard-warn on toggle-off. Small, high-value robustness change.
+
+- **2026-07-29 · Capture/Restore session is at odds with the mandatory deep-clean (DESIGN FLAW, fix later).**
+  status: `bug -> rethink`. "Capture session" fails `exit 4: no session dirs (never logged in?)` when the app
+  hasn't been logged into — but the workflow WIPES the app (pm clear) before every new application, so at the
+  point a user would capture, there's often no session to capture. The feature contradicts the deep-clean it
+  ships alongside. Two problems: (a) the error is confusing/looks broken to users; (b) more fundamentally the
+  capture→restore session-migration use-case needs to happen AFTER a login and BEFORE a wipe, which the current
+  UX doesn't guide. Rethink: either capture right after login (prompt/flow), gate the button on "session
+  present", clarify the error, OR drop session-migration if it doesn't fit the wipe-per-identity model. User
+  flagged it as "useless for users as-is". Not urgent — surfaced during Cash P4 monitoring 2026-07-29.
