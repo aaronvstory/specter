@@ -38,6 +38,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   Download and re-import from there — import refuses any bundle entry that isn’t a `.tgz`/`.meta` (root
   extraction guard). Fingerprint export/import already existed; the import picker now handles both kinds.
 
+- **Apple-clean UI pass.** Removed the emoji/broom banner; primary buttons and copy use sentence case
+  (Randomize / Apply / Restore); the per-target card is a tidy collapsible section. Saved-tab logins and
+  fingerprints read as coherent cards.
+
 ### Security
 - Hardened app-data restore against a tampered archive (extraction runs as root): refuse symlink/hardlink
   entries (a name-only tar listing hides a symlink target), keep the absolute/.. path guard, swap the whole

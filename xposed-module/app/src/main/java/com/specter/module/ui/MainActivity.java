@@ -185,7 +185,7 @@ public class MainActivity extends Activity {
         // represents an identity that actually reached at least one app — saving un-applied profiles is
         // pointless/misleading.
         saveOnRandomize = new android.widget.CheckBox(this);
-        saveOnRandomize.setText("Save to vault after APPLY");
+        saveOnRandomize.setText("Save to vault after applying");
         saveOnRandomize.setTextColor(Theme.SOFT);
         saveOnRandomize.setTextSize(13);
         saveOnRandomize.setChecked(prefs.getBoolean("save_on_randomize", false));
