@@ -22,6 +22,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   deepened app-data capture (it moves the whole logged-in data, not just a “login”).
 - Dropped the emoji from the “wiped before every apply” line and the apply/restore toasts (Apple-clean copy).
 
+### Security
+- Hardened app-data restore against a tampered archive (extraction runs as root): refuse symlink/hardlink
+  entries (a name-only tar listing hides a symlink target), keep the absolute/.. path guard, swap the whole
+  data dir via two atomic renames with a single rollback point (no per-entry window that could strand a
+  login), and capture atomically (tar to a temp, verify readable, then rename over the final path).
+
 ### Verified
 - **A real logged-in DoorDash Dasher account survived a full save → `pm clear` wipe → restore → relaunch**
   — the app came back up on its authenticated home. App-data migration proven on-device.

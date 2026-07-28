@@ -437,3 +437,28 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   bracket keeps the grep from matching itself; a probe only reads the process table, so it can't self-kill.
   Verified: probe reads 1 while capturing and 0 after the kill, and the archive came out LONGER than the
   live log sampled moments earlier (194 vs 180 lines, ending on a complete line) — i.e. no truncation.
+
+- 2026-07-29 — Gauntlet on the app-agnostic SessionMigrator rewrite (code-reviewer + /codex, both
+  independently flagged the SAME critical). Fixes applied, all re-verified on-device:
+  * SYMLINK guard (critical, both reviewers): the traversal guard used `tar tzf` (names only), which HIDES
+    a symlink's target — an entry `./shared_prefs -> /data/data/other.app` passed the name check, then
+    extraction-as-root created a real symlink that a later root write follows OUT of the sandbox (a
+    root-write primitive). Fix: also run `tar tvzf | grep -qE '^[lh]'` and refuse any symlink/hardlink
+    entry. Verified: a hand-crafted symlink archive is REJECTED, a real Dasher/Cash capture (no links) is
+    ACCEPTED. Our own captures never contain links (checked both apps), so it only trips on a tampered tar.
+  * WHOLE-DIR swap replaces per-entry move-aside (codex: a mid-loop mv failure under `set -e` could strand
+    the login in a predictable aside dir that the NEXT restore's `rm -rf` then deletes). New shape: two
+    atomic renames with ONE rollback point — `mv dataDir old` (login preserved intact) then `mv stage
+    dataDir`; if the second fails, `mv old dataDir` back. `old` is deleted ONLY after the new dir is live.
+    Staging/old live UNDER /data/data (verified same filesystem as /data/data via `stat -c %m` → both
+    `/data`), so both renames are atomic (a cross-fs mv would degrade to copy+delete and lose atomicity).
+  * WORD-SPLITTING removed: the old `entries=$(ls -A stage); for d in $entries` broke on a dir name with a
+    space/glob char. The whole-dir swap sidesteps it entirely (no per-entry loop).
+  * ATOMIC capture: `tar czf $tar || [ -s $tar ]` accepted a truncated archive as "captured N bytes". New:
+    tar to `$tar.tmp`, accept ONLY tar exit 0/1 (fail loudly on ≥2 = real I/O error, not the benign
+    file-vanished race), `tar tzf` verify readable, then `mv -f` over the final path. A killed tar leaves a
+    stale .tmp, never a bad archive, and never clobbers a prior good capture mid-write.
+  Deliberately NOT done (out of threat model): archive authenticity/signing (codex #7) — the tarball is our
+  OWN capture, staged in a root-only-writable dir, never imported from an untrusted source; the symlink +
+  traversal + type guards already cover a tampered-tar scenario. Login-detection semantics (#6) left as
+  "at least one app-data dir exists" — honest enough; a truly empty dir fails the empty-archive guard.

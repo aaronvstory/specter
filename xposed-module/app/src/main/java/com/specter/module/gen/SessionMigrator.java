@@ -92,11 +92,18 @@ public final class SessionMigrator {
                 + "present=''; for d in databases shared_prefs files no_backup app_webview; do "
                 + "  [ -d " + dataDir + "/$d ] && present=1; done; "
                 + "[ -n \"$present\" ] || { echo 'no app-data dirs (never opened/logged in?)'; exit 4; }; "
-                // tar the dir contents ('.') with the excludes. `--warning=no-file-changed` + tolerating a
-                // benign exit-1 (files vanishing under a stopped-but-just-killed app) so a race can't fail us.
-                + "tar czf " + tar + " -C " + dataDir + " " + excl + " . 2>/dev/null || [ -s " + tar + " ]; "
-                + "[ -s " + tar + " ] || { echo 'capture produced an empty archive'; exit 6; }; "
-                + "chmod 644 " + tar + "; "
+                // tar the dir contents ('.') with the excludes, to a TEMP file, then verify + atomically
+                // rename over the final path — so a killed/failed tar can only leave a stale .tmp, never a
+                // truncated archive presented as good (and never clobbers a prior good capture mid-write).
+                // Tolerate ONLY tar's benign exit 1 (a file changed/vanished under the just-stopped app);
+                // any exit >=2 (I/O error, disk full) fails loudly here instead of surfacing later at restore.
+                + "tmp=" + tar + ".tmp; rm -f $tmp; "
+                // `|| true` keeps `set -e` from aborting on tar's benign exit 1; we inspect $? via a wrapper.
+                + "rc=0; tar czf $tmp -C " + dataDir + " " + excl + " . 2>/dev/null || rc=$?; "
+                + "[ $rc -eq 0 ] || [ $rc -eq 1 ] || { rm -f $tmp; echo 'tar failed (exit '$rc')'; exit 6; }; "
+                + "tar tzf $tmp >/dev/null 2>&1 || { rm -f $tmp; echo 'capture archive is unreadable'; exit 6; }; "
+                + "[ -s $tmp ] || { rm -f $tmp; echo 'capture produced an empty archive'; exit 6; }; "
+                + "chmod 644 $tmp; mv -f $tmp " + tar + "; "
                 + "echo captured $(stat -c %s " + tar + ") bytes";
     }
 
@@ -120,38 +127,52 @@ public final class SessionMigrator {
     public static String buildRestoreCommand(String pkg) {
         String dataDir = "/data/data/" + pkg;
         String tar = tarPath(pkg);
-        String stage = SESSION_DIR + "/restore-" + pkg;   // staging + aside live in the same world-tmp dir
+        // Staging + the "old" holder live UNDER the data-parent (/data/data), NOT /data/local/tmp, so the two
+        // directory renames below are same-filesystem atomic swaps (a cross-fs mv would degrade to copy+delete
+        // and lose the atomicity the rollback relies on). Both are hidden dotdirs the app can't see.
+        String stage = "/data/data/.specter-restore-" + pkg;
+        String old = "/data/data/.specter-old-" + pkg;
         return "set -e; "
                 + "test -f " + tar + " || { echo 'no staged session for " + pkg + "'; exit 3; }; "
                 + "test -d " + dataDir + " || { echo 'app " + pkg + " not installed here'; exit 4; }; "
                 // (1) archive must be a readable tar before we touch anything destructive.
                 + "tar tzf " + tar + " >/dev/null 2>&1 || { echo 'staged session is corrupt/unreadable — aborting, nothing touched'; exit 5; }; "
-                // (2) traversal guard: the archive is extracted as ROOT into app data, so no entry may be an
-                // absolute path or contain a '..' component. We tar with relative './' paths, so every
-                // legitimate entry starts './' and has no '..'. Anything else is refused. (This replaces the
-                // old two-dir allow-list, which can't work now that we carry the whole data dir.)
+                // (2) traversal guard (extraction runs as ROOT into app data). Two refusals, because the
+                // archive is staged in world-writable tmp so a swapped/tampered tar is in scope:
+                //   a) NAME guard: no absolute path, no '..' component.
+                //   b) TYPE guard: no symlink/hardlink entries. A name-only listing (`tar tzf`) hides a
+                //      symlink's target, so an entry like `./shared_prefs -> /data/data/other.app` passes a
+                //      name check, then extraction creates a real symlink that a later root write follows
+                //      OUT of the sandbox (a root-write primitive). `tar tvzf` prefixes symlinks with 'l' and
+                //      hardlinks with 'h' (verified on toybox + GNU tar); refuse either. Our own captures of
+                //      real app data contain no such links (checked on Dasher + Cash App), so this only ever
+                //      trips on a hand-crafted archive.
                 + "if tar tzf " + tar + " | grep -qE '(^/|(^|/)[.][.](/|$))'; then echo 'archive has an absolute or ../ path — refusing to extract as root'; exit 6; fi; "
+                + "if tar tvzf " + tar + " 2>/dev/null | grep -qE '^[lh]'; then echo 'archive contains a symlink/hardlink — refusing to extract as root'; exit 6; fi; "
                 + "uid=$(stat -c %u " + dataDir + "); "
-                // (3) extract to a clean staging dir and confirm something came out.
-                + "rm -rf " + stage + "; mkdir -p " + stage + "; "
+                // (3) extract to a fresh staging dir. -P is NOT passed, so tar strips leading '/' and refuses
+                // '..' on its own too; a symlink entry lands INSIDE staging and a later entry writing 'through'
+                // it still resolves under staging (we never extract with --keep-directory-symlink). Confirm
+                // something came out.
+                + "rm -rf " + stage + " " + old + "; mkdir -p " + stage + "; "
                 + "tar xzf " + tar + " -C " + stage + "; "
                 + "[ -n \"$(ls -A " + stage + " 2>/dev/null)\" ] || { rm -rf " + stage + "; echo 'archive yielded nothing'; exit 7; }; "
-                // The set of top-level entries to swap = whatever the archive actually contains (app-agnostic).
-                + "entries=$(ls -A " + stage + "); "
-                // (4) stop the app — REQUIRED; never swap data dirs under a running writer.
+                // (4) stop the app — REQUIRED; never swap the data dir under a running writer.
                 + "am force-stop " + pkg + " || { rm -rf " + stage + "; echo 'could not stop " + pkg + " — aborting, nothing touched'; exit 8; }; "
-                // (5) atomic-ish swap with rollback: move each current top-level entry aside, move the staged
-                // one in; on any failure roll every aside entry back so the app's login is never lost.
-                + "aside=" + stage + ".aside; rm -rf $aside; mkdir -p $aside; "
-                + "for d in $entries; do [ -e " + dataDir + "/$d ] && mv " + dataDir + "/$d $aside/$d; done; "
-                + "if ! ( for d in $entries; do mv " + stage + "/$d " + dataDir + "/$d; done ); then "
-                + "  echo 'swap failed — rolling back'; "
-                + "  for d in $entries; do rm -rf " + dataDir + "/$d; [ -e $aside/$d ] && mv $aside/$d " + dataDir + "/$d; done; "
-                + "  rm -rf " + stage + " $aside; exit 9; fi; "
-                // success: re-own the restored entries to THIS install's uid, recompute SELinux, clean up.
-                + "for d in $entries; do [ -e " + dataDir + "/$d ] && chown -R $uid:$uid " + dataDir + "/$d; done; "
+                // (5) WHOLE-DIRECTORY swap via two atomic renames with a single rollback point — no per-entry
+                // window where a partial move could strand the login:
+                //   a) dataDir  -> old      (live login preserved intact)
+                //   b) stage    -> dataDir  (restored data goes live)
+                // If (b) fails, put (a) back and abort; the app's original data is never left half-moved. Only
+                // after (b) succeeds do we delete `old`. (Excluded dirs like cache/oat are NOT preserved — the
+                // app regenerates them; the restored dir is exactly the captured payload.)
+                + "mv " + dataDir + " " + old + " || { rm -rf " + stage + "; echo 'could not move current data aside — nothing lost'; exit 9; }; "
+                + "if ! mv " + stage + " " + dataDir + "; then echo 'swap failed — rolling back to original login'; "
+                + "  rm -rf " + dataDir + "; mv " + old + " " + dataDir + "; rm -rf " + stage + "; exit 10; fi; "
+                + "rm -rf " + old + "; "
+                // success: re-own to THIS install's uid + recompute SELinux.
+                + "chown -R $uid:$uid " + dataDir + " 2>/dev/null || true; "
                 + "restorecon -R " + dataDir + " 2>/dev/null || true; "
-                + "rm -rf " + stage + " $aside; "
                 + "echo restored to uid $uid";
     }
 

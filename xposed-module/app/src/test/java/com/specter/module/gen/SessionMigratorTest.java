@@ -27,7 +27,7 @@ public class SessionMigratorTest {
         // whatever holds the login (databases incl. -wal/-shm, shared_prefs, files, no_backup, app_webview…)
         // for ANY app, not just a hardcoded couple of dirs.
         String cap = SessionMigrator.buildCaptureCommand("com.doordash.driverapp");
-        check(cap.contains("tar czf " + tar), "capture writes the tarball");
+        check(cap.contains("tar czf $tmp") && cap.contains("mv -f $tmp " + tar), "capture builds a tmp then publishes it to the tarball path");
         check(cap.contains("-C /data/data/com.doordash.driverapp"), "capture -C into the data dir");
         // takes the whole dir contents ('.'), not a fixed subdir list
         check(cap.matches("(?s).*-C /data/data/com.doordash.driverapp .*\\. .*"), "capture tars the whole dir ('.')");
@@ -40,12 +40,17 @@ public class SessionMigratorTest {
         // excludes OUR probe artifacts so they never ride into a restored login
         check(cap.contains("--exclude='./files/.specter_*'"), "capture excludes .specter_* probe files");
         check(cap.contains("test -d /data/data/com.doordash.driverapp"), "capture guards app-not-installed");
-        check(cap.contains("chmod 644 " + tar), "capture chmods the tarball readable");
         // it must NOT restrict to *.db (that would drop the -wal where the live token is) — we tar dirs.
         check(!cap.contains("*.db"), "capture takes whole dirs, not just .db (keeps -wal)");
         // capture stops the app first so the SQLite WAL isn't mid-write (coherent snapshot), and requires it.
         check(cap.contains("am force-stop com.doordash.driverapp"), "capture stops the app before tarring");
         check(cap.indexOf("am force-stop") < cap.indexOf("tar czf"), "capture stops BEFORE the tar");
+        // ATOMIC + integrity: tar to a .tmp, tolerate ONLY exit 0/1, verify readable, then mv over the final.
+        check(cap.contains(tar + ".tmp"), "capture writes to a .tmp first");
+        check(cap.contains("[ $rc -eq 0 ] || [ $rc -eq 1 ]"), "capture accepts only tar exit 0/1 (fails on >=2)");
+        check(cap.contains("tar tzf $tmp") && cap.indexOf("tar tzf $tmp") < cap.indexOf("mv -f $tmp"),
+                "capture verifies the archive is readable before publishing it");
+        check(cap.contains("mv -f $tmp " + tar), "capture atomically renames the tmp over the final path");
         // refuses to produce an empty archive (never-logged-in / no-data guard is real)
         check(cap.contains("empty archive"), "capture rejects an empty archive");
 
@@ -59,22 +64,31 @@ public class SessionMigratorTest {
         check(res.contains("test -f " + tar), "restore guards missing staged session");
         // (1) integrity: a `tar tzf` readability check gates everything destructive.
         check(res.contains("tar tzf " + tar + " >/dev/null"), "restore verifies the archive is readable first");
-        // (2) traversal guard: refuse absolute paths or ../ components (extraction runs as root). Now that we
-        // carry the whole data dir, the guard is path-safety, not a two-dir allow-list.
+        // (2a) name traversal guard: refuse absolute paths or ../ components (extraction runs as root).
         check(res.contains("grep -qE '(^/|(^|/)[.][.](/|$))'"), "restore refuses absolute/../ entries");
-        // (3) staging: extract to a staging dir, not straight into the data dir.
-        check(res.contains("tar xzf " + tar + " -C /data/local/tmp/specter/restore-com.doordash.driverapp"),
-                "restore extracts to a staging dir, not the live data dir");
-        // the swap set is whatever the archive holds (app-agnostic), resolved from the staging dir listing.
-        check(res.contains("entries=$(ls -A /data/local/tmp/specter/restore-com.doordash.driverapp)"),
-                "restore swaps exactly the archive's top-level entries");
-        // (4)/(5) NO destructive rm of the live dirs before the swap — the old dirs are moved ASIDE, and a
-        // failed swap rolls them back. The only `rm -rf` of a data-dir path is the rollback wipe, which is
-        // immediately followed by a restore of the aside copy.
-        check(res.contains("mv /data/data/com.doordash.driverapp/$d $aside/$d"), "restore moves current entries aside (not delete)");
+        // (2b) TYPE guard: refuse symlink/hardlink entries — a name-only listing hides a symlink's target, so
+        // a symlink entry would otherwise become a root-write primitive out of the sandbox.
+        check(res.contains("tar tvzf " + tar) && res.contains("grep -qE '^[lh]'"),
+                "restore refuses symlink/hardlink entries (type guard)");
+        // (3) staging: extract to a staging dir UNDER /data/data (same fs => atomic swap), not the live dir.
+        check(res.contains("tar xzf " + tar + " -C /data/data/.specter-restore-com.doordash.driverapp"),
+                "restore extracts to a staging dir on the same filesystem as the data dir");
+        // (4)/(5) WHOLE-DIR swap via two atomic renames with ONE rollback point. Move the live dir aside
+        // (login preserved intact), move staging in; if that fails, put the original back.
+        check(res.contains("mv /data/data/com.doordash.driverapp /data/data/.specter-old-com.doordash.driverapp"),
+                "restore moves the whole live dir aside (atomic rename, login preserved)");
+        check(res.contains("mv /data/data/.specter-restore-com.doordash.driverapp /data/data/com.doordash.driverapp"),
+                "restore renames staging into place (atomic)");
+        check(res.contains("mv /data/data/.specter-old-com.doordash.driverapp /data/data/com.doordash.driverapp"),
+                "restore rolls the original back on a failed swap");
         check(res.contains("rolling back"), "restore has a rollback path");
-        check(!res.contains("rm -rf /data/data/com.doordash.driverapp/$d; tar xzf"),
-                "restore never rm's the live dir immediately before untar (the old destructive shape)");
+        // the old login is deleted only AFTER the new one is live: the standalone `rm -rf <old>;` (its own
+        // statement, no staging path alongside) must come after the successful mv-in.
+        check(res.indexOf("mv /data/data/.specter-restore-com.doordash.driverapp /data/data/com.doordash.driverapp")
+                        < res.indexOf("rm -rf /data/data/.specter-old-com.doordash.driverapp; "),
+                "restore deletes the old login only after the new one is live");
+        // no word-split ls loop remains
+        check(!res.contains("for d in $entries"), "restore does NOT word-split an ls var");
         // force-stop must be REQUIRED (guarded), not `|| true` — never swap under a live writer.
         check(!res.contains("am force-stop com.doordash.driverapp || true"), "restore does not ignore a failed force-stop");
 
