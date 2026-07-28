@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.14.5] â 2026-07-29
+
+### Fixed
+- **Hide GPS-spoofer + proxy/tunnel apps from installed-app enumeration.** The `hide_apps` sensitive-package
+  list covered root/Xposed/hook tools but NOT fake-GPS apps (Lockito, GPS Joystick, Fake GPS) or proxy/tunnel
+  helpers (SuperProxy, tun2socks/tun2tap, shadowsocks/v2ray/clash) or MITM capture tools (HTTP Toolkit) â a
+  fraud/KYC SDK that can enumerate (QUERY_ALL_PACKAGES) treats an installed GPS-spoofer as a strong risk
+  signal even when the mock flag itself is hidden. Now hidden. Mainstream VPNs (Mullvad, etc.) are
+  deliberately KEPT visible â their presence is common/benign and hiding them is itself a tell. Found while
+  analyzing a live Cash App application trace (Lockito was installed + unhidden).
+
 ## [0.14.4] â 2026-07-28
 
 ### Changed

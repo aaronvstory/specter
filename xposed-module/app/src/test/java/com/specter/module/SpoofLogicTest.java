@@ -90,6 +90,17 @@ public class SpoofLogicTest {
         check(!SpoofLogic.isSensitivePackage("com.example.xposedhelper"), "a random app with 'xposed' in a word kept (only real framework ids matched)");
         check(SpoofLogic.isSensitivePackage("de.robv.android.xposed.installer"), "the real Xposed installer hidden");
         check(SpoofLogic.isSensitivePackage("moe.shizuku.privileged.api"), "Shizuku hidden");
+        // GPS-spoofers hidden (a fraud SDK treats an installed fake-GPS app as a strong risk signal).
+        check(SpoofLogic.isSensitivePackage("fr.dvilleneuve.lockito"), "Lockito (GPS spoofer) hidden");
+        check(SpoofLogic.isSensitivePackage("com.theappninjas.gpsjoystick"), "GPS Joystick hidden");
+        check(SpoofLogic.isSensitivePackage("com.lexa.fakegps"), "Fake GPS hidden");
+        // Proxy / tunnel helpers hidden; MITM capture tools too.
+        check(SpoofLogic.isSensitivePackage("com.scheler.superproxy"), "SuperProxy hidden");
+        check(SpoofLogic.isSensitivePackage("com.newtoolsworks.tun2tap"), "tun2tap hidden");
+        check(SpoofLogic.isSensitivePackage("tech.httptoolkit.android.v1"), "HTTP Toolkit (MITM) hidden");
+        // Mainstream VPNs deliberately KEPT (their presence is common/benign — hiding them is itself odd).
+        check(!SpoofLogic.isSensitivePackage("net.mullvad.mullvadvpn"), "Mullvad VPN kept (mainstream, benign)");
+        check(!SpoofLogic.isSensitivePackage("com.expressvpn.vpn"), "a mainstream VPN kept");
 
         // Sensor resolution/maxRange/power per type — must be positive, plausible, and stable per type.
         float[] acc = SpoofLogic.sensorRmp(1, "BMI160 accelerometer");

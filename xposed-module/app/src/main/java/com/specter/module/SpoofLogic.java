@@ -117,6 +117,15 @@ public final class SpoofLogic {
         "com.noshufou.android.su", "me.weishu.kernelsu", "kernelsu", "com.rifsxd.ksunext",
         "io.github.vvb2060", "hidemyapplist", "com.tsng.hidemyapplist",
         "riru.momo", "com.zhufucdev", "moe.shizuku",   // detection-probe / instrumentation apps (specific)
+        // GPS-SPOOFERS — a fraud/KYC SDK that CAN enumerate (declares QUERY_ALL_PACKAGES) treats an
+        // installed fake-GPS app as a strong risk signal, even when the mock flag itself is hidden. Hide them.
+        "lockito", "dvilleneuve.lockito", "fakegps", "fake.gps", "faketraveler", "mock.location",
+        "gpsjoystick", "theappninjas.gpsjoystick", "fakegpsjoystick", "location.changer", "hola.fakelocation",
+        // PROXY / VPN / tunnel apps — likewise a tell if the SDK can see them. (Legit mainstream VPNs like
+        // Mullvad are deliberately NOT hidden — their presence is common/benign; only the tunneling/proxy
+        // helpers used for IP rotation are.)
+        "superproxy", "scheler.superproxy", "tun2socks", "tun2tap", "socksdroid", "com.github.shadowsocks",
+        "v2ray", "clash", "sagernet", "httpcanary", "tech.httptoolkit",   // MITM/capture tools are a tell too
     };
 
     // Per-sensor-type {maxRange, resolution, power} — the high-entropy fields FingerprintJS hashes
