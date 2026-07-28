@@ -621,23 +621,28 @@ public class MainActivity extends Activity {
     /** The missing/stale-native-layer banner: an amber card explaining the gap + a one-tap install button.
      *  Install writes the module from the bundled asset via su, then prompts a reboot. */
     private View zygiskBanner() {
-        LinearLayout card = cardBox();
+        LinearLayout c = card();
+        // Amber left-edge accent so it reads as a warning without shouting (a thin colored bar, not a border).
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF2A2418);   // warm amber-tinted surface
+        bg.setCornerRadius(dp(Theme.R_CARD));
+        c.setBackground(bg);
+        c.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
         boolean stale = zygiskStatus.installed;   // installed but wrong version vs missing entirely
-        TextView lab = label(stale ? "Native layer out of date" : "Native layer not installed");
-        lab.setTextColor(Theme.AMBER); lab.setTextSize(14);
-        card.addView(lab);
-        TextView d = value(stale
+        TextView lab = new TextView(this);
+        lab.setText(stale ? "Native layer out of date" : "Native layer not installed");
+        lab.setTextColor(Theme.AMBER); lab.setTextSize(Theme.T_BODY);
+        lab.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        c.addView(lab);
+        TextView d = new TextView(this);
+        d.setText(stale
                 ? "An update is available. Install it to keep deep signals covered."
-                : "Without it, some deep signals still read the real device. One tap installs it.");
-        d.setTextColor(Theme.DIM); d.setTextSize(12);
-        card.addView(d);
-        Button go = button(stale ? "Update native layer" : "Install native layer", true, v -> installZygisk());
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, dp(8), 0, 0);
-        go.setLayoutParams(lp);
-        card.addView(go);
-        return card;
+                : "Without it, some deep signals still read the real device.");
+        d.setTextColor(Theme.SOFT); d.setTextSize(Theme.T_CAPTION);
+        d.setPadding(0, dp(Theme.S1), 0, dp(Theme.S3));
+        c.addView(d);
+        c.addView(secondaryButton(stale ? "Update native layer" : "Install native layer", v -> installZygisk()));
+        return c;
     }
 
     /** Install/update the bundled Zygisk native layer via su, off-thread, then prompt a reboot. */
@@ -1348,13 +1353,9 @@ public class MainActivity extends Activity {
     }
 
     private View sectionLabel(String s) {
-        TextView t = new TextView(this);
-        t.setText(s.toUpperCase());
-        t.setTextColor(Theme.GOLD);
-        t.setTextSize(11);
-        t.setLetterSpacing(0.12f);
-        t.setPadding(dp(4), dp(14), dp(4), dp(4));
-        return t;
+        // Route legacy callers to the quiet v2 section header (SOFT, sentence case, proper inset) — so every
+        // not-yet-rewritten screen loses the gold-uppercase "developer dashboard" shout automatically.
+        return section(s);
     }
 
     /** One identifier: label + enable toggle on the top row; the value and two SMALL inline actions
@@ -2336,13 +2337,18 @@ public class MainActivity extends Activity {
 
     // ---------- small view builders ----------
     private LinearLayout cardBox() {
+        // Legacy card, restyled to the v2 design language (soft radius, no heavy border, 16dp side inset)
+        // so the not-yet-rewritten screens (Vault/Settings) match the new Identity screen automatically.
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setBackground(pill(Theme.CARD, Theme.LINE));
-        c.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Theme.CARD);
+        bg.setCornerRadius(dp(Theme.R_CARD));
+        c.setBackground(bg);
+        c.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, dp(4), 0, dp(4));
+        lp.setMargins(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));
         c.setLayoutParams(lp);
         return c;
     }
