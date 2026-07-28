@@ -475,3 +475,16 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   save() cp is a non-atomic overwrite; rename() rollback has edge cases if the process dies mid-move;
   export tar cf truncates dest. Acceptable for a single-user on-device vault; revisit with temp+rename+lock
   if corruption is ever observed.
+
+- 2026-07-29 — R1 functionality review (/codex) after the UI redesign. Fixed: restoreAppData now STAGES the
+  login tarball before the fingerprint-apply wipe (old order could wipe the real login then fail to stage —
+  data loss); opBusy set/cleared (concurrent restores were possible); a failed vault-save reports error not
+  success; AppDataVault.save checks the su exit code + "copied" marker (not just dest.exists(), which a stale
+  tarball satisfied) and buildCopyIn is atomic (temp+rename); import type-guard requires REGULAR files only
+  (rejects device/fifo/socket, not just symlink/hardlink — verified on-device: fifo bundle rejected, real
+  2-regular-file export passes); relinkFingerprint validates both labels (NPE guard). DEFERRED (lower
+  severity): import extracts into the vault dir rather than a temp-then-atomic-swap — the exact-member-set +
+  regular-file + label-charset guards already make a hostile bundle very constrained and the destination is
+  the app's OWN dir; revisit if it ever matters. Note: the codex reviews for spoofing/functionality/whole-app
+  repeatedly drowned in loaded skill-file context; the FOCUSED single-file prompts (strip skills, "output only
+  findings") are what produced usable results.
