@@ -47,3 +47,4 @@ resources/*.zip
 /xposed-module/zygisk/dev-scripts/.gl-ext-test-out/
 /dist/specter-zygisk-v*.zip
 /xposed-module/app/src/main/assets/zygisk/
+backups/
