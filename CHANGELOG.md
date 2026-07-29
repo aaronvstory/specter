@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.18.1] — 2026-07-30
+
+### Changed
+- **"Save AppData" now prompts for a name** (parity with the fingerprint "Save to vault" flow, which
+  always asked). After the capture succeeds the saved login is named via a dialog prefilled with the app
+  label; the date/time is still prepended to the stored label (and shown as the row's subtitle), so the
+  name is just the human tag. Blank uses the date/time alone. Backing out leaves the capture staged and
+  unsaved (re-tap to name it) rather than silently auto-naming.
+- **Fingerprint↔AppData linking is more robust.** When saving AppData, the fingerprint the app is running
+  under is matched to an already-saved fingerprint by android_id and REUSED (never duplicated) — now with
+  an activeVaultLabel fast-path so a just-applied identity links even when a fresh vault scan would miss. The
+  AppData entry records that fingerprint label, so the Saved tab shows them joined.
 ## [0.18.0] — 2026-07-30
 
 ### Added

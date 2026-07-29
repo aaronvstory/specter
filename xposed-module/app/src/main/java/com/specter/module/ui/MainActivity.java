@@ -1259,20 +1259,17 @@ public class MainActivity extends Activity {
             try {
                 String out = capture ? SessionMigrator.capture(pkg) : SessionMigrator.restore(pkg);
                 if (capture) {
-                    // Snapshot the WHOLE logged-in state: the login tarball AND the fingerprint the app is
-                    // CURRENTLY running under — so an already-logged-in app whose fingerprint was never saved
-                    // can still be captured in one action, and restore re-applies both together.
-                    String fpLabel = ensureFingerprintSaved(pkg);   // saves the live applied fingerprint if new
-                    String device = deviceStringForPkg(pkg);
-                    String label = (fpLabel != null && !fpLabel.isEmpty())
-                            ? uniqueAppDataLabel(fpLabel + "-" + shortPkg(pkg))
-                            : uniqueAppDataLabel(Vault.makeLabel(shortPkg(pkg)));
-                    String verr = appDataVault.save(label, pkg, fpLabel == null ? "" : fpLabel, device);
-                    if (verr != null) ok = false;   // the durable save FAILED — report it as an error, not success
-                    msg = verr == null
-                            ? "Saved " + Targets.label(this, pkg) + " AppData"
-                                + (fpLabel != null && !fpLabel.isEmpty() ? " + fingerprint " + fpLabel : "")
-                            : "Captured, but vault save failed: " + verr + " (staged at " + SessionMigrator.tarPath(pkg) + ")";
+                    // Snapshot the WHOLE logged-in state: the login tarball (now STAGED by capture() above) AND
+                    // the fingerprint the app is CURRENTLY running under — so an already-logged-in app whose
+                    // fingerprint was never saved can still be captured in one action, and restore re-applies
+                    // both together. ensureFingerprintSaved reuses an existing saved fingerprint (matched by
+                    // android_id) or saves the live one if new. We DON'T write the AppData entry here — the
+                    // staged tarball waits while we ask the user to NAME it (parity with the fingerprint
+                    // "Save to vault" flow, which prompts for a name), then saveAppDataAs() does the durable save.
+                    final String fpLabel = ensureFingerprintSaved(pkg);   // saves/reuses the live applied fingerprint
+                    final String device = deviceStringForPkg(pkg);
+                    runOnUiThread(() -> promptAppDataName(pkg, fpLabel, device, statusView));
+                    return;   // the save + status update happen after the name dialog
                 } else {
                     // After restore the app was force-stopped; relaunch so it comes up on the new session.
                     try {
@@ -1293,6 +1290,74 @@ public class MainActivity extends Activity {
                 if (fOk) toast(fMsg);
             });
         }, "specter-session-" + (capture ? "cap" : "res")).start();
+    }
+
+    /** After a successful AppData capture (the login tarball is STAGED, waiting), ask the user to NAME the saved
+     *  entry — parity with the fingerprint "Save to vault" flow, which also prompts. Recognizes an already-saved
+     *  fingerprint (fpLabel, matched by ensureFingerprintSaved) and links to it. Prefill is the app label; the
+     *  date/time is always prepended to the stored label (and shown as the row's subtitle), so the name the user
+     *  types is just the human tag. Blank uses the date/time alone. The durable save runs off the UI thread. */
+    private void promptAppDataName(final String pkg, final String fpLabel, final String device, final TextView statusView) {
+        if (!alive()) {
+            // Activity gone before we could ask — fall back to an auto-named save so the capture isn't lost.
+            saveAppDataAs(pkg, defaultAppDataName(pkg), fpLabel, device, statusView);
+            return;
+        }
+        final EditText in = new EditText(this);
+        in.setText(defaultAppDataName(pkg));
+        in.setSelection(in.getText().length());
+        in.setHint("Name (optional) — blank uses the date/time");
+        in.setTextColor(Theme.INK);
+        in.setHintTextColor(Theme.DIM);
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        String fpNote = (fpLabel != null && !fpLabel.isEmpty())
+                ? "Linked to fingerprint " + labelName(fpLabel) + " — name this saved login."
+                : "Name this saved login. A date and time are added automatically.";
+        new AlertDialog.Builder(this)
+                .setTitle("Save AppData as")
+                .setMessage(fpNote)
+                .setView(in)
+                .setPositiveButton("Save", (d, w) ->
+                        saveAppDataAs(pkg, in.getText().toString().trim(), fpLabel, device, statusView))
+                .setNegativeButton("Cancel", (d, w) -> {
+                    // User backed out — the capture is staged but not vaulted. Say so; nothing is lost if they
+                    // re-tap Save AppData (a fresh capture just re-stages), and the staged tar is harmless.
+                    statusView.setTextColor(Theme.DIM);
+                    statusView.setText("Capture ready — not saved (tap Save AppData to name it).");
+                })
+                .show();
+    }
+
+    /** The prefilled AppData name: the app's own label (e.g. "Dasher"), which reads cleanly since the date/time
+     *  is prepended to the stored label separately. Falls back to the short package tail. */
+    private String defaultAppDataName(String pkg) {
+        String lbl = Targets.label(this, pkg);
+        return (lbl == null || lbl.isEmpty() || lbl.equals(pkg)) ? shortPkg(pkg) : lbl;
+    }
+
+    /** Durable-save the staged AppData capture under a date/time-stamped label carrying the user's {@code name}
+     *  (blank -> date/time only), linked to {@code fpLabel}. Runs the su copy off the UI thread, then reports. */
+    private void saveAppDataAs(final String pkg, final String name, final String fpLabel, final String device,
+                               final TextView statusView) {
+        statusView.setTextColor(Theme.DIM);
+        statusView.setText("Saving AppData…");
+        new Thread(() -> {
+            // makeLabel prepends the MMDDYY-Day-HHMM stamp (same scheme as the fingerprint vault), so the label
+            // sorts + groups by date and the row shows name + time regardless of what was typed. uniqueAppDataLabel
+            // sanitizes to the AppData charset + disambiguates a same-minute collision.
+            String label = uniqueAppDataLabel(Vault.makeLabel(name));
+            String verr = appDataVault.save(label, pkg, fpLabel == null ? "" : fpLabel, device);
+            final boolean ok = verr == null;
+            final String msg = ok
+                    ? "Saved " + Targets.label(this, pkg) + " AppData"
+                        + (fpLabel != null && !fpLabel.isEmpty() ? " + fingerprint " + labelName(fpLabel) : "")
+                    : "Capture ok, but vault save failed: " + verr + " (staged at " + SessionMigrator.tarPath(pkg) + ")";
+            runOnUiThread(() -> {
+                statusView.setTextColor(ok ? Theme.SAGE : Theme.RED);
+                statusView.setText(msg);
+                if (ok) { toast(msg); render(); }   // render so the Saved tab picks up the new entry
+            });
+        }, "specter-appdata-save").start();
     }
 
     /** Turn a raw {@link SessionMigrator.SessionException} ("... exited 3: no staged session for <pkg>") into a
@@ -1332,14 +1397,22 @@ public class MainActivity extends Activity {
         Map<String, String> live = readLiveProfile(pkg);
         if (live == null || live.isEmpty()) return null;
         String liveAid = live.get("android_id");
-        // Already saved? match on android_id (the unique per-identity key). Reuse that label.
         if (liveAid != null && !liveAid.isEmpty()) {
+            // Fast path: the fingerprint the user just applied/saved is tracked in activeVaultLabel. If its
+            // android_id matches the live one, reuse it directly — this is the authoritative "current identity"
+            // and prevents a duplicate when the vault scan below would otherwise re-derive a fresh save.
+            if (activeVaultLabel != null && !activeVaultLabel.isEmpty()) {
+                Map<String, String> act = vault.load(activeVaultLabel);
+                if (act != null && liveAid.equals(act.get("android_id"))) return activeVaultLabel;
+            }
+            // Otherwise scan the vault: any saved fingerprint with the same android_id (the unique per-identity
+            // key) IS this identity — reuse + link to it, never create a duplicate.
             for (Vault.Entry e : vault.list()) {
                 Map<String, String> saved = vault.load(e.label);
                 if (saved != null && liveAid.equals(saved.get("android_id"))) { activeVaultLabel = e.label; return e.label; }
             }
         }
-        // New identity -> save it as a fingerprint, named after the app so it's recognizable in the list.
+        // Genuinely new identity (no saved fingerprint shares its android_id) -> save it, named after the app.
         String label = vault.save(shortPkg(pkg), live, pkg);
         if (label != null) activeVaultLabel = label;
         return label;
