@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Default scope suggestion shown in LSPosed. DevInfo (the safe test target) ONLY.
-         NEVER default to Dasher/DoorDash/system: (1) GeerGit owns the fleet apps, (2) Dasher is
-         pairip-protected and kills broad hooks / crashes on tamper. Scope real apps only after the
-         hooks are proven pairip-safe (narrow, identifier-getters only). See docs/PAIRIP-CONSTRAINT.md. -->
+    <!-- Default scope suggestion shown in LSPosed. DevInfo (the safe test target) + "android" (System
+         Framework — REQUIRED for the system_server app-hiding gate that closes the raw-binder bypass; the
+         PmsHook only loads in the "android" process). The framework hook is self-disabling on any error
+         (fail-open), never filters system/priv callers, and only hides sensitive pkgs from OUR scoped
+         targets — so enabling framework scope is safe.
+         NEVER default to Dasher/DoorDash: (1) GeerGit owns the fleet apps, (2) Dasher is pairip-protected
+         and kills broad hooks / crashes on tamper. Scope real apps only after the hooks are proven
+         pairip-safe (narrow, identifier-getters only). See docs/PAIRIP-CONSTRAINT.md. -->
     <string-array name="xposed_scope">
         <item>com.liuzh.deviceinfo</item>
+        <item>android</item>
     </string-array>
 </resources>

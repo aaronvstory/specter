@@ -14,8 +14,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   UID→name lookups (getPackagesForUid/getNameForUid), and getInstallSourceInfo — not just the installed-
   package list and direct getPackageInfo lookups. An SDK can no longer infer a hidden app is present by
   resolving a known intent or walking UIDs. Keyed off the same category denylist (root/hook/GPS/proxy tells),
-  so it works for any user, not a fixed app set. (Known remaining hole: a raw IPackageManager binder bypass
-  — only a system_server hook closes that; see docs/DECISIONS.md + IDEAS.md.)
+  so it works for any user, not a fixed app set.
+- **System-server app-hiding gate closes the raw-binder bypass.** A new PackageManagerService hook
+  (AppsFilter.shouldFilterApplication, API 30+) hides sensitive packages from our scoped targets at the
+  framework visibility gate — so an SDK calling IPackageManager directly (skipping the app-side hooks)
+  is also filtered. Requires enabling “System Framework” scope in LSPosed. Safe by design: fail-open kill
+  switch on any error, never filters system/privileged callers or critical packages, derives the caller
+  from the hook arg (no re-entrant PMS call — no deadlock), and only hides from OUR scoped apps.
 
 ## [0.17.6] — 2026-07-29
 

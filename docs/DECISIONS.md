@@ -2,14 +2,20 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
-- **2026-07-29 (v0.17.7): app-hiding stays app-side (per-app PackageManager wrapper), NOT system_server.**
+- **2026-07-29 (v0.17.7): app-hiding is now BOTH app-side AND system_server (HMA-style gate ADDED).**
   Gap analysis vs HideMyApplist (Dr-TSNG/Hide-My-Applist): HMA hooks ONE chokepoint in system_server
-  (`shouldFilterApplication`/`filterAppAccessLPr`) covering every read path + the raw-binder bypass; we hook
-  `ApplicationPackageManager` method-by-method. We CLOSED the high-value app-side gaps (intent resolution,
-  UID→name, getInstallSourceInfo) in v0.17.7. Remaining known hole: an SDK grabbing the raw IPackageManager
-  binder via ServiceManager.getService("package") bypasses app-side hooks entirely — only a system_server
-  hook closes that. Deferred (bigger, version-fragile, bootloop-risk); revisit if a target proves to use the
-  binder bypass. See docs/IDEAS.md.
+  (`shouldFilterApplication`) covering every read path + the raw-binder bypass; we hooked
+  `ApplicationPackageManager` method-by-method. v0.17.7 closed BOTH: (1) app-side gaps (intent resolution,
+  UID→name, getInstallSourceInfo) AND (2) a new `PmsHook` on `AppsFilter.shouldFilterApplication` (API 30+)
+  in system_server (`PmsHook.java`), which closes the raw-IPackageManager-binder bypass. KEY SAFETY CALL vs
+  HMA: we derive the caller from the `callingSetting` HOOK ARG, NOT by calling `getPackagesForUid` back into
+  PMS — codex flagged that a synchronous self-call into PMS from its own visibility gate risks lock
+  inversion/deadlock in system_server (recursion terminates via the cleared-identity system-uid guard, but
+  the lock risk remained). Reading the arg is strictly safer and needs no PMS call. Gate is fail-open
+  (kill switch on any throwable), never filters system/priv callers or NEVER_HIDE pkgs, only hides sensitive
+  pkgs from OUR scoped targets. Requires "System Framework" LSPosed scope (added to the scope suggestion).
+  Both devices are API 30, so only the API-30 `AppsFilter` path is verified; 33/34 (`AppsFilterImpl`, arg
+  shift + `mName` field) are coded but untested — add a device to verify before claiming newer-API support.
 
 - **2026-07-29 (v0.17.3): kept the bottom-nav tab named "Identity", not "Fingerprint"** (user-confirmed).
   The tab is broader than one fingerprint — it holds the device fields, the IDs, the carrier, AND the target

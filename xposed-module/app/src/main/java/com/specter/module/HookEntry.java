@@ -41,6 +41,13 @@ public class HookEntry implements IXposedHookLoadPackage {
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         final String pkg = lpparam.packageName;
+
+        // system_server ("android"): the ONE place we can close the raw-IPackageManager-binder app-hiding
+        // bypass. A per-app PackageManager hook (below) is skipped by an SDK that calls the binder directly;
+        // hooking the PackageManagerService visibility gate here filters at the source, for every caller.
+        // Requires the module to be scoped to "System Framework" in LSPosed.
+        if ("android".equals(pkg)) { PmsHook.install(lpparam); return; }
+
         final Map<String, String> p = loadProfile(pkg);
         if (p == null || p.isEmpty()) return; // not a scoped/targeted app -> do nothing
         XposedBridge.log("[specter] active for " + pkg + " (" + p.size() + " fields)");
