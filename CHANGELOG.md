@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.8] — 2026-07-30
+
+### Fixed
+- **US profiles now pick US-market Samsung models.** The generator filtered devices by BRAND only, so a
+  US profile could get an international Samsung (e.g. SM-A525F) paired with a US carrier — an internal
+  coherence tell. Samsung models are now constrained to US suffixes (U/U1/V/A/T/P, W=Canada); other US
+  brands (Google/Motorola/LGE) are unaffected. Byte-parity mirrored in Java (Profile.isUsModel).
+- **The system_server app-hiding gate now installs regardless of LSPosed’s framework-scope key.** Some
+  LSPosed builds deliver the framework process as “android”, others as “system”; PmsHook now triggers on
+  BOTH, and both are in the scope suggestion.
+
 ## [0.17.7] — 2026-07-29
 
 ### Added

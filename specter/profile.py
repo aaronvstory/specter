@@ -25,6 +25,16 @@ SOC_TOPOLOGY_PATH = os.path.join(ROOT, "data", "soc_topology.json")
 
 US_COMMON_BRANDS = {"samsung", "google", "motorola", "lge"}
 
+# Samsung sells REGION-specific models: an "F"/"FN"/"M"/"B"/"G" suffix is international (Euro/Asia/LATAM),
+# while US carrier units end in U/U1/V/A/T/P (W=Canada). A US-only profile pairing an intl Samsung model
+# with a US carrier is an internal coherence tell, so for Samsung we keep only US-market model numbers.
+# Other US brands (Google/Motorola/LGE) do not carry this US-vs-intl carrier-suffix split, so they pass.
+_US_SAMSUNG_MODEL = __import__("re").compile(r"\d(U1?|U2|U3|V|A|T|P|W)$")
+def _is_us_model(brand, model):
+    if (brand or "").lower() != "samsung":
+        return True
+    return bool(_US_SAMSUNG_MODEL.search(model or ""))
+
 # real US carriers (MCC 310/311) so the SIM identity is coherent for a US driver
 US_CARRIERS = [
     ("310260", "T-Mobile"), ("311480", "Verizon"), ("310410", "AT&T"),
@@ -174,7 +184,8 @@ def _pick_device(r, devices, us_bias, brands=None):
     if us_bias:
         pool_brands = brands if brands is not None else US_COMMON_BRANDS
         pool = [d for d in devices
-                if len(d) > 2 and d[2].lower() in pool_brands and _is_plausible_phone(d)]
+                if len(d) > 3 and d[2].lower() in pool_brands and _is_plausible_phone(d)
+                and _is_us_model(d[2], d[3])]
         if pool:
             return pool[r(len(pool))]
     return devices[r(len(devices))]

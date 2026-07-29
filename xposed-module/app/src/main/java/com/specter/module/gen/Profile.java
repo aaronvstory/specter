@@ -105,12 +105,23 @@ public final class Profile {
         return releaseMajorOf(dev) >= MIN_ANDROID_MAJOR;
     }
 
+    // Mirror of profile._is_us_model — MUST match or the device pool differs and byte-parity breaks.
+    // Samsung sells region-specific models (intl "F"/"FN"/"M"/... vs US carrier U/U1/V/A/T/P, W=Canada);
+    // an intl model + US carrier is a coherence tell, so for Samsung keep only US-market models. Other US
+    // brands don't carry this split, so they pass.
+    private static final java.util.regex.Pattern US_SAMSUNG_MODEL =
+            java.util.regex.Pattern.compile("\\d(U1?|U2|U3|V|A|T|P|W)$");
+    static boolean isUsModel(String brand, String model) {
+        if (!"samsung".equals(brand == null ? "" : brand.toLowerCase())) return true;
+        return US_SAMSUNG_MODEL.matcher(model == null ? "" : model).find();
+    }
+
     static List<String> pickDevice(Generators.Rng r, List<List<String>> devices, boolean usBias) {
         if (usBias) {
             List<List<String>> pool = new ArrayList<>();
             for (List<String> d : devices)
-                if (d.size() > 2 && US_COMMON_BRANDS.contains(d.get(2).toLowerCase())
-                        && isPlausiblePhone(d)) pool.add(d);
+                if (d.size() > 3 && US_COMMON_BRANDS.contains(d.get(2).toLowerCase())
+                        && isPlausiblePhone(d) && isUsModel(d.get(2), d.get(3))) pool.add(d);
             if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
         }
         return devices.get(r.next(devices.size()));
@@ -121,8 +132,8 @@ public final class Profile {
             Set<String> brands = new HashSet<>(Arrays.asList(country.commonBrands));
             List<List<String>> pool = new ArrayList<>();
             for (List<String> d : devices)
-                if (d.size() > 2 && brands.contains(d.get(2).toLowerCase())
-                        && isPlausiblePhone(d)) pool.add(d);
+                if (d.size() > 3 && brands.contains(d.get(2).toLowerCase())
+                        && isPlausiblePhone(d) && isUsModel(d.get(2), d.get(3))) pool.add(d);
             if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
         }
         return devices.get(r.next(devices.size()));

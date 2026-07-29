@@ -11,5 +11,6 @@
     <string-array name="xposed_scope">
         <item>com.liuzh.deviceinfo</item>
         <item>android</item>
+        <item>system</item>
     </string-array>
 </resources>
