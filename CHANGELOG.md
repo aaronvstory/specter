@@ -3,6 +3,26 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.1] — 2026-07-29
+
+### Changed
+- **Vault polish + consistent vocabulary.** Standardized on two terms, explained once on the Saved page:
+  a **Fingerprint** is a saved device config; **AppData** is a saved app login. “Device profiles” /
+  “login” wording is gone from the UI.
+  - Facet chips are now **All / Fingerprints / AppData / Both** (Both = entries that pair a fingerprint with
+    linked AppData). Selecting a chip no longer shifts its size (fill-only, no contrasting border).
+  - Each saved row’s overflow is now an **inline chevron-expand** strip (Rename · Export · Delete) inside
+    the card, replacing the raw pop-up list. Restore stays the dominant action.
+  - **Every app row has an icon**: uninstalled apps get a generated monogram tile + a clean title-cased name
+    (e.g. “Ubercab Driver”) instead of a raw “com.ubercab.driver” string.
+- **Identity hero tightened.** “Save to vault on apply” is a compact one-line checkbox (was a tall titled
+  pane). “Generate another identity” is an outlined secondary button paired under Apply (was floating grey
+  text). The Target-apps card now shows a clear divider + “Selected” caption between the Change control and
+  the app list.
+- **Native layer updates silently.** An out-of-date native layer is now re-written on launch automatically
+  (no reboot needed for the file), so the “Native layer update available” banner no longer nags on every
+  launch — it appears only when the layer isn’t installed at all.
+
 ## [0.17.0] — 2026-07-29
 
 ### Changed
