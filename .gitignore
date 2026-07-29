@@ -55,3 +55,6 @@ backups/
 
 # local on-device verification screenshots (never tracked)
 .shots/
+
+# Serena MCP project cache
+.serena/
