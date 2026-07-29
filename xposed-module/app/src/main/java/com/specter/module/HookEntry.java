@@ -1036,6 +1036,11 @@ public class HookEntry implements IXposedHookLoadPackage {
         {"gsm.version.baseband", "build_radio"}, {"ril.baseband", "build_radio"},
         {"ro.board.platform", "soc_platform"}, {"ro.hardware.chipname", "soc_platform"},
         {"ro.soc.model", "soc_platform"},
+        // ro.chipname / ro.mediatek.platform are the SoC-codename siblings a fingerprinter also reads
+        // (Cash App reads both). Aliasing them to soc_platform keeps the whole SoC-name set coherent — else
+        // ro.chipname leaks the REAL SoC codename while ro.board.platform says the spoofed one (an internal
+        // contradiction that is itself a tell). Empty on the Pixel 4, but populated on many devices.
+        {"ro.chipname", "soc_platform"}, {"ro.mediatek.platform", "soc_platform"},
         // Build.MODEL & friends exist per-PARTITION on Android 10+ (system/vendor/odm/product/system_ext);
         // aliasing only ro.product.model + .vendor.* left odm/product/system_ext leaking the REAL device.
         {"ro.product.model", "build_model"}, {"ro.product.vendor.model", "build_model"},

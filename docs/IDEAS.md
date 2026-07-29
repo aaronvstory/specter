@@ -5,6 +5,16 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-30 - Hide/spoof VPN/proxy signal (SuperProxy et al.)** - status: `idea`. Hypothesis: the income
+  apps may flag "device is behind a VPN/proxy" as a risk signal (e.g. FPJS `vpn`/`proxy` products, or an
+  in-app check). Investigate what a fingerprinter actually reads to detect a proxy/VPN on Android — the
+  `tun0`/`ppp0` network interface presence, `ConnectivityManager` VPN transport
+  (`NetworkCapabilities.TRANSPORT_VPN`), `Settings` proxy props, `http.proxyHost`/`https.proxyHost` system
+  props, timezone-vs-IP mismatch — then decide what Specter can neutralize (hook the VPN-transport /
+  interface-enumeration reads so a scoped app sees NO active VPN even when SuperProxy is routing). MEASURE
+  first with the trace + FPJS Server API (does the `vpn`/`proxy` product actually fire?) before building —
+  don't assume it's checked. Related: the trace-what-they-read discipline; pairs with the FPJS Server API tool.
+
 - **2026-07-28 - Widevine L1->L3 liboemcrypto bind-mount (byedentity parity)** - status: `shipped` (0.14.0).
   SHIPPED + PROVEN on-device (Pixel 4a): `WidevineL3` generates a Magisk module (module.prop + post-fs-data.sh
   that `mount -o bind`s an EMPTY stub over /vendor/lib{,64}/liboemcrypto.so), installed/removed via su behind a

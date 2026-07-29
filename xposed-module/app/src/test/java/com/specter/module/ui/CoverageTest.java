@@ -15,6 +15,9 @@ public final class CoverageTest {
         eq(Coverage.of("prop", "ro.serialno"), Coverage.State.SPOOFED, "serialno");
         eq(Coverage.of("prop", "gsm.version.baseband"), Coverage.State.SPOOFED, "baseband");
         eq(Coverage.of("prop", "ro.board.platform"), Coverage.State.SPOOFED, "board.platform");
+        // SoC-codename siblings now aliased (v0.18.2) — the whole SoC-name set is coherent.
+        eq(Coverage.of("prop", "ro.chipname"), Coverage.State.SPOOFED, "ro.chipname (aliased)");
+        eq(Coverage.of("prop", "ro.mediatek.platform"), Coverage.State.SPOOFED, "ro.mediatek.platform (aliased)");
 
         // Generic/non-identity props -> REAL (we deliberately don't spoof)
         eq(Coverage.of("prop", "vendor.debug.egl.swapinterval"), Coverage.State.REAL, "vendor.debug");
@@ -28,6 +31,9 @@ public final class CoverageTest {
         eq(Coverage.of("prop", "ro.hardware"), Coverage.State.SPOOFED, "ro.hardware (aliased)");
         eq(Coverage.of("prop", "ro.build.version.codename"), Coverage.State.REAL, "codename (universal REL)");
         eq(Coverage.of("prop", "ro.build.version.preview_sdk"), Coverage.State.REAL, "preview_sdk (universal 0)");
+        // touch/input tuning props are not device-identifying -> REAL (were falling through to UNKNOWN)
+        eq(Coverage.of("prop", "ro.input.resampling"), Coverage.State.REAL, "ro.input.* (input tuning)");
+        eq(Coverage.of("prop", "persist.input.velocitytracker.strategy"), Coverage.State.REAL, "persist.input.*");
 
         // Spoofed files -> SPOOFED
         eq(Coverage.of("open", "/proc/cpuinfo"), Coverage.State.SPOOFED, "cpuinfo");

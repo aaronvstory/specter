@@ -23,6 +23,7 @@ public final class Coverage {
     private static final Set<String> SPOOFED_PROPS = new HashSet<>(Arrays.asList(
         // radio / kernel / soc
         "gsm.version.baseband", "ril.baseband", "os.version", "ro.board.platform", "ro.soc.model",
+        "ro.chipname", "ro.mediatek.platform",
         // boot.* identity + lock state
         "ro.boot.bootloader", "ro.boot.hardware", "ro.boot.hardware.platform", "ro.boot.serialno",
         "ro.boot.flash.locked", "ro.boot.vbmeta.device_state", "ro.boot.verifiedbootstate",
@@ -67,8 +68,9 @@ public final class Coverage {
             if (target.startsWith("vendor.") || target.startsWith("debug.") || target.startsWith("sys.")
                     || target.startsWith("cache_key.") || target.equals("ro.arch")
                     || target.startsWith("ro.product.cpu.abilist") || target.startsWith("ro.hardware.")
+                    || target.startsWith("ro.input.") || target.startsWith("persist.input.")
                     || target.equals("ro.build.version.codename") || target.equals("ro.build.version.preview_sdk"))
-                return State.REAL;
+                return State.REAL;   // touch/input tuning + generic props — not device-identifying
             return State.UNKNOWN;
         }
         // Files: exact spoofed-file matches, plus the strict per-core cpu_capacity family.

@@ -38,6 +38,10 @@ public class ProbeActivity extends Activity {
     /** Props Specter spoofs via the Java SystemProperties hook — read each BOTH ways and compare. */
     private static final String[] DUAL_READ_PROPS = {
         "ro.board.platform", "ro.hardware.chipname", "gsm.version.baseband",
+        // ro.chipname + ro.mediatek.platform: the SoC-codename siblings a fingerprinter also reads (Cash App
+        // does). Aliased to soc_platform since v0.18.2 — dual-read here so a regression self-reports. Empty on
+        // Qualcomm hosts (Pixel), populated on others; both must read the SPOOFED soc value on a scoped app.
+        "ro.chipname", "ro.mediatek.platform",
         "ro.product.model", "ro.product.brand", "ro.product.manufacturer",
         "ro.product.device", "ro.product.name", "ro.build.id", "ro.build.fingerprint",
         "ro.build.version.release", "ro.build.version.incremental", "ro.build.host",

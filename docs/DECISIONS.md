@@ -532,3 +532,15 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   it's per-device, removable, and installable with no PC — vs the old by-hand hosts+settings fleet steps.
 - "Set up everything" installs Widevine L3 too (in the default, not opt-in): these are fleet income phones,
   DRM HD playback is irrelevant. Widevine stays a Settings toggle as well for later removal.
+
+## 2026-07-30 — ro.chipname / ro.mediatek.platform aliased to soc_platform (v0.18.2)
+- A live trace of Cash App showed it reads ro.chipname + ro.mediatek.platform, which were NOT in PROP_ALIASES
+  while their siblings (ro.board.platform / ro.hardware.chipname / ro.soc.model) all alias to soc_platform.
+  That left ro.chipname leaking the REAL SoC codename on a host where it's populated — an internal
+  contradiction (chipname says the real SoC, board.platform says the spoofed one) that is itself a tell.
+  Aliased both to soc_platform in BOTH layers (HookEntry.PROP_ALIASES + native spoof_logic.h, kept lockstep).
+- Verified on the 4a probe (added ro.chipname + ro.mediatek.platform to DUAL_READ_PROPS so a regression
+  self-reports): both read the spoofed soc value (sdm660) on java AND native. Empty on Qualcomm hosts like
+  the Pixel, but Specter targets ANY Android — a MediaTek host would otherwise leak.
+- Live-trace Coverage: ro.input.* / persist.input.* now classify REAL (touch/velocity tuning, not
+  device-identifying) instead of falling through to UNKNOWN and muddying the read tally.

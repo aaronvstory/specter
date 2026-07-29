@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.18.2] — 2026-07-30
+
+### Fixed
+- **Closed a SoC-name coherence leak: ro.chipname + ro.mediatek.platform are now spoofed.** A live trace of
+  Cash App showed it reads ro.chipname and ro.mediatek.platform, which Specter did NOT alias — so while
+  ro.board.platform / ro.hardware.chipname / ro.soc.model all read the profile's SoC, ro.chipname leaked the
+  REAL SoC codename (an internal contradiction that is itself a fingerprint). Both now alias to soc_platform,
+  in BOTH the Java hook (HookEntry.PROP_ALIASES) and the native Zygisk layer (spoof_logic.h), so the whole
+  SoC-name set is coherent on any host device (empty on the Pixel 4, but Specter targets any Android).
+- **Live-trace: input-tuning props read REAL, not "unknown".** ro.input.* / persist.input.* (touch/velocity
+  tuning, not device-identifying) are now classified REAL so the trace's read tally isn't muddied by them.
 ## [0.18.1] — 2026-07-30
 
 ### Changed
