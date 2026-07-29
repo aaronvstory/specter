@@ -40,6 +40,19 @@ public final class CoverageTest {
         eq(Coverage.of("open", "/proc/meminfo"), Coverage.State.SPOOFED, "meminfo");
         eq(Coverage.of("open", "/proc/version"), Coverage.State.SPOOFED, "version");
         eq(Coverage.of("open", "/sys/devices/system/cpu/cpu3/cpu_capacity"), Coverage.State.SPOOFED, "cpu_capacity");
+        // per-core cpufreq + topology now redirected (the SD855-vs-SD845 coherence leak)
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu7/cpufreq/cpuinfo_max_freq"), Coverage.State.SPOOFED, "cpuinfo_max_freq");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq"), Coverage.State.SPOOFED, "scaling_min_freq");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu4/topology/physical_package_id"), Coverage.State.SPOOFED, "physical_package_id");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu6/topology/core_siblings_list"), Coverage.State.SPOOFED, "core_siblings_list");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/online"), Coverage.State.SPOOFED, "cpu/online");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/possible"), Coverage.State.SPOOFED, "cpu/possible");
+        // guard: a non-per-core cpu path (cpuidle) must NOT false-match the per-core matcher
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpuidle/current_driver"), Coverage.State.UNKNOWN, "cpuidle (not per-core)");
+        eq(Coverage.of("open", "/proc/modules"), Coverage.State.SPOOFED, "/proc/modules (generic)");
+        // cache/* is intentionally NOT spoofed (size/level would stay real -> incoherent) — must read UNKNOWN
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index2/shared_cpu_list"), Coverage.State.UNKNOWN, "cache shared (not spoofed)");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index2/size"), Coverage.State.UNKNOWN, "cache size (not spoofed)");
         eq(Coverage.of("open", "/proc/mounts"), Coverage.State.SPOOFED, "mounts (filtered)");
 
         // Non-identity files -> REAL

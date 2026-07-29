@@ -5,7 +5,22 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
-- **2026-07-30 - Hide/spoof VPN/proxy signal (SuperProxy et al.)** - status: `idea`. Hypothesis: the income
+- **2026-07-30 - Per-SoC CPU cache dataset (size/level/sharing)** - status: `idea`. Cash App reads
+  /sys/.../cpu<N>/cache/index<K>/{size,level,type,shared_cpu_list} — a cache fingerprint. v0.18.3 does NOT
+  spoof it (spoofing only shared_cpu_list while size/level stay real would fabricate an inconsistent topology —
+  codex flagged). To close it properly, build a per-SoC cache dataset (L1i/L1d/L2/L3 sizes + which cores share
+  each level + the index numbering) for all ~29 SoCs, then redirect the whole cache dir coherently. Needs
+  accurate kernel-DTS-sourced data per SoC. Medium effort, medium value (it's a secondary CPU signal; the
+  cpufreq+topology leak that flagged an account is already closed).
+- **2026-07-30 - GPU/graphics prop leaks (ro.hardware.gralloc, ro.vendor.graphics.memory)** - status: `idea`.
+  Empty on the Pixel 4 but populated on other hosts — they leak the real GPU vendor/mem. Needs per-SoC/GPU
+  coherent values to alias them. Low urgency (empty on current fleet); revisit if a host populates them.
+- **2026-07-30 - Native /proc/net VPN redirect** - status: `idea`. The Java hide_vpn hook (v0.18.3) covers
+  every in-process Java detection surface. A native NDK fingerprinter reading /proc/net/route or /proc/net/tcp
+  directly (localhost proxy port, tun route) would bypass it. Add a Zygisk /proc/net redirect if a real app is
+  found reading it — MEASURE first (Cash doesn't check VPN at all this session, so low priority).
+
+- **2026-07-30 - Hide/spoof VPN/proxy signal (SuperProxy et al.)** - status: `shipped` (v0.18.3, Java surfaces). Hypothesis: the income
   apps may flag "device is behind a VPN/proxy" as a risk signal (e.g. FPJS `vpn`/`proxy` products, or an
   in-app check). Investigate what a fingerprinter actually reads to detect a proxy/VPN on Android — the
   `tun0`/`ppp0` network interface presence, `ConnectivityManager` VPN transport

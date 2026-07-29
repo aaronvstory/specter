@@ -544,3 +544,29 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   the Pixel, but Specter targets ANY Android — a MediaTek host would otherwise leak.
 - Live-trace Coverage: ro.input.* / persist.input.* now classify REAL (touch/velocity tuning, not
   device-identifying) instead of falling through to UNKNOWN and muddying the read tally.
+
+## 2026-07-30 — CPU-fingerprint coherence: cpufreq + topology + cache + /proc/modules (v0.18.3)
+- ROOT CAUSE of an account flag (Cash App, "suspicious activity"): a live trace showed Cash reads every
+  core's cpufreq (cpuinfo_max/min_freq), topology (physical_package_id/core_siblings_list/cluster_cpus_list),
+  and cache sharing (cache/index*/shared_cpu_list) — NONE spoofed. So a profile claiming an LG G7 (SD845,
+  4+4 two-cluster) leaked the REAL Pixel 4 SD855 (1+3+4 three-cluster: 1785600/2419200/2841600 kHz). A
+  fingerprinter reading those sees an SD855 masquerading as an SD845 — the coherence tell.
+- FIX: native Zygisk redirect of all per-core cpufreq (from new per-SoC cpu_max_freq/cpu_min_freq profile
+  fields, byte-parity Java↔Python, all 29 SoCs), topology (DERIVED from the cpu_capacity vector — a run of
+  equal capacities = one cluster, so no new profile field needed), cache shared_cpu_list (L1 per-core, L2
+  per-cluster, L3 all-cores), and online/possible/kernel_max. Also /proc/modules -> a generic module list
+  (real names like "ftm5" leak the exact device's touchscreen driver).
+- WHY derive topology from cpu_capacity instead of a new field: the cluster structure is fully determined by
+  the capacity vector (already per-SoC + byte-parity), so deriving it needs no dataset expansion and can't
+  drift out of sync with cpu_capacity.
+- Probe self-checks it: sys_cpu_max_freq_sig / pkg_sig / siblings dual-read. Verified on the 4a — an sdm845
+  profile on the real sm7150 host reads the spoofed SD845 signature, host-independent.
+- DEFERRED (lower value, minor/empty on Pixel): cache index size/level (needs per-SoC L1/L2/L3 size dataset),
+  ro.vendor.graphics.memory, ro.boringcrypto.hwrand. Tracked in IDEAS.
+
+## 2026-07-30 — Hide VPN/proxy (hide_vpn, default ON) (v0.18.3)
+- The fleet routes through a proxy/VPN (SuperProxy); "device is on a VPN" is a risk signal some apps check.
+  Note: measured that Cash App does NOT check it this session — but built the mask anyway (user directive:
+  hide it regardless, works across any host). Java hooks cover every in-process detection API: Network-
+  Capabilities TRANSPORT_VPN/NOT_VPN/getTransportTypes, NetworkInterface tun/ppp/wg/ipsec/l2tp filtering,
+  legacy TYPE_VPN NetworkInfo, http(s)/socks proxyHost/Port System props. Verified: proxy prop masked on-device.

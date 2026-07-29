@@ -68,9 +68,14 @@ public final class ZygiskInstaller {
      */
     public static Status status(Context ctx, RootWriter.Shell shell) {
         String bundled = bundledVersion(ctx);
-        // One shell round-trip: print the installed module.prop if the .so exists, else a marker.
+        // One shell round-trip: print the installed module.prop + the on-disk .so's md5 if present, else a
+        // marker. The md5 is what makes the sync ROBUST: a same-VERSION rebuild (common in dev, and possible
+        // across builds since the version string doesn't always bump) changes the .so bytes but not the
+        // version, so a version-only "current" check would leave a STALE native layer on device forever
+        // (observed: a cpufreq/topology .so silently not re-synced). Comparing the md5 catches that.
         String probe = "if [ -f " + MODULE_DIR + "/zygisk/arm64-v8a.so ]; then cat " + MODULE_DIR
-                + "/module.prop 2>/dev/null; else echo __specter_zygisk_absent__; fi";
+                + "/module.prop 2>/dev/null; echo \"__specter_md5__ $(md5sum " + MODULE_DIR
+                + "/zygisk/arm64-v8a.so 2>/dev/null | cut -d' ' -f1)\"; else echo __specter_zygisk_absent__; fi";
         String out;
         try {
             out = shell.runCapture(probe);
@@ -81,8 +86,38 @@ public final class ZygiskInstaller {
             return new Status(false, false, null, bundled);
         }
         String iv = SpoofLogic.modulePropVersion(out);
-        boolean current = iv != null && bundled != null && iv.equals(bundled);
-        return new Status(true, current, iv, bundled);
+        String installedMd5 = extractMd5(out);
+        String bundledMd5 = bundledSoMd5(ctx);
+        // "current" now means version AND bytes match. If we can't compute a hash (no md5sum, asset read
+        // failure), fall back to the version compare alone rather than forcing a needless re-install.
+        boolean versionOk = iv != null && bundled != null && iv.equals(bundled);
+        boolean hashOk = (installedMd5 == null || bundledMd5 == null)   // can't compare -> don't block on it
+                || installedMd5.equalsIgnoreCase(bundledMd5);
+        return new Status(true, versionOk && hashOk, iv, bundled);
+    }
+
+    /** Pull the md5 the status probe printed ("__specter_md5__ <hash>"), or null if absent. */
+    static String extractMd5(String probeOut) {
+        if (probeOut == null) return null;
+        int i = probeOut.indexOf("__specter_md5__");
+        if (i < 0) return null;
+        String rest = probeOut.substring(i + "__specter_md5__".length()).trim();
+        int sp = rest.indexOf('\n');
+        if (sp >= 0) rest = rest.substring(0, sp);
+        rest = rest.trim();
+        return rest.isEmpty() ? null : rest;
+    }
+
+    /** md5 of the .so the APK bundles (assets/zygisk/arm64-v8a.so), or null if unreadable. */
+    static String bundledSoMd5(Context ctx) {
+        try (InputStream in = ctx.getAssets().open(ASSET_DIR + "/arm64-v8a.so")) {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+            byte[] buf = new byte[8192]; int n;
+            while ((n = in.read(buf)) != -1) md.update(buf, 0, n);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : md.digest()) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Throwable t) { return null; }
     }
 
     // ---- install ----

@@ -3,6 +3,31 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.18.3] — 2026-07-30
+
+### Fixed
+- **CLOSED the CPU-coherence leak that flagged an account.** A live trace of Cash App showed it reads every
+  core's cpufreq (cpuinfo_max/min_freq) AND topology (physical_package_id, core_siblings_list,
+  cluster_cpus_list) — none of which Specter spoofed. So a profile claiming an LG G7 (Snapdragon 845, a 4+4
+  two-cluster layout) still leaked the REAL Pixel 4's Snapdragon 855 signature (1+3+4 three-cluster:
+  1785600/2419200/2841600 kHz, packages 0/1/2 with sibling ranges 0-3/4-6/7). A fingerprinter reading those
+  sees an SD855 masquerading as an SD845 — the coherence tell. Now the native Zygisk layer redirects, per
+  core: cpuinfo_{max,min}_freq + scaling_{max,min}_freq (from new per-SoC cpu_max_freq/cpu_min_freq profile
+  fields, byte-parity Java↔Python) and the topology cluster grouping (derived from the cpu_capacity vector),
+  plus the top-level online/possible/kernel_max. All 29 SoCs carry coherent stock frequency tables.
+- **Native-layer auto-sync now compares the .so HASH, not just the version.** A same-version rebuild changed
+  the .so bytes but not module.prop's version, so the version-gated sync left a STALE native layer on device
+  (on-device behavior silently didn't match the latest build). status() now md5-compares the on-disk .so vs
+  the bundled asset. /proc/modules spoof made vendor-neutral (no Qualcomm-specific names that would reveal
+  incoherence on an Exynos/Tensor profile); write_spoof loops over EINTR/short writes.
+
+### Added
+- **Hide VPN & proxy (hide_vpn protection, default ON).** Masks every in-process Java surface an SDK uses to
+  detect a tunnel: NetworkCapabilities.hasTransport(TRANSPORT_VPN)→false, hasCapability(NOT_VPN)→true,
+  getTransportTypes() strips VPN; NetworkInterface.getNetworkInterfaces() drops tun/ppp/wg/ipsec/l2tp;
+  legacy ConnectivityManager getNetworkInfo(TYPE_VPN)/getAllNetworkInfo() drop the VPN entry; and
+  http(s)/socks proxyHost/Port System properties return null. So a scoped app reads the device as not behind
+  a VPN/proxy even when routed through one.
 ## [0.18.2] — 2026-07-30
 
 ### Fixed

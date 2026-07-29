@@ -159,6 +159,28 @@ public class ProbeActivity extends Activity {
             put(o, "sys_cpu_capacity7", readFileTrim("/sys/devices/system/cpu/cpu7/cpu_capacity"));
             put(o, "sys_cpu_present", readFileTrim("/sys/devices/system/cpu/present"));
             put(o, "sys_gpu_model", readFileTrim("/sys/class/kgsl/kgsl-3d0/gpu_model"));
+            // Per-core CPU freq + topology — these leaked the REAL SoC's core signature (SD855 1+3+4 while a
+            // profile claimed an SD845 4+4), the coherence tell that flagged an account (v0.18.3). Read core 0
+            // (little) + a mid + last (big/prime) so a regression in the spoof self-reports here. A concise
+            // "cluster fingerprint" string captures the whole layout: per-core max_freq + physical_package_id.
+            StringBuilder freqSig = new StringBuilder(), pkgSig = new StringBuilder();
+            for (int c = 0; c < 8; c++) {
+                String mx = readFileTrim("/sys/devices/system/cpu/cpu" + c + "/cpufreq/cpuinfo_max_freq");
+                String pk = readFileTrim("/sys/devices/system/cpu/cpu" + c + "/topology/physical_package_id");
+                if (mx.isEmpty() && pk.isEmpty()) break;   // fewer than 8 cores
+                if (c > 0) { freqSig.append(' '); pkgSig.append(' '); }
+                freqSig.append(mx.isEmpty() ? "?" : mx);
+                pkgSig.append(pk.isEmpty() ? "?" : pk);
+            }
+            put(o, "sys_cpu_max_freq_sig", freqSig.toString());   // per-core max freq (kHz) — must match profile SoC
+            put(o, "sys_cpu_pkg_sig", pkgSig.toString());         // per-core physical_package_id — cluster grouping
+            put(o, "sys_cpu_online", readFileTrim("/sys/devices/system/cpu/online"));
+            put(o, "sys_cpu_cpu0_siblings", readFileTrim("/sys/devices/system/cpu/cpu0/topology/core_siblings_list"));
+            put(o, "sys_cpu_cpu0_l2_shared", readFileTrim("/sys/devices/system/cpu/cpu0/cache/index2/shared_cpu_list"));
+            // /proc/modules must NOT name the real device's drivers (ftm5 = Pixel 4 touchscreen). Report whether
+            // any device-specific driver name survives (should be "clean" = generic list only).
+            String mods = readFileTrim("/proc/modules");
+            put(o, "proc_modules_leak", (mods.contains("ftm5") || mods.contains("heatmap")) ? "LEAK" : "clean");
             put(o, "proc_version", readFileTrim("/proc/version"));
             // /proc/mounts + mountinfo must NOT leak Magisk bind-mounts (root signal). Report whether any
             // "magisk" line survives (should be "clean" when hide_root is on).
@@ -168,6 +190,11 @@ public class ProbeActivity extends Activity {
             put(o, "mountinfo_magisk_leak", mountinfo.toLowerCase().contains("magisk") ? "LEAK" : "clean");
             // frida-server artifact must be hidden from a File.exists()/access check (frida detection).
             put(o, "frida_server_visible", new java.io.File("/data/local/tmp/frida-server").exists() ? "LEAK" : "clean");
+            // VPN/proxy detection (hide_vpn). With a VPN/proxy active on the device, a scoped app must still
+            // read "no VPN" — else the tunnel is a risk signal. These report what the SDK's detection APIs see:
+            put(o, "vpn_transport", vpnViaCapabilities() ? "LEAK" : "clean");        // NetworkCapabilities TRANSPORT_VPN
+            put(o, "vpn_interface", vpnViaInterfaces() ? "LEAK" : "clean");          // NetworkInterface tun0/ppp0/...
+            put(o, "proxy_host", proxyHostLeak());                                    // http(s).proxyHost System prop
             // ro.boot.hardware / ro.boot.hardware.platform leaked the real device (flame/sm8150) — now aliased.
             put(o, "prop_ro_boot_hardware", readProp("ro.boot.hardware"));
             put(o, "prop_ro_boot_hardware_platform", readProp("ro.boot.hardware.platform"));
@@ -532,6 +559,45 @@ public class ProbeActivity extends Activity {
 
     private void put(JSONObject o, String k, String v) {
         try { o.put(k, v == null ? "null" : v); } catch (Throwable ignored) {}
+    }
+
+    // --- VPN/proxy detection (mirrors what a fingerprinting SDK does; hide_vpn must make all read "clean") ---
+
+    /** The #1 method: any Network with TRANSPORT_VPN via ConnectivityManager. */
+    private boolean vpnViaCapabilities() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager)
+                    getSystemService(CONNECTIVITY_SERVICE);
+            if (cm == null) return false;
+            for (android.net.Network net : cm.getAllNetworks()) {
+                android.net.NetworkCapabilities nc = cm.getNetworkCapabilities(net);
+                if (nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    /** The #2 method: a tun/ppp/wg interface in NetworkInterface.getNetworkInterfaces(). */
+    private boolean vpnViaInterfaces() {
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> e = java.net.NetworkInterface.getNetworkInterfaces();
+            while (e != null && e.hasMoreElements()) {
+                String n = e.nextElement().getName();
+                if (n != null) {
+                    String l = n.toLowerCase(java.util.Locale.US);
+                    if (l.startsWith("tun") || l.startsWith("ppp") || l.startsWith("wg")
+                            || l.startsWith("ipsec") || l.startsWith("l2tp") || l.startsWith("pptp")) return true;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    /** A proxy configured via System properties (SuperProxy et al.) — should read empty when hidden. */
+    private String proxyHostLeak() {
+        String h = System.getProperty("http.proxyHost");
+        if (h == null || h.isEmpty()) h = System.getProperty("https.proxyHost");
+        return (h == null || h.isEmpty()) ? "clean" : ("LEAK:" + h);
     }
 
     // Read a system property via the Java SystemProperties.get (the hooked path).

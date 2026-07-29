@@ -16,6 +16,7 @@
 
     <application
         android:label="Specter Lite"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".HarvestActivity"

@@ -57,6 +57,10 @@ public final class Coverage {
         "/proc/cpuinfo", "/proc/version", "/proc/meminfo",
         "/proc/mounts", "/proc/self/mountinfo",
         "/sys/class/kgsl/kgsl-3d0/gpu_model", "/sys/devices/system/cpu/present",
+        // core-count files the native layer now redirects (were leaking the real core layout)
+        "/sys/devices/system/cpu/online", "/sys/devices/system/cpu/possible",
+        "/sys/devices/system/cpu/kernel_max",
+        "/proc/modules",   // generic module list (real names leak the device's specific drivers)
         "/proc/sys/kernel/random/boot_id", "/sys/fs/selinux/enforce"
     ));
 
@@ -73,9 +77,10 @@ public final class Coverage {
                 return State.REAL;   // touch/input tuning + generic props — not device-identifying
             return State.UNKNOWN;
         }
-        // Files: exact spoofed-file matches, plus the strict per-core cpu_capacity family.
+        // Files: exact spoofed-file matches, plus the strict per-core cpu_capacity / cpufreq / topology family.
         if (SPOOFED_FILES.contains(target)) return State.SPOOFED;
         if (isCpuCapacityPath(target)) return State.SPOOFED;
+        if (isPerCoreCpuPath(target)) return State.SPOOFED;
         // A read of the app's OWN /proc or a system lib is not device-identifying.
         if (target.startsWith("/proc/self/") || target.startsWith("/system/")
                 || target.startsWith("/apex/") || target.startsWith("/vendor/lib")) return State.REAL;
@@ -85,9 +90,29 @@ public final class Coverage {
     /** Strictly /sys/devices/system/cpu/cpu&lt;digits&gt;/cpu_capacity (one per-core node we redirect) — not any
      *  path merely containing "cpu" and ending in cpu_capacity (codex). */
     static boolean isCpuCapacityPath(String path) {
-        final String pre = "/sys/devices/system/cpu/cpu", suf = "/cpu_capacity";
-        if (!path.startsWith(pre) || !path.endsWith(suf)) return false;
-        String mid = path.substring(pre.length(), path.length() - suf.length());
+        return isPerCoreCpuLeaf(path, "/cpu_capacity");
+    }
+
+    /** The per-core cpufreq + topology files the native layer redirects (freq ceiling + cluster grouping —
+     *  both leak the real SoC otherwise). Matches /sys/devices/system/cpu/cpu&lt;digits&gt;/&lt;one of the leaves&gt;. */
+    static boolean isPerCoreCpuPath(String path) {
+        return isPerCoreCpuLeaf(path, "/cpufreq/cpuinfo_max_freq")
+                || isPerCoreCpuLeaf(path, "/cpufreq/cpuinfo_min_freq")
+                || isPerCoreCpuLeaf(path, "/cpufreq/scaling_max_freq")
+                || isPerCoreCpuLeaf(path, "/cpufreq/scaling_min_freq")
+                || isPerCoreCpuLeaf(path, "/topology/physical_package_id")
+                || isPerCoreCpuLeaf(path, "/topology/core_siblings_list")
+                || isPerCoreCpuLeaf(path, "/topology/cluster_cpus_list");
+        // NOTE: cache/index*/shared_cpu_list is intentionally NOT covered — the native layer doesn't spoof it
+        // (spoofing only sharing while size/level stay real would fabricate an inconsistent cache topology).
+    }
+
+    /** True iff path == /sys/devices/system/cpu/cpu&lt;digits&gt;&lt;suffix&gt; (the &lt;digits&gt; segment must be non-empty
+     *  and all digits — so a sibling like .../cpuidle/ never false-matches). */
+    private static boolean isPerCoreCpuLeaf(String path, String suffix) {
+        final String pre = "/sys/devices/system/cpu/cpu";
+        if (path == null || !path.startsWith(pre) || !path.endsWith(suffix)) return false;
+        String mid = path.substring(pre.length(), path.length() - suffix.length());
         if (mid.isEmpty()) return false;
         for (int i = 0; i < mid.length(); i++) if (!Character.isDigit(mid.charAt(i))) return false;
         return true;

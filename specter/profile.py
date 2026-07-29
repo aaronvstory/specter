@@ -84,11 +84,20 @@ def _soc_topology_fields(soc, topo=None):
     e = t.get(soc) or t["_default"]
     cap = e["cpu_capacity"]
     n = len(cap.split())
-    return {
+    out = {
         "cpu_capacity": cap,
         "gpu_model": e.get("gpu_model", ""),
         "cpu_present": "0-%d" % (n - 1),
     }
+    # Per-core max/min CPU frequency (kHz), behind /sys/.../cpufreq/cpuinfo_{max,min}_freq. These leak the
+    # REAL SoC's core-frequency signature otherwise (e.g. a Pixel 4's SD855 1+3+4 layout while the profile
+    # claims an LG G7 SD845 4+4) — a hardware-coherence tell. Emitted only when the SoC table carries them
+    # (all do via _default); a constant lookup keyed on the already-picked SoC, so byte-parity safe.
+    if e.get("cpu_max_freq"):
+        out["cpu_max_freq"] = e["cpu_max_freq"]
+    if e.get("cpu_min_freq"):
+        out["cpu_min_freq"] = e["cpu_min_freq"]
+    return out
 
 
 def _load_hardware():

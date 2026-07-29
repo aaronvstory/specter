@@ -67,6 +67,16 @@ public class SpoofLogicTest {
         check(!SpoofLogic.isOwnApk("/data/user/0/" + pkg + "/files/x.apk", pkg), "app's data-dir file not matched (only /data/app)");
         check(!SpoofLogic.isOwnApk("/data/app/~~q==/" + pkg + "-1==/lib/arm64/x.so", pkg), "non-apk in own dir not matched");
         check(!SpoofLogic.isOwnApk(null, pkg) && !SpoofLogic.isOwnApk(own, null), "null-safe");
+
+        // isTunnelIface: VPN/tunnel interface names the VPN-hiding hook drops from getNetworkInterfaces().
+        check(SpoofLogic.isTunnelIface("tun0"), "tun0 is a tunnel");
+        check(SpoofLogic.isTunnelIface("ppp0"), "ppp0 is a tunnel");
+        check(SpoofLogic.isTunnelIface("wg0"), "wg0 (WireGuard) is a tunnel");
+        check(SpoofLogic.isTunnelIface("TUN0"), "case-insensitive");
+        check(SpoofLogic.isTunnelIface("ipsec0") && SpoofLogic.isTunnelIface("l2tp-vpn"), "ipsec/l2tp tunnels");
+        check(!SpoofLogic.isTunnelIface("wlan0") && !SpoofLogic.isTunnelIface("rmnet0")
+                && !SpoofLogic.isTunnelIface("eth0") && !SpoofLogic.isTunnelIface("lo"), "real ifaces not tunnels");
+        check(!SpoofLogic.isTunnelIface(null) && !SpoofLogic.isTunnelIface(""), "null/empty safe");
         long reset = 1618552951L;
         long baseT = SpoofLogic.apkInstallSeconds(reset, own);
         check(baseT > reset, "install time is AFTER the factory reset");

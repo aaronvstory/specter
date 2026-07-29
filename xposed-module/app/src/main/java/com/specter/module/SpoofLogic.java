@@ -371,4 +371,15 @@ public final class SpoofLogic {
         }
         return -1;
     }
+
+    /** True if {@code name} is a VPN/tunnel network-interface name a detector looks for
+     *  (tun*, ppp*, wg*, pptp*, ipsec*, l2tp*). An app enumerating NetworkInterface.getNetworkInterfaces()
+     *  and finding one of these concludes a VPN is up — so the VPN-hiding hook drops interfaces whose name
+     *  matches this. Pure + case-insensitive so it's unit-testable off the hook path. */
+    public static boolean isTunnelIface(String name) {
+        if (name == null) return false;
+        String n = name.toLowerCase(java.util.Locale.US);
+        return n.startsWith("tun") || n.startsWith("ppp") || n.startsWith("wg")
+                || n.startsWith("pptp") || n.startsWith("ipsec") || n.startsWith("l2tp");
+    }
 }

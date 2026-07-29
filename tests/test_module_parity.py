@@ -179,7 +179,9 @@ def test_soc_topology_matches_java_embedded_table():
     for soc, e in topo.items():
         if soc.startswith("_comment"):
             continue
-        want = f"{e['cpu_capacity']}|{e.get('gpu_model', '')}"
+        # Java embeds "cpu_capacity|gpu_model|cpu_max_freq|cpu_min_freq" (freqs added v0.18.3).
+        want = "|".join([e["cpu_capacity"], e.get("gpu_model", ""),
+                         e.get("cpu_max_freq", ""), e.get("cpu_min_freq", "")])
         assert pairs.get(soc) == want, f"soc {soc}: java={pairs.get(soc)!r} != json {want!r}"
     # and no extra SoCs on the Java side
     extra = set(pairs) - {k for k in topo if not k.startswith("_comment")}

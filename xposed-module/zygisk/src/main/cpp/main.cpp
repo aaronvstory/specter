@@ -1057,11 +1057,19 @@ public:
                                    const std::string &sysPath) {
                 std::string sp = dir + "/.specter_" + tag;
                 int f = open(sp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-                if (f >= 0) {
-                    bool ok = write(f, content.data(), content.size()) == (ssize_t) content.size();
-                    close(f);
-                    if (ok) g_sys_redirect[sysPath] = sp;
+                if (f < 0) return;
+                // Loop over write() to handle EINTR + short writes — a single write() that returns fewer bytes
+                // (or is interrupted) would else leave the redirect UNregistered and silently leak the real file
+                // (codex gauntlet). Only register the redirect once the FULL content is on disk.
+                size_t off = 0; bool ok = true;
+                while (off < content.size()) {
+                    ssize_t w = write(f, content.data() + off, content.size() - off);
+                    if (w < 0) { if (errno == EINTR) continue; ok = false; break; }
+                    if (w == 0) { ok = false; break; }
+                    off += (size_t) w;
                 }
+                close(f);
+                if (ok) g_sys_redirect[sysPath] = sp;
             };
             auto cap = profile.find("cpu_capacity");
             if (cap != profile.end() && !cap->second.empty()) {
@@ -1079,6 +1087,100 @@ public:
                     i = j + 1;
                 }
             }
+            // Per-core CPU max/min frequency (kHz) -> /sys/.../cpu<i>/cpufreq/cpuinfo_{max,min}_freq AND the
+            // scaling_{max,min}_freq siblings some readers use. These leak the REAL SoC's core-frequency
+            // signature otherwise (proven: a Pixel 4's SD855 1+3+4 layout read while the profile claimed an
+            // LG G7 SD845 4+4 — the coherence tell that flagged an account). cpuinfo_* is the immutable HW
+            // ceiling a fingerprinter reads; scaling_* is the current policy limit (usually == cpuinfo_*), so
+            // redirect BOTH. Same per-core space-split as cpu_capacity.
+            auto redirect_freq = [&](const std::string &key, std::initializer_list<const char *> leaves) {
+                auto it = profile.find(key);
+                if (it == profile.end() || it->second.empty()) return;
+                const std::string &v = it->second;
+                size_t i = 0, core = 0;
+                while (i < v.size()) {
+                    size_t j = v.find(' ', i);
+                    if (j == std::string::npos) j = v.size();
+                    std::string one = v.substr(i, j - i);
+                    if (!one.empty()) {
+                        std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(core) + "/cpufreq/";
+                        int li = 0;
+                        for (const char *leaf : leaves)
+                            write_spoof(key + std::to_string(core) + "_" + std::to_string(li++),
+                                        one + "\n", base + leaf);
+                    }
+                    core++;
+                    i = j + 1;
+                }
+            };
+            redirect_freq("cpu_max_freq", {"cpuinfo_max_freq", "scaling_max_freq"});
+            redirect_freq("cpu_min_freq", {"cpuinfo_min_freq", "scaling_min_freq"});
+
+            // Per-core CPU TOPOLOGY -> /sys/.../cpu<i>/topology/{physical_package_id,core_siblings_list,
+            // cluster_cpus_list} + the top-level online/possible/kernel_max. These leak the real SoC's CLUSTER
+            // grouping otherwise (proven: the Pixel 4 SD855 reads pkg 0/1/2 with sibling ranges 0-3,4-6,7 — a
+            // 1+3+4 THREE-cluster layout — while a claimed LG G7 SD845 is 4+4 TWO clusters). The cluster
+            // structure is fully determined by the cpu_capacity vector: a run of equal capacities = one cluster.
+            // So we derive it from cpu_capacity (no extra profile field) and write coherent topology files.
+            if (cap != profile.end() && !cap->second.empty()) {
+                std::vector<std::string> caps;
+                { size_t i = 0; const std::string &v = cap->second;
+                  while (i < v.size()) { size_t j = v.find(' ', i); if (j == std::string::npos) j = v.size();
+                      std::string one = v.substr(i, j - i); if (!one.empty()) caps.push_back(one); i = j + 1; } }
+                int n = (int) caps.size();
+                if (n > 0) {
+                    // Assign each core a cluster id (increment when the capacity value changes from the previous
+                    // core), and record each cluster's [start,end] core range for the sibling list.
+                    std::vector<int> pkg(n);
+                    std::vector<std::pair<int,int>> clusterRange;   // per cluster: first..last core
+                    int cid = 0;
+                    for (int c = 0; c < n; c++) {
+                        if (c > 0 && caps[c] != caps[c-1]) cid++;
+                        pkg[c] = cid;
+                        if ((int) clusterRange.size() <= cid) clusterRange.push_back({c, c});
+                        else clusterRange[cid].second = c;
+                    }
+                    auto rangeStr = [](int a, int b) {
+                        return a == b ? std::to_string(a) : std::to_string(a) + "-" + std::to_string(b);
+                    };
+                    std::string full = "0-" + std::to_string(n - 1);   // all cores (used for L3 sharing + online/possible)
+                    for (int c = 0; c < n; c++) {
+                        std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(c) + "/topology/";
+                        std::string sib = rangeStr(clusterRange[pkg[c]].first, clusterRange[pkg[c]].second);
+                        write_spoof("toppkg" + std::to_string(c), std::to_string(pkg[c]) + "\n", base + "physical_package_id");
+                        write_spoof("topsib" + std::to_string(c), sib + "\n", base + "core_siblings_list");
+                        write_spoof("topclu" + std::to_string(c), sib + "\n", base + "cluster_cpus_list");
+                        // NOTE: cache/index<k>/shared_cpu_list is NOT spoofed. Index numbering, presence, and the
+                        // level→index mapping vary by SoC, and the companion size/level/type files would stay
+                        // real — spoofing only shared_cpu_list would fabricate an INCONSISTENT cache topology
+                        // (worse than leaving it). Physical_package_id/core_siblings_list above already carry the
+                        // cluster grouping. Doing cache right needs a per-SoC cache dataset (size+level+sharing) —
+                        // tracked in IDEAS. (codex gauntlet 2026-07-30.)
+                    }
+                    // Top-level core-count files. present is already written from cpu_present above; add the
+                    // siblings online/possible (0-(n-1)) and kernel_max (n-1) so the whole CPU-count picture is coherent.
+                    write_spoof("cpuonline",   full + "\n", "/sys/devices/system/cpu/online");
+                    write_spoof("cpupossible", full + "\n", "/sys/devices/system/cpu/possible");
+                    write_spoof("cpukmax",      std::to_string(n - 1) + "\n", "/sys/devices/system/cpu/kernel_max");
+                }
+            }
+
+            // /proc/modules — the loaded-kernel-module list. The REAL device's names leak its exact hardware
+            // (proven on the Pixel 4: "ftm5" = its ST touchscreen driver, "heatmap", etc. — a claimed LG G7
+            // would never have those). Redirect to a GENERIC list of modules common to most ARM Android so a
+            // reader sees a plausible-but-non-identifying set instead of the host's device-specific drivers.
+            // (Addresses are zeroed like a non-root read; sizes/refcounts are plausible constants.)
+            // VENDOR-NEUTRAL list: no Qualcomm/Exynos/Tensor-specific driver names (those would themselves
+            // reveal profile incoherence on a non-matching SoC — codex gauntlet). Just a minimal set of
+            // generic Android modules present across vendors + a wlan driver, which any phone plausibly shows.
+            {
+                static const char *GENERIC_MODULES =
+                    "wlan 6668672 0 - Live 0x0000000000000000 (O)\n"
+                    "zram 32768 2 - Live 0x0000000000000000\n"
+                    "cfg80211 1085440 1 wlan, Live 0x0000000000000000\n";
+                write_spoof("procmodules", GENERIC_MODULES, "/proc/modules");
+            }
+
             auto gm = profile.find("gpu_model");
             if (gm != profile.end() && !gm->second.empty())
                 write_spoof("gpumodel", gm->second + "\n", "/sys/class/kgsl/kgsl-3d0/gpu_model");

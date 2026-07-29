@@ -46,6 +46,7 @@ public final class Protections {
         new P("hide_root",     "Hide root",          "Root and jailbreak tools read as absent."),
         new P("hide_dev",      "Hide developer mode","ADB and Developer Options read as off."),
         new P("hide_apps",     "Hide app list",      "Keeps Specter and root tools out of the installed-app list."),
+        new P("hide_vpn",      "Hide VPN & proxy",   "The device reads as not on a VPN or proxy, even when routed through one."),
         new P("spoof_ua",      "Match browser signature", "The web User-Agent matches the applied device."),
         new P("spoof_apktime", "Randomize install time", "The app's install date reads as a fresh, per-identity value."),
         new P("spoof_sysfs",   "Match hardware profile", "Deep hardware signals and screen size match the applied device."),
