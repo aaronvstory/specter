@@ -26,15 +26,35 @@ import java.util.List;
  * scoped app (the native companion still guards APPLY).
  */
 public final class DiagnosticsActivity extends Activity {
+    /** Optional intent extra: the package the caller just monitored, shown as "watching <app>". Absent when
+     *  opened from Settings' global "View live trace" (then we show the scoped-target set instead). */
+    public static final String EXTRA_PKG = "specter.diag.pkg";
+
     private static final int MAX_ROWS = 400;         // cap distinct signals rendered (parser drops excess)
     private static final long REFRESH_MS = 2000;
+    private static final long BLINK_MS = 650;        // live-dot flash period
 
     private LinearLayout list;                        // rows container (rebuilt each refresh)
+    private LinearLayout statRow;                      // the KPI tile row (signals/spoofed/real/reads)
     private TextView summary;
+    private View liveDot;                             // the flashing-red "capturing" indicator
+    private boolean dotOn = true;
     private final Handler h = new Handler(Looper.getMainLooper());
     private volatile boolean live = true;
     private volatile boolean reading = false;   // one in-flight read at a time (no su-exec pileup)
     private volatile List<TraceParser.Row> lastRows = java.util.Collections.emptyList();  // for Export
+    private final Runnable blink = new Runnable() {
+        @Override public void run() {
+            if (liveDot == null) return;
+            // Flash while live; hold a steady (dim) dot when paused.
+            dotOn = !dotOn;
+            // Flash the red dot on/off while live; a steady dim dot when paused.
+            int dimRed = (Theme.RED & 0x00FFFFFF) | 0x33000000;   // same hue, ~20% alpha
+            liveDot.setBackground(roundRect(live && dotOn ? Theme.RED : (live ? dimRed : Theme.LINE),
+                    live ? Theme.RED : Theme.LINE, dp(5)));
+            h.postDelayed(this, BLINK_MS);
+        }
+    };
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!live) return;
@@ -64,26 +84,51 @@ public final class DiagnosticsActivity extends Activity {
         back.setPadding(dp(2), 0, dp(14), 0);
         back.setOnClickListener(v -> finish());
         titleRow.addView(back);
+
+        // Flashing-red dot + title: an unmistakable "recording" affordance while capture is live.
+        liveDot = new View(this);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(10), dp(10));
+        dlp.setMargins(0, 0, dp(8), 0);
+        dlp.gravity = Gravity.CENTER_VERTICAL;
+        liveDot.setLayoutParams(dlp);
+        liveDot.setBackground(roundRect(Theme.RED, Theme.RED, dp(5)));
+        titleRow.addView(liveDot);
+
         TextView title = new TextView(this);
-        title.setText("Live trace — what the target reads");
+        title.setText("Live trace");
         title.setTextColor(Theme.INK);
         title.setTextSize(18);
         titleRow.addView(title);
         root.addView(titleRow);
 
+        // Which app's reads are we showing? The capture log is shared by ALL scoped+armed targets, so name the
+        // app the caller just monitored, or (from the global entry point) the whole scoped-target set.
+        TextView who = new TextView(this);
+        who.setTextColor(Theme.DIM);
+        who.setTextSize(12);
+        who.setPadding(0, dp(3), 0, 0);
+        who.setText(subjectLine());
+        root.addView(who);
+
+        // Stat tiles (signals / spoofed / real / reads) — a scannable KPI row, not a run-on string.
+        statRow = new LinearLayout(this);
+        statRow.setOrientation(LinearLayout.HORIZONTAL);
+        statRow.setPadding(0, dp(10), 0, 0);
+        root.addView(statRow);
+
         summary = new TextView(this);
         summary.setTextColor(Theme.DIM);
-        summary.setTextSize(12);
-        summary.setPadding(0, dp(4), 0, 0);
+        summary.setTextSize(11);
+        summary.setPadding(0, dp(6), 0, 0);
         root.addView(summary);
 
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
         btns.setPadding(0, dp(8), 0, dp(8));
-        final Button liveBtn = flatButton("Live ●");
+        final Button liveBtn = flatButton("Pause");
         liveBtn.setOnClickListener(v -> {
             live = !live;
-            liveBtn.setText(live ? "Live ●" : "Paused");
+            liveBtn.setText(live ? "Pause" : "Resume");
             // Always clear any queued tick before re-arming, or a fast Pause→Live toggle stacks a second
             // self-rescheduling loop (doubling su traffic each time). One loop, always.
             h.removeCallbacks(tick);
@@ -112,8 +157,31 @@ public final class DiagnosticsActivity extends Activity {
         setContentView(scroll);
     }
 
-    @Override protected void onResume() { super.onResume(); live = true; h.removeCallbacks(tick); h.post(tick); }
-    @Override protected void onPause() { super.onPause(); live = false; h.removeCallbacks(tick); }
+    @Override protected void onResume() {
+        super.onResume(); live = true;
+        h.removeCallbacks(tick); h.post(tick);
+        h.removeCallbacks(blink); h.post(blink);
+    }
+    @Override protected void onPause() {
+        super.onPause(); live = false;
+        h.removeCallbacks(tick); h.removeCallbacks(blink);
+    }
+
+    /** Who are we watching? The active-monitor package (passed as {@link #EXTRA_PKG}) if present, else the set
+     *  of scoped targets — the capture log is shared, so with several targets armed the rows below can mix
+     *  reads from all of them. Naming them makes that explicit instead of leaving "which app is this?" open. */
+    private String subjectLine() {
+        String pkg = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_PKG);
+        if (pkg != null && !pkg.isEmpty()) return "Watching " + Targets.label(this, pkg);
+        java.util.Set<String> targets = Targets.get(getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE));
+        if (targets.isEmpty()) return "No target apps yet — add one on the Identity tab.";
+        if (targets.size() == 1) return "Watching " + Targets.label(this, targets.iterator().next());
+        StringBuilder sb = new StringBuilder("Watching " + targets.size() + " apps: ");
+        int i = 0;
+        for (String p : targets) { if (i++ > 0) sb.append(", "); sb.append(Targets.label(this, p)); }
+        sb.append(" — reads from all of them are mixed below.");
+        return sb.toString();
+    }
 
     /** Read + parse the (root-owned) log OFF the main thread — `su -c cat` + a full-file read would ANR
      *  the UI if run inline in the 2s tick — then hand the parsed rows back to the main thread to render.
@@ -131,11 +199,14 @@ public final class DiagnosticsActivity extends Activity {
     private void render(String raw, List<TraceParser.Row> rows) {
         lastRows = rows;   // snapshot for Export (a readable coverage report, not the raw log)
         list.removeAllViews();
+        statRow.removeAllViews();
         if (raw == null) {
-            summary.setText("Capture not running. Enable “Diagnostics logging” in Settings, then APPLY to a "
+            summary.setTextSize(12);
+            summary.setText("Capture not running. Turn on “Read logging” in Settings, then APPLY to a "
                     + "scoped target and open it.");
             return;
         }
+        summary.setTextSize(11);
         int props = 0, files = 0, stat = 0, hits = 0, spoofed = 0, real = 0;
         for (TraceParser.Row r : rows) {
             hits += r.count;
@@ -146,9 +217,12 @@ public final class DiagnosticsActivity extends Activity {
             if (c == Coverage.State.SPOOFED) spoofed++;
             else if (c == Coverage.State.REAL) real++;
         }
-        summary.setText(rows.size() + " signals · " + spoofed + " spoofed · " + real + " real (non-ID) · "
-                + hits + " reads   (" + props + " props, " + files + " files, " + stat + " stat)"
-                + (rows.size() >= MAX_ROWS ? "  — capped" : ""));
+        statRow.addView(statTile(String.valueOf(rows.size()), "signals", Theme.INK));
+        statRow.addView(statTile(String.valueOf(spoofed), "spoofed", Theme.SAGE));
+        statRow.addView(statTile(String.valueOf(real), "real", Theme.DIM));
+        statRow.addView(statTile(String.valueOf(hits), "reads", Theme.GOLD));
+        summary.setText(props + " props · " + files + " files · " + stat + " stat"
+                + (rows.size() >= MAX_ROWS ? "  ·  list capped at " + MAX_ROWS : ""));
 
         addGroup("Properties", TraceParser.Kind.PROP, rows);
         addGroup("Files", TraceParser.Kind.FILE, rows);
@@ -346,6 +420,31 @@ public final class DiagnosticsActivity extends Activity {
         }, "specter-diag-export").start();
     }
 
+
+    /** A compact KPI tile: big number over a small caption, on a rounded card — reads far cleaner than the
+     *  old run-on stat string. Tiles share the row equally (weight 1). */
+    private View statTile(String number, String caption, int numColor) {
+        LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.setGravity(Gravity.CENTER);
+        t.setBackground(roundRect(Theme.CARD, Theme.LINE, dp(8)));
+        t.setPadding(dp(6), dp(8), dp(6), dp(8));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(0, 0, dp(6), 0);
+        t.setLayoutParams(lp);
+        TextView num = new TextView(this);
+        num.setText(number);
+        num.setTextColor(numColor);
+        num.setTextSize(20);
+        num.setTypeface(num.getTypeface(), android.graphics.Typeface.BOLD);
+        t.addView(num);
+        TextView cap = new TextView(this);
+        cap.setText(caption);
+        cap.setTextColor(Theme.DIM);
+        cap.setTextSize(11);
+        t.addView(cap);
+        return t;
+    }
 
     private Button flatButton(String text) {
         Button btn = new Button(this);

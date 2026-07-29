@@ -3,6 +3,26 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.3] — 2026-07-29
+
+### Changed
+- **Consistent AppData vocabulary on the Identity tab.** A target app’s per-app actions now read
+  **Save AppData / Restore AppData** (were “Save login / Restore login”), matching the Vault.
+- **Read logging vs Monitor reads, made one mental model.** Settings’ diagnostics toggle is renamed
+  **Read logging** (the global on/off); tapping **Monitor reads** on a target app now flips that same
+  switch on automatically, so the two controls can never disagree. Each explains the other in-copy.
+- **Live trace names what it is watching.** The trace screen shows **Watching <app>** — the app you just
+  monitored, or the full scoped-target set (with a note that their reads are mixed) when opened globally.
+- **Live trace stats are now KPI tiles** (signals / spoofed / real / reads) instead of a run-on line, and
+  the **Live** indicator is a **flashing-red dot** while capturing (steady-dim when paused).
+
+### Fixed
+- **Restore/Save errors are now clean human sentences** (e.g. “No saved AppData to restore for Dasher
+  yet.”) using the app label, not a raw “exited 3: no staged session for com.…” shell error, and no
+  longer double-echo the same failure as both a red inline message and a toast.
+- **Menu/row-expand flicker gone.** Removing the whole-tree LayoutTransition stops the flash that fired
+  every time a dropdown or an inline row-actions menu opened (each rebuilt the tab).
+
 ## [0.17.2] — 2026-07-29
 
 ### Changed

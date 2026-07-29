@@ -2,6 +2,15 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-29 (v0.17.3): kept the bottom-nav tab named "Identity", not "Fingerprint"** (user-confirmed).
+  The tab is broader than one fingerprint — it holds the device fields, the IDs, the carrier, AND the target
+  apps; "Fingerprint" in the Vault is the saved profile blob. Keeping them distinct is more accurate.
+- **2026-07-29 (v0.17.3): "Monitor reads" (per-app) and "Read logging" (Settings) are ONE two-level model.**
+  Per-app monitoring IS read logging scoped to that app, so starting a monitor now flips the global "Read
+  logging" pref ON (and Stop flips it back OFF *only if the monitor turned it on* — never clobbering a global
+  the user set). Renamed the Settings toggle "Diagnostics logging" → "Read logging"; each control's copy names
+  the other. Avoids the "are these the same thing?" confusion the user flagged.
+
 - **2026-07-27 · rootApps/developerTools are PROVEN sticky server-side reputation, not a client leak** —
   captured live that our Java hook returns 0 for development_settings_enabled + adb_enabled (the exact
   O0.java read), ro.debuggable=0, and every root file/thread/selinux surface is clean, yet the server

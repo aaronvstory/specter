@@ -58,7 +58,7 @@ public final class Protections {
         // OPT-IN diagnostics (default OFF). READ-ONLY — makes the hooks LOG what each scoped app reads +
         // what value we returned, to /data/local/tmp/specter/diag.log (via a background logcat capture).
         // Changes NOTHING the app sees, so it's safe; a slight perf/log cost is why it's off by default.
-        new P("trace",          "Diagnostics logging", "Logs what each app reads, so you can verify spoofs land. Read-only.", false),
+        new P("trace",          "Read logging", "The global switch for read logging. “Monitor reads” on a target app turns this on automatically. Read-only — changes nothing the app sees.", false),
     };
 
     /** Look up a protection by its gate key (e.g. "trace"). Returns null if unknown. */

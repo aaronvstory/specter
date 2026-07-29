@@ -89,6 +89,7 @@ public class MainActivity extends Activity {
     private final Set<String> expandedGroups = new java.util.HashSet<>();  // date groups the user EXPANDED
     private final Set<String> expandedRows = new java.util.HashSet<>();    // Vault rows whose ⋯ actions are open
     private String monitoringPkg = null;       // the pkg currently being trace-monitored (null = not monitoring).
+    private boolean traceAutoEnabled = false;  // did THIS monitor turn "trace" on? (so stop only undoes what it did)
                                                // The button toggles "Monitor reads" -> "Monitoring…"; a second tap
                                                // (or the 30-min auto-stop) ends it and opens the read report.
     private final android.os.Handler monitorTimeout = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -150,12 +151,11 @@ public class MainActivity extends Activity {
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(0, dp(Theme.S1), 0, dp(Theme.S6) * 2);   // side padding now lives on cards; big bottom pad
-        // Restrained motion: animate row/card insert+remove so expanding a section or switching tabs fades in
-        // instead of snapping. LayoutTransition is the one-liner that honours the system animator scale
-        // (respects "remove animations"/reduced-motion), so no extra reduced-motion handling needed.
-        android.animation.LayoutTransition lt = new android.animation.LayoutTransition();
-        lt.enableTransitionType(android.animation.LayoutTransition.CHANGING);
-        content.setLayoutTransition(lt);
+        // No LayoutTransition on `content`: every state change (expand a row, flip a toggle, switch tabs) goes
+        // through render() -> removeAllViews() + re-add, so a transition here can only ever animate a WHOLE-TREE
+        // teardown/rebuild — which reads as a flash/flicker on each toggle, not the gentle fade it was meant to
+        // be. Removing it kills the flicker with no behavioural loss (the content just swaps instantly).
+        // ponytail: if per-row expand animation is ever wanted, animate the changed subtree only, not `content`.
         scroll.addView(content);
         root.addView(scroll);
 
@@ -940,9 +940,9 @@ public class MainActivity extends Activity {
             actions.addView(row1);
             LinearLayout row2 = new LinearLayout(this); row2.setOrientation(LinearLayout.HORIZONTAL);
             row2.setPadding(0, dp(Theme.S2), 0, 0);
-            Button save = halfButton("Save login", v -> runSession(pkg, true, sessStatus));
+            Button save = halfButton("Save AppData", v -> runSession(pkg, true, sessStatus));
             View gap = new View(this); gap.setLayoutParams(new LinearLayout.LayoutParams(dp(Theme.S2), 1));
-            Button rest = halfButton("Restore login", v -> runSession(pkg, false, sessStatus));
+            Button rest = halfButton("Restore AppData", v -> runSession(pkg, false, sessStatus));
             row2.addView(save); row2.addView(gap); row2.addView(rest);
             actions.addView(row2);
             actions.addView(sessStatus);
@@ -1043,6 +1043,14 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (err != null) { statusView.setTextColor(Theme.RED); statusView.setText("Monitor failed: " + err); return; }
                 monitoringPkg = pkg;
+                // Monitoring one app IS read logging scoped to that app — reflect it in the global Settings
+                // toggle so the two controls never disagree (the source of the "are these the same?" confusion).
+                // Remember whether WE flipped it on, so Stop can undo exactly that — and NOT clobber a global
+                // "Read logging" the user had already switched on themselves. onCreate re-arms capture whenever
+                // this pref is on, so leaving it stuck-on would silently resume capture on every future launch.
+                Protections.P trace = Protections.byKey("trace");
+                traceAutoEnabled = trace != null && !Protections.isOn(prefs, trace);
+                if (traceAutoEnabled) Protections.set(prefs, trace, true);
                 DiagnosticsService.start(this);   // background capture -> diag.log
                 statusView.setTextColor(Theme.SAGE);
                 statusView.setText("Monitoring — relaunch " + Targets.label(this, pkg) + ", use it, then tap Stop.");
@@ -1064,13 +1072,15 @@ public class MainActivity extends Activity {
         monitorTimeout.removeCallbacksAndMessages(null);
         monitoringPkg = null;
         DiagnosticsService.stop(this);
+        clearTraceAutoEnable();   // undo the auto-ON so onCreate doesn't silently resume capture next launch
         status.setText("Stopping monitor…");
         new Thread(() -> {
             final String msg = disarmAndArchive(pkg);
             runOnUiThread(() -> {
                 status.setText(msg);
                 render();
-                startActivity(new Intent(this, DiagnosticsActivity.class));   // reads diag.log -> spoofed/real report
+                startActivity(new Intent(this, DiagnosticsActivity.class)
+                        .putExtra(DiagnosticsActivity.EXTRA_PKG, pkg));   // reads diag.log -> spoofed/real report
             });
         }, "specter-mon-stop").start();
     }
@@ -1142,6 +1152,7 @@ public class MainActivity extends Activity {
         monitorTimeout.removeCallbacksAndMessages(null);
         monitoringPkg = null;
         DiagnosticsService.stop(this);   // tear the capture down before the wipe thread starts
+        clearTraceAutoEnable();   // undo the auto-ON so onCreate doesn't silently resume capture next launch
         toast("Saving the in-progress read capture for " + Targets.label(this, pkg) + " first.");
         render();   // the button must stop saying "Monitoring…" now, not at some later redraw
         return pkg;
@@ -1156,6 +1167,16 @@ public class MainActivity extends Activity {
         final String msg = disarmAndArchive(pkg);
         // Toast, not the status line: the caller (APPLY/RESTORE) owns `status` from here on.
         runOnUiThread(() -> toast(msg));
+    }
+
+    /** If this monitor auto-enabled the global "Read logging" pref, switch it back off on stop — so the opt-in
+     *  diagnostics toggle returns to where the user left it and onCreate won't silently re-arm capture. A no-op
+     *  if the user had turned it on themselves (we only undo what the monitor turned on). */
+    private void clearTraceAutoEnable() {
+        if (!traceAutoEnabled) return;
+        traceAutoEnabled = false;
+        Protections.P trace = Protections.byKey("trace");
+        if (trace != null) Protections.set(prefs, trace, false);
     }
 
     /** Add/remove {@code "trace":"1"} in the app's live profile file via su. Returns null on success, else an error. */
@@ -1194,7 +1215,7 @@ public class MainActivity extends Activity {
                     String verr = appDataVault.save(label, pkg, fpLabel == null ? "" : fpLabel, device);
                     if (verr != null) ok = false;   // the durable save FAILED — report it as an error, not success
                     msg = verr == null
-                            ? "Saved " + Targets.label(this, pkg) + " login (" + out + ")"
+                            ? "Saved " + Targets.label(this, pkg) + " AppData"
                                 + (fpLabel != null && !fpLabel.isEmpty() ? " + fingerprint " + fpLabel : "")
                             : "Captured, but vault save failed: " + verr + " (staged at " + SessionMigrator.tarPath(pkg) + ")";
                 } else {
@@ -1203,18 +1224,48 @@ public class MainActivity extends Activity {
                         Intent li = getPackageManager().getLaunchIntentForPackage(pkg);
                         if (li != null) startActivity(li);
                     } catch (Throwable ignored) {}
-                    msg = "Session restored (" + out + "). Relaunched " + Targets.label(this, pkg) + ".";
+                    msg = "AppData restored for " + Targets.label(this, pkg) + " — relaunched.";
                 }
             } catch (SessionMigrator.SessionException e) {
-                ok = false; msg = (capture ? "Capture" : "Restore") + " failed: " + e.getMessage();
+                ok = false; msg = sessionErrorMessage(pkg, capture, e.getMessage());
             }
             final String fMsg = msg; final boolean fOk = ok;
             runOnUiThread(() -> {
+                // The inline per-app status line is the anchored channel (sits under the app's own buttons).
+                // Toast only on success — a red inline message + a red toast saying the same thing was noisy.
                 statusView.setTextColor(fOk ? Theme.SAGE : Theme.RED);
                 statusView.setText(fMsg);
-                toast(fMsg);
+                if (fOk) toast(fMsg);
             });
         }, "specter-session-" + (capture ? "cap" : "res")).start();
+    }
+
+    /** Turn a raw {@link SessionMigrator.SessionException} ("... exited 3: no staged session for <pkg>") into a
+     *  clean human line — the app LABEL, not the package, and a plain sentence, not a shell {@code exited N}.
+     *  The exit codes are the ones the capture/restore shell scripts echo (see {@link SessionMigrator}); any
+     *  code we don't recognise falls back to a generic message rather than leaking the raw shell error. */
+    private String sessionErrorMessage(String pkg, boolean capture, String raw) {
+        final String app = Targets.label(this, pkg);
+        int code = -1;
+        if (raw != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("exited (\\d+)").matcher(raw);
+            if (m.find()) { try { code = Integer.parseInt(m.group(1)); } catch (NumberFormatException ignored) {} }
+        }
+        if (capture) {
+            switch (code) {
+                case 3: return "Can't save " + app + " — it isn't installed on this device.";
+                case 4: return "Nothing to save for " + app + " yet — open it and sign in first.";
+                case 5: return "Couldn't save " + app + " — it wouldn't stop. Close it and try again.";
+                default: return "Couldn't save " + app + "'s AppData. Is root granted to Specter?";
+            }
+        }
+        switch (code) {
+            case 3: return "No saved AppData to restore for " + app + " yet.";
+            case 4: return "Can't restore " + app + " — it isn't installed on this device.";
+            case 5: case 6: return "The saved AppData for " + app + " is corrupt — nothing was changed.";
+            case 8: return "Couldn't restore " + app + " — it wouldn't stop. Close it and try again.";
+            default: return "Couldn't restore " + app + "'s AppData. Is root granted to Specter?";
+        }
     }
 
     /** Ensure the fingerprint the app is CURRENTLY running under is in the vault, and return its label.
@@ -1658,13 +1709,13 @@ public class MainActivity extends Activity {
         sw.setOnCheckedChangeListener((v, on) -> {
             Protections.set(prefs, prot, on);
             styleChip(chip, on);
-            // "Diagnostics logging" (trace) also manages the background capture service. It's read-only,
+            // "Read logging" (trace) also manages the background capture service. It's read-only,
             // so start/stop immediately; the trace=1 gate reaches the hooks on the next APPLY.
             if ("trace".equals(prot.gateKey)) {
                 if (on) DiagnosticsService.start(this); else DiagnosticsService.stop(this);
                 status.setText(on
-                        ? "Diagnostics ON — capturing to " + DiagnosticsService.LOG_PATH + "; APPLY to arm the hooks."
-                        : "Diagnostics OFF — capture stopped.");
+                        ? "Read logging ON — APPLY to arm, then open a scoped app. View it below."
+                        : "Read logging OFF — capture stopped.");
             } else {
                 status.setText(prot.label + (on ? " enabled" : " disabled") + " — APPLY to push.");
             }
@@ -1773,8 +1824,8 @@ public class MainActivity extends Activity {
             final String fErr = err; final String fNote = note.toString();
             runOnUiThread(() -> {
                 try {
-                    if (fErr == null) { status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + "."); toast("Login restored."); }
-                    else { status.setText("Restore failed: " + fErr); toast("Restore failed: " + fErr); }
+                    if (fErr == null) status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + ".");
+                    else status.setText(sessionErrorMessage(e.pkg, false, fErr));
                 } finally { opBusy = false; }
             });
         }, "specter-appdata-restore").start();
