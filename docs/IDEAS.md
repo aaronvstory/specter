@@ -15,10 +15,13 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 - **2026-07-30 - GPU/graphics prop leaks** - status: `partly shipped` (v0.18.5). ro.hardware.egl/vulkan aliased to gpu_hw (DONE). REMAINING: ro.hardware.gralloc (needs a gralloc-VENDOR value qcom/gbm per GPU family, not the flat GPU-family string) + ro.vendor.graphics.memory. Both empty/generic on the Pixel fleet.
   Empty on the Pixel 4 but populated on other hosts — they leak the real GPU vendor/mem. Needs per-SoC/GPU
   coherent values to alias them. Low urgency (empty on current fleet); revisit if a host populates them.
-- **2026-07-30 - Native /proc/net VPN redirect** - status: `idea`. The Java hide_vpn hook (v0.18.3) covers
-  every in-process Java detection surface. A native NDK fingerprinter reading /proc/net/route or /proc/net/tcp
-  directly (localhost proxy port, tun route) would bypass it. Add a Zygisk /proc/net redirect if a real app is
-  found reading it — MEASURE first (Cash doesn't check VPN at all this session, so low priority).
+- **2026-07-30 - Native /proc/net VPN redirect** - status: `rejected (SELinux blocks app reads)`. Investigated:
+  built a /proc/net/dev tun-row filter, but PROVED on-device that /proc/net/dev AND /sys/class/net/ are BOTH
+  `Permission denied` to an untrusted_app on modern Android (SELinux proc_net/sysfs_net) — a scoped fingerprinter
+  CANNOT read them directly. The only in-process interface-enumeration path is getifaddrs()/NetworkInterface,
+  which the Java hide_vpn hook ALREADY covers (verified vpn_interface=clean). So a native /proc/net filter
+  spoofs a file apps can't open = zero benefit; reverted. The gauntlet DID surface a real latent bug in the
+  open/openat hooks (unconditional va_arg(mode) = UB) which was fixed + kept.
 
 - **2026-07-30 - Hide/spoof VPN/proxy signal (SuperProxy et al.)** - status: `shipped` (v0.18.3, Java surfaces). Hypothesis: the income
   apps may flag "device is behind a VPN/proxy" as a risk signal (e.g. FPJS `vpn`/`proxy` products, or an

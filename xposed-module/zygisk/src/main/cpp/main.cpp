@@ -384,12 +384,16 @@ static bool is_root_path(const char *path) {
 // handing it a filtered file crashed FPJS on launch (splash loop, process died). Hiding root/tamper from
 // libfp.so's maps read needs a far more surgical approach (identify the libfp caller, or intercept only
 // its specific read), out of scope for a quick pass. clean_maps_fd()/is_maps() kept but unused.
+// The variadic `mode` arg is ONLY present when flags include O_CREAT or O_TMPFILE. Reading va_arg
+// unconditionally (even for a plain O_RDONLY open) is undefined behavior — read it only when the flags
+// actually carry it, else pass 0 (unused by the kernel when not creating). (codex-flagged latent UB.)
 static int my_openat(int dirfd, const char *path, int flags, ...) {
     if (g_trace) trace_path("openat", path);
     if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     const char *rp = redirect_path(path);
     if (rp != path) return orig_openat(AT_FDCWD, rp, O_RDONLY | O_CLOEXEC);
-    va_list ap; va_start(ap, flags); mode_t mode = va_arg(ap, int); va_end(ap);
+    mode_t mode = 0;
+    if (flags & (O_CREAT | O_TMPFILE)) { va_list ap; va_start(ap, flags); mode = va_arg(ap, int); va_end(ap); }
     return orig_openat(dirfd, path, flags, mode);
 }
 static int my_open(const char *path, int flags, ...) {
@@ -397,7 +401,8 @@ static int my_open(const char *path, int flags, ...) {
     if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
     const char *rp = redirect_path(path);
     if (rp != path) return orig_open(rp, O_RDONLY | O_CLOEXEC);
-    va_list ap; va_start(ap, flags); mode_t mode = va_arg(ap, int); va_end(ap);
+    mode_t mode = 0;
+    if (flags & (O_CREAT | O_TMPFILE)) { va_list ap; va_start(ap, flags); mode = va_arg(ap, int); va_end(ap); }
     return orig_open(path, flags, mode);
 }
 
