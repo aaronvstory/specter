@@ -153,18 +153,21 @@ public final class Vault {
         return src.renameTo(new File(dir, target + ".json")) ? target : null;
     }
 
-    /** Export a saved profile as a portable, checksummed envelope written to /sdcard/Download so it can be
-     *  shared with another user. Returns the destination path, or null on failure (missing entry / no write).
-     *  The file is named specter-profile-&lt;label&gt;.json. Vault-local metadata is stripped by the envelope. */
+    /** The single folder all Specter exports go to (auto-created on first export). One place the user can find
+     *  their shared Fingerprints and AppData bundles, instead of a cluttered Download/ root. */
+    public static final String EXPORT_DIR = "/sdcard/Download/Specter";
+
+    /** Export a saved Fingerprint as a portable, checksummed envelope written to {@link #EXPORT_DIR} so it can
+     *  be shared. Returns the destination path, or null on failure. Named specter-profile-&lt;label&gt;.json. */
     public String exportToDownloads(String label) {
         Map<String, String> p = readMap(new File(dir, label + ".json"));
         if (p == null) return null;
         String env = VaultPortable.buildEnvelope(p);
         if (env == null) return null;
         String destName = "specter-profile-" + sanitize(label) + ".json";
-        String dest = "/sdcard/Download/" + destName;
+        String dest = EXPORT_DIR + "/" + destName;
         // The app has no storage permission, so a direct write to /sdcard/Download is DENIED. Stage the
-        // file in our own (always-writable) files dir, then su-copy it into Download + make it readable.
+        // file in our own (always-writable) files dir, then su-copy it into the export folder + make it readable.
         File staged = new File(dir.getParentFile(), destName);
         // Defense-in-depth: sanitize() already restricts the name, but refuse to su-exec any path with a
         // shell metacharacter (belt-and-braces against a future caller passing a raw label).
@@ -175,7 +178,7 @@ public final class Vault {
         Process pr = null;
         try {
             pr = Runtime.getRuntime().exec(new String[]{"su", "-c",
-                    "cp '" + staged.getAbsolutePath() + "' '" + dest + "' && chmod 644 '" + dest + "'"});
+                    "mkdir -p '" + EXPORT_DIR + "' && cp '" + staged.getAbsolutePath() + "' '" + dest + "' && chmod 644 '" + dest + "'"});
             int code = pr.waitFor();
             return code == 0 ? dest : null;
         } catch (Throwable t) { return null; }
@@ -184,6 +187,13 @@ public final class Vault {
             //noinspection ResultOfMethodCallIgnored
             staged.delete();   // always remove the staged copy, success or fail
         }
+    }
+
+    /** Build the portable, checksummed Fingerprint envelope for a saved label (for a combined export bundle).
+     *  Returns null if the label isn't in the vault. */
+    public String envelopeFor(String label) {
+        Map<String, String> p = readMap(new File(dir, label + ".json"));
+        return p == null ? null : VaultPortable.buildEnvelope(p);
     }
 
     /** Import a portable envelope file into the vault under a fresh timestamp label. Validates format +
@@ -225,6 +235,29 @@ public final class Vault {
         String label = save(name, parsed.profile, "");
         return label != null ? new ImportResult(label, null)
                              : new ImportResult(null, "could not write to the vault");
+    }
+
+    /** Import a Fingerprint envelope from an APP-OWNED file (e.g. a combo bundle already extracted to our temp
+     *  dir) — a plain read, no su. Same validation as {@link #importOnce}. Returns label-or-error. */
+    public ImportResult importEnvelopeFile(File src, String name) {
+        if (src == null || !src.exists()) return new ImportResult(null, "fingerprint file missing");
+        String text = readMapRaw(src);
+        if (text == null) return new ImportResult(null, "could not read fingerprint file");
+        VaultPortable.Parsed parsed = VaultPortable.parseEnvelope(text);
+        if (!parsed.isOk()) return new ImportResult(null, parsed.error);
+        String label = save(name, parsed.profile, "");
+        return label != null ? new ImportResult(label, null)
+                             : new ImportResult(null, "could not write to the vault");
+    }
+
+    /** Read a plain app-owned text file to a String (UTF-8), or null on failure. */
+    private static String readMapRaw(File f) {
+        try (FileInputStream in = new FileInputStream(f)) {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096]; int n;
+            while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+            return new String(bos.toByteArray(), "UTF-8");
+        } catch (Exception e) { return null; }
     }
 
     /** Read a file the app itself can't (no storage permission) via su. Returns null on failure. Restricted

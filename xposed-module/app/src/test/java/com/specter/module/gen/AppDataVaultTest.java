@@ -54,10 +54,12 @@ public class AppDataVaultTest {
 
         // ---- export/import bundle commands ----
         String exp = AppDataVault.buildExportCommand("/data/data/com.specter/files/appdata",
-                "072926-Sun-1924-razr", "/sdcard/Download/specter-login-072926-Sun-1924-razr.tar");
-        check(exp.contains("tar cf '/sdcard/Download/specter-login-072926-Sun-1924-razr.tar'"), "export builds the bundle tar");
+                "072926-Sun-1924-razr", "/sdcard/Download/Specter/specter-login-072926-Sun-1924-razr.tar",
+                "/sdcard/Download/Specter");
+        check(exp.contains("tar cf '/sdcard/Download/Specter/specter-login-072926-Sun-1924-razr.tar'"), "export builds the bundle tar");
         check(exp.contains("'072926-Sun-1924-razr.tgz' '072926-Sun-1924-razr.meta'"), "export bundles BOTH tgz + meta");
         check(exp.contains("test -f") && exp.indexOf("test -f") < exp.indexOf("tar cf"), "export guards missing source");
+        check(exp.contains("mkdir -p '/sdcard/Download/Specter'"), "export auto-creates the Specter folder");
 
         String imp = AppDataVault.buildImportCommand("/sdcard/Download/specter-login-x.tar",
                 "/data/data/com.specter/files/appdata", "072926-Sun-1924-razr");
@@ -66,6 +68,44 @@ public class AppDataVaultTest {
         check(imp.contains("tar tvf") && imp.contains("grep -qvE '^-'"), "import requires regular-file entries only");
         // import EXACT-SET guard: members must be exactly <label>.meta + <label>.tgz for the expected label.
         check(imp.contains("072926-Sun-1924-razr.meta|072926-Sun-1924-razr.tgz|"), "import requires exactly the label's two files");
+
+        // ---- combined-bundle commands (fingerprint .json + AppData .tgz/.meta as one tar) ----
+        String cexp = AppDataVault.buildComboExportCommand("/data/data/com.specter/files/appdata",
+                "072926-Sun-1924-razr", "/sdcard/Download/Specter/specter-combo-072926-Sun-1924-razr.tar",
+                "/sdcard/Download/Specter");
+        check(cexp.contains("'072926-Sun-1924-razr.json' '072926-Sun-1924-razr.tgz' '072926-Sun-1924-razr.meta'"),
+                "combo export bundles json + tgz + meta");
+        check(cexp.contains("test -f") && cexp.contains(".json'"), "combo export guards BOTH sources");
+        check(cexp.contains("mkdir -p '/sdcard/Download/Specter'"), "combo export auto-creates the Specter folder");
+
+        String cimp = AppDataVault.buildComboImportCommand("/sdcard/Download/Specter/specter-combo-x.tar",
+                "/data/data/com.specter/files/combo-import-072926-Sun-1924-razr", "072926-Sun-1924-razr");
+        // TOCTOU-safe: the untrusted /sdcard tar is COPIED to an app-owned staged path FIRST, then ALL
+        // validation + extraction touch only the staged copy.
+        check(cimp.contains("cp '/sdcard/Download/Specter/specter-combo-x.tar' '/data/data/com.specter/files/combo-import-072926-Sun-1924-razr/src.tar'"),
+                "combo import stages the untrusted tar to an app-owned copy first");
+        check(cimp.contains("tar tvf '/data/data/com.specter/files/combo-import-072926-Sun-1924-razr/src.tar'"),
+                "combo import validates the STAGED copy, not the /sdcard original (no TOCTOU)");
+        check(cimp.contains("tar tvf") && cimp.contains("grep -qvE '^-'"), "combo import requires regular-file entries only");
+        check(cimp.contains("072926-Sun-1924-razr.json|072926-Sun-1924-razr.meta|072926-Sun-1924-razr.tgz|"),
+                "combo import requires exactly the label's three files");
+        check(cimp.contains("tar xf '/data/data/com.specter/files/combo-import-072926-Sun-1924-razr/src.tar' -C '/data/data/com.specter/files/combo-import-072926-Sun-1924-razr'"),
+                "combo import extracts the STAGED copy to the temp dir");
+        check(cimp.contains("chmod 644 '/data/data/com.specter/files/combo-import-072926-Sun-1924-razr/072926-Sun-1924-razr.json'"),
+                "combo import chmods extracted members so the app can read them");
+
+        // ---- label grammar: first char must be alphanumeric (no leading '-' -> tar-option, no leading '.' -> hidden) ----
+        check(AppDataVault.validLabel("072926-Sun-1924-razr"), "validLabel accepts a normal timestamp label");
+        check(!AppDataVault.validLabel("-rf"), "validLabel rejects a leading dash (would be read as a tar/rm option)");
+        check(!AppDataVault.validLabel(".hidden"), "validLabel rejects a leading dot");
+
+        // ---- bundle-name routing ----
+        check("072926-Sun-1924-razr".equals(AppDataVault.labelOfBundle("specter-combo-072926-Sun-1924-razr.tar")),
+                "labelOfBundle reads a combo bundle label");
+        check("072926-Sun-1924-razr".equals(AppDataVault.labelOfBundle("specter-login-072926-Sun-1924-razr.tar")),
+                "labelOfBundle reads a login bundle label");
+        check(AppDataVault.labelOfBundle("specter-profile-x.json") == null, "labelOfBundle rejects a non-tar name");
+        check(AppDataVault.labelOfBundle("specter-combo-../evil.tar") == null, "labelOfBundle rejects a traversal label");
 
         // ---- name sanitizer ----
         check(AppDataVault.sanitizeName("Bob's Phone!").equals("Bobs_Phone"), "sanitizeName strips punctuation, space->_");

@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [0.17.1] — 2026-07-29
 
+### Added
+- **Export / import a Fingerprint and its AppData together, as one file.** All exports now go to an
+  auto-created `Download/Specter` folder. From a Fingerprint or an AppData row you can export it alone or
+  as a **combined bundle** (`specter-combo-*.tar`) carrying both. A dedicated, in-app **Import screen**
+  (proper back button + styled type cards, not an OS pop-up) lists everything importable and handles a
+  Fingerprint (`.json`), an AppData bundle (`.tar`), or a combined bundle; a combined import relinks the
+  two halves on the destination device. Root tar extraction is TOCTOU-safe (validates + extracts an
+  app-owned copy) and reuses the existing regular-file + exact-member guards.
+
 ### Changed
 - **Vault polish + consistent vocabulary.** Standardized on two terms, explained once on the Saved page:
   a **Fingerprint** is a saved device config; **AppData** is a saved app login. “Device profiles” /

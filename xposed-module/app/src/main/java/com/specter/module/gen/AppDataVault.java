@@ -29,8 +29,10 @@ public final class AppDataVault {
     // Same package grammar as the rest of the su boundary — the ONLY app-controlled value interpolated.
     private static final Pattern PKG = SessionMigratorPkg.PKG;
     // A vault label is our own MMDDYY-Day-HHMM[-name] scheme; restrict to a safe charset so it can never
-    // carry a shell metacharacter into the su copy commands.
-    private static final Pattern LABEL = Pattern.compile("[A-Za-z0-9_.-]{1,80}");
+    // carry a shell metacharacter into the su copy commands. The FIRST char must be alphanumeric — a label
+    // (hence a "<label>.tgz" tar member arg) can never start with '-' (tar would read it as an OPTION) or '.'
+    // (a hidden file). Our labels always start with a digit (MMDDYY) so this rejects nothing legitimate.
+    private static final Pattern LABEL = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,79}");
 
     public static boolean validLabel(String s) { return s != null && LABEL.matcher(s).matches(); }
     public static boolean validPkg(String s) { return s != null && PKG.matcher(s).matches(); }
@@ -157,24 +159,29 @@ public final class AppDataVault {
     /** The package a saved app-data belongs to (needed to run SessionMigrator.restore after restoreToStaging). */
     public String pkgOf(String label) { Entry e = get(label); return e == null ? null : e.pkg; }
 
-    /** su command: bundle a saved login's tarball + meta into a single portable tar in /sdcard/Download so it
+    /** The single folder all Specter exports go to (auto-created on first export). Kept in sync with
+     *  {@code Vault.EXPORT_DIR} — both exporters write here so the user has one place to find shared files. */
+    public static final String EXPORT_DIR = "/sdcard/Download/Specter";
+
+    /** su command: bundle a saved AppData's tarball + meta into a single portable tar in the export folder so it
      *  can be moved to another device. Named specter-login-&lt;label&gt;.tar. Returns the command; both the vault
-     *  dir and the label are validated before this is built. */
-    public static String buildExportCommand(String vaultDir, String label, String dest) {
+     *  dir and the label are validated before this is built. Auto-creates the export folder. */
+    public static String buildExportCommand(String vaultDir, String label, String dest, String exportDir) {
         return "test -f '" + vaultDir + "/" + label + ".tgz' || { echo 'no such login'; exit 3; }; "
+                + "mkdir -p '" + exportDir + "' && "
                 + "tar cf '" + dest + "' -C '" + vaultDir + "' '" + label + ".tgz' '" + label + ".meta' && "
                 + "chmod 644 '" + dest + "' && echo exported $(stat -c %s '" + dest + "') bytes";
     }
 
-    /** Export a saved login (tarball + meta) to /sdcard/Download. Returns the dest path, or null on failure.
+    /** Export a saved AppData (tarball + meta) to {@link #EXPORT_DIR}. Returns the dest path, or null on failure.
      *  Runs blocking su — call off the UI thread. */
     public String exportToDownloads(String label) {
         if (!validLabel(label) || get(label) == null) return null;
-        String dest = "/sdcard/Download/specter-login-" + label + ".tar";
+        String dest = EXPORT_DIR + "/specter-login-" + label + ".tar";
         String vaultDir = dir.getAbsolutePath();
-        if (!isSafe(vaultDir) || !isSafe(dest)) return null;
+        if (!isSafe(vaultDir) || !isSafe(dest) || !isSafe(EXPORT_DIR)) return null;
         try {
-            String out = new SessionMigrator.SuShell().run(buildExportCommand(vaultDir, label, dest)).output;
+            String out = new SessionMigrator.SuShell().run(buildExportCommand(vaultDir, label, dest, EXPORT_DIR)).output;
             return out != null && out.contains("exported") ? dest : null;
         } catch (Exception e) { return null; }
     }
@@ -200,6 +207,42 @@ public final class AppDataVault {
                 + "tar xf '" + srcTar + "' -C '" + vaultDir + "' && echo imported";
     }
 
+    /** su command: build a COMBINED bundle (fingerprint envelope {@code <label>.json} + AppData
+     *  {@code <label>.tgz} + {@code <label>.meta}) into one portable tar, so a Fingerprint and its AppData
+     *  travel together to another device. The {@code .json} is staged into the vault dir by the caller first.
+     *  Auto-creates the export folder. */
+    public static String buildComboExportCommand(String vaultDir, String label, String dest, String exportDir) {
+        return "test -f '" + vaultDir + "/" + label + ".tgz' || { echo 'no such login'; exit 3; }; "
+                + "test -f '" + vaultDir + "/" + label + ".json' || { echo 'no such fingerprint'; exit 3; }; "
+                + "mkdir -p '" + exportDir + "' && "
+                + "tar cf '" + dest + "' -C '" + vaultDir + "' '" + label + ".json' '" + label + ".tgz' '" + label + ".meta' && "
+                + "chmod 644 '" + dest + "' && echo exported $(stat -c %s '" + dest + "') bytes";
+    }
+
+    /** su command: extract a COMBINED bundle (from {@link #buildComboExportCommand}) into {@code destDir}. Same
+     *  strict guards as {@link #buildImportCommand} — EVERY entry must be a regular file, and the member set must
+     *  be EXACTLY {@code <label>.json + <label>.meta + <label>.tgz}, nothing else. Extracted to an app-owned
+     *  temp dir (NOT a vault) so the caller can validate + dispatch each part safely.
+     *
+     *  <p>TOCTOU-safe: the untrusted /sdcard tar is COPIED to an app-owned staging path ({@code destDir/src.tar},
+     *  which another app can't swap) FIRST, and all validation + extraction run against that COPY — so the bytes
+     *  we validate are exactly the bytes we extract, even if the /sdcard original is swapped mid-script. */
+    public static String buildComboImportCommand(String srcTar, String destDir, String label) {
+        String staged = destDir + "/src.tar";
+        return "test -f '" + srcTar + "' || { echo 'no such bundle'; exit 3; }; "
+                + "mkdir -p '" + destDir + "' && cp '" + srcTar + "' '" + staged + "' || { echo 'stage failed'; exit 6; }; "
+                // From here on, ONLY the app-owned staged copy is touched (immune to a /sdcard swap).
+                + "if tar tvf '" + staged + "' 2>/dev/null | grep -qvE '^-'; then echo 'bundle has a non-regular-file entry'; exit 5; fi; "
+                + "got=$(tar tf '" + staged + "' | sort | tr '\\n' '|'); "
+                + "[ \"$got\" = '" + label + ".json|" + label + ".meta|" + label + ".tgz|' ] "
+                + "|| { echo 'bundle members are not exactly " + label + ".{json,tgz,meta}'; exit 4; }; "
+                // Extract as root, chmod the members world-readable (tar restores archived modes, so without this
+                // the non-root app may not be able to read them), and drop the staged copy.
+                + "tar xf '" + staged + "' -C '" + destDir + "' && "
+                + "chmod 644 '" + destDir + "/" + label + ".json' '" + destDir + "/" + label + ".tgz' '" + destDir + "/" + label + ".meta' && "
+                + "rm -f '" + staged + "' && echo imported";
+    }
+
     /** Import a portable login bundle from /sdcard/Download into the vault. Returns the imported label on
      *  success, or null. Runs blocking su — call off the UI thread. */
     public String importFromDownloads(java.io.File src) {
@@ -222,11 +265,126 @@ public final class AppDataVault {
         } catch (Exception e) { return null; }
     }
 
+    /** Export a COMBINED bundle: the AppData ({@code label}) + its linked Fingerprint envelope, as one tar in
+     *  {@link #EXPORT_DIR}. {@code fpEnvelopeJson} is the fingerprint envelope built by the Fingerprint vault
+     *  (VaultPortable.buildEnvelope). Returns the dest path, or null. Runs blocking su — call off the UI thread. */
+    public String exportCombo(String label, String fpEnvelopeJson) {
+        if (!validLabel(label) || get(label) == null || fpEnvelopeJson == null) return null;
+        String vaultDir = dir.getAbsolutePath();
+        String dest = EXPORT_DIR + "/specter-combo-" + label + ".tar";
+        if (!isSafe(vaultDir) || !isSafe(dest) || !isSafe(EXPORT_DIR)) return null;
+        java.io.File staged = new java.io.File(dir, label + ".json");   // stage the envelope alongside the .tgz/.meta
+        try {
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(staged)) {
+                fos.write(fpEnvelopeJson.getBytes("UTF-8"));
+            }
+            String out = new SessionMigrator.SuShell().run(buildComboExportCommand(vaultDir, label, dest, EXPORT_DIR)).output;
+            return out != null && out.contains("exported") ? dest : null;
+        } catch (Exception e) { return null; }
+        finally { //noinspection ResultOfMethodCallIgnored
+            staged.delete(); }   // never leave the staged .json in the vault dir
+    }
+
+    /** Extract a COMBINED bundle to a fresh app-owned temp dir and return it, so the caller can validate + import
+     *  each part (the .json to the Fingerprint vault, the .tgz/.meta to this vault). Returns null on failure. The
+     *  caller MUST delete the returned dir when done. Runs blocking su — call off the UI thread. */
+    public java.io.File importComboToTemp(java.io.File src) {
+        if (src == null) return null;
+        String name = src.getName();
+        if (!name.startsWith("specter-combo-") || !name.endsWith(".tar")) return null;
+        String label = name.substring("specter-combo-".length(), name.length() - 4);
+        if (!validLabel(label)) return null;
+        String path = src.getAbsolutePath();
+        if (!path.startsWith("/sdcard/Download/") || path.contains("..") || !isSafe(path)) return null;
+        java.io.File tmp = new java.io.File(dir.getParentFile(), "combo-import-" + label);
+        //noinspection ResultOfMethodCallIgnored
+        tmp.mkdirs();
+        String tmpPath = tmp.getAbsolutePath();
+        if (!isSafe(tmpPath)) { deleteDir(tmp); return null; }
+        try {
+            String out = new SessionMigrator.SuShell().run(buildComboImportCommand(path, tmpPath, label)).output;
+            if (out == null || !out.contains("imported")) { deleteDir(tmp); return null; }
+            return tmp;
+        } catch (Exception e) { deleteDir(tmp); return null; }
+    }
+
+    /** Ingest an AppData pair ({@code <label>.tgz} + {@code <label>.meta}) from an app-owned temp dir (the
+     *  output of {@link #importComboToTemp}) INTO this vault. Validates the meta (pkg/fingerprint grammar) before
+     *  committing, and won't overwrite an existing label. Returns the label on success, else null. No su needed —
+     *  both dirs are app-owned. */
+    public String ingestPairFromDir(java.io.File tmpDir, String label) {
+        if (tmpDir == null || !validLabel(label)) return null;
+        java.io.File srcTar = new java.io.File(tmpDir, label + ".tgz");
+        java.io.File srcMeta = new java.io.File(tmpDir, label + ".meta");
+        if (!srcTar.exists() || !srcMeta.exists()) return null;
+        // Validate the meta up front — a bundle's pkg/fingerprint flow into later su paths (restoreToStaging), so
+        // it must clear the same grammar as a freshly-captured entry (parseMeta enforces it).
+        if (parseMeta(label, readFile(srcMeta)) == null) return null;
+        java.io.File dstTar = tarFile(label), dstMeta = metaFile(label);
+        if (dstTar.exists() || dstMeta.exists()) return null;   // don't clobber an existing entry
+        // Copy (not rename — cross-dir rename can fail across mounts), then verify both landed.
+        if (!copyFile(srcTar, dstTar)) return null;
+        if (!copyFile(srcMeta, dstMeta)) { //noinspection ResultOfMethodCallIgnored
+            dstTar.delete(); return null; }
+        return get(label) != null ? label : null;
+    }
+
+    private static boolean copyFile(java.io.File src, java.io.File dst) {
+        try (java.io.FileInputStream in = new java.io.FileInputStream(src);
+             java.io.FileOutputStream out = new java.io.FileOutputStream(dst)) {
+            byte[] buf = new byte[8192]; int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+            return true;
+        } catch (Exception e) { //noinspection ResultOfMethodCallIgnored
+            dst.delete(); return false; }
+    }
+
+    /** The path to the fingerprint envelope inside a combo temp dir, for the caller to hand to the FP vault. */
+    public static java.io.File comboJson(java.io.File tmpDir, String label) {
+        return (tmpDir == null || !validLabel(label)) ? null : new java.io.File(tmpDir, label + ".json");
+    }
+
+    /** The label a combo/login bundle file encodes, or null if the name doesn't match. Used by the UI to route. */
+    public static String labelOfBundle(String fileName) {
+        if (fileName == null) return null;
+        String stem = null;
+        if (fileName.startsWith("specter-combo-") && fileName.endsWith(".tar"))
+            stem = fileName.substring("specter-combo-".length(), fileName.length() - 4);
+        else if (fileName.startsWith("specter-login-") && fileName.endsWith(".tar"))
+            stem = fileName.substring("specter-login-".length(), fileName.length() - 4);
+        return validLabel(stem) ? stem : null;
+    }
+
+    /** Recursively delete an app-owned temp dir (best-effort). */
+    public static void deleteDir(java.io.File d) {
+        if (d == null) return;
+        java.io.File[] kids = d.listFiles();
+        if (kids != null) for (java.io.File k : kids) { //noinspection ResultOfMethodCallIgnored
+            k.delete(); }
+        //noinspection ResultOfMethodCallIgnored
+        d.delete();
+    }
+
     public Entry get(String label) {
         if (!validLabel(label)) return null;
         java.io.File mf = metaFile(label);
         if (!mf.exists()) return null;
         return parseMeta(label, readFile(mf));
+    }
+
+    /** Repoint the fingerprint link of ONE specific AppData entry (by its own label) — unlike
+     *  {@link #relinkFingerprint}, which sweeps every entry matching an old fingerprint label. Used after a
+     *  combined-bundle import, where the incoming fingerprint label is UNTRUSTED and could collide with a
+     *  pre-existing local entry's link (a blind sweep would then corrupt that unrelated pairing). Returns true
+     *  if the entry's meta was rewritten. */
+    public boolean relinkOne(String label, String newFpLabel) {
+        if (!validLabel(label) || !validLabel(newFpLabel)) return false;
+        Entry e = get(label);
+        if (e == null) return false;
+        String meta = serializeMeta(e.pkg, e.savedAt, e.sizeBytes, newFpLabel, e.device);
+        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(metaFile(label))) {
+            fos.write(meta.getBytes("UTF-8")); return true;
+        } catch (Exception ex) { return false; }
     }
 
     /** All saved app-data entries, newest first. Pass a non-null {@code pkgFilter} to keep only that app. */

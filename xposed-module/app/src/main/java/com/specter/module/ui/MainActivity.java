@@ -68,6 +68,8 @@ public class MainActivity extends Activity {
     // ---- Vault (Saved tab) drill-down state ----
     private int vaultFilter = 0;    // top-level type facet: 0 = all, 1 = logins only, 2 = device profiles only
     private String vaultApp = "";   // the app drilled into ("" = the app-list / top level). A pkg with saved logins.
+    private boolean vaultImport = false;   // showing the dedicated Import browse screen (a Vault sub-view)
+    private java.util.List<String> importPaths;   // the scanned importable file paths (null until scanned)
     /** pkg -> its saved login(s), newest first. Rebuilt once per Saved-tab render from appDataVault.list().
      *  A login's `fingerprint` field is the vault-label to re-apply on restore (may be "" / stale — restore
      *  handles both). The user organizes by APP, so pkg is the primary index, not the fingerprint label. */
@@ -240,7 +242,7 @@ public class MainActivity extends Activity {
             llp.topMargin = dp(3);
             lbl.setLayoutParams(llp);
             item.addView(lbl);
-            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; rebuildBottomNav(); render(); } });
+            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; rebuildBottomNav(); render(); } });
             bottomNavBar.addView(item);
         }
     }
@@ -278,6 +280,13 @@ public class MainActivity extends Activity {
         // "Change" button lives on BOTH the Identity (tab 0) and Settings (tab 2) tabs, so gating on
         // tab==2 left the Identity target card showing stale selections after picking apps.
         if (svc != null) render();
+    }
+
+    /** Hardware back exits a Vault SUB-SCREEN (Import browser / app drill-down) before leaving the app. */
+    @Override public void onBackPressed() {
+        if (tab == 1 && vaultImport) { closeImportScreen(); return; }
+        if (tab == 1 && !vaultApp.isEmpty()) { vaultApp = ""; vaultQuery = ""; render(); return; }
+        super.onBackPressed();
     }
 
     // ---------- top chrome ----------
@@ -1780,13 +1789,27 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    /** Export a saved login bundle (tarball + meta) to /sdcard/Download so it can be moved to another device. */
+    /** Export AppData: if it has a linked Fingerprint, let the user pick AppData-only or a combined bundle. */
+    private void exportAppDataChoice(final com.specter.module.gen.AppDataVault.Entry e) {
+        boolean hasFp = !e.fingerprint.isEmpty() && vault.load(e.fingerprint) != null;
+        if (!hasFp) { exportAppData(e); return; }
+        new AlertDialog.Builder(this)
+                .setTitle("Export")
+                .setItems(new String[]{"AppData only", "With its Fingerprint (one file)"}, (d, w) -> {
+                    if (w == 0) exportAppData(e);
+                    else exportCombo(e.label);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Export a saved AppData bundle (tarball + meta) to the Specter folder so it can be moved to another device. */
     private void exportAppData(final com.specter.module.gen.AppDataVault.Entry e) {
-        status.setText("Exporting " + Targets.label(this, e.pkg) + " login…");
+        status.setText("Exporting " + appLabel(e.pkg) + " AppData…");
         new Thread(() -> {
             final String dest = appDataVault.exportToDownloads(e.label);
             runOnUiThread(() -> {
-                if (dest != null) { toast("Exported → " + dest); status.setText("Exported login → " + dest); }
+                if (dest != null) { toast("Exported → " + dest); status.setText("Exported AppData → " + dest); }
                 else { toast("Export failed (grant root?)."); status.setText("Export failed for " + e.label); }
             });
         }, "specter-appdata-export").start();
@@ -1815,6 +1838,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderSaved() {
+        if (vaultImport) { renderImportScreen(); return; }   // dedicated Import browse sub-screen
         content.addView(sectionLabel("Save current identity"));
         LinearLayout saveCard = cardBox();
         saveCard.addView(value("Save the applied identity to re-apply it later."));
@@ -1837,7 +1861,7 @@ public class MainActivity extends Activity {
         importCard.addView(idesc);
         LinearLayout importRow = new LinearLayout(this);
         importRow.setOrientation(LinearLayout.HORIZONTAL);
-        importRow.addView(button("Import…", false, v -> promptImport()));
+        importRow.addView(button("Import…", false, v -> openImportScreen()));
         importCard.addView(importRow);
         content.addView(importCard);
 
@@ -2088,7 +2112,7 @@ public class MainActivity extends Activity {
         card.addView(rowActions("ad:" + a.label,
                 () -> restoreAppData(a),
                 () -> promptRenameLogin(a.label),
-                () -> exportAppData(a),
+                () -> exportAppDataChoice(a),
                 () -> confirmDelete("Delete AppData?", appLabel(a.pkg) + " · " + when, () -> {
                     if (appDataVault.delete(a.label)) { toast("Deleted saved AppData."); render(); }
                     else toast("Could not delete.");
@@ -2328,7 +2352,7 @@ public class MainActivity extends Activity {
         card.addView(rowActions("fp:" + e.label,
                 () -> restoreSaved(e.label),
                 () -> promptRenameFingerprint(e.label),
-                () -> exportFingerprint(e.label),
+                () -> exportFingerprintChoice(e.label),
                 () -> confirmDelete("Delete fingerprint?", e.label, () -> {
                     boolean gone = vault.delete(e.label);
                     status.setText(gone ? "Deleted " + e.label : "Could not delete " + e.label);
@@ -2337,91 +2361,227 @@ public class MainActivity extends Activity {
         return card;
     }
 
-    /** Export a saved fingerprint envelope to /sdcard/Download (off the UI thread — it shells out to su). */
+    /** The AppData linked to a fingerprint label (the newest, if several), or null. */
+    private com.specter.module.gen.AppDataVault.Entry appDataForFingerprint(String fpLabel) {
+        for (java.util.List<com.specter.module.gen.AppDataVault.Entry> list : loginsByApp.values())
+            for (com.specter.module.gen.AppDataVault.Entry a : list)
+                if (fpLabel.equals(a.fingerprint)) return a;
+        return null;
+    }
+
+    /** Export a Fingerprint: if it has linked AppData, let the user pick Fingerprint-only or a combined bundle. */
+    private void exportFingerprintChoice(final String label) {
+        final com.specter.module.gen.AppDataVault.Entry linked = appDataForFingerprint(label);
+        if (linked == null) { exportFingerprint(label); return; }
+        new AlertDialog.Builder(this)
+                .setTitle("Export")
+                .setItems(new String[]{"Fingerprint only", "With its AppData (one file)"}, (d, w) -> {
+                    if (w == 0) exportFingerprint(label);
+                    else exportCombo(linked.label);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Export a saved fingerprint envelope to the Specter folder (off the UI thread — it shells out to su). */
     private void exportFingerprint(final String label) {
         new Thread(() -> {
             final String path = vault.exportToDownloads(label);
             runOnUiThread(() -> {
-                if (path != null) { toast("Exported to " + path); status.setText("Shared " + label + " -> " + path); }
+                if (path != null) { toast("Exported to " + path); status.setText("Exported Fingerprint -> " + path); }
                 else toast("Export failed.");
             });
         }, "specter-fp-export").start();
     }
 
-    /** Scan /sdcard/Download (via su — no storage permission) for shared specter-profile-*.json files and
-     *  let the user pick one to import. Runs the listing off the UI thread, then shows a picker. */
-    private void promptImport() {
+    /** Export a COMBINED bundle (AppData + its linked Fingerprint) as one file in the Specter folder. */
+    private void exportCombo(final String appDataLabel) {
+        final com.specter.module.gen.AppDataVault.Entry ad = appDataVault.get(appDataLabel);
+        if (ad == null || ad.fingerprint.isEmpty()) { toast("No linked fingerprint to bundle."); return; }
+        new Thread(() -> {
+            final String env = vault.envelopeFor(ad.fingerprint);
+            if (env == null) { runOnUiThread(() -> toast("Linked fingerprint missing — export separately.")); return; }
+            final String path = appDataVault.exportCombo(appDataLabel, env);
+            runOnUiThread(() -> {
+                if (path != null) { toast("Exported bundle to " + path); status.setText("Exported combined bundle -> " + path); }
+                else toast("Bundle export failed.");
+            });
+        }, "specter-combo-export").start();
+    }
+
+    /** Enter the dedicated Import browse screen: scan for importable files off the UI thread, then render a
+     *  properly-styled list (with a back button) — not an Android pop-up. */
+    private void openImportScreen() {
+        vaultImport = true;
+        importPaths = null;   // null = still scanning (the screen shows a "Scanning…" state)
+        render();
         new Thread(() -> {
             final java.util.List<String> names = new java.util.ArrayList<>();
             Process pr = null;
             try {
-                // Find both flavours: profiles SHARED from another Specter (specter-profile-*.json) and
-                // harvests from Specter Lite (Specter-<mfr>-<model>-*.json), in Download/ and the
-                // Download/Specter-exports/ subfolder Lite writes to. -M (mount-master) for the namespace.
+                // Look in the Specter export folder FIRST (where we now write), then legacy Download/ locations
+                // (older exports + Specter Lite harvests). -M (mount-master) for the Magisk namespace.
                 pr = Runtime.getRuntime().exec(new String[]{"su", "-M", "-c",
-                        "ls -1t /sdcard/Download/specter-profile-*.json "
-                        + "/sdcard/Download/specter-login-*.tar "     // AppData login bundles
+                        "ls -1t /sdcard/Download/Specter/specter-combo-*.tar "
+                        + "/sdcard/Download/Specter/specter-profile-*.json "
+                        + "/sdcard/Download/Specter/specter-login-*.tar "
+                        + "/sdcard/Download/specter-combo-*.tar "
+                        + "/sdcard/Download/specter-profile-*.json "
+                        + "/sdcard/Download/specter-login-*.tar "
                         + "/sdcard/Download/Specter-*.json "
                         + "/sdcard/Download/Specter-exports/*.json 2>/dev/null"});
                 try (java.io.BufferedReader r = new java.io.BufferedReader(
                         new java.io.InputStreamReader(pr.getInputStream()))) {
                     String line;
-                    while ((line = r.readLine()) != null) { line = line.trim(); if (!line.isEmpty()) names.add(line); }
+                    while ((line = r.readLine()) != null) { line = line.trim(); if (!line.isEmpty() && !names.contains(line)) names.add(line); }
                 }
                 pr.waitFor();
             } catch (Throwable ignored) {}
             finally { if (pr != null) pr.destroy(); }
+            runOnUiThread(() -> { if (!alive() || !vaultImport) return; importPaths = names; render(); });
+        }, "specter-import-scan").start();
+    }
+
+    /** Leave the Import screen and return to the main Vault list. */
+    private void closeImportScreen() { vaultImport = false; importPaths = null; render(); }
+
+    /** The dedicated Import browse screen (a Vault sub-view): a back header + one styled card per importable
+     *  file, each showing its type (Fingerprint / AppData / Combined) and name, tap to import. */
+    private void renderImportScreen() {
+        // Back header (‹ Import) — same pattern as the app drill-down.
+        LinearLayout back = new LinearLayout(this);
+        back.setOrientation(LinearLayout.HORIZONTAL);
+        back.setGravity(Gravity.CENTER_VERTICAL);
+        back.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        back.setBackground(ripple(0));
+        ImageView chev = new ImageView(this);
+        chev.setImageDrawable(icChevron(0, dp(18)).tint(Theme.GOLD));
+        chev.setRotation(180);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(20), dp(20));
+        clp.setMargins(0, 0, dp(Theme.S2), 0); chev.setLayoutParams(clp);
+        back.addView(chev);
+        TextView bt = new TextView(this);
+        bt.setText("Import");
+        bt.setTextColor(Theme.GOLD); bt.setTextSize(Theme.T_BODY);
+        bt.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        back.addView(bt);
+        back.setOnClickListener(v -> closeImportScreen());
+        content.addView(back);
+
+        TextView hint = value("Files exported from Specter, found in Download/Specter. Tap one to import it.");
+        hint.setTextColor(Theme.DIM); hint.setTextSize(Theme.T_CAPTION);
+        hint.setPadding(dp(Theme.S4) + dp(Theme.S1), 0, dp(Theme.S4), dp(Theme.S3));
+        content.addView(hint);
+
+        if (importPaths == null) {
+            LinearLayout c = cardBox();
+            TextView t = value("Scanning…"); t.setTextColor(Theme.DIM);
+            c.addView(t); content.addView(c);
+            return;
+        }
+        if (importPaths.isEmpty()) {
+            LinearLayout c = cardBox();
+            TextView t = value("Nothing to import. Export a Fingerprint or AppData first, or place a shared "
+                    + "bundle in Download/Specter.");
+            t.setTextColor(Theme.DIM); c.addView(t); content.addView(c);
+            return;
+        }
+        for (final String path : importPaths) content.addView(importFileCard(path));
+    }
+
+    /** One styled card in the Import screen: a type badge + the file name, tap to import (routes by name). */
+    private View importFileCard(final String path) {
+        final String base = path.substring(path.lastIndexOf('/') + 1);
+        final boolean isCombo = base.startsWith("specter-combo-") && base.endsWith(".tar");
+        final boolean isLogin = base.startsWith("specter-login-") && base.endsWith(".tar");
+        final String type = isCombo ? "Combined (Fingerprint + AppData)" : isLogin ? "AppData" : "Fingerprint";
+
+        LinearLayout card = cardBox();
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(ripple(dp(Theme.R_CARD)));
+        // a small deterministic tile keyed by the file type, so each row reads at a glance
+        ImageView ic = new ImageView(this);
+        ic.setImageDrawable(new MonogramIcon(dp(30), type, isCombo ? "combo" : isLogin ? "appdata" : "fingerprint"));
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(30), dp(30));
+        ilp.setMargins(0, 0, dp(Theme.S3), 0); ic.setLayoutParams(ilp); card.addView(ic);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView t = new TextView(this);
+        t.setText(type); t.setTextColor(Theme.INK); t.setTextSize(Theme.T_BODY);
+        t.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        col.addView(t);
+        TextView s = new TextView(this);
+        s.setText(base); s.setTextColor(Theme.SOFT); s.setTextSize(Theme.T_CAPTION); s.setSingleLine(true);
+        s.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+        col.addView(s);
+        card.addView(col);
+        card.addView(chevronTrailing(false));
+        card.setOnClickListener(v -> {
+            final java.io.File src = new java.io.File(path);
+            status.setText("Importing…");
+            closeImportScreen();   // return to the list; the import runs + re-renders on completion
+            if (isCombo) importCombo(src);
+            else if (isLogin) importLogin(src);
+            else importFingerprintFile(src, base);
+        });
+        return card;
+    }
+
+    /** Import an AppData (.tar) bundle into the AppData vault. */
+    private void importLogin(final java.io.File src) {
+        new Thread(() -> {
+            final String lbl = appDataVault.importFromDownloads(src);
             runOnUiThread(() -> {
-                if (!alive()) return;   // su listing finished after the user left — don't raise a dialog
-                if (names.isEmpty()) {
-                    toast("No profile found. Put a shared specter-profile-*.json or a Specter Lite harvest "
-                            + "(Specter-*.json) in Download or Download/Specter-exports.");
-                    return;
-                }
-                final String[] labels = new String[names.size()];
-                for (int i = 0; i < names.size(); i++) {
-                    String full = names.get(i);
-                    labels[i] = full.substring(full.lastIndexOf('/') + 1);   // basename for display
-                }
-                new AlertDialog.Builder(this)
-                        .setTitle("Import which file?")
-                        .setItems(labels, (d, which) -> {
-                            final java.io.File src = new java.io.File(names.get(which));
-                            final String base = labels[which];
-                            status.setText("Importing…");
-                            // A specter-login-*.tar is an AppData (login) bundle → the AppData vault; anything
-                            // else is a fingerprint profile → the fingerprint vault.
-                            if (base.startsWith("specter-login-") && base.endsWith(".tar")) {
-                                new Thread(() -> {
-                                    final String lbl = appDataVault.importFromDownloads(src);
-                                    runOnUiThread(() -> {
-                                        if (lbl != null) { status.setText("Imported login " + lbl); toast("Imported login " + lbl); render(); }
-                                        else { status.setText("Login import failed (grant root? valid bundle?)"); toast("Login import failed."); }
-                                    });
-                                }, "specter-appdata-import").start();
-                                return;
-                            }
-                            // Strip whichever prefix this file has (shared export or Lite harvest) + .json.
-                            final String stem = base.replace("specter-profile-", "")
-                                    .replace("Specter-", "").replace(".json", "");
-                            new Thread(() -> {
-                                final Vault.ImportResult r = vault.importOnce(src, "imported-" + stem);
-                                runOnUiThread(() -> {
-                                    if (r.ok()) {
-                                        status.setText("Imported " + r.label + " — restore it to apply.");
-                                        toast("Imported into vault as " + r.label);
-                                        render();
-                                    } else {
-                                        status.setText("Import failed: " + r.error);
-                                        toast("Import failed: " + r.error);
-                                    }
-                                });
-                            }, "specter-import").start();
-                        })
-                        .setNegativeButton("Cancel", null)
-                        .show();
+                if (lbl != null) { status.setText("Imported AppData " + lbl); toast("Imported AppData " + lbl); render(); }
+                else { status.setText("AppData import failed (grant root? valid bundle?)"); toast("AppData import failed."); }
             });
-        }).start();
+        }, "specter-appdata-import").start();
+    }
+
+    /** Import a Fingerprint envelope (.json) into the Fingerprint vault. */
+    private void importFingerprintFile(final java.io.File src, final String base) {
+        final String stem = base.replace("specter-profile-", "").replace("Specter-", "").replace(".json", "");
+        new Thread(() -> {
+            final Vault.ImportResult r = vault.importOnce(src, "imported-" + stem);
+            runOnUiThread(() -> {
+                if (r.ok()) { status.setText("Imported Fingerprint " + r.label + " — restore it to apply."); toast("Imported Fingerprint " + r.label); render(); }
+                else { status.setText("Import failed: " + r.error); toast("Import failed: " + r.error); }
+            });
+        }, "specter-import").start();
+    }
+
+    /** Import a COMBINED bundle: extract to an app-owned temp dir, import the Fingerprint envelope AND the
+     *  AppData pair, then clean up. Either half can fail independently; report what landed. */
+    private void importCombo(final java.io.File src) {
+        new Thread(() -> {
+            java.io.File tmp = appDataVault.importComboToTemp(src);
+            String fpMsg = "", adMsg = ""; boolean ok = false;
+            if (tmp == null) {
+                fpMsg = "bundle invalid or root denied";
+            } else {
+                try {
+                    String label = com.specter.module.gen.AppDataVault.labelOfBundle(src.getName());
+                    // Fingerprint half (app-owned temp file → no su).
+                    java.io.File fpJson = com.specter.module.gen.AppDataVault.comboJson(tmp, label);
+                    Vault.ImportResult fr = vault.importEnvelopeFile(fpJson, "imported-" + label);
+                    fpMsg = fr.ok() ? "Fingerprint " + fr.label : "Fingerprint failed (" + fr.error + ")";
+                    // AppData half.
+                    String adLabel = appDataVault.ingestPairFromDir(tmp, label);
+                    adMsg = adLabel != null ? "AppData " + adLabel : "AppData failed";
+                    // Keep the two halves LINKED on this device: the fingerprint imported under a NEW label, so
+                    // repoint the AppData's stored link at it. Use relinkOne (this entry ONLY) — NOT a sweep by
+                    // the old label, which is untrusted and could collide with a pre-existing local entry.
+                    if (fr.ok() && adLabel != null) appDataVault.relinkOne(adLabel, fr.label);
+                    ok = fr.ok() || adLabel != null;
+                } finally {
+                    com.specter.module.gen.AppDataVault.deleteDir(tmp);   // always remove the extracted temp
+                }
+            }
+            final String msg = "Imported: " + fpMsg + " · " + adMsg; final boolean fOk = ok;
+            runOnUiThread(() -> { status.setText(msg); toast(fOk ? msg : "Combined import failed."); if (fOk) render(); });
+        }, "specter-combo-import").start();
     }
 
     /** Load a saved profile into the current identity AND apply it to the selected target app(s). */
