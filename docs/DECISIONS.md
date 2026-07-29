@@ -583,3 +583,17 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   the identity-bearing SIZE real). type=Unified/Instruction/Data is universal, coherent regardless of SoC.
 - With cpufreq + topology (v0.18.3) + cache (v0.18.4), the ENTIRE per-core CPU signature is now coherent with
   the claimed SoC. This is the family that flagged an account; it's fully closed.
+
+## 2026-07-30 — Full-probe regression check: ZERO host leaks (v0.18.5 verified)
+- Applied a Pixel 4 XL / coral / msmnile (SD855) profile to the real 4a (sunfish / SD730G / sm7150) and
+  dumped the entire probe result. Checked every field against the REAL host's identity (sunfish, Pixel 4a,
+  sm7150, 1804800/2208000 kHz, Adreno 618): ZERO fields leak the host. Every CPU freq/topology/cache, GPU
+  vendor, build/product/serial/sensor value reads the applied profile — the whole fingerprint surface is
+  coherent with the claimed device.
+- The one non-spoof: /sys/.../cpu0/cache/index0/size reads ENOENT on the 4a because its cache dir has no
+  index0 — the host-aware cache logic CORRECTLY skips writing an index the host doesn't expose (rather than
+  fabricating one). Working as designed.
+- CONCLUSION: the identity-bearing leak surface Cash reads is fully closed. Remaining UNKNOWN props
+  (ro.vendor.graphics.memory, ro.hardware.gralloc, ro.vendor.redirect_socket_calls, media.metrics.enabled)
+  are EMPTY/absent on real Pixel devices — spoofing them would need per-SoC vendor values we don't have and
+  would risk an impossible-value tell (the trap the gauntlet caught for gralloc). Left real, by design.
