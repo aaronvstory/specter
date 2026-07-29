@@ -50,9 +50,15 @@ public final class CoverageTest {
         // guard: a non-per-core cpu path (cpuidle) must NOT false-match the per-core matcher
         eq(Coverage.of("open", "/sys/devices/system/cpu/cpuidle/current_driver"), Coverage.State.UNKNOWN, "cpuidle (not per-core)");
         eq(Coverage.of("open", "/proc/modules"), Coverage.State.SPOOFED, "/proc/modules (generic)");
-        // cache/* is intentionally NOT spoofed (size/level would stay real -> incoherent) — must read UNKNOWN
-        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index2/shared_cpu_list"), Coverage.State.UNKNOWN, "cache shared (not spoofed)");
-        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index2/size"), Coverage.State.UNKNOWN, "cache size (not spoofed)");
+        // full cache tree now spoofed (size + level + shared_cpu_list together)
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index2/shared_cpu_list"), Coverage.State.SPOOFED, "cache shared");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu7/cache/index2/size"), Coverage.State.SPOOFED, "cache size");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index0/level"), Coverage.State.SPOOFED, "cache level");
+        // guard: cache 'type' / 'ways_of_associativity' are NOT spoofed (left real) — must not false-match
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index2/type"), Coverage.State.UNKNOWN, "cache type (not spoofed)");
+        // guard: a NESTED path under index<K> must NOT false-match (codex) — only the exact leaf spoofs
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index2/anything/size"), Coverage.State.UNKNOWN, "nested cache path (not spoofed)");
+        eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/index2/coherency_line_size"), Coverage.State.UNKNOWN, "coherency_line_size (ends _size not /size)");
         eq(Coverage.of("open", "/proc/mounts"), Coverage.State.SPOOFED, "mounts (filtered)");
 
         // Non-identity files -> REAL

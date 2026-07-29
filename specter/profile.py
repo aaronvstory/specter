@@ -97,6 +97,12 @@ def _soc_topology_fields(soc, topo=None):
         out["cpu_max_freq"] = e["cpu_max_freq"]
     if e.get("cpu_min_freq"):
         out["cpu_min_freq"] = e["cpu_min_freq"]
+    # Per-core CPU cache sizes (KB): L1i/L1d (index0/1), per-tier L2 (index2), shared L3 (index3). The native
+    # layer redirects the FULL cache tree (size+level+shared_cpu_list) coherently from these — leaks the real
+    # SoC's cache fingerprint otherwise. Constant per-SoC lookup, byte-parity safe.
+    for k in ("cpu_l1i", "cpu_l1d", "cpu_l2", "cpu_l3"):
+        if e.get(k):
+            out[k] = e[k]
     return out
 
 

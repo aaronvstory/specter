@@ -1144,18 +1144,69 @@ public:
                         return a == b ? std::to_string(a) : std::to_string(a) + "-" + std::to_string(b);
                     };
                     std::string full = "0-" + std::to_string(n - 1);   // all cores (used for L3 sharing + online/possible)
+
+                    // Parse the per-core cache-size vectors (KB) for the FULL cache-tree spoof below. Each is
+                    // space-separated per core, same length as caps (or empty -> skip that level).
+                    auto splitVec = [&](const char *key) {
+                        std::vector<std::string> out;
+                        auto it = profile.find(key);
+                        if (it == profile.end()) return out;
+                        const std::string &v = it->second; size_t i = 0;
+                        while (i < v.size()) { size_t j = v.find(' ', i); if (j == std::string::npos) j = v.size();
+                            std::string one = v.substr(i, j - i); if (!one.empty()) out.push_back(one); i = j + 1; }
+                        return out;
+                    };
+                    std::vector<std::string> l1i = splitVec("cpu_l1i"), l1d = splitVec("cpu_l1d"), l2 = splitVec("cpu_l2");
+                    std::string l3kb; { auto it = profile.find("cpu_l3"); if (it != profile.end()) l3kb = it->second; }
+
                     for (int c = 0; c < n; c++) {
                         std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(c) + "/topology/";
                         std::string sib = rangeStr(clusterRange[pkg[c]].first, clusterRange[pkg[c]].second);
                         write_spoof("toppkg" + std::to_string(c), std::to_string(pkg[c]) + "\n", base + "physical_package_id");
                         write_spoof("topsib" + std::to_string(c), sib + "\n", base + "core_siblings_list");
                         write_spoof("topclu" + std::to_string(c), sib + "\n", base + "cluster_cpus_list");
-                        // NOTE: cache/index<k>/shared_cpu_list is NOT spoofed. Index numbering, presence, and the
-                        // level→index mapping vary by SoC, and the companion size/level/type files would stay
-                        // real — spoofing only shared_cpu_list would fabricate an INCONSISTENT cache topology
-                        // (worse than leaving it). Physical_package_id/core_siblings_list above already carry the
-                        // cluster grouping. Doing cache right needs a per-SoC cache dataset (size+level+sharing) —
-                        // tracked in IDEAS. (codex gauntlet 2026-07-30.)
+
+                        // Per-core cache-size spoof (size + level + shared_cpu_list). HOST-STRUCTURE-AWARE: we
+                        // only redirect a cache file that ALREADY EXISTS on the host at the SAME index with a
+                        // MATCHING type label (codex/subagent gauntlet) — so we never fabricate a nonexistent
+                        // index, nor attach an L1i size to an index the host labels "Data". This makes the
+                        // hard-coded index0=L1i/1=L1d/2=L2/3=L3 assumption self-correcting: if the host's layout
+                        // differs, the type check simply skips the mismatched write (leaves it real) rather than
+                        // creating a contradiction. L2 shared_cpu_list: PRIVATE (this core) on DynamIQ parts
+                        // (those with an L3/DSU, cpu_l3>0 — SD845/855/865/888, modern Exynos, Tensor); cluster-
+                        // shared only on pre-DynamIQ designs (no L3). L3 shared by all cores.
+                        std::string cb = "/sys/devices/system/cpu/cpu" + std::to_string(c) + "/cache/index";
+                        auto readReal = [](const std::string &p) -> std::string {
+                            int fd = open(p.c_str(), O_RDONLY | O_CLOEXEC);
+                            if (fd < 0) return "";
+                            char buf[64]; ssize_t r = read(fd, buf, sizeof(buf) - 1); close(fd);
+                            if (r <= 0) return "";
+                            std::string s(buf, (size_t) r);
+                            while (!s.empty() && (s.back() == '\n' || s.back() == ' ')) s.pop_back();
+                            return s;
+                        };
+                        auto writeCache = [&](int idx, const std::string &kb, int level, const std::string &shared,
+                                              const char *wantType) {
+                            if (kb.empty() || kb == "0") return;
+                            std::string ib = cb + std::to_string(idx) + "/";
+                            // Only spoof an index the host actually exposes (size file present) AND whose type
+                            // matches what we expect (so we never mislabel). If either check fails, leave it real.
+                            if (access((ib + "size").c_str(), F_OK) != 0) return;
+                            std::string realType = readReal(ib + "type");
+                            if (!realType.empty() && realType != wantType) return;
+                            std::string tag = "cache" + std::to_string(c) + "_" + std::to_string(idx);
+                            write_spoof(tag + "s", kb + "K\n",              ib + "size");
+                            write_spoof(tag + "l", std::to_string(level) + "\n", ib + "level");
+                            write_spoof(tag + "h", shared + "\n",           ib + "shared_cpu_list");
+                        };
+                        std::string self = std::to_string(c);
+                        // DynamIQ (has an L3/DSU) -> private per-core L2; pre-DynamIQ -> cluster-shared L2.
+                        bool dynamiq = !(l3kb.empty() || l3kb == "0");
+                        std::string l2shared = dynamiq ? self : sib;
+                        if (c < (int) l1i.size()) writeCache(0, l1i[c], 1, self,     "Instruction");
+                        if (c < (int) l1d.size()) writeCache(1, l1d[c], 1, self,     "Data");
+                        if (c < (int) l2.size())  writeCache(2, l2[c],  2, l2shared, "Unified");
+                        writeCache(3, l3kb, 3, full, "Unified");                    // L3 (all cores; skipped if 0)
                     }
                     // Top-level core-count files. present is already written from cpu_present above; add the
                     // siblings online/possible (0-(n-1)) and kernel_max (n-1) so the whole CPU-count picture is coherent.

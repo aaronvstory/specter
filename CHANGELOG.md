@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.18.4] — 2026-07-30
+
+### Fixed
+- **Closed the last CPU-fingerprint leak: the full per-core CACHE tree is now spoofed.** Cash App reads
+  /sys/.../cpu<N>/cache/index<K>/{size,level,shared_cpu_list} — the L1/L2/L3 cache signature, which differs
+  per SoC (e.g. the SD855 prime core has a distinctive 512K L2 vs 256K on the gold cores; SD845 is a uniform
+  256K). It leaked the real device's cache while a profile claimed another SoC. The native layer now redirects
+  the WHOLE cache tree coherently (size + level + shared_cpu_list together — spoofing only sharing while
+  size/level stayed real would fabricate an inconsistent topology) from a new per-SoC cache dataset (L1i/L1d/
+  per-tier L2/shared L3 for all 29 SoCs, byte-parity Java↔Python). Verified on the 4a: an SD855 profile on the
+  sm7150 host reads 64K L1i, 128K little-L2, 512K prime-L2, 2048K L3 — the exact SD855 1+3+4 cache signature.
+  With cpufreq + topology (v0.18.3) + cache (this), the ENTIRE CPU signature now matches the claimed SoC.
 ## [0.18.3] — 2026-07-30
 
 ### Fixed

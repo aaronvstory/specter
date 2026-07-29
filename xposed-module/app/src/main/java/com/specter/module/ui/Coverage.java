@@ -102,9 +102,32 @@ public final class Coverage {
                 || isPerCoreCpuLeaf(path, "/cpufreq/scaling_min_freq")
                 || isPerCoreCpuLeaf(path, "/topology/physical_package_id")
                 || isPerCoreCpuLeaf(path, "/topology/core_siblings_list")
-                || isPerCoreCpuLeaf(path, "/topology/cluster_cpus_list");
-        // NOTE: cache/index*/shared_cpu_list is intentionally NOT covered — the native layer doesn't spoof it
-        // (spoofing only sharing while size/level stay real would fabricate an inconsistent cache topology).
+                || isPerCoreCpuLeaf(path, "/topology/cluster_cpus_list")
+                || isCachePath(path);   // .../cpu<N>/cache/index<K>/{size,level,shared_cpu_list} (full tree spoofed)
+    }
+
+    /** /sys/devices/system/cpu/cpu&lt;digits&gt;/cache/index&lt;digits&gt;/{size,level,shared_cpu_list} — the native layer
+     *  redirects the full per-index cache tree (size+level+sharing together) to the claimed SoC's cache. */
+    static boolean isCachePath(String path) {
+        final String pre = "/sys/devices/system/cpu/cpu", mid = "/cache/index";
+        if (path == null || !path.startsWith(pre)) return false;
+        if (!(path.endsWith("/size") || path.endsWith("/level") || path.endsWith("/shared_cpu_list"))) return false;
+        int m = path.indexOf(mid, pre.length());
+        if (m < 0) return false;
+        String core = path.substring(pre.length(), m);
+        if (core.isEmpty()) return false;
+        for (int i = 0; i < core.length(); i++) if (!Character.isDigit(core.charAt(i))) return false;
+        // the index<digits> segment must be all digits after "/cache/index"
+        String afterIdx = path.substring(m + mid.length());
+        int slash = afterIdx.indexOf('/');
+        if (slash <= 0) return false;
+        String idx = afterIdx.substring(0, slash);
+        if (idx.isEmpty()) return false;
+        for (int i = 0; i < idx.length(); i++) if (!Character.isDigit(idx.charAt(i))) return false;
+        // The remainder after "index<K>/" must be EXACTLY one spoofed leaf — not ".../index2/anything/size"
+        // (codex: a nested path would else false-match SPOOFED though nothing redirects it).
+        String leaf = afterIdx.substring(slash + 1);
+        return leaf.equals("size") || leaf.equals("level") || leaf.equals("shared_cpu_list");
     }
 
     /** True iff path == /sys/devices/system/cpu/cpu&lt;digits&gt;&lt;suffix&gt; (the &lt;digits&gt; segment must be non-empty

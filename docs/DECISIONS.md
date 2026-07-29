@@ -570,3 +570,16 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   hide it regardless, works across any host). Java hooks cover every in-process detection API: Network-
   Capabilities TRANSPORT_VPN/NOT_VPN/getTransportTypes, NetworkInterface tun/ppp/wg/ipsec/l2tp filtering,
   legacy TYPE_VPN NetworkInfo, http(s)/socks proxyHost/Port System props. Verified: proxy prop masked on-device.
+
+## 2026-07-30 — Full CPU cache-tree spoof (v0.18.4)
+- Closed the last CPU-fingerprint leak: /sys/.../cpu<N>/cache/index<K>/{size,level,shared_cpu_list} leaked
+  the real SoC's cache signature. Native layer redirects the full tree from a per-SoC cache dataset (L1i/L1d/
+  per-tier-L2/shared-L3, 29 SoCs, byte-parity). index0=L1i index1=L1d (private, shared=self), index2=L2
+  (per-cluster, shared=sibling range), index3=L3 (all cores; skipped when cpu_l3=0, e.g. SD835/older).
+- WHY spoof size+level+shared but leave type/ways/line/sets REAL: on Android those companion files are
+  BLANK/zero (verified on the 4a: ways_of_associativity=0, coherency_line_size + number_of_sets EMPTY). So
+  size is NOT derivable as ways×line×sets (all 0) — there's no cross-check to contradict, and leaving them
+  real creates no incoherence (unlike the shared_cpu_list-only attempt codex flagged in v0.18.3, which left
+  the identity-bearing SIZE real). type=Unified/Instruction/Data is universal, coherent regardless of SoC.
+- With cpufreq + topology (v0.18.3) + cache (v0.18.4), the ENTIRE per-core CPU signature is now coherent with
+  the claimed SoC. This is the family that flagged an account; it's fully closed.

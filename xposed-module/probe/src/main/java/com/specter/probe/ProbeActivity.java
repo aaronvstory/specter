@@ -177,6 +177,12 @@ public class ProbeActivity extends Activity {
             put(o, "sys_cpu_online", readFileTrim("/sys/devices/system/cpu/online"));
             put(o, "sys_cpu_cpu0_siblings", readFileTrim("/sys/devices/system/cpu/cpu0/topology/core_siblings_list"));
             put(o, "sys_cpu_cpu0_l2_shared", readFileTrim("/sys/devices/system/cpu/cpu0/cache/index2/shared_cpu_list"));
+            // Full cache tree now spoofed (v0.18.4) — read cpu0 L1i + L2 + last-core L2 sizes so a regression
+            // in the per-cluster cache-size spoof self-reports (a claimed SD855 must show 128K little / 512K prime).
+            put(o, "sys_cpu_cpu0_l1i_size", readFileTrim("/sys/devices/system/cpu/cpu0/cache/index0/size"));
+            put(o, "sys_cpu_cpu0_l2_size", readFileTrim("/sys/devices/system/cpu/cpu0/cache/index2/size"));
+            put(o, "sys_cpu_cpu7_l2_size", readFileTrim("/sys/devices/system/cpu/cpu7/cache/index2/size"));
+            put(o, "sys_cpu_cpu0_l3_size", readFileTrim("/sys/devices/system/cpu/cpu0/cache/index3/size"));
             // /proc/modules must NOT name the real device's drivers (ftm5 = Pixel 4 touchscreen). Report whether
             // any device-specific driver name survives (should be "clean" = generic list only).
             String mods = readFileTrim("/proc/modules");
