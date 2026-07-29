@@ -52,3 +52,6 @@ backups/
 # Real account-data backups — NEVER commit (login tokens live here)
 /handoffs/dasher-backup/
 *.tgz
+
+# local on-device verification screenshots (never tracked)
+.shots/
