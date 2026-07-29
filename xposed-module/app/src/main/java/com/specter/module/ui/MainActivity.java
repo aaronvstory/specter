@@ -72,6 +72,8 @@ public class MainActivity extends Activity {
     private int vaultFilter = 0;    // top-level type facet: 0 = all, 1 = logins only, 2 = device profiles only
     private String vaultApp = "";   // the app drilled into ("" = the app-list / top level). A pkg with saved logins.
     private boolean vaultImport = false;   // showing the dedicated Import browse screen (a Vault sub-view)
+    private boolean healthScreen = false;  // showing the Protection Status sub-screen (a Settings sub-view)
+    private java.util.List<HealthCheck.Group> healthResults;   // last-computed checks (null = still running)
     private java.util.List<String> importPaths;   // the scanned importable file paths (null until scanned)
     /** pkg -> its saved login(s), newest first. Rebuilt once per Saved-tab render from appDataVault.list().
      *  A login's `fingerprint` field is the vault-label to re-apply on restore (may be "" / stale — restore
@@ -256,7 +258,7 @@ public class MainActivity extends Activity {
             llp.topMargin = dp(3);
             lbl.setLayoutParams(llp);
             item.addView(lbl);
-            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; rebuildBottomNav(); render(); } });
+            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; rebuildBottomNav(); render(); } });
             bottomNavBar.addView(item);
         }
     }
@@ -300,6 +302,7 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if (tab == 1 && vaultImport) { closeImportScreen(); return; }
         if (tab == 1 && !vaultApp.isEmpty()) { vaultApp = ""; vaultQuery = ""; render(); return; }
+        if (tab == 2 && healthScreen) { healthScreen = false; render(); return; }
         super.onBackPressed();
     }
 
@@ -348,7 +351,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
             Button tb = tabButton(names[i], tab == i);
-            tb.setOnClickListener(v -> { tab = idx; retintTabs(); render(); });
+            tb.setOnClickListener(v -> { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; retintTabs(); render(); });
             tabButtons[i] = tb;
             bar.addView(tb);
         }
@@ -1512,6 +1515,18 @@ public class MainActivity extends Activity {
     }
 
     private void renderSettings() {
+        if (healthScreen) { renderHealth(); return; }   // dedicated status sub-screen
+
+        // Health: one tap to verify everything is actually configured to spoof (LSPosed scope, framework
+        // gate, native layer, per-app profiles) — so a misconfiguration shows as red instead of a silent
+        // false sense of security.
+        content.addView(sectionLabel("Status"));
+        LinearLayout healthCard = card();
+        LinearLayout hTrail = new LinearLayout(this); hTrail.addView(chevronTrailing(false));
+        healthCard.addView(row("Check protection status", "Verify every layer is set up right", hTrail,
+                v -> { healthScreen = true; render(); }));
+        content.addView(healthCard);
+
         // Target apps
         // Same polished per-app cards (icon + name + LSPosed-scope warning + red ✕) as the Identity tab —
         // one consistent target UI everywhere, not a plain text list here and rich cards there.
@@ -1549,6 +1564,152 @@ public class MainActivity extends Activity {
         content.addView(gsfResetRow());
         // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
         // as a dead toggle until it actually works.
+    }
+
+    /** The Protection Status sub-screen: runs {@link HealthCheck} off-thread and renders a clean, grouped
+     *  checklist with green/amber/red status per row + a one-tap Fix for the actionable ones. */
+    private void renderHealth() {
+        content.addView(Nav.backRow(this, "Protection status", () -> { healthScreen = false; render(); }));
+
+        if (healthResults == null) {
+            TextView t = value("Checking…");
+            t.setTextColor(Theme.DIM);
+            t.setPadding(dp(Theme.S4), dp(Theme.S4), dp(Theme.S4), dp(Theme.S4));
+            content.addView(t);
+            new Thread(() -> {
+                final java.util.List<HealthCheck.Group> res = HealthCheck.runAll(getApplicationContext(), prefs);
+                runOnUiThread(() -> { if (healthScreen) { healthResults = res; render(); } });
+            }, "specter-health").start();
+            return;
+        }
+
+        int bad = 0, warn = 0, total = 0;
+        for (HealthCheck.Group g : healthResults) for (HealthCheck.Check ch : g.checks) {
+            total++;
+            if (ch.state == HealthCheck.State.BAD) bad++;
+            else if (ch.state == HealthCheck.State.WARN) warn++;
+        }
+        // Hero summary card: a big verdict line in the worst-state colour + a one-line explanation.
+        int heroColor = bad > 0 ? Theme.RED : warn > 0 ? Theme.GOLD : Theme.SAGE;
+        String heroTitle = bad > 0 ? "Not fully spoofing" : warn > 0 ? "Ready — with notes" : "All good";
+        String heroSub = bad > 0
+                ? bad + " problem" + (bad == 1 ? "" : "s") + " to fix" + (warn > 0 ? " · " + warn + " optional" : "")
+                : warn > 0 ? warn + " optional item" + (warn == 1 ? "" : "s") + " — spoofing is active"
+                : "Every check passed. You're spoofing on all layers.";
+        content.addView(healthHero(heroColor, heroTitle, heroSub));
+
+        for (HealthCheck.Group g : healthResults) {
+            content.addView(section(g.title));
+            LinearLayout card = card();
+            for (int i = 0; i < g.checks.size(); i++) {
+                if (i > 0) card.addView(hairlineInset());
+                card.addView(healthRow(g.checks.get(i)));
+            }
+            content.addView(card);
+        }
+
+        View refresh = textButton("Re-check", Theme.GOLD, v -> { healthResults = null; render(); });
+        ((TextView) refresh).setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rlp.setMargins(0, dp(Theme.S2), 0, dp(Theme.S4));
+        refresh.setLayoutParams(rlp);
+        content.addView(refresh);
+    }
+
+    /** The hero verdict card: a big status ring + title + subtitle, in the worst-state colour. */
+    private View healthHero(int color, String title, String sub) {
+        LinearLayout card = cardBox();
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(Theme.S4), dp(Theme.S4), dp(Theme.S4), dp(Theme.S4));
+
+        // A filled status disc with a soft same-hue halo — reads as one clear signal.
+        android.widget.FrameLayout disc = new android.widget.FrameLayout(this);
+        GradientDrawable halo = new GradientDrawable(); halo.setShape(GradientDrawable.OVAL);
+        halo.setColor((color & 0x00FFFFFF) | 0x26000000);
+        disc.setBackground(halo);
+        View dot = new View(this);
+        GradientDrawable dg = new GradientDrawable(); dg.setShape(GradientDrawable.OVAL); dg.setColor(color);
+        dot.setBackground(dg);
+        android.widget.FrameLayout.LayoutParams inner = new android.widget.FrameLayout.LayoutParams(dp(14), dp(14));
+        inner.gravity = Gravity.CENTER; disc.addView(dot, inner);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(30), dp(30));
+        dlp.setMargins(0, 0, dp(Theme.S4), 0); disc.setLayoutParams(dlp);
+        card.addView(disc);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView t = new TextView(this);
+        t.setText(title); t.setTextColor(color); t.setTextSize(17);
+        t.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
+        col.addView(t);
+        TextView s = new TextView(this);
+        s.setText(sub); s.setTextColor(Theme.SOFT); s.setTextSize(Theme.T_CAPTION);
+        s.setPadding(0, dp(2), 0, 0);
+        col.addView(s);
+        card.addView(col);
+        return card;
+    }
+
+    /** One check row: a status dot aligned to the label, label + wrapped detail, and (only for a real action)
+     *  a trailing Fix button. Guidance-only rows carry their steps inline in the detail — no popups. */
+    private View healthRow(final HealthCheck.Check ch) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setPadding(dp(Theme.S4), dp(Theme.S3) + dp(1), dp(Theme.S4), dp(Theme.S3) + dp(1));
+
+        int color = ch.state == HealthCheck.State.OK ? Theme.SAGE
+                : ch.state == HealthCheck.State.WARN ? Theme.GOLD : Theme.RED;
+        View dot = new View(this);
+        GradientDrawable dg = new GradientDrawable(); dg.setShape(GradientDrawable.OVAL); dg.setColor(color);
+        dot.setBackground(dg);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(8), dp(8));
+        dlp.setMargins(0, dp(6), dp(Theme.S3), 0);   // nudge down to sit on the label's cap-height
+        r.addView(dot, dlp);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView lab = new TextView(this);
+        lab.setText(ch.label); lab.setTextColor(Theme.INK); lab.setTextSize(Theme.T_BODY);
+        lab.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        col.addView(lab);
+        TextView det = new TextView(this);
+        det.setText(ch.detail); det.setTextColor(Theme.DIM); det.setTextSize(Theme.T_CAPTION);
+        det.setLineSpacing(dp(2), 1f);
+        det.setPadding(0, dp(1), 0, 0);
+        col.addView(det);
+        r.addView(col);
+
+        if (ch.fix != HealthCheck.Fix.NONE) {
+            Button fix = compactButton("Fix", false, v -> runHealthFix(ch));
+            LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            flp.setMargins(dp(Theme.S3), dp(2), 0, 0); flp.gravity = Gravity.TOP;
+            fix.setLayoutParams(flp);
+            r.addView(fix);
+        }
+        return r;
+    }
+
+    /** Run a concrete health-check fix (no popups — the guidance for scope/root lives inline in each row's
+     *  detail text; only the ACTIONABLE fixes get a button). */
+    private void runHealthFix(final HealthCheck.Check ch) {
+        switch (ch.fix) {
+            case SYNC_ZYGISK:
+                // installZygisk() runs async and owns its own UX (status banner + reboot prompt). The native
+                // layer only becomes "current" AFTER a reboot, so re-checking now would just re-show the same
+                // state — leave the list as-is; the user taps Re-check after rebooting.
+                installZygisk();
+                return;
+            case REAPPLY_PROFILE:
+                healthScreen = false; tab = 0; render();   // jump to Identity where APPLY lives
+                status.setText("Apply an identity to " + Targets.label(this, ch.fixArg) + " here.");
+                return;
+            default:
+        }
     }
 
     /** Widevine L1->L3 toggle: installs/uninstalls the liboemcrypto bind-mount Magisk module via su, off-thread.

@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [0.17.8] — 2026-07-30
 
+### Added
+- **Protection status screen (Settings → Check protection status).** Self-verifies every layer so a
+  misconfiguration shows as a red row instead of a silent false sense of security: root granted, LSPosed
+  module enabled, the system-framework app-hiding gate loaded, the Zygisk native layer installed+current,
+  and per-target-app scoped + identity-applied. Green/amber/red with a one-tap Fix for the actionable ones
+  and inline guidance for the rest — no pop-ups. The LSPosed checks are STRUCTURAL (a read-only SQLite
+  query of modules_config.db copied into the app dir to dodge the /data/local/tmp SELinux denial), so
+  “enabled” and scope membership are actually verified, not byte-grepped.
+
 ### Fixed
 - **US profiles now pick US-market Samsung models.** The generator filtered devices by BRAND only, so a
   US profile could get an international Samsung (e.g. SM-A525F) paired with a US carrier — an internal
