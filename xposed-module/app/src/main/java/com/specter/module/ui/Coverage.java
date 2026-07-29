@@ -74,6 +74,11 @@ public final class Coverage {
                     || target.startsWith("cache_key.") || target.equals("ro.arch")
                     || target.startsWith("ro.product.cpu.abilist") || target.startsWith("ro.hardware.")
                     || target.startsWith("ro.input.") || target.startsWith("persist.input.")
+                    // generic non-identity flags a fingerprinter also touches — not device-identifying (empty
+                    // or a universal boolean on real devices; audited from the Cash trace).
+                    || target.startsWith("media.metrics.") || target.startsWith("persist.media.")
+                    || target.equals("ro.boringcrypto.hwrand") || target.equals("ro.vendor.graphics.memory")
+                    || target.equals("ro.vendor.redirect_socket_calls")
                     || target.equals("ro.build.version.codename") || target.equals("ro.build.version.preview_sdk"))
                 return State.REAL;   // touch/input tuning + generic props — not device-identifying
             return State.UNKNOWN;

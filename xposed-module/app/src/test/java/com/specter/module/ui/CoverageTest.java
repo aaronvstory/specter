@@ -36,6 +36,10 @@ public final class CoverageTest {
         eq(Coverage.of("prop", "ro.build.version.preview_sdk"), Coverage.State.REAL, "preview_sdk (universal 0)");
         // touch/input tuning props are not device-identifying -> REAL (were falling through to UNKNOWN)
         eq(Coverage.of("prop", "ro.input.resampling"), Coverage.State.REAL, "ro.input.* (input tuning)");
+        // generic non-identity flags (audited from the Cash trace) — REAL, not UNKNOWN
+        eq(Coverage.of("prop", "media.metrics.enabled"), Coverage.State.REAL, "media.metrics (generic)");
+        eq(Coverage.of("prop", "ro.vendor.graphics.memory"), Coverage.State.REAL, "graphics.memory (empty on fleet)");
+        eq(Coverage.of("prop", "ro.vendor.redirect_socket_calls"), Coverage.State.REAL, "redirect_socket_calls (empty)");
         eq(Coverage.of("prop", "persist.input.velocitytracker.strategy"), Coverage.State.REAL, "persist.input.*");
 
         // Spoofed files -> SPOOFED
