@@ -5,10 +5,13 @@ on-device QA project; describe the mechanism (what a profile sets, what a sample
 engineering exact. Full framing: `CLAUDE.md`.
 
 ## Read next
-**`handoffs/2026-07-29_morning-report.md`** — the latest session's results: the app-data (login) vault
-(save/wipe/restore PROVEN on Dasher + Cash), the linked fingerprint+login model, rename/export/import, the
-signal-spoofing re-verification, and device state. The older `2026-07-29_0239_cash-monitor-*.md` has the
-3-features framing + Cash analysis if you need the deeper background.
+**`handoffs/2026-07-29_vault-unification-plan.md`** — THE NEXT TASK. Unify the Vault into ONE fingerprint
+list (each row badged "has login" or "fingerprint only"), with a With-login / Fingerprint-only filter, and
+delete the redundant separate "Saved logins" section (which also fixes the broken login-row buttons). Full
+plan + exact file locations + data-model join inside.
+
+Background (this session's results): **`handoffs/2026-07-29_morning-report.md`** — the app-data (login)
+vault (save/wipe/restore PROVEN on Dasher + Cash) and the full v0.16.0 UI redesign.
 
 ## One-paragraph state
 main @ latest (all pushed, tree clean). This stretch shipped: v0.14.2 whole-app hardening, v0.14.3 robustness
