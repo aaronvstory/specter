@@ -3,6 +3,20 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.7] — 2026-07-29
+
+### Added
+- **Fuller mock-location hiding (HideMyMock parity).** On top of forcing Location.isFromMockProvider()/
+  isMock() to false, we now also return the legacy Settings.Secure/System “mock_location” flag as 0 (getInt)
+  / null (getString), so a detector probing the old ALLOW_MOCK_LOCATION path sees a pristine consumer phone.
+- **Broader app-hiding — closed the enumeration bypasses.** App-list hiding now also filters intent
+  resolution (queryIntentActivities/Services/BroadcastReceivers/ContentProviders + resolveActivity/Service),
+  UID→name lookups (getPackagesForUid/getNameForUid), and getInstallSourceInfo — not just the installed-
+  package list and direct getPackageInfo lookups. An SDK can no longer infer a hidden app is present by
+  resolving a known intent or walking UIDs. Keyed off the same category denylist (root/hook/GPS/proxy tells),
+  so it works for any user, not a fixed app set. (Known remaining hole: a raw IPackageManager binder bypass
+  — only a system_server hook closes that; see docs/DECISIONS.md + IDEAS.md.)
+
 ## [0.17.6] — 2026-07-29
 
 ### Changed

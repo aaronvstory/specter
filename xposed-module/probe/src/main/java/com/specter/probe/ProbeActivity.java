@@ -109,6 +109,21 @@ public class ProbeActivity extends Activity {
                 put(o, "installed_sensitive_leak", leaked.length() == 0 ? "none" : leaked.toString());
             } catch (Throwable t) { put(o, "installed_sensitive_leak", "ERR:" + t); }
 
+            // DIRECT-LOOKUP hiding — a SEPARATE path from enumeration: getPackageInfo() on a known root/hook
+            // package must throw NameNotFound (as if absent), not return info. This exercises the setThrowable
+            // hook path (a plain `throw` from beforeHookedMethod is swallowed by LSPosed, so this would LEAK if
+            // the hook used a raw throw). "hidden" = correctly not found; "LEAK:<pkg>" = the lookup succeeded.
+            StringBuilder direct = new StringBuilder();
+            for (String p : new String[]{"com.topjohnwu.magisk", "org.lsposed.manager", "com.tsng.hidemyapplist"}) {
+                try {
+                    getPackageManager().getPackageInfo(p, 0);
+                    direct.append("LEAK:").append(p).append(",");   // lookup succeeded -> hiding failed
+                } catch (android.content.pm.PackageManager.NameNotFoundException nfe) {
+                    /* correct: looks not-installed */
+                } catch (Throwable ignored) { /* other error: don't count as leak */ }
+            }
+            put(o, "direct_lookup_leak", direct.length() == 0 ? "hidden" : direct.toString());
+
             // Per-SoC /sys hardware signals FPJS reads directly — the native layer redirects these.
             put(o, "sys_cpu_capacity0", readFileTrim("/sys/devices/system/cpu/cpu0/cpu_capacity"));
             put(o, "sys_cpu_capacity7", readFileTrim("/sys/devices/system/cpu/cpu7/cpu_capacity"));

@@ -2,6 +2,15 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-29 (v0.17.7): app-hiding stays app-side (per-app PackageManager wrapper), NOT system_server.**
+  Gap analysis vs HideMyApplist (Dr-TSNG/Hide-My-Applist): HMA hooks ONE chokepoint in system_server
+  (`shouldFilterApplication`/`filterAppAccessLPr`) covering every read path + the raw-binder bypass; we hook
+  `ApplicationPackageManager` method-by-method. We CLOSED the high-value app-side gaps (intent resolution,
+  UID→name, getInstallSourceInfo) in v0.17.7. Remaining known hole: an SDK grabbing the raw IPackageManager
+  binder via ServiceManager.getService("package") bypasses app-side hooks entirely — only a system_server
+  hook closes that. Deferred (bigger, version-fragile, bootloop-risk); revisit if a target proves to use the
+  binder bypass. See docs/IDEAS.md.
+
 - **2026-07-29 (v0.17.3): kept the bottom-nav tab named "Identity", not "Fingerprint"** (user-confirmed).
   The tab is broader than one fingerprint — it holds the device fields, the IDs, the carrier, AND the target
   apps; "Fingerprint" in the Vault is the saved profile blob. Keeping them distinct is more accurate.

@@ -707,3 +707,6 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   278 KB archive written pre-wipe, apply reported 1/1, trace disarmed; manual Stop still opens the read
   report and writes its own distinct timestamped archive.
   Still open for this feature: nothing blocking. The 30-min auto-stop also archives (same code path).
+
+## 2026-07-29 - System_server-side app hiding (HMA-style) - IDEA/deferred
+Our app-hiding hooks the app-side ApplicationPackageManager method-by-method. Gap analysis vs HideMyApplist (Dr-TSNG) shows HMA hooks ONE system_server chokepoint (shouldFilterApplication on API>=30, filterAppAccessLPr+applyPostResolutionFilter on 28/29) covering every read path AND the raw-binder bypass (ServiceManager.getService("package")). We closed the high-value app-side gaps in v0.17.7 (intent resolution, UID->name, getInstallSourceInfo). REMAINING: an SDK using the raw binder bypasses app-side hooks entirely. A system_server hook (via our Zygisk layer, scoped by callingUid) would close it but is version-fragile + bootloop-risk. Status: deferred; build if a target proves to use the binder bypass. Port refs: HMA PmsHookTarget30/34/28.kt.

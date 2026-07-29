@@ -126,6 +126,25 @@ public class HookEntry implements IXposedHookLoadPackage {
             try { XposedBridge.hookAllMethods(loc, "isFromMockProvider", returnFalse); } catch (Throwable ignored) {}
             try { XposedBridge.hookAllMethods(loc, "isMock", returnFalse); } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
+
+        // The LEGACY tell: Settings.Secure "mock_location" (ALLOW_MOCK_LOCATION). Pre-M this was the flag a
+        // detector read; some SDKs still probe it. A pristine consumer phone reads 0 for getInt (mocks off)
+        // and null for getString (row never written). Force both so enabling a system mock-provider doesn't
+        // flip this on. Covers Settings.Secure AND Settings.System (both expose the key historically).
+        final XC_MethodHook mockInt = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                if (SpoofLogic.argsContainKey(mp.args, "mock_location")) mp.setResult(0);
+            }
+        };
+        final XC_MethodHook mockStr = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                if (SpoofLogic.argsContainKey(mp.args, "mock_location")) mp.setResult(null);
+            }
+        };
+        try { XposedBridge.hookAllMethods(Settings.Secure.class, "getInt", mockInt); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(Settings.Secure.class, "getString", mockStr); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(Settings.System.class, "getInt", mockInt); } catch (Throwable ignored) {}
+        try { XposedBridge.hookAllMethods(Settings.System.class, "getString", mockStr); } catch (Throwable ignored) {}
     }
 
     /** Align TimeZone.getDefault() + Locale.getDefault() with the profile's US location (timezone derived
@@ -837,12 +856,16 @@ public class HookEntry implements IXposedHookLoadPackage {
                 "getInstalledApplicationsAsUser", "getInstalledPackagesAsUser", "getInstalledModules"}) {
             try { XposedBridge.hookAllMethods(pm, m, listFilter); } catch (Throwable ignored) {}
         }
-        // A direct lookup of a hidden package must look like "not installed".
+        // A direct lookup of a hidden package must look like "not installed". IMPORTANT: a plain `throw` from
+        // beforeHookedMethod is CAUGHT and swallowed by LSPosed (the original then runs, leaking the package) —
+        // to actually make the method throw you must setThrowable(), which flags the hook to skip the original
+        // and raise that exception to the caller. (This is why the old `throw` here silently didn't hide direct
+        // lookups.) NameNotFoundException is the declared not-installed contract for all these methods.
         XC_MethodHook notFound = new XC_MethodHook() {
-            @Override protected void beforeHookedMethod(MethodHookParam mp) throws Throwable {
+            @Override protected void beforeHookedMethod(MethodHookParam mp) {
                 if (mp.args.length > 0 && mp.args[0] instanceof String
                         && SpoofLogic.isSensitivePackage((String) mp.args[0])) {
-                    throw new android.content.pm.PackageManager.NameNotFoundException((String) mp.args[0]);
+                    mp.setThrowable(new android.content.pm.PackageManager.NameNotFoundException((String) mp.args[0]));
                 }
             }
         };
@@ -864,6 +887,79 @@ public class HookEntry implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable ignored) {}
+        // getInstallSourceInfo (API 30+) is the modern getInstallerPackageName. Left un-hooked, it leaks a
+        // hidden package's install attribution — and a legacy-null / new-populated mismatch is itself a tell.
+        // Throw NameNotFound (its declared not-installed contract) for a hidden target.
+        try {
+            XposedBridge.hookAllMethods(pm, "getInstallSourceInfo", notFound);
+        } catch (Throwable ignored) {}
+
+        // INTENT RESOLUTION leak: an SDK resolves a known intent and infers "app X is installed" from a
+        // non-empty ResolveInfo list, bypassing the getInstalled* filter above. Drop any ResolveInfo that
+        // points at a hidden package. (Covers query* [List] and resolve* [single ResolveInfo].)
+        XC_MethodHook resolveListFilter = new XC_MethodHook() {
+            @Override @SuppressWarnings("unchecked")
+            protected void afterHookedMethod(MethodHookParam mp) {
+                if (!(mp.getResult() instanceof java.util.List)) return;
+                java.util.List<Object> in = (java.util.List<Object>) mp.getResult();
+                java.util.List<Object> out = new java.util.ArrayList<>(in.size());
+                for (Object ri : in) {
+                    String name = resolveInfoPkg(ri);
+                    if (name != null && SpoofLogic.isSensitivePackage(name)) continue;
+                    out.add(ri);
+                }
+                if (out.size() != in.size()) mp.setResult(out);
+            }
+        };
+        for (String m : new String[]{"queryIntentActivities", "queryIntentServices",
+                "queryBroadcastReceivers", "queryIntentContentProviders", "queryIntentActivitiesAsUser",
+                "queryIntentServicesAsUser", "queryBroadcastReceiversAsUser"}) {
+            try { XposedBridge.hookAllMethods(pm, m, resolveListFilter); } catch (Throwable ignored) {}
+        }
+        XC_MethodHook resolveSingleFilter = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                String name = resolveInfoPkg(mp.getResult());
+                if (name != null && SpoofLogic.isSensitivePackage(name)) mp.setResult(null);   // "nothing resolves"
+            }
+        };
+        for (String m : new String[]{"resolveActivity", "resolveService"}) {
+            try { XposedBridge.hookAllMethods(pm, m, resolveSingleFilter); } catch (Throwable ignored) {}
+        }
+
+        // UID -> name enumeration: an SDK that saw a UID (socket peer, /proc) calls getPackagesForUid /
+        // getNameForUid to recover the package. Strip hidden packages from the result so the UID looks
+        // owned by nothing recognizable.
+        try {
+            XposedBridge.hookAllMethods(pm, "getPackagesForUid", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    if (!(mp.getResult() instanceof String[])) return;
+                    String[] in = (String[]) mp.getResult();
+                    java.util.List<String> out = new java.util.ArrayList<>(in.length);
+                    for (String n : in) if (n == null || !SpoofLogic.isSensitivePackage(n)) out.add(n);
+                    if (out.size() != in.length) mp.setResult(out.isEmpty() ? null : out.toArray(new String[0]));
+                }
+            });
+        } catch (Throwable ignored) {}
+        try {
+            XposedBridge.hookAllMethods(pm, "getNameForUid", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    Object r = mp.getResult();
+                    if (r instanceof String && SpoofLogic.isSensitivePackage((String) r)) mp.setResult(null);
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    /** The package a ResolveInfo points at (activity/service/provider), or null. ResolveInfo nests the pkg
+     *  inside its activityInfo/serviceInfo/providerInfo, not a top-level field — so {@link #pkgNameOf} (which
+     *  reads a "packageName" field) misses it. */
+    private static String resolveInfoPkg(Object ri) {
+        if (!(ri instanceof android.content.pm.ResolveInfo)) return null;
+        android.content.pm.ResolveInfo r = (android.content.pm.ResolveInfo) ri;
+        if (r.activityInfo != null) return r.activityInfo.packageName;
+        if (r.serviceInfo != null) return r.serviceInfo.packageName;
+        if (r.providerInfo != null) return r.providerInfo.packageName;
+        return null;
     }
 
     // ApplicationInfo / PackageInfo both expose the package name; ResolveInfo nests it. Pull it robustly.
