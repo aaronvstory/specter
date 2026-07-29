@@ -1920,7 +1920,7 @@ public class MainActivity extends Activity {
         // Import a shared Fingerprint or AppData bundle (from Download). One picker handles either type.
         content.addView(sectionLabel("Import"));
         LinearLayout importCard = cardBox();
-        TextView idesc = value("Add a Fingerprint or AppData someone exported (from Download).");
+        TextView idesc = value("Import a Fingerprint or AppData someone shared.");
         idesc.setTextColor(Theme.DIM);
         idesc.setTextSize(12);
         importCard.addView(idesc);
@@ -1963,7 +1963,7 @@ public class MainActivity extends Activity {
         }
 
         // One-time explainer of the vocabulary (only place "app login" is spelled out).
-        TextView legend = value("Fingerprints are saved device configs. AppData is a saved app login.");
+        TextView legend = value("A Fingerprint is a saved device. AppData is a saved app login.");
         legend.setTextColor(Theme.DIM); legend.setTextSize(Theme.T_CAPTION);
         legend.setPadding(dp(Theme.S4) + dp(Theme.S1), 0, dp(Theme.S4), dp(Theme.S2));
         content.addView(legend);
@@ -2389,30 +2389,110 @@ public class MainActivity extends Activity {
 
     /** One DEVICE-PROFILE card (fingerprint-only saved identity, top-level "Device profiles" section): the
      *  friendly name/device as title, a readable date + the apps it was applied to, and Restore / ⋯. */
+    /** A small horizontal cluster of app icons for a fingerprint row — up to 3 of the linked-AppData apps, then
+     *  a "+N" chip if more. Empty list -> a neutral dashed "unlinked" tile (this fingerprint isn't tied to any
+     *  app's AppData yet). Sized to match appLoginRow's 28dp icon so the columns line up. */
+    private View fpIconCluster(java.util.List<String> pkgs) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.setMargins(0, 0, dp(Theme.S3), 0);
+        box.setLayoutParams(blp);
+        if (pkgs.isEmpty()) { box.addView(unlinkedTile(dp(28))); return box; }
+        int show = Math.min(3, pkgs.size());
+        for (int i = 0; i < show; i++) {
+            ImageView iv = new ImageView(this);
+            iv.setImageDrawable(appIcon(pkgs.get(i), dp(28)));
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(28), dp(28));
+            if (i > 0) ilp.setMargins(dp(4), 0, 0, 0);
+            iv.setLayoutParams(ilp);
+            box.addView(iv);
+        }
+        if (pkgs.size() > show) {
+            TextView more = new TextView(this);
+            more.setText("+" + (pkgs.size() - show));
+            more.setTextColor(Theme.DIM); more.setTextSize(11);
+            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            mlp.setMargins(dp(4), 0, 0, 0);
+            more.setLayoutParams(mlp);
+            box.addView(more);
+        }
+        return box;
+    }
+
+    /** A neutral dashed placeholder tile for a fingerprint with no linked AppData — signals "not tied to an
+     *  app yet" without pretending there's an app icon. A rounded dashed square with a faint device glyph feel. */
+    private View unlinkedTile(int px) {
+        View v = new View(this);
+        v.setLayoutParams(new LinearLayout.LayoutParams(px, px));
+        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+        g.setColor(Theme.BG2);
+        g.setCornerRadius(dp(7));
+        g.setStroke(dp(1), Theme.LINE, dp(3), dp(2));   // dashed border = "empty / unlinked"
+        v.setBackground(g);
+        return v;
+    }
+
+    /** "Dasher" / "Dasher, Cash App" / "Dasher, Cash App +2" from a pkg list (linked-AppData apps). */
+    private String appNamesText(java.util.List<String> pkgs) {
+        if (pkgs.isEmpty()) return null;
+        int show = Math.min(2, pkgs.size());
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < show; i++) { if (i > 0) sb.append(", "); sb.append(appLabel(pkgs.get(i))); }
+        if (pkgs.size() > show) sb.append(" +").append(pkgs.size() - show);
+        return sb.toString();
+    }
+
+    /** Legacy fallback: the comma-separated pkgs a fingerprint was APPLIED to, as "Applied to: A, B". */
+    private String appliedToText(String targets) {
+        if (targets == null || targets.isEmpty()) return null;
+        StringBuilder names = new StringBuilder("Applied to: ");
+        String[] pkgs = targets.split(",");
+        for (int i = 0; i < pkgs.length; i++) {
+            if (i > 0) names.append(", ");
+            names.append(Targets.label(this, pkgs[i].trim()));
+        }
+        return names.toString();
+    }
+
     private View savedRow(final Vault.Entry e) {
         LinearLayout card = cardBox();
+
+        // Header row: an app-icon cluster (the app(s) whose AppData links to this fingerprint) on the left, the
+        // name/device text on the right. A fingerprint is device-level; the linked AppData is what ties it to an
+        // app, so those icons answer "which app is this for". A bare fingerprint gets a neutral unlinked tile.
+        java.util.List<String> linkedApps = appsForFingerprint(e.label);
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(fpIconCluster(linkedApps));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         String name = labelName(e.label);
         TextView lab = label(name.isEmpty() ? e.device : name);
         lab.setTextColor(Theme.INK);
         lab.setTextSize(15);
-        card.addView(lab);
+        col.addView(lab);
         TextView dev = value(labelWhen(e.label) + (name.isEmpty() ? "" : "  ·  " + e.device));
         dev.setTextColor(Theme.SOFT);
         dev.setTextSize(12);
-        card.addView(dev);
-        // Subtly show which apps this profile was applied to (by name). Empty for legacy entries.
-        if (!e.targets.isEmpty()) {
-            StringBuilder names = new StringBuilder("Applied to: ");
-            String[] pkgs = e.targets.split(",");
-            for (int i = 0; i < pkgs.length; i++) {
-                if (i > 0) names.append(", ");
-                names.append(Targets.label(this, pkgs[i].trim()));
-            }
-            TextView tv = value(names.toString());
+        col.addView(dev);
+        // Which app(s) this fingerprint is tied to, by name — from the linked AppData (falls back to the legacy
+        // "applied to" targets for old entries that predate AppData linking).
+        String tie = linkedApps.isEmpty() ? appliedToText(e.targets) : appNamesText(linkedApps);
+        if (tie != null) {
+            TextView tv = value(tie);
             tv.setTextColor(Theme.DIM);
             tv.setTextSize(11);
-            card.addView(tv);
+            col.addView(tv);
         }
+        head.addView(col);
+        card.addView(head);
 
         card.addView(rowActions("fp:" + e.label,
                 () -> restoreSaved(e.label),
@@ -2424,6 +2504,23 @@ public class MainActivity extends Activity {
                     render();
                 })));
         return card;
+    }
+
+    /** The distinct apps whose saved AppData links to this fingerprint. A fingerprint is device-level, but the
+     *  AppData that points at it IS per-app — so this is the honest "which app(s) is this fingerprint tied to"
+     *  set. Empty for a bare fingerprint saved via "Save current to vault" (no linked AppData). Order: the app
+     *  with the newest linked AppData first (loginsByApp lists are newest-first). */
+    private java.util.List<String> appsForFingerprint(String fpLabel) {
+        java.util.LinkedHashMap<String, Long> newestByApp = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, java.util.List<com.specter.module.gen.AppDataVault.Entry>> en : loginsByApp.entrySet())
+            for (com.specter.module.gen.AppDataVault.Entry a : en.getValue())
+                if (fpLabel.equals(a.fingerprint)) {
+                    Long cur = newestByApp.get(en.getKey());
+                    if (cur == null || a.savedAt > cur) newestByApp.put(en.getKey(), a.savedAt);
+                }
+        java.util.List<String> pkgs = new java.util.ArrayList<>(newestByApp.keySet());
+        pkgs.sort((x, y) -> Long.compare(newestByApp.get(y), newestByApp.get(x)));   // newest AppData first
+        return pkgs;
     }
 
     /** The AppData linked to a fingerprint label (the newest, if several), or null. */

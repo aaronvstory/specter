@@ -3,6 +3,19 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.4] — 2026-07-29
+
+### Added
+- **Fingerprint rows show the app(s) they’re tied to.** A saved Fingerprint is device-level, but the
+  AppData captured against it is per-app — so each Fingerprint row now shows the icon(s) of the app(s)
+  whose saved AppData links to it (up to 3, then “+N”), with the app name(s) on the tie-line. A bare
+  Fingerprint saved via “Save current to vault” (no linked AppData) shows a neutral unlinked tile.
+
+### Changed
+- **Tighter caption copy** so it stops wrapping a stray word onto a second line: the Import hint is now
+  “Import a Fingerprint or AppData someone shared.” and the Saved legend “A Fingerprint is a saved
+  device. AppData is a saved app login.”
+
 ## [0.17.3] — 2026-07-29
 
 ### Changed
