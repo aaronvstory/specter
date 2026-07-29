@@ -49,6 +49,9 @@ public class MainActivity extends Activity {
 
     private LinearLayout content;   // swapped per tab
     private TextView status;
+    // Auto-dismiss for the transient status banner (so it never sits pinned as permanent text).
+    private final android.os.Handler statusClear = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable statusClearRun = () -> { if (status != null) status.setText(""); };
     private final Button[] tabButtons = new Button[4];
     private int tab = 0;            // 0=Identity 1=Saved 2=Settings 3=Location
     private Vault vault;
@@ -113,18 +116,29 @@ public class MainActivity extends Activity {
 
         root.addView(appBar());
 
-        // Status is now a transient banner (hidden until there's something to say), not a permanent empty
-        // strip taking header space. Kept as the same `status` TextView so existing setText(...) calls work.
+        // Status is a TRANSIENT banner: it shows the last operation's line briefly, then auto-clears itself so
+        // it never sits pinned under the app bar as permanent ugly text. Hidden while empty. (Most callers also
+        // toast(), so the banner is a quiet secondary echo, not the primary feedback.)
         status = new TextView(this);
         status.setTextColor(Theme.SOFT);
-        status.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S4), dp(Theme.S2));
         status.setTextSize(Theme.T_CAPTION);
+        // A subtle rounded banner (inset like a card) so when it appears it reads as an intentional toast-strip,
+        // not a raw log line flush under the app bar.
+        status.setBackground(pill(Theme.CARD, Theme.LINE));
+        status.setPadding(dp(Theme.S3), dp(Theme.S2), dp(Theme.S3), dp(Theme.S2));
+        LinearLayout.LayoutParams stlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        stlp.setMargins(dp(Theme.S4), dp(Theme.S1), dp(Theme.S4), dp(Theme.S1));
+        status.setLayoutParams(stlp);
         status.setVisibility(View.GONE);
         status.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void afterTextChanged(android.text.Editable s) {
-                status.setVisibility(s.length() == 0 ? View.GONE : View.VISIBLE);
+                boolean has = s.length() > 0;
+                status.setVisibility(has ? View.VISIBLE : View.GONE);
+                statusClear.removeCallbacks(statusClearRun);
+                if (has) statusClear.postDelayed(statusClearRun, 6000);   // auto-dismiss after ~6s
             }
         });
         root.addView(status);

@@ -3,6 +3,13 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.2] — 2026-07-29
+
+### Changed
+- **The status line no longer sits pinned as raw text under the app bar.** It's now a subtle rounded banner
+  (inset like a card) that shows the last operation briefly and **auto-dismisses after ~6s** — the real
+  feedback is the toast + the hero status pill, so this is just a quiet, transient echo.
+
 ## [0.17.1] — 2026-07-29
 
 ### Added
