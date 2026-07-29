@@ -56,7 +56,6 @@ public class MainActivity extends Activity {
     private String activeVaultLabel = "";   // the fingerprint vault-label active now (set on save/restore of a
                                             // fingerprint) — an AppData capture links to it so restore re-applies
                                             // the SAME device identity + login together. "" if none saved yet.
-    private android.widget.CheckBox saveOnRandomize;   // "save to vault after RANDOMIZE ALL"
     private boolean widevineBusy = false;              // guards the Widevine-L3 toggle's failure-rollback re-fire
     private boolean opBusy = false;                     // one guard for the destructive APPLY/RESTORE paths —
                                                         // both `pm clear` + write a profile, so two running at
@@ -65,14 +64,22 @@ public class MainActivity extends Activity {
     private com.specter.module.gen.ZygiskInstaller.Status zygiskStatus;   // native-layer health (async, null until checked)
     private boolean zygiskBusy = false;                // guards the native-layer install button
     private String vaultQuery = "";                     // Saved-tab search filter (label/device substring)
-    private String appDataFilter = "";                  // Saved-logins filter: "" = all apps, else a pkg
+    // ---- Vault (Saved tab) drill-down state ----
+    private int vaultFilter = 0;    // top-level type facet: 0 = all, 1 = logins only, 2 = device profiles only
+    private String vaultApp = "";   // the app drilled into ("" = the app-list / top level). A pkg with saved logins.
+    /** pkg -> its saved login(s), newest first. Rebuilt once per Saved-tab render from appDataVault.list().
+     *  A login's `fingerprint` field is the vault-label to re-apply on restore (may be "" / stale — restore
+     *  handles both). The user organizes by APP, so pkg is the primary index, not the fingerprint label. */
+    private final Map<String, java.util.List<com.specter.module.gen.AppDataVault.Entry>> loginsByApp = new LinkedHashMap<>();
     private String appliedTargets = "";                 // comma-sep pkgs the CURRENT profile was applied to
                                                         // ("" until Apply succeeds — vault saves only applied)
     private String appliedSig = "";                      // signature (android_id + target set) of the LAST
                                                         // successful apply — so a second APPLY of the SAME
                                                         // unchanged identity says "already applied" instead
                                                         // of silently re-doing it + re-prompting to save.
-    private String seededRecentGroup = null;   // the most-recent date group we auto-expanded (so it opens once, per key)
+    // (mode·app·group) keys whose most-recent date group we've already auto-expanded once, so returning to a
+    // list doesn't re-expand a group the user manually collapsed. See renderSavedList.
+    private final Set<String> seededRecentGroups = new java.util.HashSet<>();
     private final Set<String> expandedGroups = new java.util.HashSet<>();  // date groups the user EXPANDED
     private String monitoringPkg = null;       // the pkg currently being trace-monitored (null = not monitoring).
                                                // The button toggles "Monitor reads" -> "Monitoring…"; a second tap
@@ -308,49 +315,6 @@ public class MainActivity extends Activity {
         return row;
     }
 
-    private View actionBar() {
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(dp(12), dp(4), dp(12), dp(2));
-        bar.addView(button("Randomize", false, v -> regenerate()));
-        bar.addView(button("Apply", true, v -> apply()));
-        col.addView(bar);
-
-        // "Save to vault" checkbox: when checked, a successful APPLY prompts to save the identity (name
-        // prefilled) so it can be restored later. We save on APPLY (not RANDOMIZE) so a vault entry always
-        // represents an identity that actually reached at least one app — saving un-applied profiles is
-        // pointless/misleading.
-        saveOnRandomize = new android.widget.CheckBox(this);
-        saveOnRandomize.setText("Save to vault after applying");
-        saveOnRandomize.setTextColor(Theme.SOFT);
-        saveOnRandomize.setTextSize(13);
-        saveOnRandomize.setChecked(prefs.getBoolean("save_on_randomize", false));
-        saveOnRandomize.setOnCheckedChangeListener((v, on) ->
-                prefs.edit().putBoolean("save_on_randomize", on).apply());
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cp.setMargins(dp(16), 0, dp(16), dp(4));
-        saveOnRandomize.setLayoutParams(cp);
-        col.addView(saveOnRandomize);
-
-        // APPLY/RESTORE ALWAYS deep-clean (pm clear: storage + cache) each target before writing the profile —
-        // it's not optional, because applying an identity over a prior one's data links the accounts. This is a
-        // fixed info line, not a toggle (a toggle here would be a footgun / dead control now that it's mandatory).
-        TextView autoClear = new TextView(this);
-        autoClear.setText("Each target is wiped before every apply.");
-        autoClear.setTextColor(Theme.DIM);
-        autoClear.setTextSize(12);
-        LinearLayout.LayoutParams cp2 = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cp2.setMargins(dp(16), 0, dp(16), dp(4));
-        autoClear.setLayoutParams(cp2);
-        col.addView(autoClear);
-        return col;
-    }
-
     private View tabBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -455,15 +419,6 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    /** Equal-weight third-width button — three of these share a row. */
-    private Button thirdButton(String text, View.OnClickListener onClick) {
-        Button b = compactButton(text, false, onClick);
-        b.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        b.setGravity(Gravity.CENTER);
-        b.setPadding(dp(6), dp(6), dp(6), dp(6));   // tighter h-padding so 3 short labels fit
-        return b;
-    }
-
     private void addGap(LinearLayout row) {
         View g = new View(this);
         g.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
@@ -487,6 +442,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     profile = p;
                     appliedTargets = ""; appliedSig = "";   // fresh identity — not applied to anything yet
+                    activeVaultLabel = "";                  // …and not in the vault yet either
                     status.setText("New identity ready — not yet applied.");
                     render();
                     // NOTE: saving happens after APPLY (below), not here — a vault entry should only ever
@@ -564,7 +520,7 @@ public class MainActivity extends Activity {
                     // cleared+applied — else a partial failure must remain retryable, not be suppressed as "done".
                     if (allApplied) {
                         appliedSig = sig;
-                        if (saveOnRandomize != null && saveOnRandomize.isChecked()) promptSaveName(appliedTargets);
+                        if (prefs.getBoolean("save_on_apply", false)) promptSaveName(appliedTargets);
                     }
                 } finally {
                     opBusy = false;
@@ -781,6 +737,21 @@ public class MainActivity extends Activity {
         }
         // Secondary quiet: generate another
         c.addView(textButton("Generate another identity", Theme.SOFT, v -> { if (!opBusy) regenerate(); }));
+
+        // "Save to vault on apply" — the yes/no for keeping an identity. Saving on APPLY (not on generate) means
+        // a vault entry always represents an identity that actually reached an app. When it's already applied
+        // and unsaved, the same row also offers a one-tap save of THIS identity.
+        c.addView(hairlineInset());
+        final android.widget.Switch saveSwitch = themedSwitch(prefs.getBoolean("save_on_apply", false),
+                (b, on) -> prefs.edit().putBoolean("save_on_apply", on).apply());
+        c.addView(row("Save to vault on apply", "Keep each applied identity so you can restore it later",
+                saveSwitch, v -> saveSwitch.toggle()));   // tapping the row toggles the switch (fires its listener)
+        // Already applied but not yet in the vault -> offer the one-tap save right here. activeVaultLabel is
+        // set whenever THIS identity came from / went to the vault, so an empty one means "unsaved".
+        if (applied && activeVaultLabel.isEmpty()) {
+            c.addView(hairlineInset());
+            c.addView(row("Save this identity to the vault", null, null, v -> promptSaveName(appliedTargets)));
+        }
         return c;
     }
 
@@ -970,163 +941,6 @@ public class MainActivity extends Activity {
         v.setBackgroundColor(Theme.LINE);
         v.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
         return v;
-    }
-
-    /** Target-app section (Identity tab): a header row (label + Change) followed by one SEPARATED card
-     *  per selected app — icon, name/package, an LSPosed-scope warning if not hooked, and a red ✕ remove.
-     *  Matches the picker's separated-card look (each app clearly distinct, not run-together rows). */
-    private View targetHeader() {
-        LinearLayout wrap = new LinearLayout(this);
-        wrap.setOrientation(LinearLayout.VERTICAL);
-        final Set<String> targets = Targets.get(prefs);
-
-        // Header row (label + Change) — its own card.
-        LinearLayout headCard = cardBox();
-        LinearLayout head = new LinearLayout(this);
-        head.setOrientation(LinearLayout.HORIZONTAL);
-        head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView lbl = label(targets.isEmpty() ? "Target apps" : "Target apps (" + targets.size() + ")");
-        lbl.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        head.addView(lbl);
-        head.addView(compactButton("Change", false, v ->
-                startActivity(new Intent(this, AppPickerActivity.class))));
-        headCard.addView(head);
-        if (targets.isEmpty()) {
-            TextView none = value("None yet — tap Change to pick apps.");
-            none.setTextColor(Theme.DIM);
-            headCard.addView(none);
-        }
-        wrap.addView(headCard);
-
-        // One SEPARATED card per selected app.
-        for (final String pkg : targets) {
-            LinearLayout appCard = cardBox();
-            LinearLayout r = new LinearLayout(this);
-            r.setOrientation(LinearLayout.HORIZONTAL);
-            r.setGravity(Gravity.CENTER_VERTICAL);
-
-            // App icon (small) for quick visual identification, same as the picker rows.
-            try {
-                android.graphics.drawable.Drawable ic = getPackageManager().getApplicationIcon(pkg);
-                ImageView iv = new ImageView(this);
-                iv.setImageDrawable(ic);
-                LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(30), dp(30));
-                ilp.setMargins(0, 0, dp(10), 0);
-                iv.setLayoutParams(ilp);
-                r.addView(iv);
-            } catch (Throwable ignored) {}
-
-            LinearLayout col = new LinearLayout(this);
-            col.setOrientation(LinearLayout.VERTICAL);
-            col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            TextView name = value(Targets.label(this, pkg));
-            name.setTextColor(Theme.INK);
-            col.addView(name);
-            TextView sub = value(pkg);
-            sub.setTextColor(Theme.DIM);
-            sub.setTextSize(11);
-            col.addView(sub);
-            // "Not enabled in LSPosed" warning — checked off the UI thread (memoized root grep).
-            final TextView warn = new TextView(this);
-            warn.setTextSize(11);
-            warn.setTextColor(Theme.RED);
-            warn.setVisibility(View.GONE);
-            col.addView(warn);
-            new Thread(() -> {
-                final boolean scoped = Targets.isScoped(pkg);
-                runOnUiThread(() -> {
-                    if (!scoped) { warn.setText("⚠ not enabled in LSPosed"); warn.setVisibility(View.VISIBLE); }
-                });
-            }).start();
-            r.addView(col);
-
-            // Small square red-tinted ✕ remove.
-            TextView rm = new TextView(this);
-            rm.setText("✕");
-            rm.setTextSize(13);
-            rm.setTextColor(Theme.RED);
-            rm.setGravity(Gravity.CENTER);
-            GradientDrawable rmBg = new GradientDrawable();
-            rmBg.setColor(0x22EF8A8A);
-            rmBg.setStroke(dp(1), 0x55EF8A8A);
-            rmBg.setCornerRadius(dp(3));
-            rm.setBackground(rmBg);
-            rm.setLayoutParams(new LinearLayout.LayoutParams(dp(32), dp(32)));
-            rm.setOnClickListener(v -> {
-                Set<String> cur = Targets.get(prefs);
-                cur.remove(pkg);
-                Targets.set(prefs, cur);
-                status.setText("Removed " + Targets.label(this, pkg) + " from targets.");
-                render();
-            });
-            // Chevron: expands/collapses this card's actions. Collapsed by default so three actions can never
-            // overflow the header row (the old flat row split "Paste login" in half when Monitoring… widened).
-            final boolean expanded = expandedApps.contains(pkg);
-            final boolean isMonitoring = pkg.equals(monitoringPkg);
-            TextView chev = new TextView(this);
-            chev.setText(expanded ? "⌄" : "›");
-            chev.setTextSize(18);
-            chev.setTextColor(isMonitoring ? Theme.GOLD : Theme.DIM);   // gold hint when a session is live
-            chev.setGravity(Gravity.CENTER);
-            chev.setLayoutParams(new LinearLayout.LayoutParams(dp(32), dp(32)));
-            View.OnClickListener toggle = v -> {
-                if (expandedApps.contains(pkg)) expandedApps.remove(pkg); else expandedApps.add(pkg);
-                render();
-            };
-            chev.setOnClickListener(toggle);
-            col.setOnClickListener(toggle);   // tapping the name area also expands (bigger hit target)
-            r.addView(chev);
-            r.addView(rm);
-            appCard.addView(r);
-
-            // A one-line hint under the header when collapsed + a session is live, so state is visible without
-            // expanding. (Apple pattern: the collapsed row still tells you what's happening.)
-            if (!expanded && isMonitoring) {
-                TextView live = new TextView(this);
-                live.setText("● Monitoring reads — tap to stop");
-                live.setTextSize(11);
-                live.setTextColor(Theme.GOLD);
-                live.setPadding(dp(40), dp(2), 0, 0);
-                live.setOnClickListener(toggle);
-                appCard.addView(live);
-            }
-
-            if (expanded) {
-                final TextView sessStatus = new TextView(this);
-                sessStatus.setTextSize(11);
-                sessStatus.setTextColor(Theme.DIM);
-                sessStatus.setPadding(0, dp(6), 0, 0);
-
-                // Actions stacked so they NEVER overflow: Monitor reads on its own row (its "Monitoring…"
-                // label is the widest), then Save/Restore AppData sharing the next row equally.
-                LinearLayout row1 = new LinearLayout(this);
-                row1.setOrientation(LinearLayout.HORIZONTAL);
-                row1.setPadding(0, dp(8), 0, 0);
-                // MONITOR READS: record every device signal THIS app reads during a real session, then open a
-                // spoofed/real report. Tap to start, tap (or a 30-min auto-stop) to end + archive the capture.
-                Button mon = wideButton(isMonitoring ? "Monitoring… (tap to stop)" : "Monitor reads",
-                        isMonitoring, v -> toggleMonitor(pkg, sessStatus));
-                row1.addView(mon);
-                appCard.addView(row1);
-
-                LinearLayout row2 = new LinearLayout(this);
-                row2.setOrientation(LinearLayout.HORIZONTAL);
-                row2.setPadding(0, dp(6), 0, 0);
-                // Save / Restore AppData: capture the app's whole logged-in data (databases, prefs, files,
-                // cookies) to a tarball, and restore it later — the app comes back already logged in. Root-only;
-                // copies real account data, so each is a deliberate button. (Formerly "Copy/Paste login".)
-                Button save = halfButton("Save AppData", v -> runSession(pkg, true, sessStatus));
-                View gap = new View(this);
-                gap.setLayoutParams(new LinearLayout.LayoutParams(dp(8), 1));
-                Button restore = halfButton("Restore AppData", v -> runSession(pkg, false, sessStatus));
-                row2.addView(save); row2.addView(gap); row2.addView(restore);
-                appCard.addView(row2);
-                appCard.addView(sessStatus);
-            }
-
-            wrap.addView(appCard);
-        }
-        return wrap;
     }
 
     /** Start/stop trace-monitoring what {@code pkg} reads. YOU decide the window: tap to start (arms trace on
@@ -1829,95 +1643,6 @@ public class MainActivity extends Activity {
     }
 
     // ---------- Saved (profile vault): save current, list, restore, delete ----------
-    /** The "Saved logins (AppData)" section: an app-filter chip row + one row per saved login tarball,
-     *  newest first. Each row shows the app, date, size, and the linked fingerprint; RESTORE re-applies that
-     *  fingerprint + the login together. Rendered above the fingerprint list on the Saved tab. */
-    private void renderSavedAppData() {
-        java.util.List<com.specter.module.gen.AppDataVault.Entry> all = appDataVault.list(null);
-        content.addView(sectionLabel("Saved logins (AppData)"));
-        if (all.isEmpty()) {
-            TextView t = value("No saved logins yet. Expand a target on the Identity tab → Save AppData.");
-            t.setTextColor(Theme.DIM); t.setTextSize(12);
-            LinearLayout c = cardBox(); c.addView(t); content.addView(c);
-            return;
-        }
-        // App-filter chips: All + one per distinct pkg present. Tapping re-renders the whole tab (cheap).
-        java.util.LinkedHashSet<String> pkgs = new java.util.LinkedHashSet<>();
-        for (com.specter.module.gen.AppDataVault.Entry e : all) pkgs.add(e.pkg);
-        if (pkgs.size() > 1) {
-            LinearLayout chips = new LinearLayout(this);
-            chips.setOrientation(LinearLayout.HORIZONTAL);
-            chips.setPadding(0, 0, 0, dp(4));
-            chips.addView(filterChip("All", appDataFilter.isEmpty(), v -> { appDataFilter = ""; render(); }));
-            for (final String p : pkgs) {
-                View gap = new View(this); gap.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
-                chips.addView(gap);
-                chips.addView(filterChip(Targets.label(this, p), p.equals(appDataFilter),
-                        v -> { appDataFilter = p; render(); }));
-            }
-            android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
-            hs.setHorizontalScrollBarEnabled(false);
-            hs.addView(chips);
-            content.addView(hs);
-        }
-        int shown = 0;
-        for (com.specter.module.gen.AppDataVault.Entry e : all) {
-            if (!appDataFilter.isEmpty() && !appDataFilter.equals(e.pkg)) continue;
-            content.addView(appDataRow(e));
-            shown++;
-        }
-        if (shown == 0) {
-            TextView t = value("No saved logins for that app.");
-            t.setTextColor(Theme.DIM); content.addView(t);
-        }
-    }
-
-    /** One saved-login row: app icon + name, date · size · linked fingerprint, and a RESTORE + delete. */
-    private View appDataRow(final com.specter.module.gen.AppDataVault.Entry e) {
-        LinearLayout card = cardBox();
-        LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        try {
-            android.graphics.drawable.Drawable ic = getPackageManager().getApplicationIcon(e.pkg);
-            ImageView iv = new ImageView(this); iv.setImageDrawable(ic);
-            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(26), dp(26));
-            ilp.setMargins(0, 0, dp(10), 0); iv.setLayoutParams(ilp); top.addView(iv);
-        } catch (Throwable ignored) {}
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView name = value(Targets.label(this, e.pkg)); name.setTextColor(Theme.INK);
-        col.addView(name);
-        String meta = fmtDate(e.savedAt) + " · " + fmtSize(e.sizeBytes)
-                + (e.fingerprint.isEmpty() ? " · no linked fingerprint" : " · " + e.fingerprint);
-        TextView sub = value(meta); sub.setTextColor(Theme.DIM); sub.setTextSize(11);
-        col.addView(sub);
-        top.addView(col);
-        card.addView(top);
-
-        // Primary action full-width, secondary actions as equal thirds below — never overflows.
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        row1.setPadding(0, dp(8), 0, 0);
-        row1.addView(wideButton("Restore login", true, v -> restoreAppData(e)));
-        card.addView(row1);
-
-        LinearLayout row2 = new LinearLayout(this);
-        row2.setOrientation(LinearLayout.HORIZONTAL);
-        row2.setPadding(0, dp(6), 0, 0);
-        Button rename = thirdButton("Rename", v -> promptRenameAppData(e.label));
-        Button export = thirdButton("Export", v -> exportAppData(e));
-        Button del = thirdButton("Delete", v -> {
-            if (appDataVault.delete(e.label)) { toast("Deleted saved login."); render(); }
-            else toast("Could not delete.");
-        });
-        del.setTextColor(Theme.RED);
-        row2.addView(rename); addGap(row2); row2.addView(export); addGap(row2); row2.addView(del);
-        card.addView(row2);
-        return card;
-    }
-
     /** Restore a saved login: re-apply its LINKED fingerprint (so the device identity matches), then copy the
      *  tarball back to staging and run the app-data restore, and relaunch. All off the UI thread. */
     private void restoreAppData(final com.specter.module.gen.AppDataVault.Entry e) {
@@ -1990,25 +1715,6 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    /** Rename a saved login (AppData). Keeps its link to the fingerprint (stored inside the meta). */
-    private void promptRenameAppData(final String oldLabel) {
-        final EditText in = new EditText(this);
-        in.setText(labelName(oldLabel));
-        in.setHint("New name");
-        in.setSingleLine(true);
-        new AlertDialog.Builder(this)
-                .setTitle("Rename saved login")
-                .setView(in)
-                .setPositiveButton("Rename", (d, w) -> {
-                    String neu = appDataVault.rename(oldLabel, in.getText().toString());
-                    if (neu == null) { toast("Rename failed."); return; }
-                    status.setText("Renamed login to " + neu);
-                    render();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
     /** Export a saved login bundle (tarball + meta) to /sdcard/Download so it can be moved to another device. */
     private void exportAppData(final com.specter.module.gen.AppDataVault.Entry e) {
         status.setText("Exporting " + Targets.label(this, e.pkg) + " login…");
@@ -2025,11 +1731,6 @@ public class MainActivity extends Activity {
         if (b >= 1024 * 1024) return String.format(java.util.Locale.US, "%.1f MB", b / 1048576.0);
         if (b >= 1024) return String.format(java.util.Locale.US, "%.0f KB", b / 1024.0);
         return b + " B";
-    }
-
-    private String fmtDate(long millis) {
-        if (millis <= 0) return "(unknown date)";
-        return new java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.US).format(new java.util.Date(millis));
     }
 
     /** A small selectable filter chip (gold when active). */
@@ -2072,26 +1773,103 @@ public class MainActivity extends Activity {
         importCard.addView(importRow);
         content.addView(importCard);
 
-        // Saved logins (AppData) — a captured login tarball, LINKED to the fingerprint it was taken under.
-        // Restoring one re-applies that fingerprint AND the login together, so the app opens already signed in.
-        renderSavedAppData();
-
-        content.addView(sectionLabel("Saved fingerprints"));
+        // The Saved vault, organized APP-FIRST so it scales to many apps × many logins each. Top level is a
+        // list of apps that have saved logins (tap to drill in) plus a "Device profiles" section for the
+        // fingerprint-only saves. A type facet (All / Logins / Profiles) + a search sit above both levels.
+        content.addView(sectionLabel("Saved"));
         savedListHolder = null;   // fresh holder per full render (content was cleared by render())
+
         java.util.List<Vault.Entry> all = vault.list();
-        if (all.isEmpty()) {
+        // Index every saved login by APP (list() is newest-first, so each per-app list stays newest-first).
+        loginsByApp.clear();
+        for (com.specter.module.gen.AppDataVault.Entry a : appDataVault.list(null))
+            loginsByApp.computeIfAbsent(a.pkg, k -> new java.util.ArrayList<>()).add(a);
+        // Clear a stale drill target FIRST (its last login was deleted) so it can't linger and reopen if that
+        // package later regains a login — do this before any early return below.
+        if (!vaultApp.isEmpty() && !loginsByApp.containsKey(vaultApp)) vaultApp = "";
+
+        if (all.isEmpty() && loginsByApp.isEmpty()) {
             LinearLayout empty = cardBox();
-            TextView t = value("No saved fingerprints yet.");
+            TextView t = value("Nothing saved yet. Save a login from a target app, or an identity after applying.");
             t.setTextColor(Theme.DIM);
             empty.addView(t);
             content.addView(empty);
             return;
         }
 
-        // Search box — filters by label OR device (case-insensitive substring). Preserves the query and
-        // caret across re-renders so typing feels continuous.
+        // Drilled INTO an app -> show just that app's logins (with a back header). Otherwise the app list.
+        if (!vaultApp.isEmpty()) {
+            renderAppLogins(vaultApp);
+            return;
+        }
+
+        // Type facet: All / Logins / Device profiles. Re-renders the whole tab (chip active-state repaints).
+        LinearLayout chips = new LinearLayout(this);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        chips.setPadding(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S2));
+        String[] segs = {"All", "Logins", "Device profiles"};
+        for (int i = 0; i < segs.length; i++) {
+            final int idx = i;
+            if (i > 0) addGap(chips);
+            chips.addView(filterChip(segs[i], vaultFilter == i, v -> { vaultFilter = idx; render(); }));
+        }
+        content.addView(chips);
+
+        // Search re-renders ONLY the results holder below (not the whole tab) so the EditText keeps focus while
+        // typing. The holder is a member so the text-watcher can refill it in place.
+        final java.util.List<Vault.Entry> profiles = all;
+        content.addView(vaultSearchBox("Search apps or device…", () -> renderTopLevel(profiles)));
+        savedTopHolder = null;
+        renderTopLevel(all);
+    }
+
+    /** The top-level results (app list + device-profiles section), rebuilt into a holder so the search box
+     *  above it isn't recreated on each keystroke. Filters apps by label and profiles via renderSavedList. */
+    private LinearLayout savedTopHolder;
+    private void renderTopLevel(java.util.List<Vault.Entry> all) {
+        if (savedTopHolder == null) {
+            savedTopHolder = new LinearLayout(this);
+            savedTopHolder.setOrientation(LinearLayout.VERTICAL);
+            content.addView(savedTopHolder);
+        }
+        savedTopHolder.removeAllViews();
+        savedListHolder = null;   // the profiles date-list rebuilds fresh inside this holder
+
+        String q = vaultQuery.trim().toLowerCase();
+        // Apps with saved logins (hidden under the "Device profiles" facet). Filter by app label against search.
+        if (vaultFilter != 2 && !loginsByApp.isEmpty()) {
+            java.util.List<String> pkgs = new java.util.ArrayList<>();
+            for (String pkg : loginsByApp.keySet())
+                if (q.isEmpty() || Targets.label(this, pkg).toLowerCase().contains(q)) pkgs.add(pkg);
+            pkgs.sort((x, y) -> Targets.label(this, x).compareToIgnoreCase(Targets.label(this, y)));
+            savedTopHolder.addView(section("Apps with saved logins"));
+            if (pkgs.isEmpty()) {
+                TextView none = value("No app matches \"" + vaultQuery + "\".");
+                none.setTextColor(Theme.DIM); none.setPadding(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S2));
+                savedTopHolder.addView(none);
+            } else {
+                LinearLayout appCard = card();
+                for (int i = 0; i < pkgs.size(); i++) {
+                    if (i > 0) appCard.addView(hairlineInset());
+                    appCard.addView(appLoginRow(pkgs.get(i)));
+                }
+                savedTopHolder.addView(appCard);
+            }
+        }
+
+        // Device profiles = the fingerprint-only saved identities, date-grouped (hidden under "Logins").
+        if (vaultFilter != 1 && !all.isEmpty()) {
+            savedTopHolder.addView(section("Device profiles"));
+            savedListParent = savedTopHolder;   // nest the date-list INSIDE this holder, so search rebuilds it too
+            renderSavedList(all);
+            savedListParent = null;
+        }
+    }
+
+    /** A reusable search box that writes {@link #vaultQuery} and runs {@code onChange} on each edit. */
+    private EditText vaultSearchBox(String hint, final Runnable onChange) {
         final EditText search = new EditText(this);
-        search.setHint("Search saved (name or device)…");
+        search.setHint(hint);
         search.setText(vaultQuery);
         search.setSelection(vaultQuery.length());
         search.setTextColor(Theme.INK);
@@ -2110,77 +1888,202 @@ public class MainActivity extends Activity {
         search.setPadding(dp(12), dp(8), dp(12), dp(8));
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        slp.setMargins(0, dp(2), 0, dp(6));
+        slp.setMargins(dp(Theme.S4), dp(2), dp(Theme.S4), dp(Theme.S2));
         search.setLayoutParams(slp);
         search.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void afterTextChanged(android.text.Editable s) {
-                vaultQuery = s.toString();
-                renderSavedList(all);   // re-render just the list below the search box
-            }
+            @Override public void afterTextChanged(android.text.Editable s) { vaultQuery = s.toString(); onChange.run(); }
         });
-        content.addView(search);
-
-        renderSavedList(all);
+        return search;
     }
 
-    /** Render the filtered, date-grouped, collapsible list of saved profiles (below the search box). */
+    /** One app tile in the top-level list: icon + name + "N logins" + drill chevron. Tapping drills into that
+     *  app's saved logins (clears the search so the drilled view starts fresh). */
+    private View appLoginRow(final String pkg) {
+        int n = loginsByApp.get(pkg).size();
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setMinimumHeight(dp(56));
+        r.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        r.setBackground(ripple(0));
+        try {
+            ImageView iv = new ImageView(this);
+            iv.setImageDrawable(getPackageManager().getApplicationIcon(pkg));
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(28), dp(28));
+            ilp.setMargins(0, 0, dp(Theme.S3), 0); iv.setLayoutParams(ilp); r.addView(iv);
+        } catch (Throwable ignored) {}
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView name = new TextView(this);
+        name.setText(Targets.label(this, pkg)); name.setTextColor(Theme.INK); name.setTextSize(Theme.T_BODY);
+        name.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        col.addView(name);
+        TextView sub = new TextView(this);
+        sub.setText(n + " saved login" + (n == 1 ? "" : "s")); sub.setTextColor(Theme.SOFT); sub.setTextSize(Theme.T_CAPTION);
+        col.addView(sub);
+        r.addView(col);
+        r.addView(chevronTrailing(false));
+        r.setOnClickListener(v -> { vaultApp = pkg; vaultQuery = ""; render(); });
+        return r;
+    }
+
+    /** Drilled-in view for ONE app: a back header, then that app's saved logins, date-grouped + searchable,
+     *  each with its own Restore / Export / Delete. This is where a user picks WHICH login to bring back. */
+    private void renderAppLogins(final String pkg) {
+        // Back header (‹ AppName · N logins) — tapping returns to the app list and clears the search.
+        LinearLayout back = new LinearLayout(this);
+        back.setOrientation(LinearLayout.HORIZONTAL);
+        back.setGravity(Gravity.CENTER_VERTICAL);
+        back.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S4), dp(Theme.S2));
+        back.setBackground(ripple(0));
+        ImageView chev = new ImageView(this);
+        chev.setImageDrawable(icChevron(0, dp(18)).tint(Theme.GOLD));
+        chev.setRotation(180);   // point left for "back"
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(20), dp(20));
+        clp.setMargins(0, 0, dp(Theme.S2), 0); chev.setLayoutParams(clp);
+        back.addView(chev);
+        TextView bt = new TextView(this);
+        int n = loginsByApp.get(pkg).size();
+        bt.setText(Targets.label(this, pkg) + "  ·  " + n + " login" + (n == 1 ? "" : "s"));
+        bt.setTextColor(Theme.GOLD); bt.setTextSize(Theme.T_BODY);
+        bt.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        back.addView(bt);
+        back.setOnClickListener(v -> { vaultApp = ""; vaultQuery = ""; render(); });
+        content.addView(back);
+
+        content.addView(vaultSearchBox("Search this app's logins…", () -> renderSavedList(null)));
+
+        savedListHolder = null;
+        renderSavedList(null);   // null = login mode (uses vaultApp)
+    }
+
+    /** One saved login card (in the drilled-in app view): account name/date title, size, and Restore / ⋯. */
+    private View loginRow(final com.specter.module.gen.AppDataVault.Entry a) {
+        LinearLayout card = cardBox();
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("EEE MM/dd · h:mm a", java.util.Locale.US);
+        String when = a.savedAt > 0 ? fmt.format(new java.util.Date(a.savedAt)) : "(unknown date)";
+        TextView lab = label(when);
+        lab.setTextColor(Theme.INK); lab.setTextSize(15);
+        card.addView(lab);
+        TextView sub = value(fmtSize(a.sizeBytes)
+                + (a.fingerprint.isEmpty() ? "  ·  no linked device profile" : "  ·  restores its device profile too"));
+        sub.setTextColor(Theme.SOFT); sub.setTextSize(12);
+        card.addView(sub);
+
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        btns.setGravity(Gravity.CENTER_VERTICAL);
+        btns.setPadding(0, dp(Theme.S2), 0, 0);
+        Button restore = compactButton("Restore", true, v -> restoreAppData(a));
+        restore.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        restore.setGravity(Gravity.CENTER);
+        btns.addView(restore);
+        addGap(btns);
+        btns.addView(iconButton(icMore(dp(20)), Theme.SOFT, v ->
+                new AlertDialog.Builder(this)
+                        .setTitle(Targets.label(this, a.pkg) + " · " + when)
+                        .setItems(new String[]{"Rename", "Export login", "Delete"}, (d, w) -> {
+                            if (w == 0) promptRenameLogin(a.label);
+                            else if (w == 1) exportAppData(a);
+                            else if (appDataVault.delete(a.label)) { toast("Deleted saved login."); render(); }
+                            else toast("Could not delete.");
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show()));
+        card.addView(btns);
+        return card;
+    }
+
+    /** Rename a saved login's label (keeps its fingerprint link inside the meta). */
+    private void promptRenameLogin(final String oldLabel) {
+        final EditText in = new EditText(this);
+        in.setText(labelName(oldLabel)); in.setHint("New name"); in.setSingleLine(true);
+        new AlertDialog.Builder(this)
+                .setTitle("Rename saved login")
+                .setView(in)
+                .setPositiveButton("Rename", (d, w) -> {
+                    String neu = appDataVault.rename(oldLabel, in.getText().toString());
+                    if (neu == null) { toast("Rename failed."); return; }
+                    status.setText("Renamed login to " + neu); render();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Render the filtered, date-grouped, collapsible list. {@code all != null} -> DEVICE-PROFILE mode (the
+     *  fingerprint-only Vault.Entry list at top level). {@code all == null} -> LOGIN mode: the drilled-in
+     *  app's saved logins ({@link #vaultApp}), keyed by the login label's date prefix if present, else by day. */
     private LinearLayout savedListHolder;
+    private ViewGroup savedListParent;   // where renderSavedList attaches its holder (null = content)
     private void renderSavedList(java.util.List<Vault.Entry> all) {
+        final boolean loginMode = all == null;
         if (savedListHolder == null) {
             savedListHolder = new LinearLayout(this);
             savedListHolder.setOrientation(LinearLayout.VERTICAL);
-            content.addView(savedListHolder);
+            (savedListParent != null ? savedListParent : content).addView(savedListHolder);
         }
         savedListHolder.removeAllViews();
-
         String q = vaultQuery.trim().toLowerCase();
-        // Group by the date+day prefix "MMDDYY-DayAbbr" (the label's first two dash-parts), newest first.
-        java.util.LinkedHashMap<String, java.util.List<Vault.Entry>> groups = new java.util.LinkedHashMap<>();
+
+        // Build date-grouped buckets. In login mode the items are AppDataVault.Entry (grouped by savedAt day);
+        // in profile mode they are Vault.Entry (grouped by the label's MMDDYY-Day prefix).
+        java.util.LinkedHashMap<String, java.util.List<Object>> groups = new java.util.LinkedHashMap<>();
         int shown = 0;
-        for (Vault.Entry e : all) {
-            if (!q.isEmpty() && !e.label.toLowerCase().contains(q) && !e.device.toLowerCase().contains(q)) continue;
-            shown++;
-            String[] parts = e.label.split("-");
-            String group = parts.length >= 2 ? parts[0] + "-" + parts[1] : e.label;   // "072626-Sun"
-            groups.computeIfAbsent(group, k -> new java.util.ArrayList<>()).add(e);
+        if (loginMode) {
+            java.text.SimpleDateFormat dayKey = new java.text.SimpleDateFormat("EEE MM/dd/yy", java.util.Locale.US);
+            for (com.specter.module.gen.AppDataVault.Entry a : loginsByApp.getOrDefault(vaultApp, java.util.Collections.emptyList())) {
+                String when = a.savedAt > 0 ? dayKey.format(new java.util.Date(a.savedAt)) : "(unknown date)";
+                // Match the date OR the login's (renamed) label, so a named login is findable by name.
+                if (!q.isEmpty() && !when.toLowerCase().contains(q) && !a.label.toLowerCase().contains(q)) continue;
+                shown++;
+                groups.computeIfAbsent(when, k -> new java.util.ArrayList<>()).add(a);
+            }
+        } else {
+            for (Vault.Entry e : all) {
+                if (!q.isEmpty() && !e.label.toLowerCase().contains(q) && !e.device.toLowerCase().contains(q)) continue;
+                shown++;
+                String[] parts = e.label.split("-");
+                String group = parts.length >= 2 ? parts[0] + "-" + parts[1] : e.label;   // "072626-Sun"
+                groups.computeIfAbsent(group, k -> new java.util.ArrayList<>()).add(e);
+            }
         }
         if (shown == 0) {
-            TextView none = value(q.isEmpty() ? "No saved profiles." : "No matches for \"" + vaultQuery + "\".");
+            TextView none = value(!q.isEmpty() ? "No matches for \"" + vaultQuery + "\"."
+                    : loginMode ? "No saved logins for this app." : "No device profiles saved.");
             none.setTextColor(Theme.DIM);
             savedListHolder.addView(none);
             return;
         }
-        // The MOST RECENT group (first in newest-first order) starts EXPANDED so the latest profiles are
-        // visible without a tap; older groups collapse by default. Seed it into expandedGroups when it's a NEW
-        // most-recent group (tracked by key) so a freshly-saved profile's day auto-opens too — while a user
-        // collapse still sticks (we don't re-seed the same key). Skipped during search (q force-expands anyway).
+        // Every expand/collapse + seed key is QUALIFIED by (mode·app) so two different lists that happen to
+        // share a date-group label ("Wed 07/29/26") don't share collapse state, and a manual collapse sticks.
+        final String scope = loginMode ? "L:" + vaultApp + ":" : "P:";
+        // The MOST RECENT group starts EXPANDED, seeded exactly ONCE per scoped group. Search force-opens all.
         if (q.isEmpty() && !groups.isEmpty()) {
-            String recent = groups.keySet().iterator().next();
-            if (!recent.equals(seededRecentGroup)) {
-                expandedGroups.add(recent);
-                seededRecentGroup = recent;
-            }
+            String recentKey = scope + groups.keySet().iterator().next();
+            if (seededRecentGroups.add(recentKey)) expandedGroups.add(recentKey);
         }
-        for (Map.Entry<String, java.util.List<Vault.Entry>> g : groups.entrySet()) {
-            final String groupKey = g.getKey();
-            // Collapsed BY DEFAULT (except the seeded most-recent group) — a group is open only if the user
-            // expanded it (or a search is active, which force-expands so matches are visible).
+        for (Map.Entry<String, java.util.List<Object>> g : groups.entrySet()) {
+            final String groupKey = scope + g.getKey();
             final boolean collapsed = !expandedGroups.contains(groupKey) && q.isEmpty();
-            // Group header (tap to collapse/expand). Shows the date/day + count.
             TextView header = new TextView(this);
-            header.setText((collapsed ? "▸  " : "▾  ") + prettyGroup(groupKey) + "   (" + g.getValue().size() + ")");
+            String pretty = loginMode ? g.getKey() : prettyGroup(g.getKey());
+            header.setText((collapsed ? "▸  " : "▾  ") + pretty + "   (" + g.getValue().size() + ")");
             header.setTextColor(Theme.GOLD);
             header.setTextSize(13);
-            header.setPadding(dp(4), dp(10), dp(4), dp(4));
+            header.setPadding(dp(Theme.S4), dp(10), dp(Theme.S4), dp(4));
             header.setOnClickListener(v -> {
                 if (expandedGroups.contains(groupKey)) expandedGroups.remove(groupKey);
                 else expandedGroups.add(groupKey);
                 renderSavedList(all);
             });
             savedListHolder.addView(header);
-            if (!collapsed) for (Vault.Entry e : g.getValue()) savedListHolder.addView(savedRow(e));
+            if (!collapsed) for (Object o : g.getValue())
+                savedListHolder.addView(loginMode
+                        ? loginRow((com.specter.module.gen.AppDataVault.Entry) o)
+                        : savedRow((Vault.Entry) o));
         }
     }
 
@@ -2224,10 +2127,10 @@ public class MainActivity extends Activity {
         return date + "  ·  " + h12 + ":" + String.format(java.util.Locale.US, "%02d", mm) + " " + ampm;
     }
 
+    /** One DEVICE-PROFILE card (fingerprint-only saved identity, top-level "Device profiles" section): the
+     *  friendly name/device as title, a readable date + the apps it was applied to, and Restore / ⋯. */
     private View savedRow(final Vault.Entry e) {
         LinearLayout card = cardBox();
-        // Clean hierarchy: the friendly NAME (the label's name part, or the device if unnamed) is the title;
-        // a readable date/time is the subtitle — instead of dumping the raw "072726-Mon-1453-Name" filename.
         String name = labelName(e.label);
         TextView lab = label(name.isEmpty() ? e.device : name);
         lab.setTextColor(Theme.INK);
@@ -2237,8 +2140,7 @@ public class MainActivity extends Activity {
         dev.setTextColor(Theme.SOFT);
         dev.setTextSize(12);
         card.addView(dev);
-        // Subtly show which apps this profile was applied to (by name), so a saved entry documents its
-        // real scope. Empty for legacy entries saved before this was recorded.
+        // Subtly show which apps this profile was applied to (by name). Empty for legacy entries.
         if (!e.targets.isEmpty()) {
             StringBuilder names = new StringBuilder("Applied to: ");
             String[] pkgs = e.targets.split(",");
@@ -2254,31 +2156,45 @@ public class MainActivity extends Activity {
 
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
-        btns.addView(button("Restore", true, v -> restoreSaved(e.label)));
-        btns.addView(compactButton("Rename", false, v -> promptRenameFingerprint(e.label)));
-        btns.addView(compactButton("Share", false, v -> {
-            new Thread(() -> {
-                final String path = vault.exportToDownloads(e.label);
-                runOnUiThread(() -> {
-                    if (path != null) { toast("Exported to " + path); status.setText("Shared " + e.label + " -> " + path); }
-                    else toast("Export failed.");
-                });
-            }).start();
-        }));
-        btns.addView(compactButton("Delete", false, v -> {
-            new AlertDialog.Builder(this)
-                    .setTitle("Delete saved profile?")
-                    .setMessage(e.label)
-                    .setPositiveButton("Delete", (d, w) -> {
-                        boolean gone = vault.delete(e.label);
-                        status.setText(gone ? "Deleted " + e.label : "Could not delete " + e.label);
-                        render();   // refresh the list
-                    })
-                    .setNegativeButton("Cancel", null)
-                    .show();
-        }));
+        btns.setGravity(Gravity.CENTER_VERTICAL);
+        btns.setPadding(0, dp(Theme.S2), 0, 0);
+        Button restore = compactButton("Restore", true, v -> restoreSaved(e.label));
+        restore.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        restore.setGravity(Gravity.CENTER);
+        btns.addView(restore);
+        addGap(btns);
+        btns.addView(iconButton(icMore(dp(20)), Theme.SOFT, v ->
+                new AlertDialog.Builder(this)
+                        .setTitle(name.isEmpty() ? e.device : name)
+                        .setItems(new String[]{"Rename", "Export", "Delete"}, (d, w) -> {
+                            if (w == 0) promptRenameFingerprint(e.label);
+                            else if (w == 1) exportFingerprint(e.label);
+                            else new AlertDialog.Builder(this)
+                                    .setTitle("Delete device profile?")
+                                    .setMessage(e.label)
+                                    .setPositiveButton("Delete", (dd, ww) -> {
+                                        boolean gone = vault.delete(e.label);
+                                        status.setText(gone ? "Deleted " + e.label : "Could not delete " + e.label);
+                                        render();
+                                    })
+                                    .setNegativeButton("Cancel", null)
+                                    .show();
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show()));
         card.addView(btns);
         return card;
+    }
+
+    /** Export a saved fingerprint envelope to /sdcard/Download (off the UI thread — it shells out to su). */
+    private void exportFingerprint(final String label) {
+        new Thread(() -> {
+            final String path = vault.exportToDownloads(label);
+            runOnUiThread(() -> {
+                if (path != null) { toast("Exported to " + path); status.setText("Shared " + label + " -> " + path); }
+                else toast("Export failed.");
+            });
+        }, "specter-fp-export").start();
     }
 
     /** Scan /sdcard/Download (via su — no storage permission) for shared specter-profile-*.json files and
@@ -2445,9 +2361,9 @@ public class MainActivity extends Activity {
                     activeVaultLabel = label;   // this fingerprint is now the active one an AppData capture links to
                     status.setText("Saved as " + label);
                     toast("Saved to vault: " + label);
-                    // If we're on the Saved tab, refresh the list so the new profile appears immediately (and
-                    // its date group auto-expands via the seed logic). No-op from the Identity tab (post-APPLY).
-                    if (tab == 1) render();
+                    // Refresh either tab: the Saved list gains the new entry (its date group auto-expands via
+                    // the seed logic), and the Identity hero drops its now-answered "Save this identity" row.
+                    render();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();

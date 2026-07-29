@@ -3,6 +3,29 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.0] — 2026-07-29
+
+### Changed
+- **Vault reorganized app-first, to scale.** The Saved tab had two flat top-level lists (“Saved logins” +
+  “Saved fingerprints”), which broke down at many apps × many saved logins each. It is now a two-level
+  drill-down with a persistent type facet (All / Logins / Device profiles) + search:
+  - **Top level** lists the apps that have saved logins (icon · name · “N saved logins”), plus a
+    **Device profiles** section for fingerprint-only saved identities (date-grouped).
+  - **Tap an app** to drill into just its logins — date-grouped, searchable, each with its own
+    Restore / Rename / Export / Delete. This is where you pick WHICH saved login to bring back (restoring
+    the newest by default is wrong — the newest is usually the currently-live session).
+  - **Restore** on a login re-applies its linked device profile too, so the app comes up signed in; a
+    login with no linked profile restores on its own. Every saved login stays reachable under its app —
+    nothing is hidden or orphaned.
+- **“Save to vault on apply” has a home again** on the Identity hero (a toggle), next to a one-tap
+  “Save this identity to the vault” that appears once an identity is applied but unsaved. The old checkbox
+  had been orphaned in the v0.16.0 redesign and did nothing.
+
+### Removed
+- Dead code from the redesign: the pre-redesign `actionBar()` and `targetHeader()` screens (and with them a
+  second, unreachable “Save/Restore AppData” control), plus the now-unused `thirdButton`/`fmtDate`/
+  `promptRenameAppData` helpers.
+
 ## [0.16.0] — 2026-07-29
 
 - **UI polish (round 2)**: bright pastel-yellow accent (#FFD54A) not dim orange; tight corners (no
