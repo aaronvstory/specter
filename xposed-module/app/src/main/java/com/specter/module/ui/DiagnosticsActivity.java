@@ -73,32 +73,8 @@ public final class DiagnosticsActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
         scroll.addView(root);
 
-        // Title row with a back affordance (the hardware back works, but a visible ← is expected).
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = new TextView(this);
-        back.setText("←");
-        back.setTextColor(Theme.GOLD);
-        back.setTextSize(24);
-        back.setPadding(dp(2), 0, dp(14), 0);
-        back.setOnClickListener(v -> finish());
-        titleRow.addView(back);
-
-        // Flashing-red dot + title: an unmistakable "recording" affordance while capture is live.
-        liveDot = new View(this);
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(10), dp(10));
-        dlp.setMargins(0, 0, dp(8), 0);
-        dlp.gravity = Gravity.CENTER_VERTICAL;
-        liveDot.setLayoutParams(dlp);
-        liveDot.setBackground(roundRect(Theme.RED, Theme.RED, dp(5)));
-        titleRow.addView(liveDot);
-
-        TextView title = new TextView(this);
-        title.setText("Live trace");
-        title.setTextColor(Theme.INK);
-        title.setTextSize(18);
-        titleRow.addView(title);
+        // One consistent back control (gold chevron + "Live trace" title), same as every other sub-screen.
+        LinearLayout titleRow = Nav.backRow(this, "Live trace", this::finish);
         root.addView(titleRow);
 
         // Which app's reads are we showing? The capture log is shared by ALL scoped+armed targets, so name the
@@ -124,17 +100,11 @@ public final class DiagnosticsActivity extends Activity {
 
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
+        btns.setGravity(Gravity.CENTER_VERTICAL);
         btns.setPadding(0, dp(8), 0, dp(8));
-        final Button liveBtn = flatButton("Pause");
-        liveBtn.setOnClickListener(v -> {
-            live = !live;
-            liveBtn.setText(live ? "Pause" : "Resume");
-            // Always clear any queued tick before re-arming, or a fast Pause→Live toggle stacks a second
-            // self-rescheduling loop (doubling su traffic each time). One loop, always.
-            h.removeCallbacks(tick);
-            if (live) h.post(tick);
-        });
-        btns.addView(liveBtn);
+        // The live toggle IS the "recording" affordance: a flashing-red dot + "Live" while capturing, a steady
+        // dim dot + "Paused" when stopped. Tapping it pauses/resumes the 2s refresh loop.
+        btns.addView(buildLiveToggle());
         Button refreshBtn = flatButton("Refresh");
         refreshBtn.setOnClickListener(v -> refresh());
         btns.addView(refreshBtn);
@@ -392,12 +362,14 @@ public final class DiagnosticsActivity extends Activity {
     }
 
     /** Export a READABLE coverage report (the parsed signals grouped with their spoofed/real status +
-     *  summary) to /sdcard/Download — far more useful than the raw 90k-line diag.log. Built from the
-     *  in-memory parsed rows; staged in the app's own dir then su-copied out (Download isn't app-writable). */
+     *  summary) to the shared Download/Specter folder — the SAME place every other Specter export lands —
+     *  far more useful than the raw 90k-line diag.log. Built from the in-memory parsed rows; staged in the
+     *  app's own dir then su-copied out (Download isn't app-writable). */
     private void exportLog() {
         final String report = DiagReport.build(lastRows);
         final String name = "specter-coverage-" + System.currentTimeMillis() + ".txt";
-        final String dest = "/sdcard/Download/" + name;
+        final String dir = com.specter.module.gen.AppDataVault.EXPORT_DIR;   // /sdcard/Download/Specter
+        final String dest = dir + "/" + name;
         new Thread(() -> {
             boolean ok = false;
             java.io.File staged = new java.io.File(getFilesDir(), name);
@@ -406,7 +378,7 @@ public final class DiagnosticsActivity extends Activity {
                     fos.write(report.getBytes("UTF-8"));
                 }
                 Process p = Runtime.getRuntime().exec(new String[]{"su", "-c",
-                        "cp '" + staged.getAbsolutePath() + "' '" + dest + "' && chmod 644 '" + dest + "'"});
+                        "mkdir -p '" + dir + "' && cp '" + staged.getAbsolutePath() + "' '" + dest + "' && chmod 644 '" + dest + "'"});
                 drain(p.getErrorStream());
                 drain(p.getInputStream());
                 ok = p.waitFor() == 0;
@@ -420,6 +392,44 @@ public final class DiagnosticsActivity extends Activity {
         }, "specter-diag-export").start();
     }
 
+
+    private TextView liveLabel;   // "Live" / "Paused" text inside the live toggle
+
+    /** The live toggle: a pill holding a flashing-red dot + "Live"/"Paused". The dot flashes while capturing
+     *  (this is the recording indicator), holds steady-dim when paused. Tapping pauses/resumes the 2s refresh. */
+    private View buildLiveToggle() {
+        LinearLayout pill = new LinearLayout(this);
+        pill.setOrientation(LinearLayout.HORIZONTAL);
+        pill.setGravity(Gravity.CENTER_VERTICAL);
+        pill.setBackgroundColor(Theme.BTN);
+        pill.setPadding(dp(14), dp(6), dp(14), dp(6));
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        plp.setMargins(0, 0, dp(8), 0);
+        pill.setLayoutParams(plp);
+
+        liveDot = new View(this);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(9), dp(9));
+        dlp.setMargins(0, 0, dp(7), 0);
+        liveDot.setLayoutParams(dlp);
+        liveDot.setBackground(roundRect(Theme.RED, Theme.RED, dp(5)));
+        pill.addView(liveDot);
+
+        liveLabel = new TextView(this);
+        liveLabel.setText("Live");
+        liveLabel.setTextColor(Theme.INK);
+        liveLabel.setTextSize(13);
+        pill.addView(liveLabel);
+
+        pill.setOnClickListener(v -> {
+            live = !live;
+            liveLabel.setText(live ? "Live" : "Paused");
+            // Clear any queued tick before re-arming, or a fast toggle stacks a second self-rescheduling loop.
+            h.removeCallbacks(tick);
+            if (live) h.post(tick);
+        });
+        return pill;
+    }
 
     /** A compact KPI tile: big number over a small caption, on a rounded card — reads far cleaner than the
      *  old run-on stat string. Tiles share the row equally (weight 1). */

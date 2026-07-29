@@ -62,29 +62,10 @@ public class AppPickerActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Theme.BG);
 
-        // Title row with a Back control (this is a sub-screen; give an explicit way out).
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.setPadding(dp(10), dp(12), dp(16), dp(6));
-        Button back = new Button(this);
-        back.setText("‹ Back");
-        back.setAllCaps(false);
-        back.setTextColor(Theme.INK);
-        back.setMinWidth(0); back.setMinHeight(0); back.setMinimumWidth(0); back.setMinimumHeight(0);
-        back.setPadding(dp(14), dp(7), dp(14), dp(7)); back.setTextSize(14); back.setStateListAnimator(null);
-        back.setBackground(pill(Theme.CARD2, Theme.BTN_EDGE));
-        back.setOnClickListener(v -> finish());
-        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        blp.setMargins(0, 0, dp(12), 0);
-        back.setLayoutParams(blp);
-        TextView title = new TextView(this);
-        title.setText("Target Apps");
-        title.setTextColor(Theme.GOLD);
-        title.setTextSize(20);
-        titleRow.addView(back);
-        titleRow.addView(title);
+        // One consistent back control (gold chevron + label), same as every other sub-screen. Extra top
+        // inset here since this is a full activity, not an inline vault header.
+        LinearLayout titleRow = Nav.backRow(this, "Target Apps", this::finish);
+        titleRow.setPadding(dp(8), dp(12), dp(16), dp(6));
         root.addView(titleRow);
 
         // search

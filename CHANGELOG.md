@@ -3,6 +3,23 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.6] — 2026-07-29
+
+### Changed
+- **One consistent back control everywhere.** Every sub-screen (Target Apps, Live trace, Import, the
+  vault app drill-down) now uses the same gold left-chevron in a proper 44dp touch target, via a shared
+  {@code Nav.backRow} — replacing the old mix of a “‹ Back” pill, a tiny “←”, and rotated chevrons.
+- **The live-trace record indicator moved onto the live toggle itself:** it now reads “● Live” with a
+  flashing-red dot while capturing (“Paused” + steady dim dot when stopped), instead of a stray dot by
+  the title.
+- **The live-trace coverage export now lands in Download/Specter** — the same folder as every other
+  Specter export — as does the per-app monitor read-capture archive.
+- **Clearer Anti-fingerprinting header:** “Core spoofing — always on” became “Device identity — always
+  applied” with copy that says the model/build/hardware/sensors always match and the toggles below add
+  extra protections on top (the old wording read like a blanket “everything is on” claim).
+- **The Identity status dot got a subtle same-hue halo ring** so it reads as a polished indicator, not a
+  flat circle (state colours unchanged: Ready / Applying / Applied).
+
 ## [0.17.5] — 2026-07-29
 
 ### Changed

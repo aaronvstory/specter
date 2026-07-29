@@ -1110,12 +1110,14 @@ public class MainActivity extends Activity {
      *  `cp -n` (no-clobber) keeps two captures landing in the same millisecond from overwriting each other. */
     private String archiveCapture(String pkg) {
         if (!com.specter.module.gen.RootWriter.validPkg(pkg)) return null;
-        String dest = "/sdcard/Download/specter-reads-" + pkg + "-" + System.currentTimeMillis() + ".log";
+        // Land in the shared Download/Specter folder, same as every other Specter export.
+        String dir = com.specter.module.gen.AppDataVault.EXPORT_DIR;
+        String dest = dir + "/specter-reads-" + pkg + "-" + System.currentTimeMillis() + ".log";
         try {
             com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
             waitForCaptureToStop(sh);
             // -s: only copy a NON-EMPTY capture, so a monitor that recorded nothing leaves no misleading file.
-            int code = sh.run("[ -s '" + DiagnosticsCmd.LOG_PATH + "' ] && cp -n '" + DiagnosticsCmd.LOG_PATH
+            int code = sh.run("mkdir -p '" + dir + "'; [ -s '" + DiagnosticsCmd.LOG_PATH + "' ] && cp -n '" + DiagnosticsCmd.LOG_PATH
                             + "' '" + dest + "' && chmod 644 '" + dest + "'", "");
             return code == 0 ? dest : null;
         } catch (Exception e) { return null; }
@@ -1530,8 +1532,8 @@ public class MainActivity extends Activity {
         // wired to a real gate key in the applied profile (turning one off leaves that signal real).
         content.addView(sectionLabel("Anti-fingerprinting"));
         LinearLayout info = cardBox();
-        info.addView(label("Core spoofing — always on"));
-        TextView desc = value("Every device signal is aligned to the applied phone.");
+        info.addView(label("Device identity — always applied"));
+        TextView desc = value("The model, build, hardware and sensors always match the applied phone. The toggles below add extra protections on top.");
         desc.setTextColor(Theme.DIM);
         info.addView(desc);
         content.addView(info);
@@ -2128,30 +2130,20 @@ public class MainActivity extends Activity {
     /** Drilled-in view for ONE app: a back header, then that app's saved logins, date-grouped + searchable,
      *  each with its own Restore / Export / Delete. This is where a user picks WHICH login to bring back. */
     private void renderAppLogins(final String pkg) {
-        // Back header (‹ AppName · N logins) — tapping returns to the app list and clears the search.
-        LinearLayout back = new LinearLayout(this);
-        back.setOrientation(LinearLayout.HORIZONTAL);
-        back.setGravity(Gravity.CENTER_VERTICAL);
-        back.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S4), dp(Theme.S2));
+        // Back header — the shared gold-chevron control, with the app's icon + AppData count as the label area.
+        int n = loginsByApp.get(pkg).size();
+        LinearLayout back = Nav.backRow(this, null, () -> { vaultApp = ""; vaultQuery = ""; render(); });
         back.setBackground(ripple(0));
-        ImageView chev = new ImageView(this);
-        chev.setImageDrawable(icChevron(0, dp(18)).tint(Theme.GOLD));
-        chev.setRotation(180);   // point left for "back"
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(20), dp(20));
-        clp.setMargins(0, 0, dp(Theme.S2), 0); chev.setLayoutParams(clp);
-        back.addView(chev);
         ImageView bico = new ImageView(this);
         bico.setImageDrawable(appIcon(pkg, dp(22)));
         LinearLayout.LayoutParams bilp = new LinearLayout.LayoutParams(dp(22), dp(22));
         bilp.setMargins(0, 0, dp(Theme.S2), 0); bico.setLayoutParams(bilp);
         back.addView(bico);
         TextView bt = new TextView(this);
-        int n = loginsByApp.get(pkg).size();
         bt.setText(appLabel(pkg) + "  ·  " + n + " AppData");
         bt.setTextColor(Theme.GOLD); bt.setTextSize(Theme.T_BODY);
         bt.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         back.addView(bt);
-        back.setOnClickListener(v -> { vaultApp = ""; vaultQuery = ""; render(); });
         content.addView(back);
 
         content.addView(vaultSearchBox("Search this app's AppData…", () -> renderSavedList(null)));
@@ -2617,24 +2609,9 @@ public class MainActivity extends Activity {
     /** The dedicated Import browse screen (a Vault sub-view): a back header + one styled card per importable
      *  file, each showing its type (Fingerprint / AppData / Combined) and name, tap to import. */
     private void renderImportScreen() {
-        // Back header (‹ Import) — same pattern as the app drill-down.
-        LinearLayout back = new LinearLayout(this);
-        back.setOrientation(LinearLayout.HORIZONTAL);
-        back.setGravity(Gravity.CENTER_VERTICAL);
-        back.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        // Back header — the shared gold-chevron control.
+        LinearLayout back = Nav.backRow(this, "Import", this::closeImportScreen);
         back.setBackground(ripple(0));
-        ImageView chev = new ImageView(this);
-        chev.setImageDrawable(icChevron(0, dp(18)).tint(Theme.GOLD));
-        chev.setRotation(180);
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(20), dp(20));
-        clp.setMargins(0, 0, dp(Theme.S2), 0); chev.setLayoutParams(clp);
-        back.addView(chev);
-        TextView bt = new TextView(this);
-        bt.setText("Import");
-        bt.setTextColor(Theme.GOLD); bt.setTextSize(Theme.T_BODY);
-        bt.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
-        back.addView(bt);
-        back.setOnClickListener(v -> closeImportScreen());
         content.addView(back);
 
         TextView hint = value("Files exported from Specter, found in Download/Specter. Tap one to import it.");
@@ -2984,19 +2961,31 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    /** A small status pill: a colored dot + a word (Ready / Applying… / Applied). Reads at a glance. */
+    /** A small status pill: a colored dot + a word (Ready / Applying… / Applied). Reads at a glance. The dot
+     *  carries a faint same-hue halo ring so it reads as a polished indicator, not a flat circle — subtle,
+     *  not obnoxious. Colour encodes state: SOFT=Ready, GOLD=Applying, SAGE=Applied. */
     private View statusPill(String text, int color) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(Theme.S1), 0, dp(Theme.S3));
+        // A 12dp halo frame holds a 7dp solid dot centered, with a ~15%-alpha ring of the same hue behind it.
+        android.widget.FrameLayout dotWrap = new android.widget.FrameLayout(this);
+        LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(dp(12), dp(12));
+        wlp.setMargins(0, 0, dp(Theme.S2), 0);
+        wlp.gravity = Gravity.CENTER_VERTICAL;
+        GradientDrawable halo = new GradientDrawable();
+        halo.setShape(GradientDrawable.OVAL);
+        halo.setColor((color & 0x00FFFFFF) | 0x26000000);   // same hue, ~15% alpha
+        dotWrap.setBackground(halo);
         View dot = new View(this);
         GradientDrawable d = new GradientDrawable();
         d.setShape(GradientDrawable.OVAL); d.setColor(color);
         dot.setBackground(d);
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(7), dp(7));
-        dlp.setMargins(0, 0, dp(Theme.S2), 0);
-        row.addView(dot, dlp);
+        android.widget.FrameLayout.LayoutParams dlp = new android.widget.FrameLayout.LayoutParams(dp(7), dp(7));
+        dlp.gravity = Gravity.CENTER;
+        dotWrap.addView(dot, dlp);
+        row.addView(dotWrap, wlp);
         TextView t = new TextView(this);
         t.setText(text); t.setTextColor(color); t.setTextSize(Theme.T_CAPTION);
         t.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
