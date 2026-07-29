@@ -202,6 +202,11 @@ public class ProbeActivity extends Activity {
             put(o, "vpn_interface", vpnViaInterfaces() ? "LEAK" : "clean");          // NetworkInterface tun0/ppp0/...
             put(o, "proxy_host", proxyHostLeak());                                    // http(s).proxyHost System prop
             // ro.boot.hardware / ro.boot.hardware.platform leaked the real device (flame/sm8150) — now aliased.
+            // GPU driver family — ro.hardware.egl/vulkan/gralloc must match the profile's GPU (mali for a
+            // Samsung/Exynos profile), not leak the real host's adreno. Aliased to gpu_hw (v0.18.5).
+            put(o, "prop_ro_hardware_egl", readProp("ro.hardware.egl"));
+            put(o, "prop_ro_hardware_vulkan", readProp("ro.hardware.vulkan"));
+            put(o, "prop_ro_hardware_gralloc", readProp("ro.hardware.gralloc"));
             put(o, "prop_ro_boot_hardware", readProp("ro.boot.hardware"));
             put(o, "prop_ro_boot_hardware_platform", readProp("ro.boot.hardware.platform"));
             // Per-partition product props (Android 10+) — odm/product/system_ext must NOT leak the real device.

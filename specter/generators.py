@@ -147,6 +147,21 @@ _SDK_BY_RELEASE = {
 }
 
 
+def gpu_hw_for(renderer):
+    """GPU driver family (adreno/mali/powervr) behind ro.hardware.{egl,vulkan,gralloc}, derived from the
+    GL renderer string. Coherent with the claimed device's GPU: a Mali renderer -> "mali", an Adreno
+    renderer -> "adreno". Falls back to "adreno" (the common US-market Qualcomm case) when unknown, since
+    every US device Specter picks is Qualcomm or Exynos. Pure lookup (no RNG) -> byte-parity safe."""
+    r = (renderer or "").lower()
+    if "mali" in r:
+        return "mali"
+    if "adreno" in r:
+        return "adreno"
+    if "powervr" in r:
+        return "powervr"
+    return "adreno"
+
+
 def sdk_for_release(release):
     """API level for an Android release string. Falls back on the major version, then 30."""
     if not release:

@@ -26,7 +26,10 @@ public final class CoverageTest {
         eq(Coverage.of("prop", "sys.boot_completed"), Coverage.State.REAL, "sys.*");
         // False-positive guards: props UNDER a spoofed prefix that we DON'T alias must read REAL, not
         // "spoofed" (codex). ro.hardware.chipname IS aliased; ro.hardware.gralloc is NOT.
-        eq(Coverage.of("prop", "ro.hardware.gralloc"), Coverage.State.REAL, "ro.hardware.gralloc (not aliased)");
+        // egl/vulkan aliased to gpu_hw (were leaking the real GPU vendor); gralloc left REAL (empty on real devices)
+        eq(Coverage.of("prop", "ro.hardware.egl"), Coverage.State.SPOOFED, "ro.hardware.egl (aliased to gpu_hw)");
+        eq(Coverage.of("prop", "ro.hardware.vulkan"), Coverage.State.SPOOFED, "ro.hardware.vulkan (aliased)");
+        eq(Coverage.of("prop", "ro.hardware.gralloc"), Coverage.State.REAL, "ro.hardware.gralloc (NOT aliased, empty on real)");
         eq(Coverage.of("prop", "ro.hardware.chipname"), Coverage.State.SPOOFED, "ro.hardware.chipname (aliased)");
         eq(Coverage.of("prop", "ro.hardware"), Coverage.State.SPOOFED, "ro.hardware (aliased)");
         eq(Coverage.of("prop", "ro.build.version.codename"), Coverage.State.REAL, "codename (universal REL)");

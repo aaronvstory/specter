@@ -1155,6 +1155,12 @@ public class HookEntry implements IXposedHookLoadPackage {
         // ro.chipname leaks the REAL SoC codename while ro.board.platform says the spoofed one (an internal
         // contradiction that is itself a tell). Empty on the Pixel 4, but populated on many devices.
         {"ro.chipname", "soc_platform"}, {"ro.mediatek.platform", "soc_platform"},
+        // GPU driver family — ro.hardware.egl / ro.hardware.vulkan leak the REAL GPU vendor (adreno/mali)
+        // otherwise, contradicting a profile whose renderer claims a different GPU (a Mali-renderer Samsung
+        // profile read ro.hardware.egl=adreno on a Pixel host). Aliased to the derived gpu_hw. NOTE: we do NOT
+        // alias ro.hardware.gralloc — it is EMPTY on real devices (verified: Pixel 4 + 4a both read ""), so
+        // forcing a value there would be LESS coherent than leaving it empty (egl/vulkan are the populated leak).
+        {"ro.hardware.egl", "gpu_hw"}, {"ro.hardware.vulkan", "gpu_hw"},
         // Build.MODEL & friends exist per-PARTITION on Android 10+ (system/vendor/odm/product/system_ext);
         // aliasing only ro.product.model + .vendor.* left odm/product/system_ext leaking the REAL device.
         {"ro.product.model", "build_model"}, {"ro.product.vendor.model", "build_model"},

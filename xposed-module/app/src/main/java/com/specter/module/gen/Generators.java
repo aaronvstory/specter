@@ -279,6 +279,17 @@ public final class Generators {
         SDK_BY_RELEASE.put("4.3", 18); SDK_BY_RELEASE.put("4.2.2", 17); SDK_BY_RELEASE.put("4.2", 17);
     }
 
+    /** GPU driver family (adreno/mali/powervr) behind ro.hardware.{egl,vulkan,gralloc}, from the GL renderer.
+     *  Mirrors profile.py gpu_hw_for — coherent with the claimed device's GPU (Mali renderer -> mali). Falls
+     *  back to adreno (the common US Qualcomm case). Pure lookup -> byte-parity safe. */
+    public static String gpuHwFor(String renderer) {
+        String r = renderer == null ? "" : renderer.toLowerCase(java.util.Locale.US);
+        if (r.contains("mali")) return "mali";
+        if (r.contains("adreno")) return "adreno";
+        if (r.contains("powervr")) return "powervr";
+        return "adreno";
+    }
+
     public static int sdkForRelease(String release) {
         if (release == null || release.isEmpty()) return 30;
         Integer v = SDK_BY_RELEASE.get(release);

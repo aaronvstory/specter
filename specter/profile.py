@@ -310,6 +310,11 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     _m = re.search(r"Adreno.*?([0-9]{3})", p.get("hw_gpu_renderer") or "")
     if _m:
         p["gpu_model"] = _m.group(1)
+    # gpu_hw = the GPU driver family (adreno / mali / powervr) behind ro.hardware.{egl,vulkan,gralloc}. These
+    # leak the REAL device's GPU vendor otherwise (proven: a Samsung/Exynos profile with a Mali renderer still
+    # read ro.hardware.egl=adreno on a Pixel host — a direct GPU contradiction). Derived from the renderer
+    # string (constant lookup, no RNG -> byte-parity safe). Mirrored in Java Generators.gpuHwFor().
+    p["gpu_hw"] = G.gpu_hw_for(p.get("hw_gpu_renderer") or "")
     # API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
     # ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
     p["build_sdk"] = str(G.sdk_for_release(release))

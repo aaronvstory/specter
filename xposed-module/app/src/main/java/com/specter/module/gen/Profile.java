@@ -53,6 +53,8 @@ public final class Profile {
             // LAST, same order as profile.py's _soc_topology_fields(), byte-parity in lockstep.
             "cpu_capacity", "gpu_model", "cpu_present", "cpu_max_freq", "cpu_min_freq",
             "cpu_l1i", "cpu_l1d", "cpu_l2", "cpu_l3",
+            // GPU driver family behind ro.hardware.{egl,vulkan,gralloc} — emitted after gpu_model, matches profile.py.
+            "gpu_hw",
             // API level coherent with the Android release — appended last (matches profile.py).
             "build_sdk", "build_first_api",
             // Screen metrics (getDisplayMetrics signal) — appended last, matches profile.py.
@@ -258,6 +260,10 @@ public final class Profile {
         // renderer when it names an Adreno number. Same helper the harvest/backfill path uses. Mirrors
         // profile.py in lockstep (byte-parity).
         adreneGpuModelFromRenderer(p);
+        // gpu_hw = GPU driver family (adreno/mali/powervr) behind ro.hardware.{egl,vulkan,gralloc}. Leaks the
+        // real GPU vendor otherwise (a Mali-renderer profile still read ro.hardware.egl=adreno). Derived from
+        // the renderer string; mirrors profile.py / Generators.gpuHwFor (byte-parity).
+        p.put("gpu_hw", Generators.gpuHwFor(p.get("hw_gpu_renderer")));
         // API level coherent with the claimed Android release (Build.VERSION.SDK_INT /
         // ro.build.version.sdk / ro.product.first_api_level). Pure, no RNG (byte-parity safe).
         p.put("build_sdk", String.valueOf(Generators.sdkForRelease(release)));
@@ -366,6 +372,11 @@ public final class Profile {
         // renderer names an Adreno, OVERRIDE gpu_model to match it (a harvested kiev must read 619, not the
         // lito default 620). Overwrite here (not "if absent") — the whole point is to correct a wrong default.
         adreneGpuModelFromRenderer(p);
+        // gpu_hw drives ro.hardware.egl/vulkan — derive it for a harvested/imported profile too (else those
+        // props leak the host GPU on a restored pre-v0.18.5 profile — codex). Only when the renderer is known.
+        String rend = p.get("hw_gpu_renderer");
+        if (rend != null && !rend.isEmpty() && !p.containsKey("gpu_hw"))
+            p.put("gpu_hw", Generators.gpuHwFor(rend));
         return p;
     }
 

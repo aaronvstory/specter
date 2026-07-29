@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.18.5] — 2026-07-30
+
+### Fixed
+- **Closed a GPU-vendor coherence leak: ro.hardware.egl / ro.hardware.vulkan are now
+  spoofed.** These read the REAL host GPU driver (adreno on a Qualcomm Pixel) — so a Samsung/Exynos profile
+  whose GL renderer is Mali-G76 still reported ro.hardware.egl=adreno, a direct GPU contradiction a
+  fingerprinter catches by comparing the renderer against these props. A new derived profile field gpu_hw
+  (adreno/mali/powervr, from the renderer string, byte-parity Java↔Python) drives egl + vulkan via PROP_ALIASES
+  in BOTH the Java hook and the native Zygisk layer. Verified on the 4a: an exynos9825 profile reads egl + vulkan = "mali" (was "adreno"). gralloc is left REAL — real devices report a
+  gralloc VENDOR (qcom/gbm), never the GPU family, so forcing it would be an impossible-value tell (gauntlet).
 ## [0.18.4] — 2026-07-30
 
 ### Fixed

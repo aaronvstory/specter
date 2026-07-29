@@ -19,6 +19,10 @@ static const char *PROP_ALIASES[][2] = {
     // whole SoC-name set stays coherent — else ro.chipname leaks the REAL codename on a host device where
     // it's populated (empty on the Pixel 4, but Specter targets ANY Android). Lockstep w/ HookEntry.
     {"ro.chipname", "soc_platform"}, {"ro.mediatek.platform", "soc_platform"},
+    // GPU driver family — ro.hardware.egl / ro.hardware.vulkan leak the real GPU vendor otherwise (a Mali-
+    // renderer profile read ro.hardware.egl=adreno on a Qualcomm host). Alias to gpu_hw. NOT ro.hardware.gralloc
+    // (empty on real devices — forcing a value there is less coherent). Lockstep w/ HookEntry.
+    {"ro.hardware.egl", "gpu_hw"}, {"ro.hardware.vulkan", "gpu_hw"},
     // Build.MODEL and friends exist per-PARTITION on Android 10+ (system/vendor/odm/product/system_ext).
     // Aliasing only ro.product.model + .vendor.* left odm/product/system_ext leaking the REAL device
     // (proven: ro.product.odm.model=Pixel 4). Cover every partition for each identity field.

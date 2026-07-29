@@ -37,6 +37,7 @@ public final class Coverage {
         "ro.system.build.fingerprint", "ro.system_ext.build.fingerprint", "ro.vendor.build.fingerprint",
         // hardware
         "ro.hardware", "ro.hardware.chipname",
+        "ro.hardware.egl", "ro.hardware.vulkan",   // GPU driver family (aliased to gpu_hw); NOT gralloc (empty on real devices)
         // product.* (all partitions)
         "ro.product.board", "ro.product.brand", "ro.product.build.id", "ro.product.build.version.incremental",
         "ro.product.build.version.release", "ro.product.device", "ro.product.manufacturer",
