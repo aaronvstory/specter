@@ -22,6 +22,7 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
     app/src/main/java/com/specter/module/gen/SessionMigrator.java \
     app/src/main/java/com/specter/module/gen/AppDataVault.java \
     app/src/main/java/com/specter/module/gen/WidevineL3.java \
+    app/src/main/java/com/specter/module/gen/OtaBlock.java \
     app/src/main/java/com/specter/module/gen/GsfReset.java \
     app/src/main/java/com/specter/module/ui/DiagnosticsCmd.java \
     app/src/main/java/com/specter/module/ui/TraceParser.java \
@@ -35,6 +36,7 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
     app/src/test/java/com/specter/module/gen/SessionMigratorTest.java \
     app/src/test/java/com/specter/module/gen/AppDataVaultTest.java \
     app/src/test/java/com/specter/module/gen/WidevineL3Test.java \
+    app/src/test/java/com/specter/module/gen/OtaBlockTest.java \
     app/src/test/java/com/specter/module/gen/GsfResetTest.java \
     app/src/test/java/com/specter/module/ui/DiagnosticsCmdTest.java \
     app/src/test/java/com/specter/module/ui/TraceParserTest.java \
@@ -48,6 +50,7 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
 "$JAVA" -cp "$OUT" com.specter.module.gen.SessionMigratorTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.AppDataVaultTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.WidevineL3Test
+"$JAVA" -cp "$OUT" com.specter.module.gen.OtaBlockTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.GsfResetTest
 "$JAVA" -cp "$OUT" com.specter.module.ui.DiagnosticsCmdTest
 "$JAVA" -cp "$OUT" com.specter.module.ui.TraceParserTest

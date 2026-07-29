@@ -3,6 +3,24 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.18.0] — 2026-07-30
+
+### Added
+- **Guided first-run setup — "Set up everything" (Settings → Set up everything).** One tap installs every
+  layer a virgin phone needs and reboots, so an end user never hand-installs 5+ pieces: the Zygisk native
+  layer, the OTA block (keeps the device on its current OS version), and Widevine L3 (software DRM,
+  device-wide) — plus it **writes the target apps into Specter's LSPosed scope from inside the app**, the
+  one step that used to require the PC (`scripts/scope_probe.py`). Shows a live per-step checklist, is
+  idempotent (already-done steps just report so), and ends at the reboot every layer needs. A first-run
+  banner points new users at it until it's been run once; the Protection status screen verifies it worked.
+- **In-app LSPosed scope writer (`LspScope`).** Adds packages to Specter's own module scope via the same
+  root SQLite-copy route the Protection status screen already uses to read the config DB — `INSERT OR
+  IGNORE` scoped to Specter's `mid` only (never another module's scope), reboot to apply.
+- **OTA-block Magisk module (`OtaBlock`).** Bundles the proven 4-layer OTA block (hosts blackhole of the
+  OTA CDN + framework auto-update off + staged-payload purge + GMS update components disabled) as one
+  removable Magisk module, installed atomically (staging dir → rename, with .bak rollback) like the
+  Widevine L3 module. Reversible: removing it restores updates on reboot.
+
 ## [0.17.8] — 2026-07-30
 
 ### Added

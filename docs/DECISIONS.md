@@ -515,3 +515,20 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   the app's OWN dir; revisit if it ever matters. Note: the codex reviews for spoofing/functionality/whole-app
   repeatedly drowned in loaded skill-file context; the FOCUSED single-file prompts (strip skills, "output only
   findings") are what produced usable results.
+
+## 2026-07-30 — In-app LSPosed scope writer + "Set up everything" orchestrator (v0.18.0)
+- The virgin-phone install experience is the APK-as-orchestrator (not a flashable zip): the APK already
+  bundles every module + has the su installers, so a "Set up everything" button chaining them + one reboot
+  is the smallest reliable path and self-verifies via the Protection-status screen. A separate zip would be
+  a second build artifact that still needs the APK for the UI and can't verify itself.
+- Scope is written from inside the app (`LspScope`) via the SAME root SQLite-copy route HealthCheck already
+  uses to READ modules_config.db — copy to app dir via su, edit with Android's own SQLiteDatabase, copy back.
+  `INSERT OR IGNORE` scoped to Specter's own mid via a sub-select, so it never touches another module's scope
+  and re-runs are no-ops. Reboot required (LSPosed reloads scope on boot); MODULE registration is already
+  fine because the APK is a normally-installed package (the fragile part the memory warned about is module
+  registration, not scope rows — scope_probe.py proved scope-row edits + reboot work).
+- OTA-block is a Magisk module (`OtaBlock`, mirrors WidevineL3's atomic staging) carrying the proven 4-layer
+  block (hosts blackhole + framework auto-update off + payload purge + GMS update components disabled), so
+  it's per-device, removable, and installable with no PC — vs the old by-hand hosts+settings fleet steps.
+- "Set up everything" installs Widevine L3 too (in the default, not opt-in): these are fleet income phones,
+  DRM HD playback is irrelevant. Widevine stays a Settings toggle as well for later removal.

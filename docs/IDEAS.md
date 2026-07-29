@@ -711,8 +711,16 @@ Checked the generated profile for cross-field incoherence beyond what's already 
 ## 2026-07-29 - System_server-side app hiding (HMA-style) - IDEA/deferred
 Our app-hiding hooks the app-side ApplicationPackageManager method-by-method. Gap analysis vs HideMyApplist (Dr-TSNG) shows HMA hooks ONE system_server chokepoint (shouldFilterApplication on API>=30, filterAppAccessLPr+applyPostResolutionFilter on 28/29) covering every read path AND the raw-binder bypass (ServiceManager.getService("package")). We closed the high-value app-side gaps in v0.17.7 (intent resolution, UID->name, getInstallSourceInfo). REMAINING: an SDK using the raw binder bypasses app-side hooks entirely. A system_server hook (via our Zygisk layer, scoped by callingUid) would close it but is version-fragile + bootloop-risk. Status: SHIPPED v0.17.7 (PmsHook.java, API-30 AppsFilter path verified-buildable; caller derived from the callingSetting arg, NOT a getPackagesForUid PMS call, to avoid lock inversion). API 33/34 coded, untested. Port refs: HMA PmsHookTarget30/34/28.kt.
 
-## 2026-07-30 - ★ Install / first-run experience (virgin phone) - TOP PRIORITY (gates paywall)
-status: `idea -> must-build-next`. A brand-new user on a virgin phone must NOT hand-install 5+ pieces
+## 2026-07-30 - ★ Install / first-run experience (virgin phone) - SHIPPED (v0.18.0)
+status: `shipped`. Chose direction (b): the Specter APK as an ORCHESTRATOR. "Set up everything" (Settings →
+Set up everything, + a first-run banner on every tab until run once) installs the Zygisk native layer,
+writes the target apps into LSPosed scope FROM INSIDE THE APP (the one PC-only step, `LspScope` — same root
+SQLite-copy route the Protection-status screen reads with), installs the OTA-block Magisk module (`OtaBlock`)
+and Widevine L3, then prompts the one reboot they all need. `SetupFlow` orchestrates + reports a live
+per-step checklist (idempotent — already-done steps just say so). Verified on the 4a: removed Dasher from
+scope, ran setup, Dasher re-added + OTA-block hosts overlay + ota_disable=1 + both Magisk modules on disk,
+all four steps green. The Protection-status screen (v0.17.8) is the "did it work?" verifier. Original notes:
+A brand-new user on a virgin phone must NOT hand-install 5+ pieces
 (Xposed module APK + Zygisk + Magisk modules + LSPosed scope incl. System Framework/Android System +
 reboot). This session proved how fragile that is (bad install state hid the module from LSPosed; a wrong
 step wiped the vault). Directions: (a) a FLASHABLE MAGISK ZIP that bundles the modules AND writes the

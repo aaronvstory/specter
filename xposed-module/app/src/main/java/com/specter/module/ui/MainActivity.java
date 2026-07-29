@@ -74,6 +74,10 @@ public class MainActivity extends Activity {
     private boolean vaultImport = false;   // showing the dedicated Import browse screen (a Vault sub-view)
     private boolean healthScreen = false;  // showing the Protection Status sub-screen (a Settings sub-view)
     private java.util.List<HealthCheck.Group> healthResults;   // last-computed checks (null = still running)
+    private boolean setupScreen = false;   // showing the guided "Set up everything" sub-screen (Settings sub-view)
+    private boolean setupBusy = false;     // a setup run is in flight (guards the button + drives the spinner)
+    private java.util.List<com.specter.module.gen.SetupFlow.StepResult> setupResults;  // last run's per-step outcomes (null = not run yet)
+    private boolean setupAnySucceeded = false;  // did the last run install ANYTHING? (gates the reboot prompt + "done")
     private java.util.List<String> importPaths;   // the scanned importable file paths (null until scanned)
     /** pkg -> its saved login(s), newest first. Rebuilt once per Saved-tab render from appDataVault.list().
      *  A login's `fingerprint` field is the vault-label to re-apply on restore (may be "" / stale — restore
@@ -258,7 +262,7 @@ public class MainActivity extends Activity {
             llp.topMargin = dp(3);
             lbl.setLayoutParams(llp);
             item.addView(lbl);
-            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; rebuildBottomNav(); render(); } });
+            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; rebuildBottomNav(); render(); } });
             bottomNavBar.addView(item);
         }
     }
@@ -302,6 +306,7 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if (tab == 1 && vaultImport) { closeImportScreen(); return; }
         if (tab == 1 && !vaultApp.isEmpty()) { vaultApp = ""; vaultQuery = ""; render(); return; }
+        if (tab == 2 && setupScreen) { setupScreen = false; render(); return; }
         if (tab == 2 && healthScreen) { healthScreen = false; render(); return; }
         super.onBackPressed();
     }
@@ -351,7 +356,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
             Button tb = tabButton(names[i], tab == i);
-            tb.setOnClickListener(v -> { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; retintTabs(); render(); });
+            tb.setOnClickListener(v -> { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; retintTabs(); render(); });
             tabButtons[i] = tb;
             bar.addView(tb);
         }
@@ -602,6 +607,13 @@ public class MainActivity extends Activity {
                 && (!zygiskStatus.installed || zygiskSyncFailed)) {
             content.addView(zygiskBanner());
         }
+        // First-run call-to-action: until the guided setup has been run once, surface a prominent banner on
+        // every tab so a brand-new user is pointed at "Set up everything" instead of hunting through Settings.
+        // Dismissed permanently once setup completes (setupResults sets the pref); the Settings row stays for
+        // re-runs. Suppressed while the setup screen itself is open (would be redundant).
+        if (!prefs.getBoolean("setup_done", false) && !setupScreen) {
+            content.addView(setupBanner());
+        }
         switch (tab) {
             case 0: renderIdentity(); break;
             case 1: renderSaved(); break;
@@ -676,6 +688,44 @@ public class MainActivity extends Activity {
 
         // inline text action on the right
         View act = textButton(stale ? "Update" : "Install", Theme.GOLD, v -> installZygisk());
+        act.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((TextView) act).setPadding(dp(Theme.S3), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        outer.addView(act);
+        return outer;
+    }
+
+    /** First-run banner: a gold-accented card that sends a new user to the guided "Set up everything" flow.
+     *  Same clean card surface + inline action as {@link #zygiskBanner}. Shown until setup runs once. */
+    private View setupBanner() {
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.HORIZONTAL);
+        outer.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Theme.CARD);
+        bg.setCornerRadius(dp(Theme.R_CARD));
+        outer.setBackground(bg);
+        LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        olp.setMargins(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));
+        outer.setLayoutParams(olp);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S3), dp(Theme.S3));
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView lab = new TextView(this);
+        lab.setText("Finish setup");
+        lab.setTextColor(Theme.INK); lab.setTextSize(Theme.T_BODY);
+        lab.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        col.addView(lab);
+        TextView d = new TextView(this);
+        d.setText("Install every layer + scope your apps in one tap, then reboot.");
+        d.setTextColor(Theme.SOFT); d.setTextSize(Theme.T_CAPTION);
+        d.setPadding(0, dp(Theme.S1), 0, 0);
+        col.addView(d);
+        outer.addView(col);
+
+        View act = textButton("Set up", Theme.GOLD, v -> { tab = 2; setupScreen = true; setupResults = null; rebuildBottomNav(); render(); });
         act.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         ((TextView) act).setPadding(dp(Theme.S3), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
         outer.addView(act);
@@ -1515,6 +1565,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderSettings() {
+        if (setupScreen) { renderSetup(); return; }     // dedicated guided-setup sub-screen
         if (healthScreen) { renderHealth(); return; }   // dedicated status sub-screen
 
         // Health: one tap to verify everything is actually configured to spoof (LSPosed scope, framework
@@ -1522,6 +1573,12 @@ public class MainActivity extends Activity {
         // false sense of security.
         content.addView(sectionLabel("Status"));
         LinearLayout healthCard = card();
+        // Set up everything: the one-tap first-run install (native layer + LSPosed scope + OTA block +
+        // Widevine L3, then a reboot). Always available so it's re-runnable, not just a first-run gate.
+        LinearLayout sTrail = new LinearLayout(this); sTrail.addView(chevronTrailing(false));
+        healthCard.addView(row("Set up everything", "Install every layer + scope your apps, then reboot", sTrail,
+                v -> { setupScreen = true; setupResults = null; render(); }));
+        healthCard.addView(hairlineInset());
         LinearLayout hTrail = new LinearLayout(this); hTrail.addView(chevronTrailing(false));
         healthCard.addView(row("Check protection status", "Verify every layer is set up right", hTrail,
                 v -> { healthScreen = true; render(); }));
@@ -1564,6 +1621,186 @@ public class MainActivity extends Activity {
         content.addView(gsfResetRow());
         // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
         // as a dead toggle until it actually works.
+    }
+
+    /** The guided "Set up everything" sub-screen: one tap installs every layer (native + scope + OTA block +
+     *  Widevine L3) via {@link com.specter.module.gen.SetupFlow}, shows a live per-step checklist, then prompts
+     *  the one reboot they all need. Re-runnable — it's idempotent (already-done steps just report so). */
+    private void renderSetup() {
+        content.addView(Nav.backRow(this, "Set up everything", () -> { setupScreen = false; render(); }));
+
+        // BEFORE a run: an intro card that says exactly what the button does, then the button. AFTER a run: the
+        // per-step checklist + a reboot prompt. While running: the same checklist area shows "Setting up…".
+        if (setupResults == null && !setupBusy) {
+            LinearLayout intro = cardBox();
+            TextView h = label("One-tap install");
+            h.setTextColor(Theme.INK); h.setTextSize(16);
+            h.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
+            intro.addView(h);
+            TextView d = value("Installs the native layer, adds your target apps to LSPosed scope, blocks OS "
+                    + "updates, and sets software DRM — then reboots to activate everything. Safe to run again.");
+            d.setTextColor(Theme.SOFT); d.setPadding(0, dp(Theme.S1), 0, 0);
+            intro.addView(d);
+            content.addView(intro);
+
+            // Show what "your apps" means so scope isn't a black box.
+            java.util.Set<String> targets = Targets.get(prefs);
+            if (!targets.isEmpty()) {
+                content.addView(section("Apps to scope"));
+                LinearLayout tcard = card();
+                int i = 0;
+                for (String pkg : targets) {
+                    if (i++ > 0) tcard.addView(hairlineInset());
+                    LinearLayout r = new LinearLayout(this);
+                    r.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+                    TextView t = value(Targets.label(this, pkg));
+                    t.setTextColor(Theme.INK);
+                    r.addView(t);
+                    tcard.addView(r);
+                }
+                content.addView(tcard);
+            }
+
+            View go = primaryButton("Set up everything", v -> runSetup());
+            LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            glp.setMargins(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S4));
+            go.setLayoutParams(glp);
+            content.addView(go);
+            return;
+        }
+
+        // Running or done: render the per-step checklist. While busy, results is still the prior list (or null);
+        // show a running header either way.
+        if (setupBusy) {
+            TextView t = value("Setting up… this takes a few seconds.");
+            t.setTextColor(Theme.DIM);
+            t.setPadding(dp(Theme.S4), dp(Theme.S4), dp(Theme.S4), dp(Theme.S3));
+            content.addView(t);
+        }
+
+        if (setupResults != null) {
+            int failed = 0;
+            for (com.specter.module.gen.SetupFlow.StepResult s : setupResults) if (!s.done) failed++;
+            if (!setupBusy) {
+                // Three states: all good (green), nothing installed at all (red — e.g. root denied), and
+                // partial (gold). Never claim success when anySucceeded is false.
+                int heroColor; String heroTitle, heroSub;
+                if (!setupAnySucceeded) {
+                    heroColor = Theme.RED; heroTitle = "Setup didn’t run";
+                    heroSub = "Nothing installed — grant Specter root in Magisk, then try again.";
+                } else if (failed == 0) {
+                    heroColor = Theme.SAGE; heroTitle = "Setup complete";
+                    heroSub = "Reboot to activate every layer.";
+                } else {
+                    heroColor = Theme.GOLD; heroTitle = "Setup finished — with notes";
+                    heroSub = failed + " step" + (failed == 1 ? "" : "s") + " need attention — reboot, then check status.";
+                }
+                content.addView(healthHero(heroColor, heroTitle, heroSub));
+            }
+            content.addView(section("Steps"));
+            LinearLayout card = card();
+            for (int i = 0; i < setupResults.size(); i++) {
+                if (i > 0) card.addView(hairlineInset());
+                card.addView(setupStepRow(setupResults.get(i)));
+            }
+            content.addView(card);
+        }
+
+        if (!setupBusy && setupResults != null) {
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            rlp.setMargins(dp(Theme.S4), dp(Theme.S3), dp(Theme.S4), dp(Theme.S2));
+            // Reboot only when something actually installed — rebooting after a total failure is pointless.
+            // Otherwise offer a Retry (the same one-tap run).
+            View primary = setupAnySucceeded
+                    ? primaryButton("Reboot now", v -> promptReboot())
+                    : primaryButton("Try again", v -> runSetup());
+            primary.setLayoutParams(rlp);
+            content.addView(primary);
+
+            View check = textButton("Check protection status instead", Theme.GOLD,
+                    v -> { setupScreen = false; healthScreen = true; render(); });
+            ((TextView) check).setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            clp.setMargins(0, 0, 0, dp(Theme.S4));
+            check.setLayoutParams(clp);
+            content.addView(check);
+        }
+    }
+
+    /** One setup step row: a green (done) / amber (not done) dot + label + detail. Same visual language as a
+     *  health-check row, minus the Fix button (the reboot at the end is the single follow-up action). */
+    private View setupStepRow(final com.specter.module.gen.SetupFlow.StepResult s) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setPadding(dp(Theme.S4), dp(Theme.S3) + dp(1), dp(Theme.S4), dp(Theme.S3) + dp(1));
+
+        int color = s.done ? Theme.SAGE : Theme.GOLD;
+        View dot = new View(this);
+        GradientDrawable dg = new GradientDrawable(); dg.setShape(GradientDrawable.OVAL); dg.setColor(color);
+        dot.setBackground(dg);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(8), dp(8));
+        dlp.setMargins(0, dp(6), dp(Theme.S3), 0);
+        r.addView(dot, dlp);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView lab = new TextView(this);
+        lab.setText(s.label); lab.setTextColor(Theme.INK); lab.setTextSize(Theme.T_BODY);
+        lab.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        col.addView(lab);
+        TextView det = new TextView(this);
+        det.setText(s.detail); det.setTextColor(Theme.DIM); det.setTextSize(Theme.T_CAPTION);
+        det.setLineSpacing(dp(2), 1f); det.setPadding(0, dp(1), 0, 0);
+        col.addView(det);
+        r.addView(col);
+        return r;
+    }
+
+    /** Run the whole install flow off the UI thread, then re-render into the checklist + reboot prompt. */
+    private void runSetup() {
+        if (setupBusy) return;
+        setupBusy = true; setupResults = null;
+        render();   // shows the "Setting up…" state
+        final java.util.Set<String> targets = Targets.get(prefs);
+        new Thread(() -> {
+            com.specter.module.gen.SetupFlow.Outcome out;
+            try {
+                out = com.specter.module.gen.SetupFlow.run(getApplicationContext(), targets);
+            } catch (com.specter.module.gen.SetupFlow.BusyException be) {
+                // Another run (e.g. a stale worker after Activity recreation) holds the process-wide latch.
+                runOnUiThread(() -> { setupBusy = false; status.setText("Setup already running — one moment."); });
+                return;
+            }
+            final com.specter.module.gen.SetupFlow.Outcome f = out;
+            runOnUiThread(() -> {
+                setupBusy = false;
+                setupResults = f.steps;
+                setupAnySucceeded = f.anySucceeded;
+                // Only mark setup done (which permanently hides the first-run banner) when SOMETHING actually
+                // installed — a total failure (root denied) must keep nagging the user to finish setup.
+                if (f.anySucceeded) prefs.edit().putBoolean("setup_done", true).apply();
+                Targets.invalidateScopeCache();   // scope may have changed — force the next isScoped() to re-check
+                if (setupScreen) render();
+            });
+        }, "specter-setup").start();
+    }
+
+    /** Prompt + perform a reboot (the single follow-up every setup step needs to activate). */
+    private void promptReboot() {
+        if (!alive()) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Reboot to finish")
+                .setMessage("Specter installed everything. Reboot now to activate it.")
+                .setPositiveButton("Reboot now", (dl, w) -> new Thread(() -> {
+                    try { new com.specter.module.gen.RootWriter.SuShell().run("svc power reboot || reboot", ""); }
+                    catch (Throwable ignored) {}
+                }).start())
+                .setNegativeButton("Later", null)
+                .show();
     }
 
     /** The Protection Status sub-screen: runs {@link HealthCheck} off-thread and renders a clean, grouped
