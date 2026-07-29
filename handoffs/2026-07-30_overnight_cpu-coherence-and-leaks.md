@@ -58,3 +58,17 @@ Python: `.venv/Scripts/python.exe -m pytest -q` (byte-parity). JVM: `cd xposed-m
 Native: `bash build-zygisk.sh` + `bash run-zygisk-tests.sh <serial>`. Module: `build-apk.sh`. All green.
 EOL: profile.py/generators.py/cli.py/verify.py/CHANGELOG.md/HookEntry.java/ZygiskInstaller.java = CRLF (edit
 via byte-script or re-normalize after Edit); Profile.java/Coverage.java/main.cpp/soc_topology.json = LF.
+
+
+## UPDATE (later overnight) — v0.18.5 GPU coherence + full re-audit DONE
+- **v0.18.5**: closed the GPU-vendor leak. ro.hardware.egl/vulkan aliased to a derived gpu_hw (adreno/mali/
+  powervr from the renderer, byte-parity, both hook layers, backfilled for old profiles). gralloc left REAL
+  (real devices report a gralloc VENDOR qcom/gbm, never the GPU family — gauntlet caught that forcing it =
+  impossible-value tell). Verified on 4a: Exynos profile reads egl/vulkan=mali.
+- **Full re-audit** of the Cash trace: only 4 props remain unspoofed, ALL non-identity (empty/universal:
+  graphics.memory, redirect_socket_calls, media.metrics, boringcrypto.hwrand) — classified REAL. The entire
+  identity-bearing surface Cash reads (CPU freq/topology/cache + SoC names + GPU vendor + build/product/boot)
+  is now CLOSED.
+- Main at v0.18.5. 4a fully deployed + verified. P4 STILL awaiting the user'''s "it'''s free" signal.
+- NEXT (IDEAS, after user direction): native GPS spoof w/ boot auto-start (big, income-critical — do NOT
+  start unattended). Smaller: gralloc-vendor value, ro.vendor.graphics.memory per-SoC.
