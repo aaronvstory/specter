@@ -14,8 +14,11 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   the lock risk remained). Reading the arg is strictly safer and needs no PMS call. Gate is fail-open
   (kill switch on any throwable), never filters system/priv callers or NEVER_HIDE pkgs, only hides sensitive
   pkgs from OUR scoped targets. Requires "System Framework" LSPosed scope (added to the scope suggestion).
-  Both devices are API 30, so only the API-30 `AppsFilter` path is verified; 33/34 (`AppsFilterImpl`, arg
-  shift + `mName` field) are coded but untested — add a device to verify before claiming newer-API support.
+  PROVEN on-device (4a, API 30, 2026-07-29): gate installed in system_server, device booted clean, no
+  over-hiding (shell sees all 312 pkgs, Settings fine), and the probe's raw-binder test
+  (`IPackageManager` direct, bypassing app-side hooks) reads `raw_binder_leak=hidden` — the bypass is
+  CLOSED. No system_server crash traces from our code. API 33/34 (`AppsFilterImpl`, arg shift + `mName`)
+  are coded but UNTESTED (no API 33+ device) — verify before claiming newer-API support.
 
 - **2026-07-29 (v0.17.3): kept the bottom-nav tab named "Identity", not "Fingerprint"** (user-confirmed).
   The tab is broader than one fingerprint — it holds the device fields, the IDs, the carrier, AND the target

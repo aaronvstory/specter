@@ -124,6 +124,32 @@ public class ProbeActivity extends Activity {
             }
             put(o, "direct_lookup_leak", direct.length() == 0 ? "hidden" : direct.toString());
 
+            // RAW-BINDER hiding — the definitive test of the system_server gate. Calling IPackageManager
+            // directly (ServiceManager.getService("package") -> IPackageManager.Stub.asInterface) BYPASSES
+            // android.app.ApplicationPackageManager, where our per-app hooks live. So a "hidden" result here
+            // is attributable ONLY to the PackageManagerService-side AppsFilter gate. "hidden" = the gate
+            // filtered it; "LEAK:<pkg>" = the binder returned it (gate off / not covering this path);
+            // "N/A" = couldn't reach the binder (reflection failed — inconclusive, not a leak).
+            String rawResult;
+            try {
+                Object sm = Class.forName("android.os.ServiceManager")
+                        .getMethod("getService", String.class).invoke(null, "package");
+                Object ipm = Class.forName("android.content.pm.IPackageManager$Stub")
+                        .getMethod("asInterface", Class.forName("android.os.IBinder")).invoke(null, sm);
+                // API 28+ getPackageInfo(String, int, int userId) on IPackageManager.
+                java.lang.reflect.Method gpi = ipm.getClass().getMethod(
+                        "getPackageInfo", String.class, int.class, int.class);
+                StringBuilder raw = new StringBuilder();
+                for (String p : new String[]{"com.topjohnwu.magisk", "org.lsposed.manager"}) {
+                    Object pi = gpi.invoke(ipm, p, 0, 0);   // null PackageInfo == filtered/absent
+                    if (pi != null) raw.append("LEAK:").append(p).append(",");
+                }
+                rawResult = raw.length() == 0 ? "hidden" : raw.toString();
+            } catch (Throwable t) {
+                rawResult = "N/A:" + t.getClass().getSimpleName();
+            }
+            put(o, "raw_binder_leak", rawResult);
+
             // Per-SoC /sys hardware signals FPJS reads directly — the native layer redirects these.
             put(o, "sys_cpu_capacity0", readFileTrim("/sys/devices/system/cpu/cpu0/cpu_capacity"));
             put(o, "sys_cpu_capacity7", readFileTrim("/sys/devices/system/cpu/cpu7/cpu_capacity"));
