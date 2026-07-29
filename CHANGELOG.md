@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.17.5] — 2026-07-29
+
+### Changed
+- **Every Fingerprint row now shows an app icon.** A Fingerprint is always saved against at least one app
+  (“Save current to vault” requires an applied target; an AppData capture saves it against that app), so
+  the row’s icon cluster is now the UNION of linked-AppData apps and applied-to targets — icons first for
+  apps with real saved AppData. Multiple apps render as an OVERLAPPING avatar-stack (up to 4, then “+N”),
+  so 3/4/5 apps stay tight and never break the row width. The unlinked tile now only shows for a
+  legacy/imported entry that carries no apps at all.
+- **Shorter captions:** “Import a Fingerprint or AppData.” and “Fingerprint = saved identity. AppData =
+  saved login.”
+
 ## [0.17.4] — 2026-07-29
 
 ### Added
