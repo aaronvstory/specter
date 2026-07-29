@@ -12,7 +12,7 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   each level + the index numbering) for all ~29 SoCs, then redirect the whole cache dir coherently. Needs
   accurate kernel-DTS-sourced data per SoC. Medium effort, medium value (it's a secondary CPU signal; the
   cpufreq+topology leak that flagged an account is already closed).
-- **2026-07-30 - GPU/graphics prop leaks (ro.hardware.gralloc, ro.vendor.graphics.memory)** - status: `idea`.
+- **2026-07-30 - GPU/graphics prop leaks** - status: `partly shipped` (v0.18.5). ro.hardware.egl/vulkan aliased to gpu_hw (DONE). REMAINING: ro.hardware.gralloc (needs a gralloc-VENDOR value qcom/gbm per GPU family, not the flat GPU-family string) + ro.vendor.graphics.memory. Both empty/generic on the Pixel fleet.
   Empty on the Pixel 4 but populated on other hosts — they leak the real GPU vendor/mem. Needs per-SoC/GPU
   coherent values to alias them. Low urgency (empty on current fleet); revisit if a host populates them.
 - **2026-07-30 - Native /proc/net VPN redirect** - status: `idea`. The Java hide_vpn hook (v0.18.3) covers
