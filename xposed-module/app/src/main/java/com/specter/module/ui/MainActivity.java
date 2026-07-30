@@ -1576,12 +1576,12 @@ public class MainActivity extends Activity {
             // key) IS this identity — reuse + link to it, never create a duplicate.
             for (Vault.Entry e : vault.list()) {
                 Map<String, String> saved = vault.load(e.label);
-                if (saved != null && liveAid.equals(saved.get("android_id"))) { activeVaultLabel = e.label; return e.label; }
+                if (saved != null && liveAid.equals(saved.get("android_id"))) { activeVaultLabel = e.label; persistCurrentState(); return e.label; }
             }
         }
         // Genuinely new identity (no saved fingerprint shares its android_id) -> save it, named after the app.
         String label = vault.save(shortPkg(pkg), live, pkg);
-        if (label != null) activeVaultLabel = label;
+        if (label != null) { activeVaultLabel = label; persistCurrentState(); }
         return label;
     }
 
@@ -1676,7 +1676,7 @@ public class MainActivity extends Activity {
                 if (profile.isEmpty()) return true;
                 final Map<String, String> ctx = new LinkedHashMap<>(profile);
                 new Thread(() -> { try { final String nv = svc.randomizeField(ctx, f.key);
-                    runOnUiThread(() -> { profile.put(f.key, nv); render(); status.setText(f.label + " randomized — Apply to push."); });
+                    runOnUiThread(() -> { profile.put(f.key, nv); persistCurrentState(); render(); status.setText(f.label + " randomized — Apply to push."); });
                 } catch (Throwable t) {} }).start();
                 return true;
             });
@@ -1742,7 +1742,7 @@ public class MainActivity extends Activity {
                 try {
                     final String nv = svc.randomizeField(ctx, f.key);
                     runOnUiThread(() -> {
-                        profile.put(f.key, nv); val.setText(nv);
+                        profile.put(f.key, nv); persistCurrentState(); val.setText(nv);
                         status.setText(f.label + " randomized — APPLY to push.");
                     });
                 } catch (Throwable t) {
@@ -1797,6 +1797,7 @@ public class MainActivity extends Activity {
                     // strict format (validate() returns true) so a hand-entered device value is allowed.
                     if (!Generators.validate(f.key, nv)) { toast("Invalid " + f.label + " format — not saved."); return; }
                     profile.put(f.key, nv);
+                    persistCurrentState();
                     if (val != null) val.setText(nv); else render();   // null val (grouped row) -> re-render
                     status.setText(f.label + " set to a custom value — APPLY to push.");
                 })
@@ -2713,7 +2714,7 @@ public class MainActivity extends Activity {
                     String neu = vault.rename(oldLabel, in.getText().toString());
                     if (neu == null) { toast("Rename failed."); return; }
                     int relinked = appDataVault.relinkFingerprint(oldLabel, neu);
-                    if (activeVaultLabel.equals(oldLabel)) activeVaultLabel = neu;
+                    if (activeVaultLabel.equals(oldLabel)) { activeVaultLabel = neu; persistCurrentState(); }
                     moveExpandedKey("fp:", oldLabel, neu);   // keep the row's actions open across the rename
                     status.setText("Renamed to " + neu + (relinked > 0 ? " (" + relinked + " login(s) relinked)" : ""));
                     render();
@@ -3604,6 +3605,8 @@ public class MainActivity extends Activity {
         profile = new LinkedHashMap<>(saved);
         activeVaultLabel = labelStr;   // restoring a fingerprint makes IT the active one for AppData linkage
         appliedSig = "";   // a restored identity is new state — force the next APPLY/RESTORE to actually run
+        appliedTargets = "";
+        persistCurrentState();
         Set<String> targets = Targets.get(prefs);
         if (targets.isEmpty()) {
             status.setText("Restored " + labelStr + " — pick a target app (Settings), then it will apply.");
@@ -3641,6 +3644,7 @@ public class MainActivity extends Activity {
                 try {
                     if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
                     if (okN == pkgs.size()) appliedSig = sig;   // every target restored -> a repeat APPLY is a no-op
+                    persistCurrentState();
                     if (allClean) toast("Wiped and restored to " + pkgs.size() + " app(s).");
                     else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
                             + " app(s) done — grant root in Magisk?");
@@ -3682,6 +3686,7 @@ public class MainActivity extends Activity {
                     String label = vault.save(typed, profile, targets);
                     if (label == null) { status.setText("Save failed — could not write the vault file."); toast("Save failed."); return; }
                     activeVaultLabel = label;   // this fingerprint is now the active one an AppData capture links to
+                    persistCurrentState();
                     status.setText("Saved as " + label);
                     toast("Saved to vault: " + label);
                     // Refresh either tab: the Saved list gains the new entry (its date group auto-expands via
