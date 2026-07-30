@@ -73,8 +73,8 @@ public final class RootWriter {
                 // pipe we never read, that pipe fills and su blocks forever (classic exec deadlock).
                 Thread out = drain(p.getInputStream()), err = drain(p.getErrorStream());
                 try (OutputStream os = p.getOutputStream()) {
-                    os.write(stdinData.getBytes("UTF-8"));
-                    os.flush();
+                    // A command with no stdin (e.g. "am force-stop <pkg>") passes null — feed nothing, don't NPE.
+                    if (stdinData != null) { os.write(stdinData.getBytes("UTF-8")); os.flush(); }
                 }
                 int code = p.waitFor();
                 out.join(2000); err.join(2000);
@@ -133,4 +133,55 @@ public final class RootWriter {
 
     /** Convenience: write via a real su process. */
     public static void write(String pkg, String json) { write(new SuShell(), pkg, json); }
+
+    /** Set the {@code timezone} field of an already-applied profile to {@code tzId}, leaving every other field
+     *  untouched (identity is preserved). Reads the live JSON via su, patches the one key, writes it back
+     *  atomically. Returns true if the profile existed and was updated. Used to align device timezone to the
+     *  current IP's zone (which the phone number's area code can't know). Best-effort — false on any failure. */
+    public static boolean setTimezone(Shell shell, String pkg, String tzId) {
+        if (!validPkg(pkg) || tzId == null || tzId.isEmpty()) return false;
+        try {
+            String json = shell.runCapture("cat " + PROFILE_DIR + "/" + pkg + ".json 2>/dev/null");
+            if (json == null || json.trim().isEmpty()) return false;
+            // Parse with the un-hookable flat parser (NOT org.json — dodges the co-scope getString poisoning,
+            // and org.json isn't on the pure-JVM test classpath). Profiles are flat string maps.
+            java.util.LinkedHashMap<String, String> m = new java.util.LinkedHashMap<>();
+            com.specter.module.SpoofLogic.parseFlatJson(json, m);
+            m.remove(com.specter.module.SpoofLogic.TRUE_ANDROID_ID_KEY);   // shadow key, never written back
+            if (m.isEmpty()) return false;
+            if (tzId.equals(m.get("timezone"))) return true;   // already aligned
+            m.put("timezone", tzId);
+            write(shell, pkg, toFlatJson(m));
+            return true;
+        } catch (Throwable t) { return false; }
+    }
+
+    /** Serialize a flat string map to JSON with the same escaping the profile writer expects. */
+    static String toFlatJson(java.util.Map<String, String> m) {
+        StringBuilder b = new StringBuilder("{");
+        boolean first = true;
+        for (java.util.Map.Entry<String, String> e : m.entrySet()) {
+            if (!first) b.append(',');
+            first = false;
+            b.append('"').append(esc(e.getKey())).append("\":\"").append(esc(e.getValue())).append('"');
+        }
+        return b.append('}').toString();
+    }
+
+    private static String esc(String s) {
+        if (s == null) return "";
+        StringBuilder b = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"':  b.append("\\\""); break;
+                case '\\': b.append("\\\\"); break;
+                case '\n': b.append("\\n");  break;
+                case '\r': b.append("\\r");  break;
+                case '\t': b.append("\\t");  break;
+                default:   b.append(c);
+            }
+        }
+        return b.toString();
+    }
 }

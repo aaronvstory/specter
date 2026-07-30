@@ -763,3 +763,18 @@ exposure — must re-arm manually). Decompile fr.dvilleneuve.lockito, reimplemen
 provider + route interpolation w/ velocity+bearing) natively in Specter with predefined saved routes AND
 boot auto-start, coherent with the applied US profile's region/timezone. Big task, not urgent, but removes
 the external dependency + the reboot-drop problem.
+
+## 2026-07-30 — v0.19.0 shipped + follow-ups
+- SHIPPED: status-page Network card (public IP + geo + routing pill), timezone-follows-proxy-IP (auto-align on
+  Apply, gated on TRANSPORT_VPN), WebRTC ICE-candidate filter (fix-not-block, WebView).
+- IDEA (researching): measure the WebRTC filter against detectme.pro through a scoped WebView to confirm the
+  proxy-only-candidate result — the WebView-injection timing (onPageStarted) is a hypothesis until measured.
+- IDEA: locale/language could also follow the proxy IP's country (today locale is fixed en-US, US-only build);
+  low priority while US-only.
+- IDEA (rejected for Specter): QUIC/DNS/latency flags are proxy-layer — surface them in the status page as
+  "proxy responsibility" guidance rather than trying to fix them device-side.
+- IDEA (gauntlet follow-up, not urgent): WebRTC shim injects via WebViewClient.onPageStarted, which leaves a
+  small residual race (a script in the main document's FIRST inline <script> could create an RTCPeerConnection
+  before the shim installs). Fully closing it = androidx.webkit WebViewCompat.addDocumentStartJavaScript
+  (document-start injection). Deferred: adds a dependency to a deliberately dep-free module; onPageStarted
+  covers the on-load / on-interaction fingerprint flows. Revisit if a real detector beats the timing.

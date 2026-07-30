@@ -534,7 +534,11 @@ public class MainActivity extends Activity {
                 try { svc.apply(pkg, toApply); ok++; okPkgs.add(pkg); }
                 catch (Throwable t) { lastErr = t.getMessage(); }
             }
+            // Auto-align timezone to the proxy exit IP — but ONLY when actually routed through a VPN/proxy
+            // (never align to the phone's own home/carrier IP). One lookup for the whole applied set.
+            String tzAligned = autoAlignTimezone(okPkgs);
             final int clearedN = cleared, okN = ok; final String clrErr = clearErr, err = lastErr;
+            final String tzMsg = tzAligned;
             final boolean allClean = clearedN == pkgs.size();   // every target wiped -> the no-carry-over claim holds
             final boolean allApplied = okN == pkgs.size();      // every target cleared AND applied
             runOnUiThread(() -> {
@@ -546,6 +550,7 @@ public class MainActivity extends Activity {
                     String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
                             + (clrErr != null ? " Clear error: " + clrErr : "")
                             + (err != null ? " Apply error: " + err + " (grant root in Magisk?)" : "")
+                            + (tzMsg != null ? " " + tzMsg : "")
                             + (clrErr == null && err == null ? " Relaunch them to see it." : "");
                     status.setText(m); toast(m);
                     if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
@@ -1910,6 +1915,7 @@ public class MainActivity extends Activity {
 
         for (HealthCheck.Group g : healthResults) {
             content.addView(section(g.title));
+            if (g.geo != null) content.addView(ipLocationCard(g.geo, g.vpnRouting));   // rich IP/location card
             LinearLayout card = card();
             for (int i = 0; i < g.checks.size(); i++) {
                 if (i > 0) card.addView(hairlineInset());
@@ -1960,6 +1966,73 @@ public class MainActivity extends Activity {
         s.setPadding(0, dp(2), 0, 0);
         col.addView(s);
         card.addView(col);
+        return card;
+    }
+
+    /** Rich IP + location card for the Network group: a globe glyph, the public IP big, the ISP + city/country
+     *  and the IP's timezone, plus a routing pill (green "Proxy/VPN" when tunnelled, amber "Direct" otherwise).
+     *  This is the "what does the network read as" answer, shown clearly. */
+    private View ipLocationCard(HealthCheck.Geo g, boolean vpnRouting) {
+        LinearLayout card = cardBox();
+        card.setPadding(dp(Theme.S4), dp(Theme.S4), dp(Theme.S4), dp(Theme.S4));
+
+        // Header row: globe glyph + "Public IP" label ... routing pill (right).
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView globe = new TextView(this);
+        globe.setText("🌐"); globe.setTextSize(18);
+        globe.setPadding(0, 0, dp(Theme.S3), 0);
+        head.addView(globe);
+
+        TextView cap = new TextView(this);
+        cap.setText("Public IP"); cap.setTextColor(Theme.DIM); cap.setTextSize(Theme.T_CAPTION);
+        cap.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        head.addView(cap);
+
+        int pillColor = vpnRouting ? Theme.SAGE : Theme.AMBER;
+        TextView pill = new TextView(this);
+        pill.setText(vpnRouting ? "Proxy / VPN" : "Direct");
+        pill.setTextColor(pillColor); pill.setTextSize(Theme.T_CAPTION);
+        pill.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
+        pill.setPadding(dp(Theme.S3), dp(Theme.S1), dp(Theme.S3), dp(Theme.S1));
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setShape(GradientDrawable.RECTANGLE); pillBg.setCornerRadius(dp(Theme.R_PILL));
+        pillBg.setColor((pillColor & 0x00FFFFFF) | 0x22000000);
+        pill.setBackground(pillBg);
+        head.addView(pill);
+        card.addView(head);
+
+        // The IP, big.
+        TextView ip = new TextView(this);
+        ip.setText(g.ip); ip.setTextColor(Theme.INK); ip.setTextSize(Theme.T_TITLE);
+        ip.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
+        ip.setTextIsSelectable(true);
+        ip.setPadding(0, dp(Theme.S3), 0, 0);
+        card.addView(ip);
+
+        if (g.isp != null) {
+            TextView isp = new TextView(this);
+            isp.setText(g.isp); isp.setTextColor(Theme.SOFT); isp.setTextSize(Theme.T_LABEL);
+            isp.setPadding(0, dp(2), 0, 0);
+            card.addView(isp);
+        }
+
+        // Location + timezone, each with a small glyph.
+        TextView loc = new TextView(this);
+        loc.setText("📍  " + g.location());
+        loc.setTextColor(Theme.INK); loc.setTextSize(Theme.T_BODY);
+        loc.setPadding(0, dp(Theme.S3), 0, 0);
+        card.addView(loc);
+
+        if (g.tz != null) {
+            TextView tz = new TextView(this);
+            tz.setText("🕑  " + g.tz);
+            tz.setTextColor(Theme.SOFT); tz.setTextSize(Theme.T_LABEL);
+            tz.setPadding(0, dp(Theme.S2), 0, 0);
+            card.addView(tz);
+        }
         return card;
     }
 
@@ -2018,8 +2091,66 @@ public class MainActivity extends Activity {
                 healthScreen = false; tab = 0; render();   // jump to Identity where APPLY lives
                 status.setText("Apply an identity to " + Targets.label(this, ch.fixArg) + " here.");
                 return;
+            case MATCH_TZ:
+                matchTimezoneToIp();
+                return;
             default:
         }
+    }
+
+    /** Auto-align applied profiles' timezone to the current proxy exit IP — GATED on being routed through a
+     *  VPN/proxy (never align to the phone's own home/carrier IP). Runs on the apply worker thread. Returns a
+     *  short status note (or null when nothing was changed / not on a proxy). */
+    private String autoAlignTimezone(java.util.List<String> pkgs) {
+        try {
+            if (pkgs == null || pkgs.isEmpty()) return null;
+            // Pin the VPN tunnel and run the lookup THROUGH it, so the exit IP is provably the proxy's — not a
+            // home IP if the VPN flaps mid-lookup (closes the ABA race). No tunnel -> do nothing.
+            android.net.Network vpn = HealthCheck.activeVpnNetwork(getApplicationContext());
+            if (vpn == null) return null;
+            HealthCheck.Geo g = HealthCheck.lookupGeo(vpn);
+            if (g == null || g.tz == null) return null;
+            // Final guard: the SAME VPN network must still be active right before we write.
+            if (!vpn.equals(HealthCheck.activeVpnNetwork(getApplicationContext()))) return null;
+            com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
+            int n = 0;
+            for (String pkg : pkgs) if (com.specter.module.gen.RootWriter.setTimezone(sh, pkg, g.tz)) n++;
+            return n > 0 ? "Timezone aligned to " + g.tz + " (proxy IP)." : null;
+        } catch (Throwable t) { return null; }
+    }
+
+    /** Rewrite every applied target profile's "timezone" to the IP's zone (off-thread, su), then force-stop the
+     *  targets so the TimeZone.getDefault() hook reloads the new value. Kills the device-vs-IP timezone mismatch. */
+    private void matchTimezoneToIp() {
+        final Set<String> targets = Targets.get(prefs);
+        healthResults = null; render();   // show the "Checking…" spinner while we work + re-check
+        new Thread(() -> {
+            // Don't trust the tzId captured at check time (the proxy endpoint/location may have changed since).
+            // Re-resolve the zone THROUGH the current VPN tunnel; if there's no tunnel now, leave the TZ as-is.
+            android.net.Network vpn = HealthCheck.activeVpnNetwork(getApplicationContext());
+            HealthCheck.Geo g = vpn != null ? HealthCheck.lookupGeo(vpn) : null;
+            String zone = (g != null) ? g.tz : null;
+            int changed = 0;
+            // Final guard: same VPN still active immediately before writing.
+            if (zone != null && vpn.equals(HealthCheck.activeVpnNetwork(getApplicationContext()))) {
+                com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
+                for (String pkg : targets) {
+                    if (com.specter.module.gen.RootWriter.setTimezone(sh, pkg, zone)) {
+                        changed++;
+                        try { sh.run("am force-stop " + pkg, null); } catch (Throwable ignored) {}
+                    }
+                }
+            }
+            final int n = changed; final String z = zone;
+            runOnUiThread(() -> {
+                if (!healthScreen) return;
+                Toast.makeText(this, z == null ? "Not on a proxy/VPN — timezone left as-is"
+                        : n == 0 ? "No profiles updated"
+                        : "Timezone set to " + z + " for " + n + " app" + (n == 1 ? "" : "s"),
+                        Toast.LENGTH_SHORT).show();
+                healthResults = null; render();   // re-run checks — the mismatch row should clear
+            });
+        }, "specter-tzfix").start();
     }
 
     /** Widevine L1->L3 toggle: installs/uninstalls the liboemcrypto bind-mount Magisk module via su, off-thread.

@@ -796,3 +796,26 @@ is the design that gives it the best chance, but cross-device is still HYPOTHESI
 
 Safety: a full byte-perfect backup of the pre-test Dasher data dir was pulled to the PC first
 (md5-verified), so the account was never actually at risk.
+
+## v0.19.0 — the network/device split (detectme.pro analysis)
+detectme.pro mixes DEVICE-config signals (Specter's domain) with NETWORK/PROXY signals (the proxy's domain).
+Being explicit about which is which so we don't overpromise:
+
+**Specter CAN fix (device-side, shipped v0.19.0):**
+- **Timezone Mismatch** — device TZ vs IP geo. FIXED: TZ now follows the proxy exit IP (gated on VPN routing),
+  not the phone number. PROVEN on-device: exit 67.9.12.215 (Birmingham AL) → device TZ America/Chicago, match.
+- **WebRTC leak** — the real local/private IP leaking via ICE candidates. FIXED (not blocked): a JS ICE filter
+  drops private/mDNS candidates, keeps the proxy candidate. WebView targets only. HYPOTHESIS until measured on
+  detectme.pro through a scoped WebView — native Chrome is out of scope for a per-app module.
+- **VPN/proxy interface visibility** — already closed (Java NetworkInterface + native getifaddrs, v0.18.5).
+
+**Specter CANNOT fix (network/proxy-side — the proxy's job, stated plainly to the user):**
+- **WSS/TCP latency (proxy-like)** — measured from the proxy's packet timing. Needs a physically-near /
+  low-latency residential proxy; a device-config module can't change round-trip time.
+- **HTTP/3 QUIC unreachable** — the proxy must forward UDP/QUIC (SOCKS5-without-UDP fails this).
+- **DNS resolver (public DNS)** — use the provider's/home DNS, not Google/Cloudflare, on the proxy side.
+- **Datacenter/Server IP reputation** — an IP-SELECTION problem: use residential/mobile IPs, not datacenter.
+- **RDP/VM detection** — don't operate over RDP/VM without preparation; not a device-config signal here.
+
+Strategic framing: Specter makes the DEVICE coherent and aligns TZ/WebRTC/VPN-visibility to the proxy's
+apparent location; the proxy owns clean IP reputation, residential DNS, and UDP/QUIC + realistic latency.

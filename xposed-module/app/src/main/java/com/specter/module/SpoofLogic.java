@@ -382,4 +382,51 @@ public final class SpoofLogic {
         return n.startsWith("tun") || n.startsWith("ppp") || n.startsWith("wg")
                 || n.startsWith("pptp") || n.startsWith("ipsec") || n.startsWith("l2tp");
     }
+
+    /** WebRTC ICE-candidate filter, injected into a scoped app's WebViews. WebRTC stays ENABLED (blocking it is
+     *  itself a fraud flag) — this only drops candidates that would leak the REAL device IP: mDNS ".local"
+     *  names, RFC1918 private ranges (10/8, 172.16/12, 192.168/16), and link-local (169.254/16, fe80::). The
+     *  proxy's public reflexive candidate passes through, so WebRTC reports the proxy IP, not the real one.
+     *
+     *  <p>Wraps RTCPeerConnection so the SDP set via setLocalDescription AND the trickled ICE candidates
+     *  (addEventListener + the onicecandidate property) are scrubbed. Idempotent (guards a global flag). */
+    public static String webRtcIceFilterJs() {
+        return
+        "(function(){if(window.__specter_rtc)return;window.__specter_rtc=1;try{"
+        + "var OP=window.RTCPeerConnection||window.webkitRTCPeerConnection;if(!OP)return;"
+        // A candidate line leaks the real IP if it names a .local mDNS host or a private/link-local IP.
+        + "function leak(c){if(!c)return false;c=(''+c).toLowerCase();"
+        + "if(c.indexOf('.local')>=0)return true;"
+        + "if(c.indexOf('fe80:')>=0||c.indexOf('fc00:')>=0||c.indexOf('fd')>=0&&c.match(/ fd[0-9a-f]/))return true;"
+        + "var m=c.match(/(\\d{1,3})\\.(\\d{1,3})\\.\\d{1,3}\\.\\d{1,3}/);if(!m)return false;"
+        + "var a=+m[1],b=+m[2];"
+        + "return a===10||(a===192&&b===168)||a===169&&b===254||(a===172&&b>=16&&b<=31);}"
+        // Remove leaking candidate lines from an SDP blob (setLocalDescription path + createOffer/Answer).
+        + "function scrub(sdp){if(!sdp)return sdp;return sdp.split('\\n').filter(function(l){"
+        + "return l.indexOf('a=candidate:')<0||!leak(l);}).join('\\n');}"
+        + "function F(cfg,con){var pc=new OP(cfg,con);"
+        // RTCSessionDescription.sdp is READ-ONLY (assigning to it throws) — pass a fresh plain init dict with
+        // the scrubbed sdp instead of mutating d. setLocalDescription accepts {type,sdp}. Belt-and-braces on
+        // top of the per-candidate filter below (host candidates are usually trickled, not embedded in the SDP).
+        + "var _sld=pc.setLocalDescription.bind(pc);"
+        + "pc.setLocalDescription=function(d){try{if(d&&d.sdp){d={type:d.type,sdp:scrub(d.sdp)};}}catch(e){}return _sld(d);};"
+        // Filter trickled candidates on BOTH delivery paths: addEventListener and the onicecandidate property.
+        + "var _add=pc.addEventListener.bind(pc);"
+        + "pc.addEventListener=function(t,fn,o){if(t==='icecandidate'&&typeof fn==='function'){"
+        + "var w=function(e){if(e&&e.candidate&&leak(e.candidate.candidate))return;return fn.call(this,e);};"
+        + "return _add(t,w,o);}return _add(t,fn,o);};"
+        // onicecandidate must keep real DOM 'on*' semantics: at-most-one handler, last assignment wins, a read
+        // returns what was set, AND the handler keeps its ORIGINAL dispatch position (native fires the on* slot
+        // in the order it was FIRST set, not re-appended on reassignment). Register ONE stable wrapper on the
+        // first non-null assignment that always calls the current _oh; never remove/re-add on reassignment.
+        + "var _oh=null,_reg=false;"
+        + "Object.defineProperty(pc,'onicecandidate',{configurable:true,"
+        + "get:function(){return _oh;},"
+        + "set:function(fn){_oh=(typeof fn==='function')?fn:null;"
+        + "if(_oh&&!_reg){_reg=true;_add('icecandidate',function(e){if(!_oh)return;"
+        + "if(e&&e.candidate&&leak(e.candidate.candidate))return;return _oh.call(pc,e);});}}});"
+        + "return pc;}"
+        + "F.prototype=OP.prototype;window.RTCPeerConnection=F;window.webkitRTCPeerConnection=F;"
+        + "}catch(e){}})();";
+    }
 }

@@ -231,6 +231,35 @@ public class SpoofLogicTest {
         check(zins.contains("set -e") && zins.indexOf("mv /data/adb/modules/specter_zygisk.stage ") > zins.indexOf("arm64-v8a.so"),
                 "zygisk install aborts on error + renames after staging");
 
+        // WebRTC ICE-candidate filter shim: WebRTC must stay ENABLED (not blocked) while dropping real-IP
+        // candidates. We can't run JS here, so assert the shim is present, idempotent, and names every leak
+        // rule (mDNS + the private/link-local ranges) — a regression that guts the filter fails this.
+        String rtc = SpoofLogic.webRtcIceFilterJs();
+        check(rtc != null && rtc.length() > 100, "webrtc shim is non-trivial");
+        check(rtc.contains("__specter_rtc"), "webrtc shim is idempotent (re-injection guard)");
+        check(rtc.contains("RTCPeerConnection") && rtc.contains("webkitRTCPeerConnection"), "shim wraps both RTCPeerConnection names");
+        check(rtc.contains(".local"), "shim drops mDNS .local candidates");
+        // private + link-local ranges: 10/8, 172.16-31/12, 192.168/16, 169.254/16, and IPv6 fe80::/fc00::.
+        check(rtc.contains("a===10") && rtc.contains("b>=16&&b<=31")
+                && rtc.contains("192&&b===168") && rtc.contains("169&&b===254"),
+                "shim drops RFC1918 + link-local IPv4 candidates");
+        check(rtc.contains("fe80:") && rtc.contains("fc00:"), "shim drops link-local/ULA IPv6 candidates");
+        check(rtc.contains("a=candidate:") && rtc.contains("setLocalDescription"), "shim scrubs the SDP path too");
+        // SDP fix: must build a FRESH init dict ({type,sdp}), never assign to the read-only d.sdp (which throws).
+        check(rtc.contains("{type:d.type,sdp:scrub(d.sdp)}") && !rtc.contains("d.sdp=scrub"),
+                "shim passes a new sdp dict, not a read-only mutation");
+        // onicecandidate keeps real on* semantics: getter returns the stored handler; ONE stable wrapper is
+        // registered on first assignment (via _reg guard) so dispatch position is preserved and no stacking.
+        check(rtc.contains("get:function(){return _oh;}") && rtc.contains("_reg")
+                && rtc.contains("_oh=(typeof fn==='function')?fn:null"),
+                "onicecandidate getter returns handler + single stable wrapper (no stacking / null / reorder)");
+        // balanced parens/braces — a truncated shim would silently break every WebView it's injected into
+        int par = 0, brc = 0;
+        for (int i = 0; i < rtc.length(); i++) { char c = rtc.charAt(i);
+            if (c == '(') par++; else if (c == ')') par--; else if (c == '{') brc++; else if (c == '}') brc--; }
+        check(par == 0, "webrtc shim parens balanced");
+        check(brc == 0, "webrtc shim braces balanced");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

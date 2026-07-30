@@ -2,6 +2,7 @@ package com.specter.module;
 
 import android.os.Build;
 import android.provider.Settings;
+import android.webkit.ValueCallback;
 
 import java.io.File;
 import java.lang.reflect.Field;
@@ -77,6 +78,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         hookLocaleTimezone(p);
         if (!gateOff(p, "hide_root")) hookMockLocation(lpparam);
         if (!gateOff(p, "hide_vpn")) hookVpn(lpparam);
+        if (!gateOff(p, "fix_webrtc")) hookWebRtc(lpparam);
         hookBattery(lpparam, p);
     }
 
@@ -254,6 +256,52 @@ public class HookEntry implements IXposedHookLoadPackage {
                                 || "socksProxyHost".equals(k) || "socksProxyPort".equals(k))
                             mp.setResult(mp.args.length >= 2 ? mp.args[1] : null);   // return the caller's default (usually null)
                     }
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    /** WebRTC IP-leak fix for WebView-based targets. WebRTC is NOT blocked (a blocked WebRTC is itself a fraud
+     *  flag) — instead we inject a JS ICE-candidate filter that drops the real local/private/mDNS IP candidates
+     *  while letting the proxy's public candidate through, so WebRTC still works and reports only the proxy IP.
+     *
+     *  <p>Injection point: we wrap every WebView's client so {@code onPageStarted} runs the shim. onPageStarted
+     *  fires at navigation-commit, before the main document's parser runs its scripts, so a page that reads
+     *  WebRTC on load or on user interaction (the common fingerprint flow) is covered. RESIDUAL RACE: a script
+     *  in the very first inline &lt;script&gt; of the main document could construct an RTCPeerConnection before
+     *  the shim installs. Fully closing that needs document-start injection (androidx.webkit
+     *  WebViewCompat.addDocumentStartJavaScript) — deliberately NOT pulled in to keep this module dependency-free;
+     *  tracked in IDEAS.md. Native Chrome / non-WebView browsers are NOT hookable from a scoped module. */
+    private void hookWebRtc(final XC_LoadPackage.LoadPackageParam lp) {
+        final String shim = SpoofLogic.webRtcIceFilterJs();
+        try {
+            final Class<?> webView = XposedHelpers.findClass("android.webkit.WebView", lp.classLoader);
+            // Inject on page start via the app's WebViewClient: hook setWebViewClient to wrap whatever client the
+            // app installs, whose onPageStarted then evaluateJavascript(shim)s. Apps that never set a client
+            // (relying on the framework default) aren't covered — acceptable: WebRTC-fingerprint pages run inside
+            // an app that manages its own WebView + client.
+            XposedBridge.hookAllMethods(webView, "setWebViewClient", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam mp) {
+                    if (mp.args.length >= 1 && mp.args[0] != null) {
+                        wrapClientOnPageStarted(mp.args[0], shim);
+                    }
+                }
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    /** Wrap a WebViewClient instance so its onPageStarted also injects {@code shim} via evaluateJavascript.
+     *  Idempotent per client instance (the shim itself no-ops on re-injection via its __specter_rtc guard). */
+    private void wrapClientOnPageStarted(Object client, final String shim) {
+        try {
+            XposedBridge.hookAllMethods(client.getClass(), "onPageStarted", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    try {
+                        Object wv = mp.args.length >= 1 ? mp.args[0] : null;   // the WebView
+                        if (wv == null) return;
+                        wv.getClass().getMethod("evaluateJavascript", String.class,
+                                ValueCallback.class).invoke(wv, shim, null);
+                    } catch (Throwable ignored) {}
                 }
             });
         } catch (Throwable ignored) {}

@@ -3,6 +3,31 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.19.0] â 2026-07-30
+
+### Added
+- **Protection-status: live Network card (public IP + geolocation).** The status screen now fetches the
+  current public (proxy exit) IP and its geolocation off the UI thread and shows it as a rich card â IP, ISP,
+  city/region/country, the IPâs timezone, and a Proxy/VPN-vs-Direct routing pill. New INTERNET +
+  ACCESS_NETWORK_STATE permissions (used only by this screen).
+- **Timezone follows the proxy IP, not the phone number.** A new âTimezone vs IPâ check compares each applied
+  profileâs timezone against the exit IPâs zone; a one-tap fix (and auto-alignment on Apply) rewrites the
+  profile timezone to match the IP â killing detectme.proâs âTimezone Mismatchâ flag. GATED on being routed
+  through a VPN/proxy (NetworkCapabilities.TRANSPORT_VPN): it will NEVER align to the phoneâs own home/carrier
+  IP. Identity fields are untouched â only the timezone key changes. Verified on-device: exit IP
+  67.9.12.215 (Birmingham AL) â routing pill âProxy/VPNâ, timezone matches America/Chicago.
+- **WebRTC IP-leak fix (âFix WebRTC leakâ protection, default on).** WebRTC is NOT blocked (a blocked WebRTC is
+  itself a fraud flag) â instead a JS ICE-candidate filter is injected into a scoped appâs WebViews that drops
+  only the real local/private/mDNS (RFC1918, 169.254, fe80::, .local) candidates while the proxyâs public
+  candidate passes through. WebRTC keeps working and reports the proxy IP, not the deviceâs. WebView-based
+  targets only â native Chrome isnât hookable from a scoped module.
+
+### Notes
+- detectme.proâs network-layer flags (WSS/TCP latency, HTTP/3 QUIC reachability, DNS resolver) are the
+  PROXYâs responsibility, not a device-config moduleâs â use a residential proxy that forwards UDP/QUIC and a
+  home/ISP DNS resolver. Datacenter-IP reputation is likewise an IP-selection concern. Specterâs job is
+  device coherence + aligning timezone/WebRTC/VPN-visibility to the proxy.
+
 ## [0.18.5] — 2026-07-30
 
 ### Added

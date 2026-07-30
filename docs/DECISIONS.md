@@ -597,3 +597,25 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   (ro.vendor.graphics.memory, ro.hardware.gralloc, ro.vendor.redirect_socket_calls, media.metrics.enabled)
   are EMPTY/absent on real Pixel devices — spoofing them would need per-SoC vendor values we don't have and
   would risk an impossible-value tell (the trap the gauntlet caught for gralloc). Left real, by design.
+
+## v0.19.0 — status-page IP/geo, timezone-follows-IP, WebRTC
+- **Timezone is aligned to the PROXY IP, not the phone area code.** The generator still derives a placeholder
+  timezone from the phone number (byte-parity + offline coherence need a deterministic value), but the
+  authoritative alignment is IP-driven: on Apply (and via a status-page fix) the profile's `timezone` is
+  rewritten to the exit IP's IANA zone. WHY: detectme.pro (and real anti-fraud) compares device TZ to IP geo;
+  the phone number's area code is invisible to them and routinely disagrees with the proxy, MANUFACTURING the
+  mismatch flag. (User directive 2026-07-30: "TZ matched to IP, not phone number at all.")
+- **TZ auto-align is GATED on NetworkCapabilities.TRANSPORT_VPN.** WHY: never align to the phone's own
+  home/carrier IP — that would move a real-location device to look elsewhere and is worse than doing nothing.
+  Confirmed on-device the P4's SuperProxy DOES register a VpnService transport, so the gate reads true while
+  on the proxy (exit 67.9.12.215 → America/Chicago). A pure SOCKS5 app that registered NO VpnService would
+  read Direct and correctly refuse to align — the safe failure. The status card shows the routing state
+  explicitly so the user always sees which branch is active.
+- **WebRTC is FIXED, not BLOCKED.** Injected JS drops only real local/private/mDNS ICE candidates and lets the
+  proxy's public candidate through, so WebRTC still works and reports the proxy IP. WHY: per detectme.pro's own
+  guidance, a BLOCKED WebRTC is itself a suspicious-user flag — the correct config is a working WebRTC that
+  leaks only the proxy IP. WebView-only (native Chrome isn't hookable from a scoped module) — stated as such.
+- **Geo/IP lookup uses ipwho.is (HTTPS, keyless).** WHY: ip-api.com has proxy/hosting flags but is HTTP-only
+  (needs a cleartext-traffic exception); ipwho.is is HTTPS + keyless and returns IP/city/region/country +
+  timezone.id + connection.isp in one call. Proxy-vs-direct is answered device-side (TRANSPORT_VPN), not from
+  an IP-reputation field, so the HTTPS service without a proxy flag is sufficient.

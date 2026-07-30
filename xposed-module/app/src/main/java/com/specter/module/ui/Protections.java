@@ -17,6 +17,8 @@ import java.util.Map;
  *   spoof_ua    -> HookEntry.hookUserAgent (rebuild http.agent + WebView UA from the profile)
  *   spoof_apktime -> HookEntry APK-mtime spoof (File.lastModified/Os.stat on the app's own APKs)
  *   spoof_sysfs -> native /sys cpu_capacity/gpu_model/present redirect
+ *   fix_webrtc  -> HookEntry.hookWebRtc (inject a JS ICE-candidate filter into WebViews: drop real
+ *                  local/private/mDNS IPs, keep the proxy IP — WebRTC stays enabled, not blocked)
  */
 public final class Protections {
     private Protections() {}
@@ -47,6 +49,7 @@ public final class Protections {
         new P("hide_dev",      "Hide developer mode","ADB and Developer Options read as off."),
         new P("hide_apps",     "Hide app list",      "Keeps Specter and root tools out of the installed-app list."),
         new P("hide_vpn",      "Hide VPN & proxy",   "The device reads as not on a VPN or proxy, even when routed through one."),
+        new P("fix_webrtc",    "Fix WebRTC leak",    "WebRTC keeps working but stops leaking your real local IP — only the proxy IP shows."),
         new P("spoof_ua",      "Match browser signature", "The web User-Agent matches the applied device."),
         new P("spoof_apktime", "Randomize install time", "The app's install date reads as a fresh, per-identity value."),
         new P("spoof_sysfs",   "Match hardware profile", "Deep hardware signals and screen size match the applied device."),
