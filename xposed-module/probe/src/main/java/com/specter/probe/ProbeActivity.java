@@ -201,6 +201,10 @@ public class ProbeActivity extends Activity {
             put(o, "vpn_transport", vpnViaCapabilities() ? "LEAK" : "clean");        // NetworkCapabilities TRANSPORT_VPN
             put(o, "vpn_interface", vpnViaInterfaces() ? "LEAK" : "clean");          // NetworkInterface tun0/ppp0/...
             put(o, "proxy_host", proxyHostLeak());                                    // http(s).proxyHost System prop
+            // NATIVE getifaddrs() path (an NDK detector bypasses the Java NetworkInterface hook) — the native
+            // Zygisk getifaddrs hook must filter tun/ppp/wg here too.
+            try { put(o, "vpn_native_iface", NATIVE_LIB_ERR != null ? "no-lib" : nativeVpnIface()); }
+            catch (Throwable t) { put(o, "vpn_native_iface", "err:" + t); }
             // ro.boot.hardware / ro.boot.hardware.platform leaked the real device (flame/sm8150) — now aliased.
             // GPU driver family — ro.hardware.egl/vulkan/gralloc must match the profile's GPU (mali for a
             // Samsung/Exynos profile), not leak the real host's adreno. Aliased to gpu_hw (v0.18.5).
@@ -433,6 +437,10 @@ public class ProbeActivity extends Activity {
     /** Native sensor list via the NDK ASensorManager/ASensor path — the direct-JNI reads Specter's
      *  ASensor_getName/getVendor hooks target. Returns "name|vendor;..." or "ERR:...". */
     private static native String nativeSensors();
+
+    /** Native VPN check: getifaddrs() called directly in C (the netlink path an NDK detector uses, which the
+     *  Zygisk getifaddrs hook filters). Returns "clean" / "LEAK" / "err". */
+    private static native String nativeVpnIface();
 
     private void probeHardware(JSONObject o) {
         // --- GPU renderer: Java framework path (ConfigurationInfo GLES version) + native glGetString ---

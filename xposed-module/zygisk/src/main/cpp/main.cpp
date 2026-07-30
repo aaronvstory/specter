@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
+#include <ifaddrs.h>   // getifaddrs hook (native VPN-interface masking)
 #include <cstring>
 #include <cstdlib>
 #include <cstdarg>
@@ -75,6 +76,7 @@ static const std::string *prop_spoof_lookup(const char *name) {
 }
 static long g_reset_epoch = 0;                            // factory_reset_epoch (seconds), 0 = unset
 static bool g_hide_root = false;                          // hide root-indicator paths (ENOENT)
+static bool g_hide_vpn = false;                           // filter tun/ppp/wg from getifaddrs (native VPN mask)
 static bool is_root_path(const char *path);              // defined below with the file hooks
 
 // -------- passive tracer (GOAL 1.3) --------
@@ -491,6 +493,56 @@ static void *my_dlsym(void *handle, const char *symbol) {
          strstr(symbol, "AAsset") || strstr(symbol, "getauxval") || strstr(symbol, "property")))
         __android_log_print(ANDROID_LOG_INFO, "SpecterTrace", "dlsym %s", symbol);
     return orig_dlsym(handle, symbol);
+}
+
+// True if an interface name is a VPN/tunnel iface a native detector looks for. Requires the tunnel prefix
+// to be followed by a DIGIT (or end) so "tun0"/"wg0"/"ppp0" match but "wgbackup"/"pppmonitor" don't.
+// Case-insensitive. The native counterpart of SpoofLogic.isTunnelIface (the Java NetworkInterface filter).
+static bool is_tunnel_iface_native(const char *name) {
+    if (!name) return false;
+    char lo[32]; size_t i = 0;
+    for (; name[i] && i < sizeof(lo) - 1; i++) lo[i] = (char) tolower((unsigned char) name[i]);
+    lo[i] = 0;
+    static const char *pre[] = {"tun", "ppp", "wg", "pptp", "ipsec", "l2tp"};
+    for (auto p : pre) {
+        size_t n = strlen(p);
+        if (strncmp(lo, p, n) == 0) { char nxt = lo[n]; if (nxt == 0 || (nxt >= '0' && nxt <= '9')) return true; }
+    }
+    return false;
+}
+
+// getifaddrs() is the NATIVE interface-enumeration path (reads a netlink RTM_GETLINK socket — NOT /proc/net,
+// which is SELinux-denied to apps anyway). An NDK VPN detector calls it directly, bypassing the Java
+// NetworkInterface hook. We call the original, then UNLINK + FREE every tun/ppp/wg entry from the returned
+// linked list before the caller sees it — so a scoped app enumerating interfaces natively finds no tunnel.
+// Gated by g_hide_vpn.
+//
+// MEMORY SAFETY (verified against bionic libc/bionic/ifaddrs.cpp): each ifaddrs node is a SEPARATE malloc
+// (an `ifaddrs_storage` per interface), and freeifaddrs() walks ifa_next calling free() on each. So freeing a
+// node we've unlinked from the middle is CORRECT — it's a distinct allocation the caller's freeifaddrs would
+// otherwise never reach (leaking it). This is EXACTLY what bionic's own resolve_or_remove_nameless_interfaces
+// does (unlink via prev->ifa_next then free(addr)). No double-free: once unlinked, the caller's head-walk can
+// never reach the freed node.
+using getifaddrs_t = int (*)(struct ifaddrs **);
+static getifaddrs_t orig_getifaddrs = nullptr;
+static int my_getifaddrs(struct ifaddrs **ifap) {
+    int rc = orig_getifaddrs(ifap);
+    if (rc != 0 || !g_hide_vpn || !ifap || !*ifap) return rc;
+    struct ifaddrs *head = *ifap, *prev = nullptr, *cur = head;
+    while (cur) {
+        if (is_tunnel_iface_native(cur->ifa_name)) {
+            struct ifaddrs *drop = cur;
+            if (prev) prev->ifa_next = cur->ifa_next;   // unlink from the middle
+            else head = cur->ifa_next;                  // unlink the head
+            cur = cur->ifa_next;
+            free(drop);                                 // separate malloc per node (bionic) -> safe to free
+            continue;
+        }
+        prev = cur;
+        cur = cur->ifa_next;
+    }
+    *ifap = head;
+    return rc;
 }
 
 #ifndef AT_HWCAP
@@ -965,6 +1017,11 @@ public:
         g_hide_root = true;
         auto hr = profile.find("hide_root");
         if (hr != profile.end() && hr->second == "0") g_hide_root = false;
+        // Hide VPN/proxy by default (the fleet routes through one; a tunnel is a risk signal). Drives the
+        // native getifaddrs filter — the counterpart of the Java NetworkInterface hook. Gate: hide_vpn=="0".
+        g_hide_vpn = true;
+        auto hv = profile.find("hide_vpn");
+        if (hv != profile.end() && hv->second == "0") g_hide_vpn = false;
         // A writable dir we own, for temp files (cleaned maps etc.).
         if (!pkg.empty()) {
             g_files_dir = "/data/data/" + pkg + "/files";
@@ -1292,7 +1349,7 @@ public:
         }
 
         if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&
-            g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root &&
+            g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root && !g_hide_vpn &&
             g_gl_renderer.empty() && g_gl_vendor.empty() && g_gl_version.empty() &&
             g_sensor_labels.empty() && g_sys_redirect.empty()) return;
         installHooks();
@@ -1347,6 +1404,12 @@ private:
         }
         if (g_spoof_hwcap || g_trace) {
             applied += hookSym("getauxval", (void *) my_getauxval, (void **) &orig_getauxval);
+        }
+        // Native VPN mask: filter tun/ppp/wg entries from getifaddrs() — the netlink-backed interface
+        // enumeration an NDK detector uses (the /proc/net files are SELinux-denied to apps, so this is THE
+        // native path). Counterpart of the Java NetworkInterface.getNetworkInterfaces() hook.
+        if (g_hide_vpn) {
+            applied += hookSym("getifaddrs", (void *) my_getifaddrs, (void **) &orig_getifaddrs);
         }
         // glGetString (GPU renderer/vendor/version). libGLESv2.so may not be loaded yet at
         // specialize-time (it loads when the app first touches GL), so dlopen it to resolve the symbol;

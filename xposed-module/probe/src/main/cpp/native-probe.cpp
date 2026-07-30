@@ -4,6 +4,8 @@
 #include <jni.h>
 #include <sys/system_properties.h>
 #include <string>
+#include <cstring>
+#include <ifaddrs.h>
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <android/sensor.h>
@@ -15,6 +17,24 @@ Java_com_specter_probe_ProbeActivity_nativeGetprop(JNIEnv *env, jobject, jstring
     __system_property_get(k, buf);
     env->ReleaseStringUTFChars(key, k);
     return env->NewStringUTF(buf);
+}
+
+// NATIVE VPN check: call getifaddrs() directly (the netlink-backed path an NDK detector uses, which the
+// Zygisk getifaddrs hook filters). Returns the name of the first tun/ppp/wg interface seen, or "clean".
+// This tests the NATIVE hook specifically — distinct from the Java NetworkInterface path.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_specter_probe_ProbeActivity_nativeVpnIface(JNIEnv *env, jobject) {
+    struct ifaddrs *ifa = nullptr;
+    if (getifaddrs(&ifa) != 0) return env->NewStringUTF("err");
+    const char *hit = "clean";
+    for (struct ifaddrs *p = ifa; p; p = p->ifa_next) {
+        const char *n = p->ifa_name;
+        if (n && (strncmp(n, "tun", 3) == 0 || strncmp(n, "ppp", 3) == 0 || strncmp(n, "wg", 2) == 0)) {
+            hit = "LEAK"; break;
+        }
+    }
+    freeifaddrs(ifa);
+    return env->NewStringUTF(hit);
 }
 
 // Native GPU strings via a headless EGL pbuffer + GLES2 context — the DIRECT path a native
