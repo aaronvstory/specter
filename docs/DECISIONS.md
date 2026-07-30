@@ -619,3 +619,16 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   (needs a cleartext-traffic exception); ipwho.is is HTTPS + keyless and returns IP/city/region/country +
   timezone.id + connection.isp in one call. Proxy-vs-direct is answered device-side (TRANSPORT_VPN), not from
   an IP-reputation field, so the HTTPS service without a proxy flag is sufficient.
+
+## v0.19.1 — codex triple-audit fixes + an obsolete-decision correction
+- **CORRECTION: the old "cpuinfo left real" decision is OBSOLETE.** The native layer now redirects
+  /proc/cpuinfo (open/openat/fopen/raw-syscall) per-SoC (main.cpp), so cpuinfo is spoofed. Any earlier note
+  saying it's left real no longer applies. (Flagged by the codex spoofing audit 2026-07-30.)
+- **rc() no-param hooks use hookAllMethods, not findAndHookMethod.** WHY: findAndHookMethod with no explicit
+  param types resolves the varargs overload, which NoSuchMethodErrors against LSPosed's obfuscated
+  XposedHelpers — the exact CLAUDE.md trap. It had been silently no-opping every zero-arg identifier hook.
+  getImei/getDeviceId are NOT rc()'d (a constant would clobber the slot distinction) — a single slot-aware
+  hookAllMethods covers both their zero-arg and int(slot) overloads.
+- **su commands are time-bounded (60s), not unbounded.** WHY: a hung su / un-answered root prompt blocked the
+  worker thread's waitFor() forever and stranded the UI busy. Bounded via a helper-thread join (API-agnostic;
+  Process.waitFor(timeout) is API 26+ and minSdk is 24). 60s is generous for a slow pm-clear/cp but trips a real hang.

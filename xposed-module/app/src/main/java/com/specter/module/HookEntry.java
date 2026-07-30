@@ -1213,7 +1213,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         // aliasing only ro.product.model + .vendor.* left odm/product/system_ext leaking the REAL device.
         {"ro.product.model", "build_model"}, {"ro.product.vendor.model", "build_model"},
         {"ro.product.odm.model", "build_model"}, {"ro.product.product.model", "build_model"},
-        {"ro.product.system_ext.model", "build_model"},
+        {"ro.product.system.model", "build_model"}, {"ro.product.system_ext.model", "build_model"},
         {"ro.product.brand", "build_brand"}, {"ro.product.vendor.brand", "build_brand"},
         {"ro.product.odm.brand", "build_brand"}, {"ro.product.product.brand", "build_brand"},
         {"ro.product.system.brand", "build_brand"}, {"ro.product.system_ext.brand", "build_brand"},
@@ -1225,10 +1225,10 @@ public class HookEntry implements IXposedHookLoadPackage {
         {"ro.product.system_ext.manufacturer", "build_manufacturer"},
         {"ro.product.device", "build_device"}, {"ro.product.vendor.device", "build_device"},
         {"ro.product.odm.device", "build_device"}, {"ro.product.product.device", "build_device"},
-        {"ro.product.system_ext.device", "build_device"},
+        {"ro.product.system.device", "build_device"}, {"ro.product.system_ext.device", "build_device"},
         {"ro.product.name", "build_product"}, {"ro.product.vendor.name", "build_product"},
         {"ro.product.odm.name", "build_product"}, {"ro.product.product.name", "build_product"},
-        {"ro.product.system_ext.name", "build_product"},
+        {"ro.product.system.name", "build_product"}, {"ro.product.system_ext.name", "build_product"},
         {"ro.build.id", "build_id"}, {"ro.build.display.id", "build_display"},
         {"ro.product.build.id", "build_id"},
         {"ro.build.fingerprint", "build_fingerprint"},
@@ -1392,10 +1392,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     private void hookTelephony(XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
         Class<?> tm = XposedHelpers.findClassIfExists("android.telephony.TelephonyManager", lp.classLoader);
         if (tm == null) return;
-        rc(tm, "getImei", p.get("imei1"));
-        rc(tm, "getDeviceId", p.get("imei1"));
-        // slot overloads: slot 0 -> imei1, slot 1 -> imei2 (a dual-SIM app reading both must
-        // see two DIFFERENT imeis, or the mismatch flags). Use a slot-aware hook, not a constant.
+        // getImei/getDeviceId have a zero-arg AND an int(slot) overload. hookSlotImei now covers BOTH via
+        // hookAllMethods (zero-arg -> imei1; getImei(0)->imei1, getImei(1)->imei2), so a dual-SIM app reading
+        // both slots sees two DIFFERENT imeis. NOT rc()'d — a constant rc() clobbered the slot distinction, and
+        // the pre-fix rc() no-op silently left the zero-arg getImei()/getDeviceId() leaking the REAL imei.
         hookSlotImei(tm, "getImei", p.get("imei1"), p.get("imei2"));
         hookSlotImei(tm, "getDeviceId", p.get("imei1"), p.get("imei2"));
         rc(tm, "getSubscriberId", p.get("sim_subscriber_imsi"));
@@ -1740,10 +1740,13 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     // ---- helpers ----
-    // slot-aware IMEI: getImei(0)->imei1, getImei(1)->imei2
+    // slot-aware IMEI across BOTH overloads: getImei()/getDeviceId() -> imei1; getImei(0)->imei1,
+    // getImei(1)->imei2. hookAllMethods (not findAndHookMethod) so the zero-arg overload is covered too — the
+    // int-only findAndHookMethod left getImei() leaking the real value.
     private void hookSlotImei(Class<?> tm, String method, final String imei1, final String imei2) {
+        if (imei1 == null) return;
         try {
-            XposedHelpers.findAndHookMethod(tm, method, int.class, new XC_MethodHook() {
+            XposedBridge.hookAllMethods(tm, method, new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     int slot = (param.args.length > 0 && param.args[0] instanceof Integer)
                             ? (Integer) param.args[0] : 0;
@@ -1755,8 +1758,23 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     private void rc(Class<?> c, String method, String val, Class<?>... params) {
         if (val == null) return;
-        try { XposedHelpers.findAndHookMethod(c, method, appended(params,
-                XC_MethodReplacement.returnConstant(val))); } catch (Throwable ignored) {}
+        // With NO explicit param types, findAndHookMethod resolves the varargs overload — which
+        // NoSuchMethodErrors against LSPosed's obfuscated XposedHelpers (see CLAUDE.md), silently no-opping every
+        // zero-arg identifier hook (getImei/getSubscriberId/getMacAddress/getAddress/...). Fix: hook the exact
+        // zero-arg method found via plain reflection with XposedBridge.hookMethod (resolvable + arity-precise, so
+        // it does NOT clobber a slot overload like getImei(int) that a separate slot-aware hook owns). Explicit
+        // param types still use findAndHookMethod, which resolves fine when the types are given.
+        try {
+            final XC_MethodHook hook = (XC_MethodHook) XC_MethodReplacement.returnConstant(val);
+            if (params.length == 0) {
+                // Overload-agnostic + resolvable. Safe here because rc() is only used for identifiers whose
+                // ONLY overload is zero-arg (getSubscriberId/getMacAddress/getAddress/...). The two methods
+                // with a slot overload (getImei/getDeviceId) are hooked separately (hookSlotImei), NOT via rc().
+                XposedBridge.hookAllMethods(c, method, hook);
+            } else {
+                XposedHelpers.findAndHookMethod(c, method, appended(params, hook));
+            }
+        } catch (Throwable ignored) {}
     }
     private Object[] appended(Class<?>[] params, Object hook) {
         Object[] a = new Object[params.length + 1];

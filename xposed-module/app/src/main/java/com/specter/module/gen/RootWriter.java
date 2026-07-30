@@ -64,6 +64,12 @@ public final class RootWriter {
         default String runCapture(String command) throws Exception { return ""; }
     }
 
+    /** Upper bound on any single su command. A hung su daemon or an un-answered root prompt must NOT block the
+     *  caller's worker thread forever (would strand the UI in a busy state). Generous enough for a slow
+     *  pm-clear/cp; a real hang trips it. On timeout the process is force-killed and an exception is thrown so
+     *  the caller surfaces the failure instead of spinning. */
+    private static final long SU_TIMEOUT_MS = 60_000L;
+
     /** Default shell: spawn a real {@code su} process. */
     public static final class SuShell implements Shell {
         @Override public int run(String command, String stdinData) throws Exception {
@@ -76,7 +82,8 @@ public final class RootWriter {
                     // A command with no stdin (e.g. "am force-stop <pkg>") passes null — feed nothing, don't NPE.
                     if (stdinData != null) { os.write(stdinData.getBytes("UTF-8")); os.flush(); }
                 }
-                int code = p.waitFor();
+                if (!awaitBounded(p)) throw new WriteException("su timed out after " + SU_TIMEOUT_MS + "ms: " + command);
+                int code = p.exitValue();
                 out.join(2000); err.join(2000);
                 return code;
             } finally {
@@ -86,6 +93,9 @@ public final class RootWriter {
 
         @Override public String runCapture(String command) throws Exception {
             Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
+            // A hung su must not block the reader loop forever: force-kill after the timeout so the read below
+            // hits EOF instead of stalling.
+            Thread killer = timeoutKiller(p);
             try {
                 Thread err = drain(p.getErrorStream());   // drain stderr so it can't deadlock the read below
                 java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
@@ -97,8 +107,31 @@ public final class RootWriter {
                 err.join(2000);
                 return new String(bos.toByteArray(), "UTF-8");
             } finally {
+                killer.interrupt();
                 p.destroy();
             }
+        }
+
+        /** Wait for {@code p} up to {@link #SU_TIMEOUT_MS}; true if it exited, false on timeout. API-agnostic
+         *  (Process.waitFor(long,TimeUnit) is API 26+, minSdk is 24), so we wait on a helper thread's join. */
+        private static boolean awaitBounded(final Process p) {
+            final Thread waiter = new Thread(() -> { try { p.waitFor(); } catch (InterruptedException ignored) {} });
+            waiter.setDaemon(true);
+            waiter.start();
+            try { waiter.join(SU_TIMEOUT_MS); } catch (InterruptedException ignored) {}
+            if (waiter.isAlive()) { p.destroy(); return false; }
+            return true;
+        }
+
+        /** A daemon that force-kills {@code p} after the timeout (for the streaming read path). Interrupt it in
+         *  finally when the command finished on its own. */
+        private static Thread timeoutKiller(final Process p) {
+            Thread t = new Thread(() -> {
+                try { Thread.sleep(SU_TIMEOUT_MS); p.destroy(); } catch (InterruptedException ignored) {}
+            });
+            t.setDaemon(true);
+            t.start();
+            return t;
         }
 
         /** Spawn a daemon thread that reads {@code is} to EOF and discards it — just to keep the pipe empty. */
