@@ -2,6 +2,16 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-30 (v0.19.3): MainActivity uses `launchMode="singleTop"`, not the default `standard`.** Root
+  cause of a user-reported identity/applied-state bug cluster, confirmed via `dumpsys activity activities`
+  on a Pixel 4a: with no launchMode set, EVERY launcher relaunch — even with the app still resident in
+  Recents, no process death — pushed a brand-new `MainActivity` instance on top of the existing one instead
+  of resuming it (three consecutive relaunches produced three stacked `ActivityRecord`s in the same task).
+  A fresh instance's `onCreate()` ran with empty fields and unconditionally called `regenerate()`, discarding
+  whatever identity/applied-state the old (now-orphaned) instance held. `singleTop` fixes the common case by
+  routing a relaunch to `onResume()` on the same instance; a SEPARATE SharedPreferences persist/restore (see
+  `persistCurrentState()`/`restoreCurrentState()`) covers the remaining genuine-process-death case, which
+  `singleTop` alone doesn't reach. Both were needed — neither alone is sufficient.
 - **2026-07-30 (v0.19.3, gauntlet fix): Widevine default-ON migration queries the REAL on-device module dir
   via su, not the `setup_done` flag.** The first cut seeded `fresh install → true, existing → false` using
   `!prefs.getBoolean("setup_done", false)` as the fresh-install signal — both `/codex` and the code-reviewer

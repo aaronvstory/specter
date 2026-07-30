@@ -26,6 +26,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   change that needs a reboot; the banner stays up (surviving a dismissed dialog or app relaunch) until the
   device actually reboots, then auto-clears.
 
+### Fixed
+- **Identity/applied-state lost on relaunch.** `MainActivity` had no `launchMode`, so every launcher
+  relaunch — even with the app still resident in Recents, no process death involved — pushed a brand-new
+  Activity instance on top instead of resuming the existing one; `onCreate()` then unconditionally
+  regenerated a new identity and discarded the applied state. Fixed with `launchMode="singleTop"` (the
+  common-case fix) plus a durable current-identity/applied-state persist+restore in SharedPreferences (for
+  genuine process death, which `singleTop` doesn't cover) so `onCreate()` only regenerates when nothing can
+  be restored. Verified on-device: state survives both a launcher relaunch and `adb shell am kill`.
+- Toast/button copy mismatch: the "already applied" toast said "tap Randomize" while the actual button
+  reads "Generate another identity" — now consistent.
+- `reboot_pending_since` could throw `ClassCastException` on a device that armed the marker under the
+  prior (pre-gauntlet) build, which stored it as a `Long` instead of the current `Integer` boot count.
+- `save_on_apply` still defaulted to `false` at the actual apply-time read site (only the checkbox's
+  initial rendering had been updated to default checked) — a fresh install showed the box checked but Apply
+  silently never saved to the vault.
+- Protection-status screen's "Target apps" hook-attestation rows are now visually set apart (a raised card
+  background + each row's real app icon) from the device/config-level checks around them.
+- Network-status pill now reads "VPN/proxy transport detected/not detected" (was "VPN transport…") —
+  matches the actual signal (a VpnService-based transport, which is how a proxy app like SuperProxy routes).
+
 ### Added
 - Copy-guard check (`xposed-module/check_copy_guard.py`, wired into `run-jvm-tests.sh`) scans every
   `Protections.ALL` description for the one-line/no-paragraph rule.
