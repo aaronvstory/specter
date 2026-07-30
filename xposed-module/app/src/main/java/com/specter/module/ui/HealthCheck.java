@@ -168,10 +168,13 @@ final class HealthCheck {
         // (this UI app is unscoped, so hide_vpn doesn't hide the tunnel from us).
         android.net.Network vpnNet = activeVpnNetwork(ctx);
         boolean routedThroughVpn = vpnNet != null;
-        out.add(routedThroughVpn
-                ? Check.ok("Routing", "Traffic is going through a VPN/proxy tunnel.")
-                : Check.warn("Routing", "Direct — no VPN/proxy tunnel detected. Connect your proxy/VPN before "
-                        + "matching the timezone (otherwise it would align to your real network).", Fix.NONE, null));
+        // The card's routing pill already shows Proxy/VPN vs Direct, so add a row ONLY when Direct — to carry the
+        // guidance the pill can't (connect a proxy before matching TZ). Avoids duplicating the pill on the card.
+        if (!routedThroughVpn) {
+            out.add(Check.warn("Routing",
+                    "Direct — no VPN/proxy tunnel. Connect your proxy/VPN before matching the timezone "
+                    + "(otherwise it would align to your real network).", Fix.NONE, null));
+        }
 
         // Public IP + geo: one call returns IP, city/country, and the IP's timezone. Pinned to the VPN tunnel
         // when present, so the IP is the proxy exit. The IP/location is rendered as a rich card (Group.geo)

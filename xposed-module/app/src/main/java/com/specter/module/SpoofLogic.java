@@ -18,7 +18,10 @@ public final class SpoofLogic {
 
     /** getImei(slot)/getDeviceId(slot): slot 0 -> imei1, slot 1 -> imei2, anything else -> imei1. */
     public static String imeiForSlot(int slot, String imei1, String imei2) {
-        return slot == 1 ? imei2 : imei1;
+        // Single-SIM profile (no imei2): slot 1 falls back to imei1 rather than returning null (which would
+        // leave the real value / a null leaking on a dual-SIM read).
+        if (slot == 1 && imei2 != null && !imei2.isEmpty()) return imei2;
+        return imei1;
     }
 
     /** Parse a decimal GSF id to long; returns fallback on any malformed value (never throws). */

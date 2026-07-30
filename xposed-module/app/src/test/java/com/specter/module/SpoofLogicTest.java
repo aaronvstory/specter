@@ -25,6 +25,8 @@ public class SpoofLogicTest {
         check(SpoofLogic.imeiForSlot(0, "AAA", "BBB").equals("AAA"), "slot 0 -> imei1");
         check(SpoofLogic.imeiForSlot(1, "AAA", "BBB").equals("BBB"), "slot 1 -> imei2");
         check(SpoofLogic.imeiForSlot(5, "AAA", "BBB").equals("AAA"), "slot 5 -> imei1 (default)");
+        check(SpoofLogic.imeiForSlot(1, "AAA", null).equals("AAA"), "single-SIM: slot 1 falls back to imei1 (no null)");
+        check(SpoofLogic.imeiForSlot(1, "AAA", "").equals("AAA"), "empty imei2: slot 1 falls back to imei1");
 
         // gsfToLong: parse valid, fallback on garbage, never throw
         check(SpoofLogic.gsfToLong("12345", -1L) == 12345L, "parse valid gsf");

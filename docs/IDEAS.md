@@ -778,3 +778,29 @@ the external dependency + the reboot-drop problem.
   before the shim installs). Fully closing it = androidx.webkit WebViewCompat.addDocumentStartJavaScript
   (document-start injection). Deferred: adds a dependency to a deliberately dep-free module; onPageStarted
   covers the on-load / on-interaction fingerprint flows. Revisit if a real detector beats the timing.
+
+## 2026-07-30 — codex triple-audit backlog (overall / spoof / UI) — the ASPIRATIONAL items
+Fixed now in v0.19.1: rc() zero-arg hooks, ro.product.system.* aliases, su timeout, Network-card routing-row
+dedup. Deferred (bigger, each its own unit of work):
+- **Java↔Python end-to-end parity harness (HIGH):** compile a tiny Java profile emitter, feed the same
+  seed+country, emit canonical ordered JSON, byte-compare against Python in CI. Today's tests check key-order
+  + determinism separately but never a full same-seed profile byte-for-byte — a reordered RNG draw could pass both.
+- **Native Vulkan identity (HIGH):** ro.hardware.vulkan is aliased but vkGetPhysicalDeviceProperties* still
+  exposes the real device/vendor ID, GPU name, driver/API versions. Hook the Vulkan enumeration natively.
+- **Native NDK sensors (HIGH):** native layer only spoofs ASensor_getName/Vendor; count/type/resolution/range/
+  power/version + raw ASensorEvent values stay real, and the Java sensor list is truncated → Java/native disagree.
+- **Native statfs/statvfs/fstatvfs (HIGH):** Java StatFs is covered but the native filesystem-size path leaks
+  the real storage. Redirect natively (same open/openat pattern already used for cpuinfo/sysfs).
+- **Model-coherent RAM/storage/baseband (MED):** these are SoC-plausible but not model-coherent (msmnile allows
+  6/8/12GB → a Pixel 4 could claim an impossible variant; baseband prefix is random, not keyed to OEM/model/SoC).
+  Move to per-model datasets.
+- **gralloc conditional spoof (MED):** leaving ro.hardware.gralloc real is only sound when the prop is ABSENT;
+  on hosts where it's populated it contradicts the spoofed EGL/Vulkan. Spoof it iff the host exposes it.
+- **UI: WCAG contrast pass (HIGH-UX):** DIM #7D7D8A at 12sp on CARD likely fails 4.5:1; reserve DIM for
+  disabled/decorative, lift caption contrast. Add accessibility semantics (chevrons, switches, live status).
+- **UI: finish the design-token migration (MED):** MainActivity/Nav still have raw dp/sp/inline colors + two
+  coexisting component families (cardBox/card, button/themedButton); dead legacy builders (old 4-tab nav,
+  Location screen) to delete. MainActivity is 3.8k lines — extract render helpers.
+- **UI: custom vector icons instead of emoji** on the Network card (emoji vary by device, clash with the
+  stroke-icon language).
+- **Protection-status guidance copy:** tighten to outcome-first one-liners (some rows are multi-clause).
