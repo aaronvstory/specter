@@ -113,13 +113,13 @@ public class MainActivity extends Activity {
         appDataVault = new com.specter.module.gen.AppDataVault(getFilesDir());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         // Widevine L3 defaults ON for a brand-new install (max protection by default — fleet phones don't
-        // watch HD Netflix). Every read site below defaults to true, so an EXISTING install (setup already
-        // run, module never actually installed) must have its real false state written explicitly here —
-        // once — or it would suddenly show an ON switch with no module behind it.
-        if (!prefs.contains("widevine_l3")) {
-            boolean freshInstall = !prefs.getBoolean("setup_done", false);
-            prefs.edit().putBoolean("widevine_l3", freshInstall).apply();
-        }
+        // watch HD Netflix). Every read site below defaults to true, so an install that predates this seed
+        // must have its REAL state written explicitly here once, or an existing user with the module never
+        // installed would suddenly see an ON switch with no module behind it. `setup_done` is NOT a reliable
+        // fresh-vs-existing signal (it's only set by the guided "Set up everything" flow — a user who scoped
+        // LSPosed manually has setup_done=false too, identical to a fresh install), so this checks the real
+        // on-device module dir via su instead of inferring intent from an unrelated flag.
+        seedWidevineDefault();
         svc.setCountry(Country.of(prefs.getString("country", "US")));
         // Resume diagnostics capture if the user left it on (the service is START_STICKY but a full app
         // kill or reboot drops it — re-arm here so "on" stays on across launches).
@@ -609,11 +609,18 @@ public class MainActivity extends Activity {
      *  Guard every dialog raised from a runOnUiThread completion with this. */
     private boolean alive() { return !isFinishing() && !isDestroyed(); }
 
-    /** Wall-clock time this boot started (now minus uptime) — the same boot-wall stamp the v0.19.2 runtime
-     *  heartbeat uses, so a reboot marker set here compares cleanly against it. Not spoofed, comparable
-     *  across app launches (unlike boot_id, which the native layer spoofs per-app). */
-    private static long bootWallMs() {
-        return System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime();
+    /** The device's real boot count (Settings.Global.BOOT_COUNT) — increments exactly once per boot and is
+     *  immune to wall-clock changes (NTP sync, manual clock/timezone edits), unlike a currentTimeMillis() -
+     *  elapsedRealtime() stamp which a clock jump can push past a stored marker with no reboot at all. This
+     *  UI app is unscoped, so nothing spoofs the value it reads here (the native layer only spoofs boot_count
+     *  inside SCOPED target apps' profiles — see HookEntry.java — never for this app itself). */
+    private int bootCount() {
+        try {
+            return android.provider.Settings.Global.getInt(getContentResolver(),
+                    android.provider.Settings.Global.BOOT_COUNT);
+        } catch (Throwable t) {
+            return -1;   // unreadable — treat as "unknown boot", never auto-clears a pending marker
+        }
     }
 
     /** Arm the persistent "Reboot required" banner — call whenever a setup/scope/native step installs a
@@ -621,15 +628,18 @@ public class MainActivity extends Activity {
      *  not-yet-rebooted change is left alone (don't push the deadline forward on every re-run). */
     private void armRebootPending() {
         if (!prefs.contains("reboot_pending_since")) {
-            prefs.edit().putLong("reboot_pending_since", bootWallMs()).apply();
+            prefs.edit().putInt("reboot_pending_since", bootCount()).apply();
         }
     }
 
-    /** Clear the marker once a reboot has actually happened: the CURRENT boot started strictly after the
-     *  marker was stamped. Safe to call every render() — a no-op when nothing is pending or none happened. */
+    /** Clear the marker once a reboot has actually happened: the CURRENT boot count is strictly greater than
+     *  the one stamped when the marker was armed. Safe to call every render() — a no-op when nothing is
+     *  pending or the count can't be read (never silently drops a pending reboot on a read failure). */
     private void clearRebootPendingIfRebooted() {
-        long since = prefs.getLong("reboot_pending_since", -1);
-        if (since >= 0 && bootWallMs() > since) {
+        if (!prefs.contains("reboot_pending_since")) return;
+        int since = prefs.getInt("reboot_pending_since", -1);
+        int now = bootCount();
+        if (since >= 0 && now >= 0 && now > since) {
             prefs.edit().remove("reboot_pending_since").apply();
         }
     }
@@ -665,6 +675,29 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** One-time (per install) Widevine-L3 default seed, run off the UI thread since it needs su. A device
+     *  that already has the Magisk module mounted (installed by an earlier build, before this default
+     *  existed) must seed `true`; everything else — including a device that ran setup but had no oemcrypto
+     *  to shadow — seeds `false`. Never touches an already-seeded pref (checked again on the UI thread right
+     *  before writing, since onCreate itself already guarantees this runs at most once per process). */
+    private void seedWidevineDefault() {
+        if (prefs.contains("widevine_l3")) return;
+        new Thread(() -> {
+            boolean installed;
+            try {
+                String out = new com.specter.module.gen.RootWriter.SuShell().runCapture(
+                        "[ -d /data/adb/modules/" + com.specter.module.gen.WidevineL3.MODULE_ID + " ] && echo 1 || echo 0").trim();
+                installed = "1".equals(out);
+            } catch (Throwable t) {
+                installed = false;   // no root yet (first launch, before Superuser grant) — nothing could be installed
+            }
+            final boolean seed = installed;
+            runOnUiThread(() -> {
+                if (!prefs.contains("widevine_l3")) prefs.edit().putBoolean("widevine_l3", seed).apply();
+            });
+        }).start();
+    }
+
     /** Read the on-device native-layer status off the UI thread (su can block). If the layer is INSTALLED but
      *  STALE (an app-version bump re-bumped the bundled asset), silently re-write the bundled .so so the on-disk
      *  version matches again — no banner, no nag; the refreshed layer activates on the next natural reboot. Only
@@ -682,6 +715,7 @@ public class MainActivity extends Activity {
                         com.specter.module.gen.ZygiskInstaller.install(getApplicationContext());
                         st = com.specter.module.gen.ZygiskInstaller.status(getApplicationContext(), new com.specter.module.gen.RootWriter.SuShell());
                         zygiskSyncFailed = false;
+                        runOnUiThread(this::armRebootPending);   // refreshed .so needs a reboot to actually load
                     } catch (Throwable t) { zygiskSyncFailed = true; }
                 } else {
                     zygiskSyncFailed = false;

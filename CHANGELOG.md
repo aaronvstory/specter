@@ -15,14 +15,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   only a VPN *transport* detection (never implies knowledge of an upstream VPN or a plain proxy it can't
   see), and spells out that detection boundary in a footer line.
 - **Widevine L3 defaults ON for new installs** (max protection by default — fleet phones don't watch HD
-  Netflix/Prime). Existing installs keep their real state via a one-time migration write. Setup can skip the
-  step entirely when the user's setting is off.
+  Netflix/Prime). An install that predates this default gets its real state seeded once, checked live
+  against the on-device Magisk module (not inferred from an unrelated setup flag). Setup can skip the step
+  entirely when the user's setting is off.
 - **Mock-location hiding is now its own protection (`hide_mock`, default ON)**, independent of `hide_root`.
   The status check no longer warns just because a GPS mocker (e.g. Lockito) is installed or selected — it
   reflects whether Specter's own hook is armed, which is the thing that actually matters.
 - **Persistent "Reboot required" banner.** Setup, the native-layer installer, and the Widevine toggle now
-  arm a boot-wall-stamped marker whenever they install a change that needs a reboot; the banner stays up
-  (surviving a dismissed dialog or app relaunch) until the device actually reboots, then auto-clears.
+  arm a marker (keyed to the real Android boot count, immune to clock changes) whenever they install a
+  change that needs a reboot; the banner stays up (surviving a dismissed dialog or app relaunch) until the
+  device actually reboots, then auto-clears.
 
 ### Added
 - Copy-guard check (`xposed-module/check_copy_guard.py`, wired into `run-jvm-tests.sh`) scans every

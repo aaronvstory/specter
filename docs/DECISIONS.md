@@ -2,17 +2,24 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
-- **2026-07-30 (v0.19.3): Widevine default-ON migration writes an explicit `false` for existing installs,
-  not just "skip the seed".** Every `widevine_l3` read site now defaults to `true` (to satisfy "max
-  protection by default" for fresh installs), so an existing install that never touched the toggle would
-  otherwise silently start reading `true` too — a switch showing ON with no module actually mounted. Fixed
-  by writing the real state explicitly once in `onCreate` (`fresh install → true, existing → false`), gated
-  on `!prefs.contains("widevine_l3")` so it only runs once ever.
-- **2026-07-30 (v0.19.3): reboot-required persistence uses the same boot-wall stamp as the v0.19.2 runtime
-  heartbeat, not a plain boolean flag.** A boolean "reboot pending" can't tell whether the user actually
-  rebooted since it was set — a boot-wall timestamp (`now - elapsedRealtime()`) can: if the CURRENT boot's
-  wall-start is after the stored marker, a reboot happened, so the banner auto-clears. Re-arming is
-  idempotent (an already-pending marker isn't pushed forward by a second setup run).
+- **2026-07-30 (v0.19.3, gauntlet fix): Widevine default-ON migration queries the REAL on-device module dir
+  via su, not the `setup_done` flag.** The first cut seeded `fresh install → true, existing → false` using
+  `!prefs.getBoolean("setup_done", false)` as the fresh-install signal — both `/codex` and the code-reviewer
+  subagent independently caught that `setup_done` only means "ran the guided Set-up-everything flow", not
+  "has this device been used before". A user who scoped LSPosed manually (never tapped the guided flow) has
+  `setup_done=false` identical to a genuinely fresh install, so they'd wrongly get seeded `true` — an ON
+  switch with no module behind it, exactly the bug the seed exists to prevent. Fixed: `seedWidevineDefault()`
+  runs off the UI thread and checks `[ -d /data/adb/modules/specter_widevine_l3 ]` via su for the real state;
+  no-root/first-launch failure seeds `false` (safe default — nothing could be installed without root yet).
+- **2026-07-30 (v0.19.3, gauntlet fix): reboot-required persistence keys off `Settings.Global.BOOT_COUNT`,
+  not a wall-clock delta.** The first cut compared `currentTimeMillis() - elapsedRealtime()` snapshots to
+  detect a reboot — both reviewers caught that `currentTimeMillis()` isn't monotonic: an NTP time sync or a
+  manual clock/timezone change mid-boot can push that delta past the stored marker with ZERO reboot having
+  happened, silently dropping the "Reboot required" banner (the exact failure the feature exists to prevent).
+  `Settings.Global.BOOT_COUNT` is a real Android counter that increments exactly once per boot and is
+  unaffected by wall-clock changes; the unscoped UI app reads its true value (only SCOPED target apps get a
+  spoofed `boot_count` in their profile — see HookEntry.java). Re-arming is idempotent (an already-pending
+  marker isn't pushed forward by a second setup run); an unreadable boot count (-1) never auto-clears.
 - **2026-07-30 (v0.19.3): mock-location health check dropped the Lockito app-op/appops scan entirely.**
   Detecting *any* mock-location-capable app installed and warning about it was the wrong signal — Specter
   hides the mock flag from every scoped app regardless of what's installed. The check now only reads whether
