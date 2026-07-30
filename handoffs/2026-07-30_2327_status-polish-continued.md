@@ -9,7 +9,15 @@ the 4a.**
 
 ## Goal
 Finish the v0.19.3 status/settings polish PR: two small UI items the user flagged live while testing on the
-P4, then merge.
+P4 (Item A/B below), PLUS a new cluster of apply/identity-state bugs the user found on the 4a (Item C below,
+NOT YET INVESTIGATED beyond a first-pass code trace — see "New bug cluster"). Then merge.
+
+**User's explicit instruction for next session: launch TWO /codex reviews in parallel** — one on the recent
+crash-fix diff (sanity-check `aab1d4d` + `ccc5389`, already gauntlet-passed but a fresh pair of eyes doesn't
+hurt given how the P4 crash slipped through the first gauntlet), and a SECOND one dedicated to the new bug
+cluster in "New bug cluster" below — hand codex the user's raw description verbatim (quoted below) plus this
+session's own code trace, and let it figure out the actual root cause(s) and propose a fix. Don't do the fix
+work yourself first — that's explicitly what the user asked to hand to codex.
 
 ## User Emphasis (IMPORTANT)
 - ⚠️ **"VPN transport detected" is misleading when a proxy (not a VPN) is in use.** User: "we're using a
@@ -23,8 +31,85 @@ P4, then merge.
   handoff. **When asked for a handoff, stop new work and write it — don't squeeze in "just one more small
   fix" first**, even a genuinely trivial one. (This session made that mistake — see lesson below.)
 
+## New bug cluster (found on the 4a, NOT YET FIXED — hand to a dedicated /codex, see Goal)
+
+User's raw report (verbatim, for handing to codex as-is so nothing gets lost in translation):
+
+> when a currently offered fingerprint is already applied to an app, and we click apply again, the toast
+> (which is ugly — up top it shows up — should have a slightly distinctive look) says "randomize" but the
+> button to randomize says "generate identity" so those are incoherent.. the popup should say "generate ..."
+> also, I now tried to apply to an already applied and it did a new popup asking for a new name, then I closed
+> it, then i clicked apply again and only then did it recognize it's already been applied ... it might've
+> missed that it's already applied when i closed and reopened the app or idk ... and between when we close
+> (soft close) and reopen the app - up top it gives that same toast and says "Identity not applied ..." then
+> goes away and says applied.. so ya we need a better toast there looking better and perhaps say something
+> like "Checking" or something like that instead of defaulting to identity not applied then going away.. and
+> then some weird issue between this happened where we didn't even generate a new identity and somehow a new
+> identity appeared there
+
+This session did a FIRST-PASS code trace (no on-device repro yet — P4 was already unplugged when this was
+reported) that found three concrete, well-anchored leads. Hand these to codex as a starting point, not a
+final diagnosis — codex should verify/extend, not just rubber-stamp:
+
+1. **Toast/button copy incoherence (the easy, confirmed one).**
+   `MainActivity.java:519` — `String msg = "Already applied. Relaunch the app(s), or tap Randomize for a new
+   one.";` — says "Randomize", but the actual button at `MainActivity.java:955` is labeled
+   `"Generate another identity"`. Straightforward fix: make the toast say "Generate another identity" (or
+   whatever the button's final wording is), so they match. Low risk, do this one directly.
+
+2. **`appliedSig`/`appliedTargets` are in-memory-only, never persisted — likely the root cause of BOTH the
+   "already applied" being missed after close/reopen AND the "Identity not applied" flash on resume.**
+   `MainActivity.java:86-91` declares:
+   ```java
+   private String appliedTargets = "";   // comma-sep pkgs the CURRENT profile was applied to
+   private String appliedSig = "";       // signature of the LAST successful apply
+   ```
+   Both are plain instance fields — NOT written to `SharedPreferences`, NOT restored via
+   `onSaveInstanceState`/a bundle, nothing. If Android kills the `com.specter` process while backgrounded
+   (a "soft close" that's actually a process death — very possible, this session saw Xposed-injection-timing
+   evidence that com.specter's process lifecycle is already fragile, see the P4 crash fix above) and the user
+   reopens, `onCreate()` runs fresh with `appliedSig=""` — even though the identity WAS actually pushed to the
+   target app's profile file on disk (root-owned, in `/data/local/tmp/specter/` per `HookConstants.
+   HEARTBEAT_DIR_PARENT`). This would explain:
+   - "click apply again and only then did it recognize it's already been applied" — the FIRST apply-after-
+     reopen re-did a real apply (since `appliedSig` was reset to `""`), which itself SET `appliedSig` again
+     (see `MainActivity.java:568`), so the SECOND apply-again correctly saw "already applied". One real
+     apply happened invisibly in between.
+   - The "Identity not applied ... then goes away and says applied" toast/status flash on resume — likely
+     `onResume()` (`MainActivity.java:305-311`) calling `render()` synchronously reads the reset (empty)
+     `appliedSig` BEFORE any async status re-check catches up (if one exists — worth checking whether
+     `render()`'s "applied" logic at `MainActivity.java:940` triggers any follow-up work, or whether it's
+     truly synchronous/stale until the next explicit action).
+   - Confirm/deny by checking: does `Targets`/`Vault`/anything ELSE persist an "applied" marker anywhere
+     (SharedPreferences, a file) that `onCreate` could restore `appliedSig`/`appliedTargets` FROM? If not,
+     that's the actual gap — this state needs to survive process death, either by reading it back from the
+     on-device profile files (root/su, same as HealthCheck already does for target-app hook attestation) or
+     by persisting the signature+targets pair to SharedPreferences on every successful apply.
+
+3. **"a new identity appeared there" without the user generating one — likely the SAME root cause as #2.**
+   `MainActivity.java:179` (`onCreate`) calls `regenerate()` UNCONDITIONALLY on every Activity creation —
+   including a process-death-triggered recreation after a soft-close, not just a genuinely fresh install.
+   `regenerate()` (`MainActivity.java:478`) generates a brand-new random profile. So: process dies while
+   backgrounded → user reopens → `onCreate` → `regenerate()` fires → a NEW identity appears, discarding
+   whatever was showing (and possibly already applied) before, with NO explicit user action. This likely
+   needs the SAME fix direction as #2: don't blindly `regenerate()` on every `onCreate` — check whether a
+   profile already exists (in-memory-lost-but-recoverable, or read back from wherever #2's investigation
+   finds durable state) before generating a fresh one. Ties into #2 for one coherent fix, not two.
+
+**Framing for whoever picks this up:** all three symptoms plausibly trace to ONE structural gap — this
+Activity treats "current identity" + "applied state" as pure in-memory session state with no durability
+across process death, which on Android is NOT a rare edge case (background apps get killed routinely under
+memory pressure). The fix is likely "persist the minimum durable state (current profile? applied
+signature+targets? both?) so `onCreate` can restore instead of always starting fresh" — but let codex verify
+this diagnosis against the actual full flow before committing to an approach; this session's trace is a
+lead, not a confirmed root cause. NOT reproduced on-device this session (P4 already unplugged) — the next
+session should reproduce on the 4a first (soft-close via home button or `am kill com.specter` to simulate
+process death, not `force-stop` which is a harder kill) before proposing a fix, so codex has real evidence
+to work from, not just static analysis.
+
 ## Current State
-- **Status:** All CRITICAL/blocking work is DONE and pushed. Two cosmetic items remain (see Next Action).
+- **Status:** All CRITICAL/blocking work is DONE and pushed. Two small cosmetic items (A/B) plus one
+  not-yet-diagnosed bug cluster (C, see "New bug cluster" above) remain (see Next Action).
 - **What's done this session** (chronological, all on `feat/status-settings-polish`, all pushed):
   1. Implemented the full POLISH-PLAN-v0.19.3.md (11 items) — see the PRIOR handoff
      `handoffs/2026-07-30_2133_status-settings-polish.md` for that work's detail. Commit `7ba41ba`.
@@ -92,7 +177,23 @@ P4, then merge.
    may differ after a fresh USB attach). Confirm it's on v0.19.3 too (`adb shell dumpsys package com.specter
    | grep versionName`) — if not, install the latest build from `dist/specter-module-v0.19.3.apk` (rebuild
    first if the repo has moved since `ccc5389`).
-2. **Item A — Network pill copy.** File: `xposed-module/app/src/main/java/com/specter/module/ui/MainActivity.java`
+2. **Launch TWO /codex reviews in parallel** (user's explicit instruction — see Goal):
+   - **codex #1**: sanity-check the crash-fix diff (`git diff 7ba41ba..ccc5389` covers the gauntlet fixes +
+     crash fix + save_on_apply default) — a fresh pair of eyes, since the P4 crash slipped past the FIRST
+     gauntlet pass. Low-stakes, quick.
+   - **codex #2**: the new bug cluster in "New bug cluster" above. Feed it the user's raw quote VERBATIM +
+     this session's 3-lead trace + the actual current source (MainActivity.java, focusing on lines
+     ~86-91, ~478-500, ~510-570, ~940, ~179, ~305-311). Ask it to (a) confirm or refute the "no durable
+     applied/identity state across process death" diagnosis by tracing the FULL flow itself, (b) identify
+     the exact minimal fix, (c) flag anything else in the same area it notices while it's in there. Do NOT
+     pre-empt this with your own fix — let codex drive the diagnosis per the user's instruction.
+3. **Reproduce the bug cluster on the 4a FIRST** (before or alongside launching codex #2 — whichever is
+   faster) — soft-close via home button, or `adb shell am kill com.specter` to simulate a real process death
+   (NOT `force-stop`, which is a harder kill than what actually happens in the field), then reopen and watch
+   for: the toast/status flash, whether a new identity appears unprompted, whether "already applied" is
+   missed on the first apply after reopen. Real evidence makes codex's job much easier and catches any
+   difference between this session's static trace and actual behavior.
+4. **Item A — Network pill copy.** File: `xposed-module/app/src/main/java/com/specter/module/ui/MainActivity.java`
    around line 2152 (search `VPN transport detected` / `VPN transport not detected` — the exact line may have
    shifted from the `save_on_apply` edit, it's a 1-line diff so shift is minimal). Current:
    ```java
@@ -105,7 +206,7 @@ P4, then merge.
    which is how SuperProxy — the user's proxy app — actually routes), while the footer still correctly says
    a PLAIN (non-VpnService) proxy or an upstream/router VPN is NOT detectable. No contradiction — just accurate
    wording for the transport type that IS being detected.
-3. **Item B — Visually distinguish Target-apps hook rows.** In the Protection-status screen (`renderHealth()`
+5. **Item B — Visually distinguish Target-apps hook rows.** In the Protection-status screen (`renderHealth()`
    / `healthRow()` in MainActivity.java, feeding off `HealthCheck.Group`s from `HealthCheck.runAll()`), the
    "Target apps" group's rows (one per scoped target app, e.g. "Cash App — Hooks loaded this boot · N profile
    fields · vX.X.X") currently render with the exact same row styling as every other check (Root access,
@@ -116,12 +217,21 @@ P4, then merge.
    it, don't reinvent), a subtly different card background/accent, or a small leading badge. Keep it minimal —
    this is a QA/status screen, not a redesign. **Screenshot-verify on-device before calling it done** — this
    project's own rule (CLAUDE.md: "For UI or frontend changes ... verify visually").
-4. Bump nothing version-wise unless the user asks — v0.19.3 already covers this whole PR arc; these are
-   still-v0.19.3 polish items, not a new version.
-5. Run `run-jvm-tests.sh` + `pytest -q`, rebuild, deploy + screenshot-verify on the 4a, commit, push.
-6. **Then offer to merge** (don't merge without asking — the gauntlet already ran on the substantive changes;
-   these two items are small enough that a quick self-review + the existing test suites should suffice, but
-   ask the user first since they've been driving verification closely this session).
+6. **Item C — the bug cluster fix**, once codex #2 + on-device repro converge on a diagnosis. This is
+   probably the biggest chunk of next-session work — budget for it accordingly, don't treat it as a quick
+   add-on alongside A/B. Also fix the toast/button copy incoherence (lead #1 above, "Randomize" vs "Generate
+   another identity") while in this area — it's simple and directly user-confirmed, no need to wait on codex
+   for that specific piece. The "toast should have a slightly distinctive look" / "say Checking instead of
+   flashing not-applied" requests are UI-polish riding on top of the same investigation — fold them in once
+   the state bug itself is understood, not before (a nicer-looking toast that still flashes wrong info is a
+   half-fix).
+7. Bump nothing version-wise unless the user asks — v0.19.3 already covers this whole PR arc; these are
+   still-v0.19.3 polish items, not a new version. (If Item C turns out to be a substantial enough fix that it
+   feels wrong to lump into v0.19.3, ask the user first — don't decide unilaterally.)
+8. Run `run-jvm-tests.sh` + `pytest -q`, rebuild, deploy + screenshot-verify on the 4a, commit, push.
+9. **Then offer to merge** (don't merge without asking). Given Item C may be a real behavioral fix (not just
+   cosmetic like A/B), consider whether it warrants its own gauntlet pass (code-reviewer + codex on the fix
+   diff) before merging — use judgment based on how invasive the eventual fix turns out to be.
 
 ## Relevant Artifacts
 - Prior handoff (the original 11-item plan + its detailed file:line spec):
