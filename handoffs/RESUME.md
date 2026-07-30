@@ -4,10 +4,18 @@ Created: 2026-07-30 (late). An Android device-config + on-device QA project. Des
 purpose (see CLAUDE.md "Session framing"). Point a fresh session at THIS file first; open the detailed log
 only for specifics.
 
-## STATE (all committed + pushed, tree clean, v0.18.5)
-Main = `4da10a3`. Both phones (P4 flame `9B151FFAZ00FPF`, 4a sunfish `17031JEC204747`) on v0.18.5, fully
-deployed + verified. **The P4 is NOW A FREE TEST DEVICE** — reboot/deploy/test it like the 4a (user
-reclassified 2026-07-30; memory `p4-now-free-test-device`). No more income-device restrictions.
+## STATE (all committed + pushed, tree clean, v0.19.0)
+Main = `5396c1d`. **P4 (flame `9B151FFAZ00FPF`) runs v0.19.0** (status card verified on it this session);
+**4a (sunfish `17031JEC204747`) still on v0.18.5** — deploy v0.19.0 + reboot both to load the new WebRTC hook.
+**The P4 is a FREE TEST DEVICE** (memory `p4-now-free-test-device`) — reboot/deploy/test like the 4a. NOTE:
+the P4 was on the live SuperProxy this session so it was NOT rebooted (WebRTC hook loads on next reboot).
+
+### v0.19.0 (this session) — status-page network/IP/geo + timezone-follows-proxy-IP + WebRTC leak fix
+Full detail: `handoffs/SESSION-v0.19.0-network-tz-webrtc.md`. In short: Protection-status now shows a live
+Network card (public IP + ISP + geo + timezone + Proxy/VPN routing pill, pinned to the VPN tunnel); timezone
+now AUTO-ALIGNS to the proxy exit IP (never the phone number, never the home IP — gated on TRANSPORT_VPN +
+lookup-through-tunnel); WebRTC leak is FIXED-not-blocked (JS ICE filter drops private/mDNS candidates, keeps
+the proxy candidate, WebView targets only). Two gauntlet rounds passed. QUIC/DNS/latency flags = proxy's job.
 
 ### What shipped this session (v0.18.0 → v0.18.5) — the account-flag leak is CLOSED
 - **v0.18.0/.1** — guided "Set up everything" first-run install (in-app LSPosed scope writer `LspScope` +
@@ -39,38 +47,24 @@ zero-host-leak regression check passed. The probe (`ProbeActivity`) self-checks 
 
 ---
 
-## NEXT (the user's LATEST request — status page + detectme.pro) — START HERE
-User ran **detectme.pro** on the P4 with SuperProxy (a clean residential proxy). Results (screenshot) +
-several asks. Be HONEST about the device-vs-network split below.
+## NEXT — START HERE
+The status-page + timezone + WebRTC work from the last handoff is DONE + merged (v0.19.0). Remaining:
+1. **Deploy v0.19.0 to the 4a**, then **reboot both phones** so the new WebRTC hook + native layer load
+   (the WebRTC filter is Java-hook, needs a fresh app process / reboot to take effect in scoped apps).
+2. **MEASURE the WebRTC filter against detectme.pro through a scoped WebView** — the current
+   onPageStarted-timing injection is a HYPOTHESIS until measured; confirm the ICE result shows only the proxy
+   candidate. Specter's scope has the FPJS demo + DevInfo + com.specter(.probe); detectme.pro runs in a
+   browser/WebView — pick a scoped WebView-based target to test, or note that native Chrome is out of scope.
+3. Optional (docs/IDEAS.md): if a real detector beats the onPageStarted timing, add androidx.webkit
+   `addDocumentStartJavaScript` for true document-start injection (deferred to keep the module dep-free).
 
-### A) Status-page additions (BUILDABLE — do this first)
-`HealthCheck.java` = the Protection-status screen (Settings → Check protection status; rendered in
-MainActivity.renderHealth ~L1571). Currently checks root/module/gate/native-layer/per-app-scope. ADD:
-1. **VPN/proxy hook status row** — is hide_vpn active + are the Java NetworkInterface + native getifaddrs
-   hooks engaged? (verify via the probe's vpn_* fields or a light self-check).
-2. **Current public IP** — fetch + display off the UI thread (the proxy's exit IP).
-3. **Geolocation of that IP** — IP→geo lookup, show city/country (the proxy's apparent location).
-4. **Make VPN/proxy masking TOGGLEABLE** — hide_vpn is a Protections gate (default on, native g_hide_vpn +
-   Java). Check Protections.ALL[] (Protections.java): it may already be a user toggle ("Hide VPN & proxy" was
-   added in v0.18.3) — if so, surface it clearly; if it's internal-only, add the toggle row.
-
-### B) detectme.pro results — Specter CAN vs CANNOT (tell the user plainly, don't overpromise)
-- **WebRTC IP Leak (Leak)** — ✅ FIXABLE, highest value. WebRTC leaks the real IP via ICE candidates
-  (in-app, hookable). Hook the PeerConnection/ICE path or force the ICE transport policy. Investigate first.
-- **Timezone Mismatch (Minor)** — ✅ FIXABLE. Device TZ vs IP geolocation. Specter sets TZ from the profile's
-  phone area code today; instead align it to the PROXY IP's geo (uses the IP-geo lookup from A3). This is WHY
-  A2/A3 matter — they feed this fix.
-- **WSS vs TCP Latency (Proxy-like)**, **HTTP/3 QUIC Unreachable**, **DNS Resolver (Public DNS)** — ❌
-  NETWORK-LAYER, NOT SPECTER. Measured from the proxy's packet timing / DNS config. A device-config module
-  can't change these — they need the PROXY side (forward QUIC, use a residential DNS resolver, residential-
-  like latency). State this clearly.
-- **TCP/IP Fingerprint (Match)** ✅, **IP Reputation (Clean)** ✅, **IP Network Type (Residential)** ✅,
-  **RDP/VM (none)** ✅ — already good.
-
-### C) Strategic point
-Specter = make the DEVICE consistent + match the proxy's apparent location. The proxy = clean network/IP/
-DNS/QUIC. detectme.pro mixes both. Specter should fix WebRTC leak + align timezone/locale/geo to the proxy IP;
-the network-timing/QUIC/DNS flags are the proxy's job, not Specter's.
+### detectme.pro — Specter's domain vs the proxy's (state plainly, don't overpromise)
+- ✅ FIXED device-side (v0.19.0): **Timezone Mismatch** (TZ auto-aligns to proxy IP, gated on VPN routing),
+  **WebRTC Leak** (fix-not-block ICE filter, WebView), VPN/proxy interface hiding (v0.18.5).
+- ❌ PROXY's job, NOT Specter: **WSS/TCP latency**, **HTTP/3 QUIC** (needs UDP forwarding), **DNS resolver**
+  (use home/ISP DNS not Google/CF), **Datacenter-IP reputation**, **RDP/VM**. A device-config module can't
+  change packet timing / DNS / QUIC / IP reputation — that's proxy/IP selection. Full write-up in
+  docs/ANTI-FINGERPRINT-STRATEGY.md.
 
 ## Build/test
 Python: `.venv/Scripts/python.exe -m pytest -q`. JVM: `cd xposed-module && bash run-jvm-tests.sh`. Native:
@@ -82,9 +76,8 @@ soc_topology.json = LF. `find . -name nul -type f -delete` before commit. /gaunt
 
 ## Resume phrase
 ```
-Read handoffs/RESUME.md and resume. START with "NEXT": build the status-page VPN/IP/geo additions + confirm
-hide_vpn is a clear toggle (section A), then the WebRTC-leak + timezone-vs-proxy-IP masking (section B — the
-device-side fixable ones). Be honest that the QUIC/DNS/latency flags are network/proxy-layer, not Specter.
-Both P4 + 4a are FREE test devices now (reboot/deploy freely; deny an app's location perm before launch if
-unsure). /gauntlet before merging.
+Read handoffs/RESUME.md and resume. START with "NEXT": deploy v0.19.0 to the 4a + reboot both phones to load
+the new WebRTC hook, then MEASURE the WebRTC ICE filter against detectme.pro through a scoped WebView (the
+onPageStarted-timing result is a hypothesis until measured). Both P4 + 4a are FREE test devices (reboot/deploy
+freely; deny an app's location perm before launch if unsure). /gauntlet before merging.
 ```
