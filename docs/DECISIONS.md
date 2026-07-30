@@ -2,6 +2,44 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-30 (v0.19.3): MainActivity uses `launchMode="singleTop"`, not the default `standard`.** Root
+  cause of a user-reported identity/applied-state bug cluster, confirmed via `dumpsys activity activities`
+  on a Pixel 4a: with no launchMode set, EVERY launcher relaunch — even with the app still resident in
+  Recents, no process death — pushed a brand-new `MainActivity` instance on top of the existing one instead
+  of resuming it (three consecutive relaunches produced three stacked `ActivityRecord`s in the same task).
+  A fresh instance's `onCreate()` ran with empty fields and unconditionally called `regenerate()`, discarding
+  whatever identity/applied-state the old (now-orphaned) instance held. `singleTop` fixes the common case by
+  routing a relaunch to `onResume()` on the same instance; a SEPARATE SharedPreferences persist/restore (see
+  `persistCurrentState()`/`restoreCurrentState()`) covers the remaining genuine-process-death case, which
+  `singleTop` alone doesn't reach. Both were needed — neither alone is sufficient.
+- **2026-07-30 (v0.19.3, gauntlet fix): Widevine default-ON migration queries the REAL on-device module dir
+  via su, not the `setup_done` flag.** The first cut seeded `fresh install → true, existing → false` using
+  `!prefs.getBoolean("setup_done", false)` as the fresh-install signal — both `/codex` and the code-reviewer
+  subagent independently caught that `setup_done` only means "ran the guided Set-up-everything flow", not
+  "has this device been used before". A user who scoped LSPosed manually (never tapped the guided flow) has
+  `setup_done=false` identical to a genuinely fresh install, so they'd wrongly get seeded `true` — an ON
+  switch with no module behind it, exactly the bug the seed exists to prevent. Fixed: `seedWidevineDefault()`
+  runs off the UI thread and checks `[ -d /data/adb/modules/specter_widevine_l3 ]` via su for the real state;
+  no-root/first-launch failure seeds `false` (safe default — nothing could be installed without root yet).
+- **2026-07-30 (v0.19.3, gauntlet fix): reboot-required persistence keys off `Settings.Global.BOOT_COUNT`,
+  not a wall-clock delta.** The first cut compared `currentTimeMillis() - elapsedRealtime()` snapshots to
+  detect a reboot — both reviewers caught that `currentTimeMillis()` isn't monotonic: an NTP time sync or a
+  manual clock/timezone change mid-boot can push that delta past the stored marker with ZERO reboot having
+  happened, silently dropping the "Reboot required" banner (the exact failure the feature exists to prevent).
+  `Settings.Global.BOOT_COUNT` is a real Android counter that increments exactly once per boot and is
+  unaffected by wall-clock changes; the unscoped UI app reads its true value (only SCOPED target apps get a
+  spoofed `boot_count` in their profile — see HookEntry.java). Re-arming is idempotent (an already-pending
+  marker isn't pushed forward by a second setup run); an unreadable boot count (-1) never auto-clears.
+- **2026-07-30 (v0.19.3): mock-location health check dropped the Lockito app-op/appops scan entirely.**
+  Detecting *any* mock-location-capable app installed and warning about it was the wrong signal — Specter
+  hides the mock flag from every scoped app regardless of what's installed. The check now only reads whether
+  `hide_mock` is armed (+ an informational device-wide flag suffix), so normal Lockito use reaches GREEN
+  instead of a permanent false warning.
+- **2026-07-30 (v0.19.3): JVM copy-guard test is a source-grep Python script, not a compiled JUnit-style
+  test.** `Protections.java` imports `android.content.SharedPreferences`, which the plain-`javac` JVM harness
+  (`run-jvm-tests.sh`, deliberately Android-free) can't resolve — adding an `android.jar` classpath just for
+  one string-format check was out of scope for a UI-polish PR. `check_copy_guard.py` regexes the description
+  literals straight out of the source file instead.
 - **2026-07-29 (v0.17.7): app-hiding is now BOTH app-side AND system_server (HMA-style gate ADDED).**
   Gap analysis vs HideMyApplist (Dr-TSNG/Hide-My-Applist): HMA hooks ONE chokepoint in system_server
   (`shouldFilterApplication`) covering every read path + the raw-binder bypass; we hooked

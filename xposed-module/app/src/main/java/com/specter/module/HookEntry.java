@@ -29,19 +29,13 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  */
 public class HookEntry implements IXposedHookLoadPackage {
 
-    // where the push .bat drops per-app profiles
-    private static final String PROFILE_DIR = "/data/local/tmp/specter/";
-    /** Public view of the profile dir for other module classes (e.g. PmsHook's framework heartbeat). */
-    public static final String HEARTBEAT_DIR_PARENT = PROFILE_DIR;
-    /** Where the framework gate (PmsHook, in system_server) drops its boot heartbeat — system-writable, unlike
-     *  the root-owned profile dir; the UI reads it via su. Public so both PmsHook and the UI reference one path. */
-    public static final String FRAMEWORK_HB_PATH = "/data/system/specter_hb_framework";
-    /** This module's version, compiled in — the attestation heartbeat carries it so the status screen can
-     *  reject a heartbeat written by OLD module code still loaded in a process after an APK update. */
-    public static final String MODULE_VERSION = safeVersion();
-    private static String safeVersion() {
-        try { return com.specter.module.BuildConfig.VERSION_NAME; } catch (Throwable t) { return "?"; }
-    }
+    // Constants moved to HookConstants (no Xposed imports) so the standalone UI app can read them
+    // without ever loading THIS class — loading HookEntry forces resolution of IXposedHookLoadPackage,
+    // which throws NoClassDefFoundError in any process LSPosed hasn't injected the Xposed stub into.
+    public static final String HEARTBEAT_DIR_PARENT = HookConstants.HEARTBEAT_DIR_PARENT;
+    public static final String FRAMEWORK_HB_PATH = HookConstants.FRAMEWORK_HB_PATH;
+    public static final String MODULE_VERSION = HookConstants.MODULE_VERSION;
+    private static final String PROFILE_DIR = HookConstants.HEARTBEAT_DIR_PARENT;   // internal use below
 
     // The REAL device API level, captured at module class-load — BEFORE any hook can spoof SDK_INT.
     // handleLoadPackage() can fire more than once per process (shared/multi-package processes), so reading
@@ -87,7 +81,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (!gateOff(p, "hide_apps")) hookInstalledApps(lpparam);
         if (!gateOff(p, "spoof_sysfs")) hookDisplayMetrics(lpparam, p);
         hookLocaleTimezone(p);
-        if (!gateOff(p, "hide_root")) hookMockLocation(lpparam);
+        if (!gateOff(p, "hide_mock")) hookMockLocation(lpparam);
         if (!gateOff(p, "hide_vpn")) hookVpn(lpparam);
         if (!gateOff(p, "fix_webrtc")) hookWebRtc(lpparam);
         hookBattery(lpparam, p);
@@ -185,7 +179,7 @@ public class HookEntry implements IXposedHookLoadPackage {
      *  case) reads Location.isFromMockProvider() / isMock() to detect a spoofed GPS. We don't spoof GPS
      *  coordinates yet (a larger effort), but forcing these to FALSE ensures that if the user runs a
      *  separate location-mocker (or none), no target sees a mock-location tell. Gated with the other
-     *  anti-tamper protections (hide_root). Full coordinate spoofing is a planned separate feature. */
+     *  the hide_mock protection. Full coordinate spoofing is a planned separate feature. */
     private void hookMockLocation(final XC_LoadPackage.LoadPackageParam lp) {
         try {
             Class<?> loc = XposedHelpers.findClass("android.location.Location", lp.classLoader);

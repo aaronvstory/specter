@@ -3,6 +3,53 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.19.3] - 2026-07-30
+
+### Changed
+- **Status/Settings polish pass.** Settings now splits into distinct Setup / Status / Protections /
+  Diagnostics / Advanced sections (was one clunky combined card); the first-run banner no longer shows on
+  the Settings tab itself. Every description in Settings and the status screen is now one short line or a
+  bulleted list — no multi-sentence copy anywhere.
+- **Network card redesign.** Dropped the emoji glyphs (mismatched sizes were misaligning city vs timezone)
+  and the misleading "No VPN" claim — the card now leads with the public IP/geo (the real signal), states
+  only a VPN *transport* detection (never implies knowledge of an upstream VPN or a plain proxy it can't
+  see), and spells out that detection boundary in a footer line.
+- **Widevine L3 defaults ON for new installs** (max protection by default — fleet phones don't watch HD
+  Netflix/Prime). An install that predates this default gets its real state seeded once, checked live
+  against the on-device Magisk module (not inferred from an unrelated setup flag). Setup can skip the step
+  entirely when the user's setting is off.
+- **Mock-location hiding is now its own protection (`hide_mock`, default ON)**, independent of `hide_root`.
+  The status check no longer warns just because a GPS mocker (e.g. Lockito) is installed or selected — it
+  reflects whether Specter's own hook is armed, which is the thing that actually matters.
+- **Persistent "Reboot required" banner.** Setup, the native-layer installer, and the Widevine toggle now
+  arm a marker (keyed to the real Android boot count, immune to clock changes) whenever they install a
+  change that needs a reboot; the banner stays up (surviving a dismissed dialog or app relaunch) until the
+  device actually reboots, then auto-clears.
+
+### Fixed
+- **Identity/applied-state lost on relaunch.** `MainActivity` had no `launchMode`, so every launcher
+  relaunch — even with the app still resident in Recents, no process death involved — pushed a brand-new
+  Activity instance on top instead of resuming the existing one; `onCreate()` then unconditionally
+  regenerated a new identity and discarded the applied state. Fixed with `launchMode="singleTop"` (the
+  common-case fix) plus a durable current-identity/applied-state persist+restore in SharedPreferences (for
+  genuine process death, which `singleTop` doesn't cover) so `onCreate()` only regenerates when nothing can
+  be restored. Verified on-device: state survives both a launcher relaunch and `adb shell am kill`.
+- Toast/button copy mismatch: the "already applied" toast said "tap Randomize" while the actual button
+  reads "Generate another identity" — now consistent.
+- `reboot_pending_since` could throw `ClassCastException` on a device that armed the marker under the
+  prior (pre-gauntlet) build, which stored it as a `Long` instead of the current `Integer` boot count.
+- `save_on_apply` still defaulted to `false` at the actual apply-time read site (only the checkbox's
+  initial rendering had been updated to default checked) — a fresh install showed the box checked but Apply
+  silently never saved to the vault.
+- Protection-status screen's "Target apps" hook-attestation rows are now visually set apart (a raised card
+  background + each row's real app icon) from the device/config-level checks around them.
+- Network-status pill now reads "VPN/proxy transport detected/not detected" (was "VPN transport…") —
+  matches the actual signal (a VpnService-based transport, which is how a proxy app like SuperProxy routes).
+
+### Added
+- Copy-guard check (`xposed-module/check_copy_guard.py`, wired into `run-jvm-tests.sh`) scans every
+  `Protections.ALL` description for the one-line/no-paragraph rule.
+
 ## [0.19.0] â 2026-07-30
 
 ### Added

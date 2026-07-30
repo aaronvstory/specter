@@ -61,22 +61,22 @@ public final class SetupFlow {
 
     /** Run every setup step. Blocking (multiple su round-trips) — call OFF the UI thread. Never throws; each
      *  step's exception is caught and turned into a failed StepResult so the checklist always renders. */
-    public static Outcome run(Context ctx, Collection<String> targets) {
-        return run(ctx, targets, new RootWriter.SuShell());
+    public static Outcome run(Context ctx, Collection<String> targets, boolean enableWidevine) {
+        return run(ctx, targets, enableWidevine, new RootWriter.SuShell());
     }
 
-    public static Outcome run(Context ctx, Collection<String> targets, RootWriter.Shell shell) {
+    public static Outcome run(Context ctx, Collection<String> targets, boolean enableWidevine, RootWriter.Shell shell) {
         if (!IN_FLIGHT.compareAndSet(false, true)) {
             throw new BusyException("A setup run is already in progress.");
         }
         try {
-            return runLocked(ctx, targets, shell);
+            return runLocked(ctx, targets, enableWidevine, shell);
         } finally {
             IN_FLIGHT.set(false);
         }
     }
 
-    private static Outcome runLocked(Context ctx, Collection<String> targets, RootWriter.Shell shell) {
+    private static Outcome runLocked(Context ctx, Collection<String> targets, boolean enableWidevine, RootWriter.Shell shell) {
         List<StepResult> steps = new ArrayList<>();
         boolean any = false;
         boolean nativeOk = false, scopeOk = false;   // the two REQUIRED steps
@@ -119,13 +119,18 @@ public final class SetupFlow {
         }
 
         // 4. Widevine L3 — software DRM device-wide. A device with no oemcrypto to shadow reports not-done
-        //    (WidevineL3.install exits 3 there); that's fine, it just means nothing to force.
-        try {
-            WidevineL3.install(shell);
-            steps.add(new StepResult("Widevine L3", true, "Set to software DRM — reboot to finish."));
-            any = true;
-        } catch (Throwable t) {
-            steps.add(new StepResult("Widevine L3", false, msg(t, "Couldn't set Widevine L3 on this device.")));
+        //    (WidevineL3.install exits 3 there); that's fine, it just means nothing to force. Skipped
+        //    entirely when the user's Widevine setting is off (default ON — see MainActivity onCreate).
+        if (enableWidevine) {
+            try {
+                WidevineL3.install(shell);
+                steps.add(new StepResult("Widevine L3", true, "Set to software DRM — reboot to finish."));
+                any = true;
+            } catch (Throwable t) {
+                steps.add(new StepResult("Widevine L3", false, msg(t, "Couldn't set Widevine L3 on this device.")));
+            }
+        } else {
+            steps.add(new StepResult("Widevine L3", true, "Skipped by user setting"));
         }
 
         Outcome o = new Outcome(steps, any);

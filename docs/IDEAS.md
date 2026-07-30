@@ -5,6 +5,13 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-30 - Remaining multi-sentence Settings/dialog copy (v0.19.3 gauntlet finding)** - status: `idea`.
+  The v0.19.3 polish pass enforced "one short line, no paragraphs" across Settings + Protections + the
+  Protection-status screen, but three PRE-EXISTING strings elsewhere in MainActivity.java still violate the
+  rule (flagged by /codex during the v0.19.3 gauntlet, out of scope for that diff since none of the three are
+  touched by it): the guided-setup intro line (~L1811), the reboot-prompt dialog body (~L1973-1974), and the
+  "Reset Google identity" description (~L2390). Low effort — reword each to one sentence, split the rest into
+  a second bullet/line if needed. Worth a quick follow-up pass, not urgent.
 - **2026-07-30 - Per-SoC CPU cache dataset (size/level/sharing)** - status: `idea`. Cash App reads
   /sys/.../cpu<N>/cache/index<K>/{size,level,type,shared_cpu_list} — a cache fingerprint. v0.18.3 does NOT
   spoof it (spoofing only shared_cpu_list while size/level stay real would fabricate an inconsistent topology —

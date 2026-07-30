@@ -3,7 +3,7 @@ package com.specter.module.ui;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-import com.specter.module.HookEntry;
+import com.specter.module.HookConstants;
 import com.specter.module.gen.RootWriter;
 import com.specter.module.gen.ZygiskInstaller;
 
@@ -78,13 +78,10 @@ final class HealthCheck {
             setup.add(Check.ok("App-hiding gate", "Active in system_server — closes the raw-binder bypass."));
         } else if (frameworkScopeSet(ctx, sh)) {
             setup.add(Check.warn("App-hiding gate",
-                    "System-Framework scope is ON but the module didn’t load into system_server. Reboot; if it "
-                    + "still won’t load, toggle the scope off/on in LSPosed once. (Optional — per-app hiding works without it.)",
-                    Fix.NONE, null));
+                    "Scoped, but not loaded · reboot or toggle scope", Fix.NONE, null));
         } else {
             setup.add(Check.warn("App-hiding gate",
-                    "Off. Enable “System Framework” scope in LSPosed + reboot to close the raw-binder bypass. "
-                    + "(Optional — per-app hiding works without it.)", Fix.NONE, null));
+                    "Enable System Framework scope, then reboot", Fix.NONE, null));
         }
         groups.add(new Group("Setup", setup));
 
@@ -93,16 +90,17 @@ final class HealthCheck {
         ZygiskInstaller.Status z;
         try { z = ZygiskInstaller.status(ctx, sh); } catch (Throwable t) { z = null; }
         if (z == null || z.bundledVersion == null) {
-            nativeG.add(Check.warn("Native layer", "Couldn't check the Zygisk layer (no bundled asset or su denied).",
+            nativeG.add(Check.warn("Native layer", "Check unavailable · verify root and bundled assets",
                     Fix.NONE, null));
         } else if (!z.installed) {
-            nativeG.add(Check.bad("Native layer", "Zygisk layer NOT installed — native reads leak real values. Install it.",
+            nativeG.add(Check.bad("Native layer", "Not installed · native reads remain unmasked",
                     Fix.SYNC_ZYGISK, null));
         } else if (!z.current) {
-            nativeG.add(Check.warn("Native layer", "Installed " + nn(z.installedVersion) + " but app bundles "
-                    + nn(z.bundledVersion) + " — update it.", Fix.SYNC_ZYGISK, null));
+            nativeG.add(Check.warn("Native layer",
+                    "Installed " + nn(z.installedVersion) + " · bundled " + nn(z.bundledVersion),
+                    Fix.SYNC_ZYGISK, null));
         } else {
-            nativeG.add(Check.ok("Native layer", "Zygisk layer installed + current (" + nn(z.installedVersion) + ")."));
+            nativeG.add(Check.ok("Native layer", "Installed and current · " + nn(z.installedVersion)));
         }
         groups.add(new Group("Native layer", nativeG));
 
@@ -123,10 +121,10 @@ final class HealthCheck {
                 boolean scoped = appScoped(ctx, sh, pkg);
                 boolean applied = profileApplied(sh, pkg);
                 if (!scoped) {
-                    perApp.add(Check.bad(label, "Not in LSPosed scope — hooks won't run. Add it in LSPosed + reboot.",
+                    perApp.add(Check.bad(label, "Not scoped · add in LSPosed, then reboot",
                             Fix.NONE, pkg));
                 } else if (!applied) {
-                    perApp.add(Check.warn(label, "Scoped, but no identity applied yet — apply one.",
+                    perApp.add(Check.warn(label, "Scoped · no identity applied",
                             Fix.REAPPLY_PROFILE, pkg));
                 } else {
                     // Scope-row + profile-file present is only CONFIGURATION. Proof the hooks actually RAN in
@@ -140,34 +138,33 @@ final class HealthCheck {
                     // match rejects a heartbeat written by OLD module code still loaded after an APK update.
                     long nowMs = System.currentTimeMillis();
                     boolean fresh = hb != null && hb.epochMs >= (bootWallMs - 10_000L) && hb.epochMs <= (nowMs + 60_000L);
-                    boolean sameVer = hb != null && HookEntry.MODULE_VERSION.equals(hb.version);
+                    boolean sameVer = hb != null && HookConstants.MODULE_VERSION.equals(hb.version);
                     boolean live = fresh && sameVer;
                     if (live) {
                         // "N fields" is the loaded profile's key count, NOT a per-hook success count — each
                         // hookX() swallows its own errors, so a signal could still have failed to hook. Word it
                         // as "loaded this boot" (the heartbeat proves the Java layer ran + read the profile),
                         // not "every field verified" (that needs per-hook instrumentation — see IDEAS).
-                        perApp.add(Check.ok(label, "Hooks loaded this boot — profile has " + hb.fields
-                                + " fields (v" + hb.version + ")."));
+                        perApp.add(Check.ok(label,
+                                "Hooks loaded this boot · " + hb.fields + " profile fields · v" + hb.version));
                     } else if (hb != null && fresh && !sameVer) {
-                        perApp.add(Check.warn(label, "Running an OLDER module version (" + hb.version + " vs "
-                                + HookEntry.MODULE_VERSION + ") — relaunch the app so it re-hooks with the current "
-                                + "build, then Re-check.", Fix.NONE, pkg));
-                    } else if (hb != null) {
-                        perApp.add(Check.warn(label, "Configured, but the last verified run was a PREVIOUS boot — "
-                                + "relaunch the app so the hooks re-attach, then Re-check.", Fix.NONE, pkg));
-                    } else {
-                        perApp.add(Check.warn(label, "Configured, but hooks haven’t been verified running yet. "
-                                + "Open the app once (it must be scoped + the module enabled in LSPosed), then Re-check.",
+                        perApp.add(Check.warn(label,
+                                "Old module loaded · " + hb.version + " → " + HookConstants.MODULE_VERSION,
                                 Fix.NONE, pkg));
+                    } else if (hb != null) {
+                        perApp.add(Check.warn(label,
+                                "Last verified before this boot · relaunch app", Fix.NONE, pkg));
+                    } else {
+                        perApp.add(Check.warn(label,
+                                "Hooks unverified · open app, then re-check", Fix.NONE, pkg));
                     }
                 }
             }
         }
         groups.add(new Group("Target apps", perApp));
 
-        // ---- Location: is a GPS mocker / mock-location detectable? ----
-        groups.add(new Group("Location", java.util.Collections.singletonList(mockLocationCheck(ctx, sh))));
+        // ---- Location: is Specter's mock-location hook armed? ----
+        groups.add(new Group("Location", java.util.Collections.singletonList(mockLocationCheck(prefs, sh))));
 
         // ---- Network: is VPN/proxy masking on, and what does the network read as? ----
         groups.add(networkGroup(ctx, prefs, z, sh, targets));
@@ -175,41 +172,26 @@ final class HealthCheck {
         return groups;
     }
 
-    /** Detect a GPS-mocking / mock-location signal a fraud SDK could read as a risk flag. Two config-level
-     *  signals (the app hooks make a SCOPED app read them clean, but the DEVICE-level config is what an
-     *  unscoped detector or a mis-scoped run sees): (a) any app holding the ANDROID:mock_location app-op /
-     *  selected as the mock-location app; (b) legacy Settings.Secure.mock_location=1. This is CONFIG-level,
-     *  not a runtime proof inside the target (that needs a scoped mock-Location probe — noted for later). */
-    private static Check mockLocationCheck(Context ctx, RootWriter.Shell sh) {
+    /** Specter hides the mock-location flag from every scoped app on its own (Location.isMock/
+     *  isFromMockProvider + the Settings mock_location keys) — a mocker like Lockito being installed or
+     *  selected is normal, expected use, not a leak. GREEN means the hide_mock protection is armed; a
+     *  device-wide flag is only ever a suffix note, never a downgrade. */
+    private static Check mockLocationCheck(SharedPreferences prefs, RootWriter.Shell sh) {
+        Protections.P protection = Protections.byKey("hide_mock");
+        boolean enabled = protection != null && Protections.isOn(prefs, protection);
+
+        if (!enabled) {
+            return Check.warn("Mock location", "Off · scoped apps can read mock-location flags", Fix.NONE, null);
+        }
+
         try {
-            // Apps granted the mock-location app-op (the modern "Select mock location app" selection surfaces
-            // here). `cmd appops query-op` lists packages currently allowed the op.
-            String allowed = sh.runCapture(
-                    "cmd appops query-op android:mock_location allow 2>/dev/null").trim();
-            // Legacy pre-M flag, still read by some SDKs.
-            String legacy = sh.runCapture(
-                    "settings get secure mock_location 2>/dev/null").trim();
-            boolean legacyOn = "1".equals(legacy);
-            java.util.List<String> apps = new java.util.ArrayList<>();
-            if (!allowed.isEmpty()) {
-                for (String ln : allowed.split("\\r?\\n")) {
-                    ln = ln.trim();
-                    if (!ln.isEmpty() && ln.contains(".")) apps.add(ln);
-                }
+            String legacy = sh.runCapture("settings get secure mock_location 2>/dev/null").trim();
+            if ("1".equals(legacy)) {
+                return Check.ok("Mock location", "Hidden in scoped apps · device flag is on");
             }
-            if (apps.isEmpty() && !legacyOn) {
-                return Check.ok("Mock location", "No GPS-mocking app or mock-location flag detected device-wide.");
-            }
-            StringBuilder d = new StringBuilder("Detectable: ");
-            if (!apps.isEmpty()) d.append("mock-location app(s) ").append(String.join(", ", apps));
-            if (legacyOn) { if (!apps.isEmpty()) d.append("; "); d.append("Settings.Secure.mock_location=1"); }
-            d.append(". A scoped target reads these clean via the hooks, but an unscoped/mis-scoped detector "
-                    + "(or the GPS app itself) can see it — keep a mock-location HIDER active, or turn the "
-                    + "selection off when not spoofing GPS.");
-            return Check.warn("Mock location", d.toString(), Fix.NONE, null);
+            return Check.ok("Mock location", "Hidden in scoped apps");
         } catch (Throwable t) {
-            return Check.warn("Mock location", "Couldn't check mock-location state (su/appops unavailable).",
-                    Fix.NONE, null);
+            return Check.ok("Mock location", "Hidden in scoped apps · device flag unavailable");
         }
     }
 
@@ -220,51 +202,38 @@ final class HealthCheck {
                                       RootWriter.Shell sh, Set<String> targets) {
         List<Check> out = new ArrayList<>();
 
-        // VPN/proxy masking: the "Hide VPN & proxy" protection. When ON, the Java NetworkInterface hook + the
-        // native getifaddrs hook filter tun/ppp/wg in every scoped app. We can only report the toggle + that
+        // VPN interface masking: the "Hide VPN interfaces" protection. When ON, the Java NetworkInterface hook +
+        // the native getifaddrs hook filter tun/ppp/wg in every scoped app. We can only report the toggle + that
         // the native layer is present here (per-app hook engagement lives inside each scoped process).
         Protections.P vpn = Protections.byKey("hide_vpn");
         boolean vpnOn = vpn != null && Protections.isOn(prefs, vpn);
         boolean nativeOk = z != null && z.installed && z.current;   // stale native layer is NOT "ok"
         if (vpnOn && nativeOk) {
-            out.add(Check.ok("VPN & proxy masking",
-                    "On — VPN/proxy interfaces are hidden on both the Java and native paths in scoped apps."));
+            out.add(Check.ok("VPN interface masking", "Java and native VPN interfaces are hidden"));
         } else if (vpnOn) {
-            out.add(Check.warn("VPN & proxy masking",
-                    "On, but the native layer isn't installed — an NDK detector can still see tun/ppp/wg. "
-                    + "Install the native layer above.", Fix.SYNC_ZYGISK, null));
+            out.add(Check.warn("VPN interface masking",
+                    "Native masking unavailable · install the native layer", Fix.SYNC_ZYGISK, null));
         } else {
-            out.add(Check.warn("VPN & proxy masking",
-                    "Off — the device reads as being on a VPN/proxy. Turn on “Hide VPN & proxy” in Protections.",
-                    Fix.NONE, null));
+            out.add(Check.warn("VPN interface masking",
+                    "Off · scoped apps can read VPN interfaces", Fix.NONE, null));
         }
 
         // Routing: is traffic actually going through a VPN/proxy tunnel, or straight out the home network? This
         // is the SAFETY GATE for timezone alignment — we must NEVER align the device timezone to the phone's own
         // home/carrier IP (that would MOVE a real-location device to look like it's elsewhere). Only when a VPN/
         // proxy tunnel is up is the public IP an intentional exit worth matching. Read from ConnectivityManager
-        // (this UI app is unscoped, so hide_vpn doesn't hide the tunnel from us).
+        // (this UI app is unscoped, so hide_vpn doesn't hide the tunnel from us). No standalone warning row here
+        // — the network card already states the detection boundary; missing VPN transport can't prove direct
+        // traffic (a plain proxy or upstream VPN would still read this way), so a red flag would overclaim.
         android.net.Network vpnNet = activeVpnNetwork(ctx);
         boolean routedThroughVpn = vpnNet != null;
-        // HONESTY: we only detect a VPN *transport* (NetworkCapabilities.TRANSPORT_VPN). An app-level HTTP or
-        // SOCKS5 proxy that does NOT register a VpnService is invisible to this check and reads "Direct" — we say
-        // so instead of implying "no proxy". The card's pill shows the transport state; add a row only when no
-        // transport is detected, to carry the honest caveat + the connect-before-matching-TZ guidance.
-        if (!routedThroughVpn) {
-            out.add(Check.warn("Routing",
-                    "No VPN transport detected. If you're on a VpnService-based proxy it should show here; a "
-                    + "plain HTTP/SOCKS5 proxy (no VpnService) can't be detected and reads Direct. Timezone is "
-                    + "only auto-matched when a VPN transport is present (never to your real network).",
-                    Fix.NONE, null));
-        }
 
         // Public IP + geo: one call returns IP, city/country, and the IP's timezone. Pinned to the VPN tunnel
         // when present, so the IP is the proxy exit. The IP/location is rendered as a rich card (Group.geo)
         // above these rows — here we only add the timezone verdict row.
         Geo g = lookupGeo(vpnNet);
         if (g == null) {
-            out.add(Check.warn("Public IP", "Couldn't reach the IP lookup — check the connection/proxy.",
-                    Fix.NONE, null));
+            out.add(Check.warn("Public IP", "IP lookup unavailable · check network", Fix.NONE, null));
         } else if (g.tz != null) {
             // Timezone alignment — ONLY when routed through a proxy/VPN (see the safety gate above). The device's
             // spoofed timezone (per applied profile) vs the IP's timezone; a mismatch is exactly detectme.pro's
@@ -277,15 +246,13 @@ final class HealthCheck {
                 }
                 if (mismatch != null) {
                     out.add(Check.warn("Timezone vs IP",
-                            "The device reports " + mismatch + " but the IP is in " + g.tz
-                            + " — a detectable mismatch. Match the timezone to the IP.", Fix.MATCH_TZ, g.tz));
+                            "Device: " + mismatch + " · IP: " + g.tz, Fix.MATCH_TZ, g.tz));
                 } else {
-                    out.add(Check.ok("Timezone vs IP", "The device timezone matches the IP’s zone (" + g.tz + ")."));
+                    out.add(Check.ok("Timezone vs IP", "Device timezone matches IP · " + g.tz));
                 }
             } else if (!routedThroughVpn) {
                 out.add(Check.warn("Timezone vs IP",
-                        "Not matched — connect a proxy/VPN first so the timezone aligns to the exit IP, not your "
-                        + "real network.", Fix.NONE, null));
+                        "Connect an on-device VPN before auto-matching", Fix.NONE, null));
             }
         }
 
@@ -440,7 +407,7 @@ final class HealthCheck {
         // log line from a previous boot no longer reads as loaded (the old recursive grep did). GREEN only when
         // the heartbeat was written on THIS boot (epoch >= boot wall-time, 10s slack).
         try {
-            String s = sh.runCapture("cat " + HookEntry.FRAMEWORK_HB_PATH + " 2>/dev/null");
+            String s = sh.runCapture("cat " + HookConstants.FRAMEWORK_HB_PATH + " 2>/dev/null");
             if (s == null) return false;
             s = s.trim();
             if (s.isEmpty()) return false;
