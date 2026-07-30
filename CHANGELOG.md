@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [0.18.5] — 2026-07-30
 
+### Added
+- **Native VPN masking via getifaddrs.** The Java hide_vpn hook covers Android-API VPN detection; this adds
+  the native path. getifaddrs() (netlink-backed interface enumeration) is what an NDK fingerprinter calls
+  directly, bypassing the Java hook — the Zygisk layer now inline-hooks it and unlinks+frees tun/ppp/wg
+  entries. (The earlier /proc/net/dev idea was rejected — SELinux-denies those files to apps — but getifaddrs
+  IS the reachable native path.) Verified on-device: a direct C getifaddrs call in a scoped app finds no tunnel.
+
 ### Fixed
 - **Closed a GPU-vendor coherence leak: ro.hardware.egl / ro.hardware.vulkan are now
   spoofed.** These read the REAL host GPU driver (adreno on a Qualcomm Pixel) — so a Samsung/Exynos profile

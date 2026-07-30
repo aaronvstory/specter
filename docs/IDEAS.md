@@ -15,13 +15,12 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 - **2026-07-30 - GPU/graphics prop leaks** - status: `partly shipped` (v0.18.5). ro.hardware.egl/vulkan aliased to gpu_hw (DONE). REMAINING: ro.hardware.gralloc (needs a gralloc-VENDOR value qcom/gbm per GPU family, not the flat GPU-family string) + ro.vendor.graphics.memory. Both empty/generic on the Pixel fleet.
   Empty on the Pixel 4 but populated on other hosts — they leak the real GPU vendor/mem. Needs per-SoC/GPU
   coherent values to alias them. Low urgency (empty on current fleet); revisit if a host populates them.
-- **2026-07-30 - Native /proc/net VPN redirect** - status: `rejected (SELinux blocks app reads)`. Investigated:
-  built a /proc/net/dev tun-row filter, but PROVED on-device that /proc/net/dev AND /sys/class/net/ are BOTH
-  `Permission denied` to an untrusted_app on modern Android (SELinux proc_net/sysfs_net) — a scoped fingerprinter
-  CANNOT read them directly. The only in-process interface-enumeration path is getifaddrs()/NetworkInterface,
-  which the Java hide_vpn hook ALREADY covers (verified vpn_interface=clean). So a native /proc/net filter
-  spoofs a file apps can't open = zero benefit; reverted. The gauntlet DID surface a real latent bug in the
-  open/openat hooks (unconditional va_arg(mode) = UB) which was fixed + kept.
+- **2026-07-30 - Native VPN masking** - status: `shipped` (v0.18.5, via getifaddrs). The /proc/net/dev file
+  approach was REJECTED (SELinux proc_net denies app reads). The RIGHT native path is getifaddrs() — the
+  netlink-backed enumeration an NDK detector calls, which the Java NetworkInterface hook wraps but a direct C
+  call bypasses. Zygisk now inline-hooks getifaddrs and unlinks+frees tun/ppp/wg entries. Verified on the 4a
+  (direct C getifaddrs in the probe native lib reads clean, real iface untouched). Memory-safe vs bionic
+  ifaddrs.cpp. Residual (low): /sys/class/net dir listing is also SELinux-denied to apps, so no gap there.
 
 - **2026-07-30 - Hide/spoof VPN/proxy signal (SuperProxy et al.)** - status: `shipped` (v0.18.3, Java surfaces). Hypothesis: the income
   apps may flag "device is behind a VPN/proxy" as a risk signal (e.g. FPJS `vpn`/`proxy` products, or an
