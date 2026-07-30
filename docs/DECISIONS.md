@@ -2,6 +2,27 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-30 (v0.19.3): Widevine default-ON migration writes an explicit `false` for existing installs,
+  not just "skip the seed".** Every `widevine_l3` read site now defaults to `true` (to satisfy "max
+  protection by default" for fresh installs), so an existing install that never touched the toggle would
+  otherwise silently start reading `true` too — a switch showing ON with no module actually mounted. Fixed
+  by writing the real state explicitly once in `onCreate` (`fresh install → true, existing → false`), gated
+  on `!prefs.contains("widevine_l3")` so it only runs once ever.
+- **2026-07-30 (v0.19.3): reboot-required persistence uses the same boot-wall stamp as the v0.19.2 runtime
+  heartbeat, not a plain boolean flag.** A boolean "reboot pending" can't tell whether the user actually
+  rebooted since it was set — a boot-wall timestamp (`now - elapsedRealtime()`) can: if the CURRENT boot's
+  wall-start is after the stored marker, a reboot happened, so the banner auto-clears. Re-arming is
+  idempotent (an already-pending marker isn't pushed forward by a second setup run).
+- **2026-07-30 (v0.19.3): mock-location health check dropped the Lockito app-op/appops scan entirely.**
+  Detecting *any* mock-location-capable app installed and warning about it was the wrong signal — Specter
+  hides the mock flag from every scoped app regardless of what's installed. The check now only reads whether
+  `hide_mock` is armed (+ an informational device-wide flag suffix), so normal Lockito use reaches GREEN
+  instead of a permanent false warning.
+- **2026-07-30 (v0.19.3): JVM copy-guard test is a source-grep Python script, not a compiled JUnit-style
+  test.** `Protections.java` imports `android.content.SharedPreferences`, which the plain-`javac` JVM harness
+  (`run-jvm-tests.sh`, deliberately Android-free) can't resolve — adding an `android.jar` classpath just for
+  one string-format check was out of scope for a UI-polish PR. `check_copy_guard.py` regexes the description
+  literals straight out of the source file instead.
 - **2026-07-29 (v0.17.7): app-hiding is now BOTH app-side AND system_server (HMA-style gate ADDED).**
   Gap analysis vs HideMyApplist (Dr-TSNG/Hide-My-Applist): HMA hooks ONE chokepoint in system_server
   (`shouldFilterApplication`) covering every read path + the raw-binder bypass; we hooked

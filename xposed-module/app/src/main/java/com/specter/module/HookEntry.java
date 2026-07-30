@@ -87,7 +87,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (!gateOff(p, "hide_apps")) hookInstalledApps(lpparam);
         if (!gateOff(p, "spoof_sysfs")) hookDisplayMetrics(lpparam, p);
         hookLocaleTimezone(p);
-        if (!gateOff(p, "hide_root")) hookMockLocation(lpparam);
+        if (!gateOff(p, "hide_mock")) hookMockLocation(lpparam);
         if (!gateOff(p, "hide_vpn")) hookVpn(lpparam);
         if (!gateOff(p, "fix_webrtc")) hookWebRtc(lpparam);
         hookBattery(lpparam, p);
@@ -185,7 +185,7 @@ public class HookEntry implements IXposedHookLoadPackage {
      *  case) reads Location.isFromMockProvider() / isMock() to detect a spoofed GPS. We don't spoof GPS
      *  coordinates yet (a larger effort), but forcing these to FALSE ensures that if the user runs a
      *  separate location-mocker (or none), no target sees a mock-location tell. Gated with the other
-     *  anti-tamper protections (hide_root). Full coordinate spoofing is a planned separate feature. */
+     *  the hide_mock protection. Full coordinate spoofing is a planned separate feature. */
     private void hookMockLocation(final XC_LoadPackage.LoadPackageParam lp) {
         try {
             Class<?> loc = XposedHelpers.findClass("android.location.Location", lp.classLoader);

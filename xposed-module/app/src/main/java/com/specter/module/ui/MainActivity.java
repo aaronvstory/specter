@@ -112,6 +112,14 @@ public class MainActivity extends Activity {
         vault = new Vault(getApplicationContext());
         appDataVault = new com.specter.module.gen.AppDataVault(getFilesDir());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        // Widevine L3 defaults ON for a brand-new install (max protection by default — fleet phones don't
+        // watch HD Netflix). Every read site below defaults to true, so an EXISTING install (setup already
+        // run, module never actually installed) must have its real false state written explicitly here —
+        // once — or it would suddenly show an ON switch with no module behind it.
+        if (!prefs.contains("widevine_l3")) {
+            boolean freshInstall = !prefs.getBoolean("setup_done", false);
+            prefs.edit().putBoolean("widevine_l3", freshInstall).apply();
+        }
         svc.setCountry(Country.of(prefs.getString("country", "US")));
         // Resume diagnostics capture if the user left it on (the service is START_STICKY but a full app
         // kill or reboot drops it — re-arm here so "on" stays on across launches).
@@ -601,9 +609,40 @@ public class MainActivity extends Activity {
      *  Guard every dialog raised from a runOnUiThread completion with this. */
     private boolean alive() { return !isFinishing() && !isDestroyed(); }
 
+    /** Wall-clock time this boot started (now minus uptime) — the same boot-wall stamp the v0.19.2 runtime
+     *  heartbeat uses, so a reboot marker set here compares cleanly against it. Not spoofed, comparable
+     *  across app launches (unlike boot_id, which the native layer spoofs per-app). */
+    private static long bootWallMs() {
+        return System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime();
+    }
+
+    /** Arm the persistent "Reboot required" banner — call whenever a setup/scope/native step installs a
+     *  change that only takes effect after a reboot. Idempotent: a marker already pending from an earlier,
+     *  not-yet-rebooted change is left alone (don't push the deadline forward on every re-run). */
+    private void armRebootPending() {
+        if (!prefs.contains("reboot_pending_since")) {
+            prefs.edit().putLong("reboot_pending_since", bootWallMs()).apply();
+        }
+    }
+
+    /** Clear the marker once a reboot has actually happened: the CURRENT boot started strictly after the
+     *  marker was stamped. Safe to call every render() — a no-op when nothing is pending or none happened. */
+    private void clearRebootPendingIfRebooted() {
+        long since = prefs.getLong("reboot_pending_since", -1);
+        if (since >= 0 && bootWallMs() > since) {
+            prefs.edit().remove("reboot_pending_since").apply();
+        }
+    }
+
     // ---------- rendering ----------
     private void render() {
         content.removeAllViews();
+        clearRebootPendingIfRebooted();
+        // Persistent reboot-required banner: stays up across dismissals of the setup reboot dialog (a "Later"
+        // tap must not make Specter forget a reboot is owed) until the device actually reboots.
+        if (prefs.contains("reboot_pending_since")) {
+            content.addView(rebootPendingBanner());
+        }
         // Native-layer health banner. A stale-but-installed layer is normally auto-synced by checkZygisk()
         // (silent, no nag). We ONLY surface the banner when the layer is genuinely NOT INSTALLED, or when that
         // silent auto-sync FAILED (root revoked etc.) — because a stale/unhooked native layer must never be
@@ -616,7 +655,7 @@ public class MainActivity extends Activity {
         // every tab so a brand-new user is pointed at "Set up everything" instead of hunting through Settings.
         // Dismissed permanently once setup completes (setupResults sets the pref); the Settings row stays for
         // re-runs. Suppressed while the setup screen itself is open (would be redundant).
-        if (!prefs.getBoolean("setup_done", false) && !setupScreen) {
+        if (tab != 2 && !prefs.getBoolean("setup_done", false) && !setupScreen) {
             content.addView(setupBanner());
         }
         switch (tab) {
@@ -699,6 +738,45 @@ public class MainActivity extends Activity {
         return outer;
     }
 
+    /** Persistent "Reboot required" banner — stays up (across app relaunches, across dismissing the setup
+     *  dialog) until the device actually reboots (see clearRebootPendingIfRebooted). Same clean card surface
+     *  as {@link #zygiskBanner}. */
+    private View rebootPendingBanner() {
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.HORIZONTAL);
+        outer.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Theme.CARD);
+        bg.setCornerRadius(dp(Theme.R_CARD));
+        outer.setBackground(bg);
+        LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        olp.setMargins(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));
+        outer.setLayoutParams(olp);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(Theme.S4), dp(Theme.S3), dp(Theme.S3), dp(Theme.S3));
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView lab = new TextView(this);
+        lab.setText("Reboot required");
+        lab.setTextColor(Theme.INK); lab.setTextSize(Theme.T_BODY);
+        lab.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        col.addView(lab);
+        TextView d = new TextView(this);
+        d.setText("A recent change needs a reboot to activate");
+        d.setTextColor(Theme.SOFT); d.setTextSize(Theme.T_CAPTION);
+        d.setPadding(0, dp(Theme.S1), 0, 0);
+        col.addView(d);
+        outer.addView(col);
+
+        View act = textButton("Reboot", Theme.GOLD, v -> promptReboot());
+        act.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((TextView) act).setPadding(dp(Theme.S3), dp(Theme.S3), dp(Theme.S4), dp(Theme.S3));
+        outer.addView(act);
+        return outer;
+    }
+
     /** First-run banner: a gold-accented card that sends a new user to the guided "Set up everything" flow.
      *  Same clean card surface + inline action as {@link #zygiskBanner}. Shown until setup runs once. */
     private View setupBanner() {
@@ -724,7 +802,7 @@ public class MainActivity extends Activity {
         lab.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         col.addView(lab);
         TextView d = new TextView(this);
-        d.setText("Install every layer + scope your apps in one tap, then reboot.");
+        d.setText("Install layers, scope apps, then reboot");
         d.setTextColor(Theme.SOFT); d.setTextSize(Theme.T_CAPTION);
         d.setPadding(0, dp(Theme.S1), 0, 0);
         col.addView(d);
@@ -751,6 +829,7 @@ public class MainActivity extends Activity {
                 zygiskBusy = false;
                 if (e == null) {
                     status.setText("Native layer installed — REBOOT to activate it.");
+                    armRebootPending();
                     if (alive()) new AlertDialog.Builder(this)
                             .setTitle("Native layer installed")
                             .setMessage("It activates on boot. Reboot now?")
@@ -1646,21 +1725,32 @@ public class MainActivity extends Activity {
         if (setupScreen) { renderSetup(); return; }     // dedicated guided-setup sub-screen
         if (healthScreen) { renderHealth(); return; }   // dedicated status sub-screen
 
+        // Set up everything: the one-tap first-run install (native layer + LSPosed scope + OTA block +
+        // Widevine L3, then a reboot). Always available so it's re-runnable, not just a first-run gate.
+        content.addView(sectionLabel("Setup"));
+        LinearLayout setupCard = card();
+        LinearLayout sTrail = new LinearLayout(this);
+        sTrail.addView(chevronTrailing(false));
+        setupCard.addView(row(
+                "Set up everything",
+                "Install layers, scope apps, then reboot",
+                sTrail,
+                v -> { setupScreen = true; setupResults = null; render(); }));
+        content.addView(setupCard);
+
         // Health: one tap to verify everything is actually configured to spoof (LSPosed scope, framework
         // gate, native layer, per-app profiles) — so a misconfiguration shows as red instead of a silent
         // false sense of security.
         content.addView(sectionLabel("Status"));
-        LinearLayout healthCard = card();
-        // Set up everything: the one-tap first-run install (native layer + LSPosed scope + OTA block +
-        // Widevine L3, then a reboot). Always available so it's re-runnable, not just a first-run gate.
-        LinearLayout sTrail = new LinearLayout(this); sTrail.addView(chevronTrailing(false));
-        healthCard.addView(row("Set up everything", "Install every layer + scope your apps, then reboot", sTrail,
-                v -> { setupScreen = true; setupResults = null; render(); }));
-        healthCard.addView(hairlineInset());
-        LinearLayout hTrail = new LinearLayout(this); hTrail.addView(chevronTrailing(false));
-        healthCard.addView(row("Check protection status", "Verify every layer is set up right", hTrail,
+        LinearLayout statusCard = card();
+        LinearLayout hTrail = new LinearLayout(this);
+        hTrail.addView(chevronTrailing(false));
+        statusCard.addView(row(
+                "Check protection status",
+                "Verify setup, hooks, location, and network",
+                hTrail,
                 v -> { healthScreen = true; render(); }));
-        content.addView(healthCard);
+        content.addView(statusCard);
 
         // Target apps
         // Same polished per-app cards (icon + name + LSPosed-scope warning + red ✕) as the Identity tab —
@@ -1683,13 +1773,16 @@ public class MainActivity extends Activity {
         content.addView(sectionLabel("Anti-fingerprinting"));
         LinearLayout info = cardBox();
         info.addView(label("Device identity — always applied"));
-        TextView desc = value("The model, build, hardware and sensors always match the applied phone. The toggles below add extra protections on top.");
+        TextView desc = value("Model, build, hardware, and sensors match the applied phone");
         desc.setTextColor(Theme.DIM);
         info.addView(desc);
         content.addView(info);
 
         content.addView(sectionLabel("Protections"));
-        content.addView(protectionsCard());
+        content.addView(protectionsCard(false));
+
+        content.addView(sectionLabel("Diagnostics"));
+        content.addView(diagnosticsCard());
 
         // Advanced (root) — device-wide, persistent Magisk-module actions, NOT per-profile hook gates.
         // Kept in their own section + explicitly opt-in because they modify the system (a /vendor bind-mount),
@@ -1847,7 +1940,8 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             com.specter.module.gen.SetupFlow.Outcome out;
             try {
-                out = com.specter.module.gen.SetupFlow.run(getApplicationContext(), targets);
+                out = com.specter.module.gen.SetupFlow.run(getApplicationContext(), targets,
+                        prefs.getBoolean("widevine_l3", true));
             } catch (com.specter.module.gen.SetupFlow.BusyException be) {
                 // Another run (e.g. a stale worker after Activity recreation) holds the process-wide latch.
                 runOnUiThread(() -> { setupBusy = false; status.setText("Setup already running — one moment."); });
@@ -1862,6 +1956,7 @@ public class MainActivity extends Activity {
                 // layer + LSPosed scope incl. framework) both succeeded — not when merely "something" installed.
                 // A partial run (e.g. scope failed because the module isn't enabled) must keep nagging.
                 if (f.requiredOk) prefs.edit().putBoolean("setup_done", true).apply();
+                if (f.anySucceeded) armRebootPending();
                 Targets.invalidateScopeCache();   // scope may have changed — force the next isScoped() to re-check
                 if (setupScreen) render();
             });
@@ -1935,9 +2030,10 @@ public class MainActivity extends Activity {
         int heroColor = bad > 0 ? Theme.RED : warn > 0 ? Theme.GOLD : Theme.SAGE;
         String heroTitle = bad > 0 ? "Not fully spoofing" : warn > 0 ? "Not verified" : "All good";
         String heroSub = bad > 0
-                ? bad + " problem" + (bad == 1 ? "" : "s") + " to fix" + (warn > 0 ? " · " + warn + " to check" : "")
-                : warn > 0 ? warn + " item" + (warn == 1 ? "" : "s") + " unverified — resolve before relying on this device"
-                : "Every check passed — hooks verified running this boot.";
+                ? bad + " failed · " + warn + " unverified"
+                : warn > 0
+                        ? warn + " unverified"
+                        : total + " checks passed";
         content.addView(healthHero(heroColor, heroTitle, heroSub));
 
         for (HealthCheck.Group g : healthResults) {
@@ -1996,33 +2092,30 @@ public class MainActivity extends Activity {
         return card;
     }
 
-    /** Rich IP + location card for the Network group: a globe glyph, the public IP big, the ISP + city/country
-     *  and the IP's timezone, plus a routing pill (green "Proxy/VPN" when tunnelled, amber "Direct" otherwise).
-     *  This is the "what does the network read as" answer, shown clearly. */
+    /** Network-exit card for the Network group: the public IP big, ISP, location + timezone, and a transport
+     *  pill. Honest about what's detectable — the pill states a VPN TRANSPORT was seen (or not), never claims
+     *  to know about an upstream/router VPN or a plain (non-VpnService) proxy it can't see. */
     private View ipLocationCard(HealthCheck.Geo g, boolean vpnRouting) {
         LinearLayout card = cardBox();
         card.setPadding(dp(Theme.S4), dp(Theme.S4), dp(Theme.S4), dp(Theme.S4));
 
-        // Header row: globe glyph + "Public IP" label ... routing pill (right).
+        // Header row: "NETWORK EXIT" label ... transport pill (right).
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView globe = new TextView(this);
-        globe.setText("🌐"); globe.setTextSize(18);
-        globe.setPadding(0, 0, dp(Theme.S3), 0);
-        head.addView(globe);
-
         TextView cap = new TextView(this);
-        cap.setText("Public IP"); cap.setTextColor(Theme.DIM); cap.setTextSize(Theme.T_CAPTION);
+        cap.setText("NETWORK EXIT"); cap.setTextColor(Theme.DIM); cap.setTextSize(Theme.T_CAPTION);
+        cap.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
         cap.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         head.addView(cap);
 
-        int pillColor = vpnRouting ? Theme.SAGE : Theme.AMBER;
-        TextView pill = new TextView(this);
         // Precise: we detect a VPN *transport*, not any proxy. A VpnService-based proxy (SuperProxy) shows here;
-        // a plain HTTP/SOCKS5 proxy without a VpnService reads "No VPN" even though traffic is proxied.
-        pill.setText(vpnRouting ? "VPN transport" : "No VPN");
+        // a plain HTTP/SOCKS5 proxy without a VpnService, or an upstream/router VPN, can't be seen from here —
+        // so "not detected" is informational, never a claim of direct routing.
+        int pillColor = vpnRouting ? Theme.SAGE : Theme.BLUE;
+        TextView pill = new TextView(this);
+        pill.setText(vpnRouting ? "VPN transport detected" : "VPN transport not detected");
         pill.setTextColor(pillColor); pill.setTextSize(Theme.T_CAPTION);
         pill.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
         pill.setPadding(dp(Theme.S3), dp(Theme.S1), dp(Theme.S3), dp(Theme.S1));
@@ -2048,21 +2141,52 @@ public class MainActivity extends Activity {
             card.addView(isp);
         }
 
-        // Location + timezone, each with a small glyph.
-        TextView loc = new TextView(this);
-        loc.setText("📍  " + g.location());
-        loc.setTextColor(Theme.INK); loc.setTextSize(Theme.T_BODY);
-        loc.setPadding(0, dp(Theme.S3), 0, 0);
-        card.addView(loc);
+        card.addView(hairlineInset());
+        card.addView(networkMetaRow("LOCATION", g.location()));
+        if (g.tz != null) card.addView(networkMetaRow("TIME ZONE", g.tz));
 
-        if (g.tz != null) {
-            TextView tz = new TextView(this);
-            tz.setText("🕑  " + g.tz);
-            tz.setTextColor(Theme.SOFT); tz.setTextSize(Theme.T_LABEL);
-            tz.setPadding(0, dp(Theme.S2), 0, 0);
-            card.addView(tz);
-        }
+        card.addView(hairlineInset());
+        TextView support = new TextView(this);
+        support.setText("Public IP shows the network exit");
+        support.setTextColor(Theme.SOFT); support.setTextSize(Theme.T_LABEL);
+        support.setPadding(0, dp(Theme.S3), 0, 0);
+        card.addView(support);
+        TextView limit = new TextView(this);
+        limit.setText("Upstream VPNs and plain proxies are not detectable here");
+        limit.setTextColor(Theme.DIM); limit.setTextSize(Theme.T_CAPTION);
+        limit.setPadding(0, dp(2), 0, 0);
+        card.addView(limit);
+
         return card;
+    }
+
+    /** One "LABEL   value" row inside the network card — a fixed-width caption column so LOCATION/TIME ZONE
+     *  align without relying on emoji for spacing. */
+    private View networkMetaRow(String labelText, String valueText) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.TOP);
+        row.setPadding(0, dp(Theme.S2), 0, 0);
+
+        TextView label = new TextView(this);
+        label.setText(labelText);
+        label.setTextColor(Theme.DIM);
+        label.setTextSize(Theme.T_CAPTION);
+        label.setTypeface(android.graphics.Typeface.create(
+                "sans-serif-medium",
+                android.graphics.Typeface.BOLD));
+        row.addView(label, new LinearLayout.LayoutParams(dp(88), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView value = new TextView(this);
+        value.setText(valueText);
+        value.setTextColor(Theme.INK);
+        value.setTextSize(Theme.T_LABEL);
+        row.addView(value, new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f));
+
+        return row;
     }
 
     /** One check row: a status dot aligned to the label, label + wrapped detail, and (only for a real action)
@@ -2198,19 +2322,19 @@ public class MainActivity extends Activity {
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView lab = label("Downgrade Widevine to L3");
+        TextView lab = label("Force Widevine L3");
         lab.setTextColor(Theme.INK); lab.setTextSize(14);
         titleRow.addView(lab);
-        final TextView chip = statusChip(prefs.getBoolean("widevine_l3", false));
+        final TextView chip = statusChip(prefs.getBoolean("widevine_l3", true));
         titleRow.addView(chip);
         txt.addView(titleRow);
-        TextView d = value("Reports software DRM, device-wide. Breaks HD Netflix/Prime while on.");
+        TextView d = value("Device-wide software DRM · disables HD Netflix and Prime");
         d.setTextColor(Theme.DIM); d.setTextSize(12); d.setTextIsSelectable(false);
         txt.addView(d);
         head.addView(txt);
 
         final Switch sw = new Switch(this); tintSwitch(sw);
-        sw.setChecked(prefs.getBoolean("widevine_l3", false));
+        sw.setChecked(prefs.getBoolean("widevine_l3", true));
         sw.setOnCheckedChangeListener((v, on) -> {
             // widevineBusy suppresses the recursive listener fire when we programmatically revert the switch
             // on failure (setChecked below re-invokes THIS listener) — without it a failed install would
@@ -2233,6 +2357,7 @@ public class MainActivity extends Activity {
                         if (e == null) {
                             prefs.edit().putBoolean("widevine_l3", on).apply();
                             styleChip(chip, on);
+                            armRebootPending();
                             status.setText(on
                                     ? "Widevine set to L3 — reboot to be safe."
                                     : "Widevine restored — reboot to finish.");
@@ -2296,18 +2421,24 @@ public class MainActivity extends Activity {
 
     /** One protection: label + description + a real toggle that gates the corresponding hook, plus a
      *  live ON/OFF status chip. No cosmetic switches — the state changes what the device reports. */
-    /** All protections in ONE group card with hairline-separated rows (was one card each = card soup). */
-    private View protectionsCard() {
+    /** All protections in ONE group card with hairline-separated rows (was one card each = card soup).
+     *  diagnosticsOnly splits the opt-in read-logging row into its own "Diagnostics" section. */
+    private View protectionsCard(boolean diagnosticsOnly) {
         LinearLayout c = card();
-        Protections.P[] all = Protections.ALL;
-        for (int i = 0; i < all.length; i++) {
-            if (i > 0) c.addView(hairlineInset());
-            c.addView(protectionRowInner(all[i]));
+        boolean first = true;
+        for (Protections.P prot : Protections.ALL) {
+            boolean diagnostic = "trace".equals(prot.gateKey);
+            if (diagnostic != diagnosticsOnly) continue;
+            if (!first) c.addView(hairlineInset());
+            c.addView(protectionRowInner(prot));
+            first = false;
         }
         return c;
     }
 
-    private View protectionRow(final Protections.P prot) { return protectionRowInner(prot); }
+    private View diagnosticsCard() {
+        return protectionsCard(true);
+    }
 
     private View protectionRowInner(final Protections.P prot) {
         LinearLayout card = new LinearLayout(this);
@@ -2347,10 +2478,10 @@ public class MainActivity extends Activity {
             if ("trace".equals(prot.gateKey)) {
                 if (on) DiagnosticsService.start(this); else DiagnosticsService.stop(this);
                 status.setText(on
-                        ? "Read logging ON — APPLY to arm, then open a scoped app. View it below."
-                        : "Read logging OFF — capture stopped.");
+                        ? "Read logging on — APPLY to arm"
+                        : "Read logging off");
             } else {
-                status.setText(prot.label + (on ? " enabled" : " disabled") + " — APPLY to push.");
+                status.setText(prot.label + (on ? " on — APPLY to push" : " off — APPLY to push"));
             }
         });
         head.addView(sw);
@@ -2382,21 +2513,21 @@ public class MainActivity extends Activity {
     private void styleChip(TextView chip, boolean on) { /* no-op: chips removed (see statusChip) */ }
 
     private void renderLocation() {
-        // Mock-location HIDING is real (gated with the Hide-root protection): a driver/fraud SDK reading
+        // Mock-location HIDING is real (gated with the hide_mock protection): a driver/fraud SDK reading
         // Location.isFromMockProvider()/isMock() sees false. Show it as an active protection.
         LinearLayout mockCard = cardBox();
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView lab = label("Hide mock-location flag");
+        TextView lab = label("Hide mock location");
         lab.setTextColor(Theme.INK);
         lab.setTextSize(14);
         lab.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         head.addView(lab);
-        boolean on = Protections.isOn(prefs, Protections.byKey("hide_root"));
+        boolean on = Protections.isOn(prefs, Protections.byKey("hide_mock"));
         head.addView(statusChip(on));
         mockCard.addView(head);
-        TextView d = value("Mocked GPS reads as real. Follows the Hide-root toggle.");
+        TextView d = value("Mock-location flags read as clean in scoped apps");
         d.setTextColor(Theme.DIM);
         d.setTextSize(12);
         mockCard.addView(d);

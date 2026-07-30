@@ -57,3 +57,4 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
 "$JAVA" -cp "$OUT" com.specter.module.ui.VaultPortableTest
 "$JAVA" -cp "$OUT" com.specter.module.ui.CoverageTest
 "$JAVA" -cp "$OUT" com.specter.module.ui.DiagReportTest
+python3 check_copy_guard.py

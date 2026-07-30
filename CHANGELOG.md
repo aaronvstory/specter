@@ -3,6 +3,31 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.19.3] - 2026-07-30
+
+### Changed
+- **Status/Settings polish pass.** Settings now splits into distinct Setup / Status / Protections /
+  Diagnostics / Advanced sections (was one clunky combined card); the first-run banner no longer shows on
+  the Settings tab itself. Every description in Settings and the status screen is now one short line or a
+  bulleted list — no multi-sentence copy anywhere.
+- **Network card redesign.** Dropped the emoji glyphs (mismatched sizes were misaligning city vs timezone)
+  and the misleading "No VPN" claim — the card now leads with the public IP/geo (the real signal), states
+  only a VPN *transport* detection (never implies knowledge of an upstream VPN or a plain proxy it can't
+  see), and spells out that detection boundary in a footer line.
+- **Widevine L3 defaults ON for new installs** (max protection by default — fleet phones don't watch HD
+  Netflix/Prime). Existing installs keep their real state via a one-time migration write. Setup can skip the
+  step entirely when the user's setting is off.
+- **Mock-location hiding is now its own protection (`hide_mock`, default ON)**, independent of `hide_root`.
+  The status check no longer warns just because a GPS mocker (e.g. Lockito) is installed or selected — it
+  reflects whether Specter's own hook is armed, which is the thing that actually matters.
+- **Persistent "Reboot required" banner.** Setup, the native-layer installer, and the Widevine toggle now
+  arm a boot-wall-stamped marker whenever they install a change that needs a reboot; the banner stays up
+  (surviving a dismissed dialog or app relaunch) until the device actually reboots, then auto-clears.
+
+### Added
+- Copy-guard check (`xposed-module/check_copy_guard.py`, wired into `run-jvm-tests.sh`) scans every
+  `Protections.ALL` description for the one-line/no-paragraph rule.
+
 ## [0.19.0] â 2026-07-30
 
 ### Added
