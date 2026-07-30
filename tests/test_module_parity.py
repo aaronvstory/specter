@@ -3,10 +3,13 @@ import os, re
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def test_module_profile_dir_matches_device():
+    """The literal lives in HookConstants.java (a plain, non-Xposed class HookEntry delegates to — so
+    the standalone UI app can read it without loading HookEntry, which implements the Xposed-only
+    IXposedHookLoadPackage and would throw NoClassDefFoundError in an unhooked process)."""
     from specter import device as D
-    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/HookEntry.java")).read()
+    java = open(os.path.join(ROOT, "xposed-module/app/src/main/java/com/specter/module/HookConstants.java")).read()
     m = re.search(r'PROFILE_DIR\s*=\s*"([^"]+)"', java)
-    assert m, "PROFILE_DIR not found in module"
+    assert m, "PROFILE_DIR not found in HookConstants"
     module_dir = m.group(1).rstrip("/")
     assert module_dir == D.PROFILE_DIR, f"module dir {module_dir} != device.py {D.PROFILE_DIR}"
 

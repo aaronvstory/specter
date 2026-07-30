@@ -3,7 +3,7 @@ package com.specter.module.ui;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-import com.specter.module.HookEntry;
+import com.specter.module.HookConstants;
 import com.specter.module.gen.RootWriter;
 import com.specter.module.gen.ZygiskInstaller;
 
@@ -138,7 +138,7 @@ final class HealthCheck {
                     // match rejects a heartbeat written by OLD module code still loaded after an APK update.
                     long nowMs = System.currentTimeMillis();
                     boolean fresh = hb != null && hb.epochMs >= (bootWallMs - 10_000L) && hb.epochMs <= (nowMs + 60_000L);
-                    boolean sameVer = hb != null && HookEntry.MODULE_VERSION.equals(hb.version);
+                    boolean sameVer = hb != null && HookConstants.MODULE_VERSION.equals(hb.version);
                     boolean live = fresh && sameVer;
                     if (live) {
                         // "N fields" is the loaded profile's key count, NOT a per-hook success count — each
@@ -149,7 +149,7 @@ final class HealthCheck {
                                 "Hooks loaded this boot · " + hb.fields + " profile fields · v" + hb.version));
                     } else if (hb != null && fresh && !sameVer) {
                         perApp.add(Check.warn(label,
-                                "Old module loaded · " + hb.version + " → " + HookEntry.MODULE_VERSION,
+                                "Old module loaded · " + hb.version + " → " + HookConstants.MODULE_VERSION,
                                 Fix.NONE, pkg));
                     } else if (hb != null) {
                         perApp.add(Check.warn(label,
@@ -407,7 +407,7 @@ final class HealthCheck {
         // log line from a previous boot no longer reads as loaded (the old recursive grep did). GREEN only when
         // the heartbeat was written on THIS boot (epoch >= boot wall-time, 10s slack).
         try {
-            String s = sh.runCapture("cat " + HookEntry.FRAMEWORK_HB_PATH + " 2>/dev/null");
+            String s = sh.runCapture("cat " + HookConstants.FRAMEWORK_HB_PATH + " 2>/dev/null");
             if (s == null) return false;
             s = s.trim();
             if (s.isEmpty()) return false;
