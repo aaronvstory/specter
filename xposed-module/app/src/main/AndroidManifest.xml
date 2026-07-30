@@ -24,8 +24,14 @@
         <!-- Launcher UI. The app is BOTH an Xposed module and a launchable app, exactly like
              GeerGit — no PC needed to generate + apply identities. NoActionBar so our own header
              is the only title (was showing "Specter" twice). -->
+        <!-- singleTop: without this, every launcher tap/relaunch (even while the app is already open in
+             Recents) pushes a BRAND-NEW MainActivity instance on top instead of resuming the existing one:
+             onCreate() runs fresh, discarding the in-memory current identity + applied state and firing an
+             unwanted regenerate(). singleTop routes a relaunch to onResume() on the SAME instance instead,
+             so the current identity/applied state survives. -->
         <activity
             android:name=".ui.MainActivity"
+            android:launchMode="singleTop"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

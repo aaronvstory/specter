@@ -89,6 +89,42 @@ public class MainActivity extends Activity {
                                                         // successful apply — so a second APPLY of the SAME
                                                         // unchanged identity says "already applied" instead
                                                         // of silently re-doing it + re-prompting to save.
+    // `profile`/`appliedTargets`/`appliedSig` above are otherwise pure in-memory session state: with no
+    // durable copy, any fresh onCreate() (a relaunch that outlives this Activity instance, or a genuine
+    // process death) lost the current identity AND the "already applied" memory, then onCreate()
+    // unconditionally regenerate()'d a brand-new one out from under whatever was showing. Persisted here
+    // (one flat JSON blob) and restored in onCreate() BEFORE deciding whether to regenerate.
+    private static final String KEY_CURRENT_STATE = "current_state_v1";
+    private void persistCurrentState() {
+        try {
+            org.json.JSONObject j = new org.json.JSONObject(IdentityService.toJson(profile));
+            j.put("_appliedTargets", appliedTargets);
+            j.put("_appliedSig", appliedSig);
+            j.put("_activeVaultLabel", activeVaultLabel);
+            prefs.edit().putString(KEY_CURRENT_STATE, j.toString()).apply();
+        } catch (Throwable ignored) {}   // best-effort — a failed persist just means the next fresh onCreate regenerates
+    }
+    /** Restores profile/appliedTargets/appliedSig/activeVaultLabel from the last persistCurrentState().
+     *  Returns true iff a profile was actually restored (false -> caller should regenerate as before). */
+    private boolean restoreCurrentState() {
+        String raw = prefs.getString(KEY_CURRENT_STATE, null);
+        if (raw == null) return false;
+        try {
+            org.json.JSONObject j = new org.json.JSONObject(raw);
+            Map<String, String> p = new LinkedHashMap<>();
+            for (java.util.Iterator<String> it = j.keys(); it.hasNext(); ) {
+                String k = it.next();
+                if (k.startsWith("_")) continue;
+                p.put(k, j.getString(k));
+            }
+            if (p.isEmpty()) return false;
+            profile = p;
+            appliedTargets = j.optString("_appliedTargets", "");
+            appliedSig = j.optString("_appliedSig", "");
+            activeVaultLabel = j.optString("_activeVaultLabel", "");
+            return true;
+        } catch (Throwable t) { return false; }
+    }
     // (mode·app·group) keys whose most-recent date group we've already auto-expanded once, so returning to a
     // list doesn't re-expand a group the user manually collapsed. See renderSavedList.
     private final Set<String> seededRecentGroups = new java.util.HashSet<>();
@@ -176,7 +212,10 @@ public class MainActivity extends Activity {
         root.addView(bottomNav());
 
         setContentView(root);
-        regenerate();
+        // Only regenerate a brand-new identity when there's nothing durable to restore (a genuinely fresh
+        // install, or a persisted-state read failure) — NOT on every onCreate. See restoreCurrentState().
+        if (!restoreCurrentState()) regenerate();
+        else render();
         checkZygisk();
     }
 
@@ -484,6 +523,7 @@ public class MainActivity extends Activity {
                     profile = p;
                     appliedTargets = ""; appliedSig = "";   // fresh identity — not applied to anything yet
                     activeVaultLabel = "";                  // …and not in the vault yet either
+                    persistCurrentState();
                     status.setText("New identity ready — not yet applied.");
                     render();
                     // NOTE: saving happens after APPLY (below), not here — a vault entry should only ever
@@ -516,7 +556,7 @@ public class MainActivity extends Activity {
         // no-op: "Already applied", nothing pushed).
         final String sig = applySignature(toApply, targets);
         if (!appliedSig.isEmpty() && appliedSig.equals(sig)) {
-            String msg = "Already applied. Relaunch the app(s), or tap Randomize for a new one.";
+            String msg = "Already applied. Relaunch the app(s), or tap \"Generate another identity\" for a new one.";
             status.setText(msg); toast(msg);
             return;
         }
@@ -566,8 +606,9 @@ public class MainActivity extends Activity {
                     // cleared+applied — else a partial failure must remain retryable, not be suppressed as "done".
                     if (allApplied) {
                         appliedSig = sig;
-                        if (prefs.getBoolean("save_on_apply", false)) promptSaveName(appliedTargets);
+                        if (prefs.getBoolean("save_on_apply", true)) promptSaveName(appliedTargets);
                     }
+                    persistCurrentState();
                 } finally {
                     opBusy = false;
                     render();   // AFTER opBusy=false, so the summary flips to "Applied" (not stuck "Applying…")
@@ -637,6 +678,14 @@ public class MainActivity extends Activity {
      *  pending or the count can't be read (never silently drops a pending reboot on a read failure). */
     private void clearRebootPendingIfRebooted() {
         if (!prefs.contains("reboot_pending_since")) return;
+        // A v0.19.3-pre-gauntlet install may still have this key stored as a Long (the old wall-clock
+        // stamp) — getInt() on a Long throws ClassCastException. That old value isn't comparable to a boot
+        // count at all, so just re-arm with the current (int) boot count and keep the banner up; the next
+        // actual reboot then clears it normally.
+        if (!(prefs.getAll().get("reboot_pending_since") instanceof Integer)) {
+            prefs.edit().putInt("reboot_pending_since", bootCount()).apply();
+            return;
+        }
         int since = prefs.getInt("reboot_pending_since", -1);
         int now = bootCount();
         if (since >= 0 && now >= 0 && now > since) {
@@ -2073,10 +2122,16 @@ public class MainActivity extends Activity {
         for (HealthCheck.Group g : healthResults) {
             content.addView(section(g.title));
             if (g.geo != null) content.addView(ipLocationCard(g.geo, g.vpnRouting));   // rich IP/location card
+            // "Target apps" is a different KIND of check (per-app hook attestation, not a device/config-level
+            // check) — set it slightly apart: a raised card background (Theme.CARD2, same "raised" tone used
+            // elsewhere) and each row's status dot swapped for the app's real icon.
+            boolean isTargetApps = "Target apps".equals(g.title);
             LinearLayout card = card();
+            if (isTargetApps) card.setBackground(pill(Theme.CARD2, Theme.LINE));
             for (int i = 0; i < g.checks.size(); i++) {
                 if (i > 0) card.addView(hairlineInset());
-                card.addView(healthRow(g.checks.get(i)));
+                HealthCheck.Check ch = g.checks.get(i);
+                card.addView(healthRow(ch, isTargetApps && ch.fixArg != null ? ch.fixArg : null));
             }
             content.addView(card);
         }
@@ -2149,7 +2204,7 @@ public class MainActivity extends Activity {
         // so "not detected" is informational, never a claim of direct routing.
         int pillColor = vpnRouting ? Theme.SAGE : Theme.BLUE;
         TextView pill = new TextView(this);
-        pill.setText(vpnRouting ? "VPN transport detected" : "VPN transport not detected");
+        pill.setText(vpnRouting ? "VPN/proxy transport detected" : "VPN/proxy transport not detected");
         pill.setTextColor(pillColor); pill.setTextSize(Theme.T_CAPTION);
         pill.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
         pill.setPadding(dp(Theme.S3), dp(Theme.S1), dp(Theme.S3), dp(Theme.S1));
@@ -2225,13 +2280,28 @@ public class MainActivity extends Activity {
 
     /** One check row: a status dot aligned to the label, label + wrapped detail, and (only for a real action)
      *  a trailing Fix button. Guidance-only rows carry their steps inline in the detail — no popups. */
-    private View healthRow(final HealthCheck.Check ch) {
+    private View healthRow(final HealthCheck.Check ch) { return healthRow(ch, null); }
+
+    /** {@code appPkg} non-null -> a Target-apps row: swap the plain status dot for the app's real icon (reuses
+     *  {@link #appIcon}, already used for target rows elsewhere) so per-app hook attestation visually reads as
+     *  a different kind of check from the device/config-level ones. */
+    private View healthRow(final HealthCheck.Check ch, final String appPkg) {
         LinearLayout r = new LinearLayout(this);
         r.setOrientation(LinearLayout.HORIZONTAL);
         r.setPadding(dp(Theme.S4), dp(Theme.S3) + dp(1), dp(Theme.S4), dp(Theme.S3) + dp(1));
 
         int color = ch.state == HealthCheck.State.OK ? Theme.SAGE
                 : ch.state == HealthCheck.State.WARN ? Theme.GOLD : Theme.RED;
+        // Target-apps rows lead with the app's real icon (reuses appIcon(), already used for target rows
+        // elsewhere) instead of a plain dot — a quiet visual cue that this is per-app hook attestation, a
+        // different kind of check from the device/config-level ones below it.
+        if (appPkg != null) {
+            ImageView icon = new ImageView(this);
+            icon.setImageDrawable(appIcon(appPkg, dp(20)));
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(20), dp(20));
+            ilp.setMargins(0, 0, dp(Theme.S3), 0);
+            r.addView(icon, ilp);
+        }
         View dot = new View(this);
         GradientDrawable dg = new GradientDrawable(); dg.setShape(GradientDrawable.OVAL); dg.setColor(color);
         dot.setBackground(dg);
