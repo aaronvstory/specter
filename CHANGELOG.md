@@ -3,7 +3,7 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
-## [0.19.3] - 2026-07-30
+## [0.19.4] - 2026-07-31
 
 ### Changed
 - **Status/Settings polish pass.** Settings now splits into distinct Setup / Status / Protections /
