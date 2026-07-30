@@ -962,7 +962,7 @@ public class MainActivity extends Activity {
         // "Save to vault on apply" — a COMPACT one-line checkbox (tap the box or its label), not a titled pane.
         // Saving on APPLY (not on generate) means a vault entry always reached an app.
         final android.widget.CheckBox save = new android.widget.CheckBox(this);
-        save.setChecked(prefs.getBoolean("save_on_apply", false));
+        save.setChecked(prefs.getBoolean("save_on_apply", true));
         save.setText("Save to vault on apply");
         save.setTextColor(Theme.SOFT);
         save.setTextSize(Theme.T_CAPTION);
