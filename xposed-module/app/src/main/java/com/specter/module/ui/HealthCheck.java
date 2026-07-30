@@ -3,6 +3,7 @@ package com.specter.module.ui;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.specter.module.HookEntry;
 import com.specter.module.gen.RootWriter;
 import com.specter.module.gen.ZygiskInstaller;
 
@@ -112,6 +113,11 @@ final class HealthCheck {
             perApp.add(Check.warn("Target apps", "No target apps selected — add one on the Identity tab.",
                     Fix.NONE, null));
         } else {
+            // Boot wall-clock: now minus uptime. A heartbeat written AFTER this instant proves the hook ran on
+            // the CURRENT boot. We use this instead of boot_id because the native layer SPOOFS boot_id per-app,
+            // so a hooked process reads a different boot_id than this (unscoped) UI — they'd never match. Wall
+            // time isn't spoofed and is comparable across processes. Small slack for clock settle after boot.
+            long bootWallMs = System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime();
             for (String pkg : targets) {
                 String label = Targets.label(ctx, pkg);
                 boolean scoped = appScoped(ctx, sh, pkg);
@@ -123,16 +129,88 @@ final class HealthCheck {
                     perApp.add(Check.warn(label, "Scoped, but no identity applied yet — apply one.",
                             Fix.REAPPLY_PROFILE, pkg));
                 } else {
-                    perApp.add(Check.ok(label, "Scoped + identity applied."));
+                    // Scope-row + profile-file present is only CONFIGURATION. Proof the hooks actually RAN in
+                    // this app on THIS boot is the runtime heartbeat the Java layer writes after installing its
+                    // hooks. Without a boot-matching heartbeat we must NOT claim GREEN — that false-GREEN is what
+                    // let a mis-hooked app reach fleet looking "protected".
+                    Heartbeat hb = readHeartbeat(sh, pkg);
+                    // Written this boot, by THIS module version? epochMs must be within [bootWall-10s, now+1min]:
+                    // the lower bound rejects a previous boot; the upper bound rejects a forged/rolled-forward
+                    // future timestamp (a stale heartbeat can't pass by jumping the clock ahead). The version
+                    // match rejects a heartbeat written by OLD module code still loaded after an APK update.
+                    long nowMs = System.currentTimeMillis();
+                    boolean fresh = hb != null && hb.epochMs >= (bootWallMs - 10_000L) && hb.epochMs <= (nowMs + 60_000L);
+                    boolean sameVer = hb != null && HookEntry.MODULE_VERSION.equals(hb.version);
+                    boolean live = fresh && sameVer;
+                    if (live) {
+                        // "N fields" is the loaded profile's key count, NOT a per-hook success count — each
+                        // hookX() swallows its own errors, so a signal could still have failed to hook. Word it
+                        // as "loaded this boot" (the heartbeat proves the Java layer ran + read the profile),
+                        // not "every field verified" (that needs per-hook instrumentation — see IDEAS).
+                        perApp.add(Check.ok(label, "Hooks loaded this boot — profile has " + hb.fields
+                                + " fields (v" + hb.version + ")."));
+                    } else if (hb != null && fresh && !sameVer) {
+                        perApp.add(Check.warn(label, "Running an OLDER module version (" + hb.version + " vs "
+                                + HookEntry.MODULE_VERSION + ") — relaunch the app so it re-hooks with the current "
+                                + "build, then Re-check.", Fix.NONE, pkg));
+                    } else if (hb != null) {
+                        perApp.add(Check.warn(label, "Configured, but the last verified run was a PREVIOUS boot — "
+                                + "relaunch the app so the hooks re-attach, then Re-check.", Fix.NONE, pkg));
+                    } else {
+                        perApp.add(Check.warn(label, "Configured, but hooks haven’t been verified running yet. "
+                                + "Open the app once (it must be scoped + the module enabled in LSPosed), then Re-check.",
+                                Fix.NONE, pkg));
+                    }
                 }
             }
         }
         groups.add(new Group("Target apps", perApp));
 
+        // ---- Location: is a GPS mocker / mock-location detectable? ----
+        groups.add(new Group("Location", java.util.Collections.singletonList(mockLocationCheck(ctx, sh))));
+
         // ---- Network: is VPN/proxy masking on, and what does the network read as? ----
         groups.add(networkGroup(ctx, prefs, z, sh, targets));
 
         return groups;
+    }
+
+    /** Detect a GPS-mocking / mock-location signal a fraud SDK could read as a risk flag. Two config-level
+     *  signals (the app hooks make a SCOPED app read them clean, but the DEVICE-level config is what an
+     *  unscoped detector or a mis-scoped run sees): (a) any app holding the ANDROID:mock_location app-op /
+     *  selected as the mock-location app; (b) legacy Settings.Secure.mock_location=1. This is CONFIG-level,
+     *  not a runtime proof inside the target (that needs a scoped mock-Location probe — noted for later). */
+    private static Check mockLocationCheck(Context ctx, RootWriter.Shell sh) {
+        try {
+            // Apps granted the mock-location app-op (the modern "Select mock location app" selection surfaces
+            // here). `cmd appops query-op` lists packages currently allowed the op.
+            String allowed = sh.runCapture(
+                    "cmd appops query-op android:mock_location allow 2>/dev/null").trim();
+            // Legacy pre-M flag, still read by some SDKs.
+            String legacy = sh.runCapture(
+                    "settings get secure mock_location 2>/dev/null").trim();
+            boolean legacyOn = "1".equals(legacy);
+            java.util.List<String> apps = new java.util.ArrayList<>();
+            if (!allowed.isEmpty()) {
+                for (String ln : allowed.split("\\r?\\n")) {
+                    ln = ln.trim();
+                    if (!ln.isEmpty() && ln.contains(".")) apps.add(ln);
+                }
+            }
+            if (apps.isEmpty() && !legacyOn) {
+                return Check.ok("Mock location", "No GPS-mocking app or mock-location flag detected device-wide.");
+            }
+            StringBuilder d = new StringBuilder("Detectable: ");
+            if (!apps.isEmpty()) d.append("mock-location app(s) ").append(String.join(", ", apps));
+            if (legacyOn) { if (!apps.isEmpty()) d.append("; "); d.append("Settings.Secure.mock_location=1"); }
+            d.append(". A scoped target reads these clean via the hooks, but an unscoped/mis-scoped detector "
+                    + "(or the GPS app itself) can see it — keep a mock-location HIDER active, or turn the "
+                    + "selection off when not spoofing GPS.");
+            return Check.warn("Mock location", d.toString(), Fix.NONE, null);
+        } catch (Throwable t) {
+            return Check.warn("Mock location", "Couldn't check mock-location state (su/appops unavailable).",
+                    Fix.NONE, null);
+        }
     }
 
     /** VPN-mask toggle state + the current public (proxy exit) IP and its geolocation. The IP/geo tells the
@@ -147,7 +225,7 @@ final class HealthCheck {
         // the native layer is present here (per-app hook engagement lives inside each scoped process).
         Protections.P vpn = Protections.byKey("hide_vpn");
         boolean vpnOn = vpn != null && Protections.isOn(prefs, vpn);
-        boolean nativeOk = z != null && z.installed;
+        boolean nativeOk = z != null && z.installed && z.current;   // stale native layer is NOT "ok"
         if (vpnOn && nativeOk) {
             out.add(Check.ok("VPN & proxy masking",
                     "On — VPN/proxy interfaces are hidden on both the Java and native paths in scoped apps."));
@@ -168,12 +246,16 @@ final class HealthCheck {
         // (this UI app is unscoped, so hide_vpn doesn't hide the tunnel from us).
         android.net.Network vpnNet = activeVpnNetwork(ctx);
         boolean routedThroughVpn = vpnNet != null;
-        // The card's routing pill already shows Proxy/VPN vs Direct, so add a row ONLY when Direct — to carry the
-        // guidance the pill can't (connect a proxy before matching TZ). Avoids duplicating the pill on the card.
+        // HONESTY: we only detect a VPN *transport* (NetworkCapabilities.TRANSPORT_VPN). An app-level HTTP or
+        // SOCKS5 proxy that does NOT register a VpnService is invisible to this check and reads "Direct" — we say
+        // so instead of implying "no proxy". The card's pill shows the transport state; add a row only when no
+        // transport is detected, to carry the honest caveat + the connect-before-matching-TZ guidance.
         if (!routedThroughVpn) {
             out.add(Check.warn("Routing",
-                    "Direct — no VPN/proxy tunnel. Connect your proxy/VPN before matching the timezone "
-                    + "(otherwise it would align to your real network).", Fix.NONE, null));
+                    "No VPN transport detected. If you're on a VpnService-based proxy it should show here; a "
+                    + "plain HTTP/SOCKS5 proxy (no VpnService) can't be detected and reads Direct. Timezone is "
+                    + "only auto-matched when a VPN transport is present (never to your real network).",
+                    Fix.NONE, null));
         }
 
         // Public IP + geo: one call returns IP, city/country, and the IP's timezone. Pinned to the VPN tunnel
@@ -233,6 +315,26 @@ final class HealthCheck {
             if (net == null) return null;
             android.net.NetworkCapabilities nc = cm.getNetworkCapabilities(net);
             return (nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) ? net : null;
+        } catch (Throwable t) { return null; }
+    }
+
+    /** A per-process runtime attestation heartbeat the Java hook writes after installing its hooks. */
+    static final class Heartbeat {
+        final String bootId; final int fields; final String version; final long epochMs;
+        Heartbeat(String b, int f, String v, long e) { bootId = b; fields = f; version = v; epochMs = e; }
+    }
+
+    /** Read {@code pkg}'s heartbeat ({@code bootId|fields|version|epochMs}) from its files dir via su. The hook
+     *  writes it world-readable; we read via su because the app dir isn't ours. Null if absent/unparseable. */
+    private static Heartbeat readHeartbeat(RootWriter.Shell sh, String pkg) {
+        try {
+            String s = sh.runCapture("cat /data/data/" + pkg + "/files/.specter_hb 2>/dev/null");
+            if (s == null) return null;
+            s = s.trim();
+            if (s.isEmpty()) return null;
+            String[] a = s.split("\\|");
+            if (a.length < 4) return null;
+            return new Heartbeat(a[0], Integer.parseInt(a[1].trim()), a[2], Long.parseLong(a[3].trim()));
         } catch (Throwable t) { return null; }
     }
 
@@ -334,10 +436,23 @@ final class HealthCheck {
     /** The gate logs "app-hiding gate installed" from system_server on boot; its presence == the gate loaded.
      *  grep -rq (quiet, any-file match) avoids the -rhc/head-1 false-negative when a LATER log file matches. */
     private static boolean frameworkGateLoaded(RootWriter.Shell sh) {
+        // Boot-scoped: the gate writes a heartbeat (methods|epochMs) in system_server when it installs. A stale
+        // log line from a previous boot no longer reads as loaded (the old recursive grep did). GREEN only when
+        // the heartbeat was written on THIS boot (epoch >= boot wall-time, 10s slack).
         try {
-            String out = sh.runCapture(
-                    "grep -rqa 'app-hiding gate installed' /data/adb/lspd/log/ 2>/dev/null && echo 1 || echo 0");
-            return "1".equals(trim(out));
+            String s = sh.runCapture("cat " + HookEntry.FRAMEWORK_HB_PATH + " 2>/dev/null");
+            if (s == null) return false;
+            s = s.trim();
+            if (s.isEmpty()) return false;
+            String[] a = s.split("\\|");
+            if (a.length < 2) return false;
+            long methods = Long.parseLong(a[0].trim());   // hooked-method count — 0 means the gate didn't install
+            long epoch = Long.parseLong(a[1].trim());
+            long nowMs = System.currentTimeMillis();
+            long bootWallMs = nowMs - android.os.SystemClock.elapsedRealtime();
+            // This boot (lower bound) AND not a forged/rolled-forward future epoch (upper bound) AND actually
+            // hooked >=1 method.
+            return methods > 0 && epoch >= (bootWallMs - 10_000L) && epoch <= (nowMs + 60_000L);
         } catch (Throwable t) { return false; }
     }
 

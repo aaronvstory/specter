@@ -31,6 +31,17 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     // where the push .bat drops per-app profiles
     private static final String PROFILE_DIR = "/data/local/tmp/specter/";
+    /** Public view of the profile dir for other module classes (e.g. PmsHook's framework heartbeat). */
+    public static final String HEARTBEAT_DIR_PARENT = PROFILE_DIR;
+    /** Where the framework gate (PmsHook, in system_server) drops its boot heartbeat — system-writable, unlike
+     *  the root-owned profile dir; the UI reads it via su. Public so both PmsHook and the UI reference one path. */
+    public static final String FRAMEWORK_HB_PATH = "/data/system/specter_hb_framework";
+    /** This module's version, compiled in — the attestation heartbeat carries it so the status screen can
+     *  reject a heartbeat written by OLD module code still loaded in a process after an APK update. */
+    public static final String MODULE_VERSION = safeVersion();
+    private static String safeVersion() {
+        try { return com.specter.module.BuildConfig.VERSION_NAME; } catch (Throwable t) { return "?"; }
+    }
 
     // The REAL device API level, captured at module class-load — BEFORE any hook can spoof SDK_INT.
     // handleLoadPackage() can fire more than once per process (shared/multi-package processes), so reading
@@ -80,7 +91,56 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (!gateOff(p, "hide_vpn")) hookVpn(lpparam);
         if (!gateOff(p, "fix_webrtc")) hookWebRtc(lpparam);
         hookBattery(lpparam, p);
+
+        // Runtime attestation heartbeat: proof that the Java layer ACTUALLY loaded + ran its hooks in THIS
+        // target process on THIS boot — written only after every hook above installed. The status screen reads
+        // it back and only shows a target GREEN when a heartbeat exists whose boot_id matches the current boot
+        // (so "scope row present in the DB" can no longer masquerade as "hooks are running"). Best-effort.
+        writeHeartbeat(pkg, p);
     }
+
+    /** Where per-process heartbeats live (root-owned, like the profiles; the UI reads them via su). */
+    static final String HEARTBEAT_DIR = PROFILE_DIR + ".hb";
+
+    /** Write a heartbeat for {@code pkg}: {@code bootId|fieldCount|moduleVersion|epochMs}. The hook process
+     *  runs as the target app's uid (not root), so it can't write the root-owned PROFILE_DIR directly — it
+     *  drops the heartbeat into its OWN files dir (always writable) at a world-readable path, and the status
+     *  screen's su read picks it up. Never throws. */
+    private void writeHeartbeat(String pkg, Map<String, String> p) {
+        try {
+            String bootId = currentBootId();
+            if (bootId == null) return;
+            String line = bootId + "|" + p.size() + "|" + moduleVersion() + "|" + System.currentTimeMillis();
+            // The target app's private files dir — the one path the hook's uid can always write.
+            File dir = new File("/data/data/" + pkg + "/files");
+            if (!dir.exists()) dir.mkdirs();
+            // Atomic write: a concurrent reader (or another handleLoadPackage in a shared process) must never
+            // see a half-written heartbeat — write a temp then rename over the live file.
+            File hb = new File(dir, ".specter_hb");
+            File tmp = new File(dir, ".specter_hb.tmp");
+            try (java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp)) {
+                fo.write(line.getBytes("UTF-8"));
+            }
+            //noinspection ResultOfMethodCallIgnored
+            tmp.setReadable(true, false);   // world-readable so the UI (via su) can read it back
+            //noinspection ResultOfMethodCallIgnored
+            tmp.renameTo(hb);
+        } catch (Throwable ignored) {}
+    }
+
+    /** The current boot's UUID from /proc/sys/kernel/random/boot_id — stable within a boot, new each reboot.
+     *  Read the REAL value directly (this runs before any boot_id spoof could apply in-process, and we want the
+     *  true per-boot token for attestation). Null on failure. */
+    public static String currentBootId() {
+        try (java.io.BufferedReader r = new java.io.BufferedReader(
+                new java.io.FileReader("/proc/sys/kernel/random/boot_id"))) {
+            String s = r.readLine();
+            return s == null ? null : s.trim();
+        } catch (Throwable t) { return null; }
+    }
+
+    /** This module's version, compiled in (no runtime PackageManager lookup). */
+    private String moduleVersion() { return MODULE_VERSION; }
 
     /** Battery capacity (a FingerprintJS hardware signal). CHARGE_COUNTER is the CURRENT charge in µAh —
      *  a fingerprinter derives the full/design capacity as charge_counter / (capacity%/100). To keep that

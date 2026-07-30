@@ -632,3 +632,22 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 - **su commands are time-bounded (60s), not unbounded.** WHY: a hung su / un-answered root prompt blocked the
   worker thread's waitFor() forever and stranded the UI busy. Bounded via a helper-thread join (API-agnostic;
   Process.waitFor(timeout) is API 26+ and minSdk is 24). 60s is generous for a slow pm-clear/cp but trips a real hang.
+
+## v0.19.2 — trustworthy status page (runtime attestation)
+- **Status GREEN now requires a boot-fresh runtime heartbeat, not DB-scope membership.** WHY: a scope row in
+  modules_config.db proves DESIRED scope, not that the hooks RAN — an already-running (or LSPosed-cache-stale)
+  target can be un-hooked while the DB says scoped. That false-GREEN is how a mis-hooked phone reached fleet.
+  The Java layer writes /data/data/<pkg>/files/.specter_hb after installing hooks; the framework gate writes
+  /data/system/specter_hb_framework (system_server can't write the root-owned profile dir).
+- **Boot-freshness = wall-time vs uptime, NOT boot_id.** WHY: the native layer spoofs /proc/.../boot_id per app,
+  so a hooked process reads a different boot_id than the (unscoped) UI — they'd never match. `System.current
+  TimeMillis() - SystemClock.elapsedRealtime()` gives a boot wall-time both processes agree on; a heartbeat
+  epoch >= that (10s slack) proves this-boot. Proven on-device.
+- **VPN detection is honestly labeled "VPN transport", not "proxy".** WHY: NetworkCapabilities.TRANSPORT_VPN
+  only catches a VpnService; a plain HTTP/SOCKS5 proxy without one reads Direct. The UI now says so instead of
+  implying no proxy. (This also means the TZ auto-align only fires on a VpnService-based proxy — correct + safe.)
+- **LspScope accepts android/system (framework scope keys).** WHY: validPkg requires a dotted name, so the
+  one-click setup silently never scoped the framework gate. The two keys are special-cased (not a validPkg
+  loosening — that still guards the su boundary).
+- **setup_done gates on required steps only; LspScope requires enabled=1.** WHY: "any step succeeded" hid the
+  first-run banner even when scope/native failed; a disabled-but-scoped module yields no hooks (false success).

@@ -804,3 +804,27 @@ dedup. Deferred (bigger, each its own unit of work):
 - **UI: custom vector icons instead of emoji** on the Network card (emoji vary by device, clash with the
   stroke-icon language).
 - **Protection-status guidance copy:** tighten to outcome-first one-liners (some rows are multi-clause).
+
+## 2026-07-30 — v0.19.2 shipped + status-page follow-ups
+Shipped: runtime attestation (per-process boot heartbeat), mock-location leak check, framework scope in setup,
+honesty pass on the status page. codex "trustworthy go/no-go" items still OPEN (bigger):
+- Native-layer RUNTIME attestation: today the native check is still disk-present (installed+current), not
+  proven-loaded-this-boot. Have the Zygisk companion write a boot heartbeat too (like the Java layer) so
+  "Native layer" GREEN means it actually injected, not just that the .so is on disk.
+- Mock-location RUNTIME proof: current check is config-level (appops/Settings). A scoped mock-Location probe
+  that verifies isFromMockProvider()/isMock() read false INSIDE a hooked target would be the real proof.
+- WAL-consistent DB reads: HealthCheck/LspScope copy only the main .db; a scope change living only in -wal can
+  be missed. Read with -wal+-shm or query LSPosed's service.
+- Tri-state status (PASS/FAIL/UNKNOWN/RESTART-REQUIRED) instead of OK/WARN/BAD, so "unknown" never reads as ok.
+- IDEA (gauntlet follow-up): per-hook success attestation. The heartbeat's "N fields" is the profile key
+  count, not a count of hooks that actually installed (each hookX swallows Throwable). For true per-signal
+  attestation, have each hookX increment a success counter that writeHeartbeat reports, so the status page can
+  say "N/M hooks installed" and flag a partial-hook run (API drift / OEM ROM quirk) instead of a blanket GREEN.
+- IDEA (gauntlet #4, robust fix): root-written boot NONCE for attestation freshness. The current epoch check
+  (bootWall <= epoch <= now+60s + version match) closes the practical false-GREEN but a backward RTC jump
+  across reboot (dead-RTC-before-NTP) could theoretically pass. The complete fix: the earliest Specter code
+  each boot (framework gate / a root service) writes a random nonce to a root-only path; target hooks echo it
+  into their heartbeat; HealthCheck exact-matches the nonce. Ordering caveat: the nonce must exist before any
+  target app launches (bootstrap via the framework gate or an init.d/service.d writer).
+- IDEA (gauntlet minor): heartbeat write path /data/data/<pkg>/files assumes user 0 — a work-profile/secondary
+  user target would read as false-WARN (safe, not false-GREEN). Multi-user: resolve the per-user data dir.

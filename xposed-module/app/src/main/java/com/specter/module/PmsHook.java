@@ -79,9 +79,30 @@ final class PmsHook {
             // hookAllMethods matches every shouldFilterApplication overload/signature across API levels.
             java.util.Set<?> hs = XposedBridge.hookAllMethods(hooked, "shouldFilterApplication", cb);
             XposedBridge.log(TAG + " app-hiding gate installed on " + hooked.getName() + " (" + hs.size() + " method(s))");
+            // Only attest the gate when it ACTUALLY hooked at least one method — hookAllMethods can return an
+            // empty set (no matching method / obfuscation drift), which is a non-installed gate, not a loaded one.
+            if (hs.size() > 0) writeFrameworkHeartbeat(hs.size());
         } catch (Throwable t) {
             XposedBridge.log(TAG + " install failed (gate off): " + t);
         }
+    }
+
+    /** Boot-scoped attestation the framework gate loaded in system_server THIS boot — the status screen checks
+     *  the boot_id so a stale log line from a previous boot can't read as GREEN. system_server (uid system) can
+     *  write PROFILE_DIR. Best-effort. */
+    private static void writeFrameworkHeartbeat(int methods) {
+        try {
+            // system_server runs as uid system and CANNOT write the root-owned /data/local/tmp/specter dir, but
+            // it CAN write /data/system. Content: methods|epochMs; the status screen checks epoch >= boot time
+            // (the boot_id is spoofed per-app, so wall-time is the portable "this boot" signal).
+            String line = methods + "|" + System.currentTimeMillis();
+            java.io.File f = new java.io.File(HookEntry.FRAMEWORK_HB_PATH);
+            java.io.FileOutputStream fo = new java.io.FileOutputStream(f);
+            fo.write(line.getBytes("UTF-8"));
+            fo.close();
+            //noinspection ResultOfMethodCallIgnored
+            f.setReadable(true, false);
+        } catch (Throwable ignored) {}
     }
 
     /** The visibility decision. Sets result=true to HIDE the target from the caller. */

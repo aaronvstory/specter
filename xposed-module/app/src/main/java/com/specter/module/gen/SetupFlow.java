@@ -51,6 +51,9 @@ public final class SetupFlow {
     public static final class Outcome {
         public final List<StepResult> steps;
         public final boolean anySucceeded;
+        /** The REQUIRED steps (native layer + LSPosed scope incl. framework) all succeeded — the gate for
+         *  marking setup complete. OTA/Widevine are optional and don't count. */
+        public boolean requiredOk;
         Outcome(List<StepResult> steps, boolean anySucceeded) {
             this.steps = steps; this.anySucceeded = anySucceeded;
         }
@@ -76,24 +79,32 @@ public final class SetupFlow {
     private static Outcome runLocked(Context ctx, Collection<String> targets, RootWriter.Shell shell) {
         List<StepResult> steps = new ArrayList<>();
         boolean any = false;
+        boolean nativeOk = false, scopeOk = false;   // the two REQUIRED steps
 
         // 1. Native layer — the deepest coverage; install (or refresh) the bundled .so.
         try {
             ZygiskInstaller.install(ctx, shell);
             steps.add(new StepResult("Native layer", true, "Installed — activates on reboot."));
-            any = true;
+            any = true; nativeOk = true;
         } catch (Throwable t) {
             steps.add(new StepResult("Native layer", false, msg(t, "Install failed — is root granted?")));
         }
 
-        // 2. LSPosed scope for the target apps. Add the picked targets; a bad/empty set still runs (no-op).
+        // 2. LSPosed scope: the picked targets PLUS the System Framework gate (android/system), so the
+        //    raw-binder app-hiding gate actually installs — a one-click setup that scoped only the user apps
+        //    left the framework gate off (codex-flagged). A bad/empty set still runs (no-op).
         try {
-            LspScope.Result r = LspScope.addTargets(ctx, targets, shell);
+            java.util.LinkedHashSet<String> scope = new java.util.LinkedHashSet<>(targets);
+            scope.add("android");
+            scope.add("system");
+            LspScope.Result r = LspScope.addTargets(ctx, scope, shell);
             String d = r.added > 0
-                    ? "Added " + r.added + " app" + (r.added == 1 ? "" : "s") + " to scope — reboot to apply."
-                    : "Already scoped.";
+                    ? "Added " + r.added + " entr" + (r.added == 1 ? "y" : "ies") + " to scope (incl. System "
+                      + "Framework) — reboot to apply."
+                    : "Already scoped (incl. System Framework).";
             steps.add(new StepResult("App scope", true, d));
             if (r.added > 0) any = true;
+            scopeOk = true;   // scope write succeeded (module enabled + rows present/added)
         } catch (Throwable t) {
             steps.add(new StepResult("App scope", false, msg(t, "Couldn't write scope — enable Specter in LSPosed first.")));
         }
@@ -117,7 +128,9 @@ public final class SetupFlow {
             steps.add(new StepResult("Widevine L3", false, msg(t, "Couldn't set Widevine L3 on this device.")));
         }
 
-        return new Outcome(steps, any);
+        Outcome o = new Outcome(steps, any);
+        o.requiredOk = nativeOk && scopeOk;   // only the required steps gate "setup complete"
+        return o;
     }
 
     private static String msg(Throwable t, String fallback) {

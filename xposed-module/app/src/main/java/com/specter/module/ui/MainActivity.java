@@ -1858,27 +1858,51 @@ public class MainActivity extends Activity {
                 setupBusy = false;
                 setupResults = f.steps;
                 setupAnySucceeded = f.anySucceeded;
-                // Only mark setup done (which permanently hides the first-run banner) when SOMETHING actually
-                // installed — a total failure (root denied) must keep nagging the user to finish setup.
-                if (f.anySucceeded) prefs.edit().putBoolean("setup_done", true).apply();
+                // Mark setup done (permanently hides the first-run banner) ONLY when the REQUIRED steps (native
+                // layer + LSPosed scope incl. framework) both succeeded — not when merely "something" installed.
+                // A partial run (e.g. scope failed because the module isn't enabled) must keep nagging.
+                if (f.requiredOk) prefs.edit().putBoolean("setup_done", true).apply();
                 Targets.invalidateScopeCache();   // scope may have changed — force the next isScoped() to re-check
                 if (setupScreen) render();
             });
         }, "specter-setup").start();
     }
 
-    /** Prompt + perform a reboot (the single follow-up every setup step needs to activate). */
+    /** Prompt + perform a reboot (the single follow-up every setup step needs to activate). Surfaces a reboot
+     *  FAILURE (su denied / command error) instead of silently doing nothing, so the user isn't left thinking
+     *  the device is rebooting when it isn't. */
     private void promptReboot() {
         if (!alive()) return;
+        // Honest copy: only claim "everything" when the required steps actually passed this run.
+        boolean ok = setupResults != null && setupRequiredOk();
+        String msg = ok ? "Required layers installed. Reboot now to activate them."
+                : "Setup finished with some steps incomplete (see the list). Reboot to activate what installed.";
         new AlertDialog.Builder(this)
                 .setTitle("Reboot to finish")
-                .setMessage("Specter installed everything. Reboot now to activate it.")
+                .setMessage(msg)
                 .setPositiveButton("Reboot now", (dl, w) -> new Thread(() -> {
-                    try { new com.specter.module.gen.RootWriter.SuShell().run("svc power reboot || reboot", ""); }
-                    catch (Throwable ignored) {}
+                    int code = -1; String err = null;
+                    try { code = new com.specter.module.gen.RootWriter.SuShell().run("svc power reboot || reboot", ""); }
+                    catch (Throwable t) { err = t.getMessage(); }
+                    if (code != 0) {
+                        final String e = err;
+                        runOnUiThread(() -> { if (alive()) toast("Reboot command failed — reboot manually"
+                                + (e != null ? " (" + e + ")" : "") + "."); });
+                    }
                 }).start())
                 .setNegativeButton("Later", null)
                 .show();
+    }
+
+    /** Did the required setup steps (native + scope) pass this run? Derived from the rendered step list. */
+    private boolean setupRequiredOk() {
+        if (setupResults == null) return false;
+        boolean nativeOk = false, scopeOk = false;
+        for (com.specter.module.gen.SetupFlow.StepResult s : setupResults) {
+            if ("Native layer".equals(s.label) && s.done) nativeOk = true;
+            if ("App scope".equals(s.label) && s.done) scopeOk = true;
+        }
+        return nativeOk && scopeOk;
     }
 
     /** The Protection Status sub-screen: runs {@link HealthCheck} off-thread and renders a clean, grouped
@@ -1905,12 +1929,15 @@ public class MainActivity extends Activity {
             else if (ch.state == HealthCheck.State.WARN) warn++;
         }
         // Hero summary card: a big verdict line in the worst-state colour + a one-line explanation.
+        // HONESTY: a WARN is NOT necessarily "optional" — "hooks not verified running this boot" is a real
+        // not-proven state. Never claim "spoofing is active" while anything is unresolved; only an all-green
+        // run is a go. Amber = "not verified", not "ready".
         int heroColor = bad > 0 ? Theme.RED : warn > 0 ? Theme.GOLD : Theme.SAGE;
-        String heroTitle = bad > 0 ? "Not fully spoofing" : warn > 0 ? "Ready — with notes" : "All good";
+        String heroTitle = bad > 0 ? "Not fully spoofing" : warn > 0 ? "Not verified" : "All good";
         String heroSub = bad > 0
-                ? bad + " problem" + (bad == 1 ? "" : "s") + " to fix" + (warn > 0 ? " · " + warn + " optional" : "")
-                : warn > 0 ? warn + " optional item" + (warn == 1 ? "" : "s") + " — spoofing is active"
-                : "Every check passed. You're spoofing on all layers.";
+                ? bad + " problem" + (bad == 1 ? "" : "s") + " to fix" + (warn > 0 ? " · " + warn + " to check" : "")
+                : warn > 0 ? warn + " item" + (warn == 1 ? "" : "s") + " unverified — resolve before relying on this device"
+                : "Every check passed — hooks verified running this boot.";
         content.addView(healthHero(heroColor, heroTitle, heroSub));
 
         for (HealthCheck.Group g : healthResults) {
@@ -1993,7 +2020,9 @@ public class MainActivity extends Activity {
 
         int pillColor = vpnRouting ? Theme.SAGE : Theme.AMBER;
         TextView pill = new TextView(this);
-        pill.setText(vpnRouting ? "Proxy / VPN" : "Direct");
+        // Precise: we detect a VPN *transport*, not any proxy. A VpnService-based proxy (SuperProxy) shows here;
+        // a plain HTTP/SOCKS5 proxy without a VpnService reads "No VPN" even though traffic is proxied.
+        pill.setText(vpnRouting ? "VPN transport" : "No VPN");
         pill.setTextColor(pillColor); pill.setTextSize(Theme.T_CAPTION);
         pill.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
         pill.setPadding(dp(Theme.S3), dp(Theme.S1), dp(Theme.S3), dp(Theme.S1));

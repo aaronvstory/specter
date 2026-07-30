@@ -59,10 +59,17 @@ public final class LspScope {
         return addTargets(ctx, pkgs, new RootWriter.SuShell());
     }
 
+    /** The LSPosed System-Framework scope keys (dot-less, so validPkg rejects them — allowed explicitly). */
+    public static boolean isFrameworkKey(String p) { return "android".equals(p) || "system".equals(p); }
+
     public static Result addTargets(Context ctx, java.util.Collection<String> pkgs, RootWriter.Shell shell) {
         // Validate every pkg up front — the same grammar RootWriter enforces at its su boundary. A bad name
         // never reaches SQLite (it's bound, not interpolated, but validate anyway to fail loud + early).
+        // EXCEPTION: the two framework scope keys "android"/"system" are dot-less (validPkg requires a dot),
+        // but they're the LSPosed keys for the System Framework gate — allow exactly those two so "Set up
+        // everything" can scope the raw-binder app-hiding gate, not just the user apps.
         for (String p : pkgs) {
+            if (isFrameworkKey(p)) continue;
             if (!RootWriter.validPkg(p)) throw new ScopeException("invalid package name: " + p);
         }
 
@@ -122,6 +129,13 @@ public final class LspScope {
             Long mid = queryLong(db, "SELECT mid FROM modules WHERE module_pkg_name='" + SPECTER_PKG + "'");
             if (mid == null) {
                 throw new ScopeException("Specter isn't a registered LSPosed module yet — enable it in LSPosed first.");
+            }
+            // The module row can exist but be DISABLED — writing scope then would silently yield no active hooks
+            // after reboot (false success). Require enabled=1 so setup surfaces "enable Specter" instead.
+            Long enabled = queryLong(db, "SELECT enabled FROM modules WHERE mid=" + mid);
+            if (enabled == null || enabled != 1L) {
+                throw new ScopeException("Specter is registered but NOT enabled in LSPosed — toggle it on in "
+                        + "LSPosed → Modules, then run setup again.");
             }
             for (String pkg : pkgs) {
                 Long before = queryLong(db,

@@ -19,6 +19,7 @@ android {
         versionName specterVersion
     }
     lint { checkReleaseBuilds false; abortOnError false }
+    buildFeatures { buildConfig true }   // expose BuildConfig.VERSION_NAME to the hook (attestation heartbeat)
     buildTypes { release { minifyEnabled false } }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

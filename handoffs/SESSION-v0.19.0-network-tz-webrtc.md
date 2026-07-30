@@ -54,3 +54,20 @@ new symbols verified in dex · no nul files · HookEntry.java stayed CRLF.
 - Deploy v0.19.0 to the 4a; reboot both to load the WebRTC hook, then measure the WebRTC filter against
   detectme.pro through a scoped WebView (the onPageStarted-timing result is a HYPOTHESIS until measured).
 - Optional: androidx.webkit document-start injection if a real detector beats the timing (docs/IDEAS.md).
+
+## v0.19.1 on-device verification (2026-07-30, post-reboot, both phones)
+Triggered by a real-world fleet "suspicious" + a codex audit flagging the rc() zero-arg no-op.
+- **PROVEN: the Java Build.* + android_id hook path WORKS end-to-end.** On the 4a (real=Pixel 5a) with a Moto
+  Z3 Play profile applied and the probe hooked (`active for com.specter.probe, 71 fields`): build_model=Moto
+  Z3 Play, manufacturer=Motorola, fingerprint=motorola/beckham, android_id=baf91856... (spoofed). Both Java
+  FIELD and prop read spoofed. Native layer also fully coherent (props/baseband/bootloader/GPU/sensors).
+- **The earlier "Build.MODEL=Pixel 4 leak" was a MEASUREMENT ARTIFACT**, not a fleet failure: on the P4 the
+  probe specifically wasn't getting the Java layer injected (LSPosed per-app cache quirk after an `install -r`
+  this session — DoorDash=72 fields + DevInfo=71 fields hooked fine, only the freshly-reinstalled probe didn't).
+  Fix for the probe: force-stop + relaunch after reboot, or reinstall+reboot. NOT a fleet issue.
+- **rc() CRITICAL fix (v0.19.1) was real but mostly hit permission-gated ids**: IMEI/IMSI/ICCID read ERR:no-perm
+  for a normal app anyway; App-Set-ID + WiFi/BT MAC were the genuinely-exposed ones. Now fixed.
+- STILL OPEN: we have NOT root-caused yesterday's specific fleet flag. The probe confirms the DEVICE fields are
+  clean; the flag is likely WebRTC/timezone (now addressed v0.19.0) or account-history — needs the actual
+  flagged signals to diff, not the probe.
+- P4 currently: SuperProxy + GPS spoof running (user re-armed after this reboot).
