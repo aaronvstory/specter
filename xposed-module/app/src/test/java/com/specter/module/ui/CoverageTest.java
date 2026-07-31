@@ -85,6 +85,12 @@ public final class CoverageTest {
         eq(Coverage.of("open", "/sys/devices/system/cpu/cpuXYZ/cpu_capacity"), Coverage.State.UNKNOWN, "cpuXYZ (non-digit)");
         eq(Coverage.of("open", "/sys/devices/system/cpu/cpu0/cache/cpu_capacity"), Coverage.State.UNKNOWN, "nested cache path");
 
+        // CONDITIONAL props must NOT be claimed: HookEntry only sets warranty_bit for SAMSUNG profiles, so
+        // listing it as spoofed would show a false "faked" on every Google/LG/Motorola profile — the exact
+        // failure this classifier exists to avoid (code-reviewer).
+        eq(Coverage.of("prop", "ro.boot.warranty_bit"), Coverage.State.UNKNOWN, "warranty_bit is Samsung-only");
+        eq(Coverage.of("prop", "ro.warranty_bit"), Coverage.State.UNKNOWN, "warranty_bit is Samsung-only (2)");
+
         // Unknowns -> UNKNOWN (never over-claim)
         eq(Coverage.of("prop", "some.random.prop"), Coverage.State.UNKNOWN, "unknown prop");
         eq(Coverage.of("stat", "/data/data/com.x/files/thing"), Coverage.State.UNKNOWN, "unknown file");
@@ -109,7 +115,9 @@ public final class CoverageTest {
         // Cash App run). The native layer rewrites the extension list, so these are a genuine SPOOFED win,
         // NOT noise: the trace was previously under-reporting them as unclassified.
         eq(Coverage.of("glGetStringi", "0x1f03 82"), Coverage.State.SPOOFED, "indexed GL_EXTENSIONS walk");
-        eq(Coverage.of("glGetString", "0x1f03"), Coverage.State.SPOOFED, "legacy GL_EXTENSIONS read");
+        // The LEGACY (non-indexed) GL_EXTENSIONS read falls back to the REAL list if the glGetStringi /
+        // glGetIntegerv hooks didn't both land, and the trace can't tell us which — so never claim it.
+        eq(Coverage.of("glGetString", "0x1f03"), Coverage.State.UNKNOWN, "legacy GL_EXTENSIONS not claimed");
         eq(Coverage.of("glGetString", "0x1f00"), Coverage.State.SPOOFED, "GL_VENDOR");
         eq(Coverage.of("glGetString", "0x1f01"), Coverage.State.SPOOFED, "GL_RENDERER");
         eq(Coverage.of("glGetString", "0x1f02"), Coverage.State.SPOOFED, "GL_VERSION");

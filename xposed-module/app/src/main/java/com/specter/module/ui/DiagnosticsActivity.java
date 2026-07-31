@@ -134,7 +134,10 @@ public final class DiagnosticsActivity extends Activity {
                         runOnUiThread(() -> {
                             if (isFinishing() || isDestroyed()) return;
                             clearBtn.setEnabled(true);
-                            reading = false;   // the invalidated read may still be settling; don't block ours
+                            // Don't force `reading = false` here — an in-flight pre-clear read clears it in
+                            // its own finally, and stomping it would allow two concurrent `su -c tail`.
+                            // Its result is already discarded by the generation check; the 2s tick (or
+                            // Refresh) picks up the cleared log on the next pass.
                             refresh();
                         });
                     }, "specter-diag-clear").start();
@@ -191,11 +194,15 @@ public final class DiagnosticsActivity extends Activity {
             final String raw = readLog();
             final List<TraceParser.Row> rows = TraceParser.parse(raw, MAX_ROWS);
             h.post(() -> {
+                boolean stale = gen != generation;
                 try {
                     // A read that STARTED before a Clear would render pre-clear rows over a cleared log
-                    // (codex). Drop it; the Clear posts its own refresh.
-                    if (gen == generation && !isFinishing() && !isDestroyed()) render(raw, rows);
+                    // (codex). Drop its result.
+                    if (!stale && !isFinishing() && !isDestroyed()) render(raw, rows);
                 } finally { reading = false; }
+                // ...and re-read now that we're free, so a Clear that happened mid-read still repaints
+                // immediately instead of waiting for the next 2s tick (or forever, if the screen is paused).
+                if (stale && !isFinishing() && !isDestroyed()) refresh();
             });
         }, "specter-diag-read").start();
     }
@@ -214,7 +221,7 @@ public final class DiagnosticsActivity extends Activity {
         int hits = 0, spoofed = 0, leaking = 0, noise = 0, unknown = 0;
         for (TraceParser.Row r : rows) {
             hits += r.count;
-            switch (Coverage.of(r.verb, r.target)) {
+            switch (Coverage.of(r)) {
                 case SPOOFED: spoofed++; break;
                 case LEAK: leaking++; break;
                 case NOISE: noise++; break;
@@ -253,7 +260,7 @@ public final class DiagnosticsActivity extends Activity {
      *  than by which syscall fetched it — the syscall was never the question the user is asking. */
     private void addCoverageGroup(String name, Coverage.State state, int accent, List<TraceParser.Row> rows) {
         int n = 0;
-        for (TraceParser.Row r : rows) if (Coverage.of(r.verb, r.target) == state) n++;
+        for (TraceParser.Row r : rows) if (Coverage.of(r) == state) n++;
         if (n == 0) return;
 
         // Group header: colored dot + name + count.
@@ -295,7 +302,7 @@ public final class DiagnosticsActivity extends Activity {
         }
 
         for (TraceParser.Row r : rows) {
-            if (Coverage.of(r.verb, r.target) != state) continue;
+            if (Coverage.of(r) != state) continue;
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);

@@ -30,6 +30,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   22 unchecked · 12,160 reads**, no cap hit, where the same screen previously read "20 spoofed / 256 real /
   124 unknown". One of the remaining unknowns is a genuine find: Cash App reads `persist.vmos.root.enable`,
   a virtualization/root probe — exactly what this screen exists to surface.
+- **No conditional prop is ever claimed as faked.** `ro.boot.warranty_bit` / `ro.warranty_bit` were listed
+  as covered, but the hook only sets them for Samsung profiles — so every Google/LG/Motorola profile would
+  have shown a false "faked" while the app read the real value. They are UNKNOWN now, and the legacy
+  (non-indexed) GL_EXTENSIONS read is likewise unclaimed because it falls back to the real list when the
+  GL hooks don't both land.
 - **One Specter folder.** Specter Lite harvests now export to `Download/Specter` like every other Specter
   export instead of creating a second `Download/Specter-exports` folder. The importer still scans the old
   path, so files exported before this release keep importing.

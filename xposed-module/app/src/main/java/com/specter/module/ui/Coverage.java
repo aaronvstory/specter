@@ -26,8 +26,14 @@ public final class Coverage {
      *  no device identity (collapse it). UNKNOWN = unclassified (show, claim nothing). */
     public enum State { SPOOFED, LEAK, NOISE, UNKNOWN }
 
-    /** EXACT prop keys Specter spoofs — mirror of HookEntry.PROP_ALIASES column 0 + STATIC_PROPS +
-     *  the deferred (sdk/first_api_level) + derived (build.tags/type, warranty) keys. Keep in sync. */
+    /** EXACT prop keys Specter spoofs on EVERY profile — mirror of HookEntry.PROP_ALIASES column 0 +
+     *  STATIC_PROPS + the deferred (sdk/first_api_level) and derived (build.tags/type) keys. Keep in sync.
+     *
+     *  <p>Only keys aliased UNCONDITIONALLY belong here. {@code ro.boot.warranty_bit} / {@code
+     *  ro.warranty_bit} are deliberately absent: HookEntry only sets them when the profile's manufacturer is
+     *  Samsung, so listing them would claim "faked" on every non-Samsung profile while the real value is
+     *  what the app actually reads. They stay UNKNOWN — an honest unknown, not a false win. Any key added
+     *  here must be verified unconditional in HookEntry first. */
     private static final Set<String> SPOOFED_PROPS = new HashSet<>(Arrays.asList(
         // radio / kernel / soc
         "gsm.version.baseband", "ril.baseband", "os.version", "ro.board.platform", "ro.soc.model",
@@ -35,13 +41,13 @@ public final class Coverage {
         // boot.* identity + lock state
         "ro.boot.bootloader", "ro.boot.hardware", "ro.boot.hardware.platform", "ro.boot.serialno",
         "ro.boot.flash.locked", "ro.boot.vbmeta.device_state", "ro.boot.verifiedbootstate",
-        "ro.boot.veritymode", "ro.boot.warranty_bit",
+        "ro.boot.veritymode",
         // build.* + fingerprints (all partitions)
         "ro.bootimage.build.fingerprint", "ro.bootloader", "ro.build.description", "ro.build.display.id",
         "ro.build.fingerprint", "ro.build.flavor", "ro.build.host", "ro.build.id", "ro.build.product",
         "ro.build.version.incremental", "ro.build.version.release", "ro.build.version.security_patch",
         "ro.build.version.sdk", "ro.build.tags", "ro.build.type", "ro.debuggable", "ro.secure",
-        "ro.warranty_bit", "ro.odm.build.fingerprint", "ro.product.build.fingerprint",
+        "ro.odm.build.fingerprint", "ro.product.build.fingerprint",
         "ro.system.build.fingerprint", "ro.system_ext.build.fingerprint", "ro.vendor.build.fingerprint",
         // hardware
         "ro.hardware", "ro.hardware.chipname",
@@ -121,6 +127,14 @@ public final class Coverage {
         "/proc/sys/kernel/osrelease"
     ));
 
+    /** Classify a parsed row. Same as {@link #of(String, String)}, memoised on the row so a render pass
+     *  (summary loop + one pass per group) classifies each row once instead of four times. */
+    public static State of(TraceParser.Row r) {
+        if (r == null) return State.UNKNOWN;
+        if (r.coverage == null) r.coverage = of(r.verb, r.target);
+        return r.coverage;
+    }
+
     public static State of(String verb, String target) {
         if (target == null || target.isEmpty()) return State.UNKNOWN;
         // A dlsym of an OpenGL/EGL entry point is the GL driver binding its own function table — 260 of them
@@ -167,6 +181,10 @@ public final class Coverage {
         if (target == null) return false;
         int sp = target.indexOf(' ');
         String glEnum = sp < 0 ? target : target.substring(0, sp);
+        // GL_EXTENSIONS via the LEGACY (non-indexed) glGetString falls back to the real list unless BOTH
+        // glGetStringi and glGetIntegerv hooked successfully (main.cpp my_glGetString) — and the trace line
+        // is emitted before that branch, so we can't tell from the log which happened. Don't claim it.
+        if (glEnum.equals("0x1f03") && !indexed) return false;
         if (!glEnum.equals("0x1f00") && !glEnum.equals("0x1f01")
                 && !glEnum.equals("0x1f02") && !glEnum.equals("0x1f03")) return false;
         if (sp < 0) return true;

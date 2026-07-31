@@ -25,6 +25,7 @@ public final class TraceParser {
         public final String verb;    // the raw trace verb: open/openat/prop/stat/access/...
         public final String target;  // the prop key or file path
         public int count;            // how many times it was read in the captured window
+        Coverage.State coverage;     // memoised classification (see Coverage.of(Row)); null until first use
         Row(Kind kind, String verb, String target) { this.kind = kind; this.verb = verb; this.target = target; }
     }
 

@@ -20,7 +20,7 @@ public final class DiagReport {
         int spoofed = 0, leaking = 0, noise = 0, unknown = 0, hits = 0;
         for (TraceParser.Row r : rows) {
             hits += r.count;
-            switch (Coverage.of(r.verb, r.target)) {
+            switch (Coverage.of(r)) {
                 case SPOOFED: spoofed++; break;
                 case LEAK: leaking++; break;
                 case NOISE: noise++; break;
@@ -44,11 +44,11 @@ public final class DiagReport {
 
     private static void appendGroup(StringBuilder sb, String name, Coverage.State state, List<TraceParser.Row> rows) {
         boolean any = false;
-        for (TraceParser.Row r : rows) if (Coverage.of(r.verb, r.target) == state) { any = true; break; }
+        for (TraceParser.Row r : rows) if (Coverage.of(r) == state) { any = true; break; }
         if (!any) return;
         sb.append("-- ").append(name).append(" --\n");
         for (TraceParser.Row r : rows) {
-            if (Coverage.of(r.verb, r.target) != state) continue;
+            if (Coverage.of(r) != state) continue;
             sb.append('[').append(kindTag(r.kind)).append("] ").append(r.target);
             if (r.count > 1) sb.append(" (x").append(r.count).append(')');
             sb.append('\n');
