@@ -343,9 +343,22 @@ def test_cpuinfo_cluster_order_matches_topology_capacity():
             f"{codename}: cpu_capacity is not little-first ({caps[0]} .. {caps[-1]})")
         assert parts[0] != parts[-1], (
             f"{codename}: heterogeneous SoC {soc} reports one CPU part for every core")
-        # The first core must be the little one in BOTH signals: its part must be the part that
-        # appears alongside the smallest capacity, i.e. the most common low-capacity part.
-        lo_parts = {p for p, c in zip(parts, caps) if c == caps[0]}
-        assert parts[0] in lo_parts, (
-            f"{codename}: CPU0 part {parts[0]} is not a low-capacity core — cpuinfo and cpu_capacity "
-            f"disagree about which core is which")
+        # Cores sharing a capacity are the SAME physical cluster, so they must report the SAME CPU part.
+        # This is what actually distinguishes little-first from big-first: with the clusters emitted in the
+        # wrong order the part runs (1,3,4) land against the capacity runs (4,3,1) and the groups disagree.
+        # (An earlier version of this test asserted `parts[0] in {parts at caps[0]}`, which is a tautology —
+        # index 0 is always in that set — and passed on the pre-fix data. codex caught it.)
+        by_cap = {}
+        for part, cap in zip(parts, caps):
+            by_cap.setdefault(cap, set()).add(part)
+        for cap, cap_parts in by_cap.items():
+            assert len(cap_parts) == 1, (
+                f"{codename}: cores with capacity {cap} report {sorted(cap_parts)} — one capacity cluster "
+                f"cannot contain two different CPU parts; cpuinfo and cpu_capacity are misaligned")
+        # …and the largest-capacity cluster must be the one with the fewest cores (the prime core), which
+        # pins the direction rather than merely the grouping.
+        assert len(by_cap) >= 2
+        biggest = max(by_cap, key=lambda c: int(c))
+        assert caps.count(biggest) <= caps.count(caps[0]), (
+            f"{codename}: the highest-capacity cluster has more cores than the lowest — capacity vector "
+            f"looks big-first")
