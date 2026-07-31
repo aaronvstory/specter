@@ -481,23 +481,25 @@ public class HookEntry implements IXposedHookLoadPackage {
             });
         } catch (Throwable ignored) {}
         // Build.VERSION.* must match the spoofed fingerprint's Android version, or an app that
-        // reads VERSION.RELEASE/INCREMENTAL/SECURITY_PATCH sees a mismatch vs the fingerprint.
+        // reads VERSION.RELEASE/INCREMENTAL/SECURITY_PATCH sees a mismatch vs the fingerprint. RELEASE /
+        // INCREMENTAL / SECURITY_PATCH are always-on string spoofs (no deferred-window leak — they're not the
+        // SIGSEGV-sensitive props), so they ALWAYS follow the profile and stay coherent with the fingerprint.
+        setVersion("RELEASE", p.get("build_release"));
         setVersion("INCREMENTAL", p.get("build_incremental"));
         setVersion("SECURITY_PATCH", p.get("build_security_patch"));
-        // OS-version-NUMBER family (RELEASE + SDK_INT + SDK string) is gated on os_version_spoof_enabled.
-        // The native layer can only spoof ro.build.version.sdk / ro.product.first_api_level LATE (spoofing
-        // at init SIGSEGVs the zygote), leaving a startup window where the native path returns the REAL host
-        // value. So IdentityService sets this flag to "0" whenever the claimed OS != the host's, and we then
-        // leave the version NUMBER reporting the real host here too — so the Java and native paths agree
+        // ONLY the SDK NUMBER (SDK_INT int + SDK string) is gated on os_version_spoof_enabled — those pair
+        // with the deferred native ro.build.version.sdk / ro.product.first_api_level, which can only spoof
+        // LATE (spoofing at init SIGSEGVs the zygote), leaving a startup window where the native path returns
+        // the REAL host value. So IdentityService sets this flag to "0" whenever the claimed SDK != the host's,
+        // and we then leave SDK_INT / SDK reporting the real host too — so the Java and native SDK paths agree
         // (both report host) instead of Java claiming e.g. 31 while the native window leaks the real 30. One
-        // flag, read by both layers. "1"/absent (older profiles) = spoof as before. (INCREMENTAL/
-        // SECURITY_PATCH above are fingerprint fields, NOT version numbers, and have no native-window leak,
-        // so they always follow the profile — skipping them would leak the host's real build string.)
-        boolean spoofOsVersion = !"0".equals(p.get("os_version_spoof_enabled"));
-        if (spoofOsVersion) setVersion("RELEASE", p.get("build_release"));
+        // flag, read by both layers. "1"/absent (older profiles) = spoof as before. (RELEASE is NOT gated: it
+        // has no deferred-window leak, so gating it would only DISAGREE with the always-on native
+        // ro.build.version.release spoof — codex-flagged.)
+        boolean spoofSdk = !"0".equals(p.get("os_version_spoof_enabled"));
         // Build.VERSION.SDK_INT is an int field — a claimed Android 9 must report SDK 28, not the real
         // device's 30. setStaticObjectField can't set a primitive int, so use plain reflection.
-        String sdk = spoofOsVersion ? p.get("build_sdk") : null;
+        String sdk = spoofSdk ? p.get("build_sdk") : null;
         if (sdk != null) {
             try {
                 // Clamp the SDK_INT int field to [29, realSdk]. Framework method availability is tied

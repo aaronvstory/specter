@@ -909,13 +909,10 @@ public:
             char host_fa[PROP_VALUE_MAX] = {0};
             if (__system_property_get("ro.product.first_api_level", host_fa) > 0 && host_fa[0])
                 g_prop_spoof_late["ro.product.first_api_level"] = host_fa;
-            else {
-                // Unreadable host launch-API: fall back to the profile's claim (old behaviour) rather than
-                // leave it unspoofed — better an approximate coherent value than nothing.
-                auto fa = profile.find("build_first_api");
-                g_prop_spoof_late["ro.product.first_api_level"] =
-                    (fa != profile.end() && !fa->second.empty()) ? fa->second : sdk->second;
-            }
+            // If the host value is unreadable, DON'T fall back to the profile's claim: that would make the
+            // pre-arm window leak the real host while the post-arm read returns a fabricated value — the exact
+            // contradiction we're avoiding. Omit the entry so first_api reports the real host on BOTH paths
+            // (coherent by definition). (codex-flagged.)
         }
         // Verified-boot / lock-state props (native path). A rooted device leaks unlocked/orange/test-keys
         // here — a heavy root flag independent of the model spoof. OEM-agnostic device STATE (a stock

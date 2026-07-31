@@ -257,19 +257,6 @@ public final class IdentityService {
         }
     }
 
-    /** The real host's launch API level (ro.product.first_api_level). Read via SystemProperties reflection —
-     *  this app is unhooked, so it returns the true value. Falls back to the host SDK if unreadable (matches
-     *  the common case first_api==sdk for a device that shipped on its current OS). */
-    private static int hostFirstApiLevel() {
-        try {
-            Class<?> sp = Class.forName("android.os.SystemProperties");
-            java.lang.reflect.Method getInt = sp.getMethod("getInt", String.class, int.class);
-            int v = (Integer) getInt.invoke(null, "ro.product.first_api_level", -1);
-            if (v > 0) return v;
-        } catch (Throwable ignored) {}
-        return android.os.Build.VERSION.SDK_INT;
-    }
-
     /** True iff the profile's claimed OS MAJOR (build_sdk) matches the real host SDK. That's the axis apps
      *  actually key off (Build.VERSION.SDK_INT + ro.build.version.sdk) and the one whose deferred-window leak
      *  broke Cash App. We deliberately do NOT also require build_first_api to match the host: on a device that
@@ -280,13 +267,12 @@ public final class IdentityService {
      *  API. (Fuller first_api coherence — a pool device that also matches host launch-API — is a dataset
      *  follow-up; see docs/IDEAS.md.) */
     private static boolean osVersionMatchesHost(Map<String, String> p) {
-        Integer sdk = parseIntOrNull(p.get("build_sdk"));
-        return sdk != null && sdk == android.os.Build.VERSION.SDK_INT;
-    }
-
-    private static Integer parseIntOrNull(String s) {
-        if (s == null || s.isEmpty()) return null;
-        try { return Integer.parseInt(s.trim()); } catch (NumberFormatException e) { return null; }
+        // CANONICAL string equality, not a numeric parse: the native layer publishes build_sdk VERBATIM as
+        // ro.build.version.sdk, so a non-canonical form ("030", " 30 ", "+30") that parses to the host SDK
+        // would stamp the flag "1" yet make native publish the raw string — reintroducing the very
+        // contradiction the flag prevents. Our own generator always writes the canonical form, so this only
+        // bites a hand-edited/imported profile; requiring exact string equality closes it. (codex-flagged.)
+        return Integer.toString(android.os.Build.VERSION.SDK_INT).equals(p.get("build_sdk"));
     }
 
     /** Stamp the applied-time OS-version-spoof policy onto the profile: os_version_spoof_enabled = "1" iff the
