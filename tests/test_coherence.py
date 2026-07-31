@@ -305,7 +305,11 @@ def test_no_tablet_or_tv_device_in_the_generation_pool():
 
 
 def test_generated_os_is_plausibly_recent():
-    """Android < 9 (2018) on a fresh account is a red flag — too old for a phone in real use today."""
+    """Every generated profile claims at least Android 11 (the coherence floor): claiming an OS older than
+    the real host leaks a contradiction in the deferred-native-prop startup window (see the Cash App
+    failure investigation). Pins P.MIN_ANDROID_MAJOR directly so a regression back to 9/10 can't sail
+    through undetected."""
     for p in _profiles(300):
-        assert _release_major(p) >= 9, \
-            "implausibly old OS: Android %s (%s)" % (p["build_release"], p["build_fingerprint"])
+        assert _release_major(p) >= P.MIN_ANDROID_MAJOR, \
+            "OS below the floor (%d): Android %s (%s)" % (
+                P.MIN_ANDROID_MAJOR, p["build_release"], p["build_fingerprint"])

@@ -173,6 +173,11 @@ public final class IdentityService {
     // suffices (no cross-process file lock needed on-device).
     private static final Object LEDGER_LOCK = new Object();
 
+    // The lowest build_sdk any generated profile can carry: derived from Profile.MIN_ANDROID_MAJOR so it
+    // can never drift out of sync with the floor. Used to decide whether the host-SDK clamp in
+    // generateUnique() is satisfiable (a host below this can't host any profile we'd generate).
+    private static final int MIN_ANDROID_SDK = Generators.sdkForRelease(String.valueOf(Profile.MIN_ANDROID_MAJOR));
+
     void saveLedger(UsedStore store) {
         // android.util.AtomicFile writes to a temp and commits by renaming OVER the live file — it never
         // delete()s the live file first. If the write fails (killed process, full disk), failWrite() drops
@@ -233,11 +238,17 @@ public final class IdentityService {
             // all give it away). So reject any profile whose claimed sdk exceeds the real host sdk. This is an
             // on-device-only gate (generateUnique uses a secure RNG, NOT the seeded byte-parity path), so it
             // never affects Java<->Python parity. See the Cash App failure investigation + docs/DECISIONS.md.
+            // Only clamp when the host can actually satisfy it. Every profile claims at least Android 11
+            // (MIN_ANDROID_MAJOR -> build_sdk >= 30), so on a host OLDER than SDK 30 the clamp would reject
+            // EVERY candidate and starve generation. That host is a different (unsupported-old-OS) situation;
+            // bricking generation is worse than the floor's mild incoherence, so skip the clamp there. On a
+            // normal A11+ fleet host this is always active. (MIN_ANDROID_SDK mirrors MIN_ANDROID_MAJOR=11.)
             final int hostSdk = android.os.Build.VERSION.SDK_INT;
+            final boolean clampSdk = hostSdk >= MIN_ANDROID_SDK;
             for (int tries = 0; tries < 1000; tries++) {
                 Map<String, String> p = Profile.build(r, devices, true, country, hardware);
                 if (!Profile.isValid(p)) continue;
-                if (exceedsHostSdk(p, hostSdk)) continue;
+                if (clampSdk && exceedsHostSdk(p, hostSdk)) continue;
                 if (store.collides(p)) continue;
                 if (store.record(p)) { saveLedger(store); return p; }
             }
