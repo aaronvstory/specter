@@ -1597,6 +1597,7 @@ public class MainActivity extends Activity {
             com.specter.module.SpoofLogic.parseFlatJson(json, m);
             m.remove(com.specter.module.SpoofLogic.TRUE_ANDROID_ID_KEY);   // internal shadow key, not a profile field
             m.remove("trace");   // a transient monitor flag, not part of the identity
+            m.remove("os_version_spoof_enabled");   // host-specific runtime policy, re-stamped on each apply
             return m.isEmpty() ? null : m;
         } catch (Exception e) { return null; }
     }

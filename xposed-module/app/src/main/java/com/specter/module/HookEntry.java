@@ -482,12 +482,22 @@ public class HookEntry implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
         // Build.VERSION.* must match the spoofed fingerprint's Android version, or an app that
         // reads VERSION.RELEASE/INCREMENTAL/SECURITY_PATCH sees a mismatch vs the fingerprint.
-        setVersion("RELEASE", p.get("build_release"));
         setVersion("INCREMENTAL", p.get("build_incremental"));
         setVersion("SECURITY_PATCH", p.get("build_security_patch"));
+        // OS-version-NUMBER family (RELEASE + SDK_INT + SDK string) is gated on os_version_spoof_enabled.
+        // The native layer can only spoof ro.build.version.sdk / ro.product.first_api_level LATE (spoofing
+        // at init SIGSEGVs the zygote), leaving a startup window where the native path returns the REAL host
+        // value. So IdentityService sets this flag to "0" whenever the claimed OS != the host's, and we then
+        // leave the version NUMBER reporting the real host here too — so the Java and native paths agree
+        // (both report host) instead of Java claiming e.g. 31 while the native window leaks the real 30. One
+        // flag, read by both layers. "1"/absent (older profiles) = spoof as before. (INCREMENTAL/
+        // SECURITY_PATCH above are fingerprint fields, NOT version numbers, and have no native-window leak,
+        // so they always follow the profile — skipping them would leak the host's real build string.)
+        boolean spoofOsVersion = !"0".equals(p.get("os_version_spoof_enabled"));
+        if (spoofOsVersion) setVersion("RELEASE", p.get("build_release"));
         // Build.VERSION.SDK_INT is an int field — a claimed Android 9 must report SDK 28, not the real
         // device's 30. setStaticObjectField can't set a primitive int, so use plain reflection.
-        String sdk = p.get("build_sdk");
+        String sdk = spoofOsVersion ? p.get("build_sdk") : null;
         if (sdk != null) {
             try {
                 // Clamp the SDK_INT int field to [29, realSdk]. Framework method availability is tied

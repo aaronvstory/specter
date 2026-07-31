@@ -48,6 +48,7 @@ public final class VaultChecksum {
         Map<String, String> m = new LinkedHashMap<>(profile);
         m.remove("_saved_at");
         m.remove("_targets");
+        m.remove("os_version_spoof_enabled");   // host-specific runtime policy, not part of the portable identity
         return m;
     }
 }
