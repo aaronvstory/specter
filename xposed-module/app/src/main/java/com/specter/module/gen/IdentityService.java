@@ -230,8 +230,10 @@ public final class IdentityService {
             // native map (spoofing them at init SIGSEGVs the zygote), so during a startup window the native
             // path returns the REAL host value. Claiming ANY value != host therefore leaks a contradiction in
             // that window (and a device can't coherently report a different OS than it runs anyway). So the
-            // OS-version family is only spoofed when the profile's claimed sdk/first_api EXACTLY match the
-            // host's; otherwise it's left reporting the host (see stampOsVersionPolicy). To keep the spoof
+            // OS-version SDK is only spoofed when the profile's claimed build_sdk EXACTLY matches the host's;
+            // otherwise SDK_INT/sdk are left reporting the host (see stampOsVersionPolicy). first_api is NOT
+            // part of the match (it would over-thin the pool) — it's host-pinned in the native layer instead.
+            // To keep the spoof
             // ACTIVE we prefer a pool device that matches the host — but the pool is thin (may lack the host's
             // exact OS), so this is a best-effort PREFERENCE, never a hard filter that could starve generation.
             // On-device-only (secureRng, not the seeded byte-parity path), so it never affects Java<->Python
