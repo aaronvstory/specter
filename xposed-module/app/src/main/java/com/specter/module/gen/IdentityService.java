@@ -224,14 +224,35 @@ public final class IdentityService {
             Map<String, Map<String, String>> hardware = loadHardware();
             UsedStore store = loadLedger();
             Generators.Rng r = secureRng();
+            // Hard coherence invariant: never claim an OS newer than the device actually runs. A profile's
+            // ro.build.version.sdk / ro.product.first_api_level are spoofed only via the DEFERRED native map
+            // (spoofing them at init SIGSEGVs the zygote), so during a brief startup window the native path
+            // returns the REAL host SDK. If the profile claimed a HIGHER sdk than the host (e.g. an Android-12
+            // profile on an Android-11 phone), that window leaks host_sdk < claimed_sdk — a contradiction.
+            // More fundamentally, a device can't coherently report a newer OS than it runs (kernel/vendor/VNDK
+            // all give it away). So reject any profile whose claimed sdk exceeds the real host sdk. This is an
+            // on-device-only gate (generateUnique uses a secure RNG, NOT the seeded byte-parity path), so it
+            // never affects Java<->Python parity. See the Cash App failure investigation + docs/DECISIONS.md.
+            final int hostSdk = android.os.Build.VERSION.SDK_INT;
             for (int tries = 0; tries < 1000; tries++) {
                 Map<String, String> p = Profile.build(r, devices, true, country, hardware);
                 if (!Profile.isValid(p)) continue;
+                if (exceedsHostSdk(p, hostSdk)) continue;
                 if (store.collides(p)) continue;
                 if (store.record(p)) { saveLedger(store); return p; }
             }
             throw new RuntimeException("could not generate a fresh valid profile in 1000 tries");
         }
+    }
+
+    /** True if the profile claims a build_sdk newer than the real host — an incoherent "newer OS than the
+     *  device runs" combo we must never apply (see generateUnique). Missing/unparseable sdk -> not rejected
+     *  (defensive: a malformed sdk shouldn't starve generation; isValid already vets structure). */
+    private static boolean exceedsHostSdk(Map<String, String> p, int hostSdk) {
+        String s = p.get("build_sdk");
+        if (s == null || s.isEmpty()) return false;
+        try { return Integer.parseInt(s.trim()) > hostSdk; }
+        catch (NumberFormatException e) { return false; }
     }
 
     /** Serialize a profile to the flat JSON string the hook consumes. */

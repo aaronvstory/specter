@@ -3,6 +3,24 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.19.5] - 2026-07-31
+
+### Fixed
+- **Coherence: never claim an Android version older than the real host (Cash App failure fix).** Generated
+  profiles no longer claim a device older than Android 11, and the on-device apply path rejects any profile
+  whose `build_sdk` exceeds the real host SDK. `ro.build.version.sdk` / `ro.product.first_api_level` are
+  spoofed only via a deferred native map (spoofing them at process init SIGSEGVs the zygote), so during a
+  brief startup window the native path returns the REAL host SDK. A profile claiming Android 9 (SDK 28) on a
+  real Android-11 (SDK 30) phone therefore leaked a 28-vs-30 self-contradiction an app can read directly —
+  the likely cause of Cash App's "unavailable to you at this time" on the newer (5.62) build. Now every
+  applied profile claims an SDK that equals-or-precedes the host's, so the deferred-window read is coherent.
+  Verified on-device: 20 fresh generations on an Android-11 host produced 0 Android-12 profiles, and the
+  applied profile claims SDK 30 == host 30.
+
+### Changed
+- `MIN_ANDROID_MAJOR` raised 9 -> 11 (Python + Java, byte-parity preserved). No profile ever claims a
+  pre-Android-11 device again.
+
 ## [0.19.4] - 2026-07-31
 
 ### Changed

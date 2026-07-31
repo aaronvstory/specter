@@ -5,6 +5,28 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-31 - Lifecycle handshake to arm the deferred native prop map (replace the 3s timer)** - status:
+  `idea` (deferred from v0.19.5). `ro.build.version.sdk`/`first_api_level` are spoofed via a deferred map armed
+  by a FIXED 3000ms detached-thread timer, leaving a startup window where the native path returns real values.
+  v0.19.5 made that window harmless via the "claimed SDK <= host SDK" clamp, but the robust fix is to arm the
+  map on a concrete lifecycle event (an LSPosed hook right before `Application.attachBaseContext()`) instead of
+  a timer. Needs a new Java->native signalling channel (none exists today) + repeated zygote/app-launch stress
+  testing across devices — codex rated it "low but nonzero SIGSEGV risk". Do it in its own PR, not overnight on
+  the fleet. Rationale: eliminates the window entirely so profiles could safely claim any SDK.
+- **2026-07-31 - Expand devices.json with real A11+ US devices (esp. Samsung)** - status: `researching`
+  (deferred from v0.19.5). At `MIN_ANDROID_MAJOR=11` the effective US phone pool is only 7 devices with ZERO
+  Samsung (the dataset's Samsung A11 rows are all Europe/N-region, filtered by `_is_us_model`) — thin rotation
+  + a non-Samsung skew that is itself distributionally odd for a US fleet. Add real A11/12/13 US devices
+  (Samsung S21/S22/S23 US variants SM-G99xU, A-series US, recent Pixels, Motorola) with COMPLETE real
+  build.prop data (exact fingerprint/incremental/first_api/patch) + matching real hardware.json SoC entries.
+  Source from physical devices or a verified build.prop dump repo — NOT firmware-site fragments (they give the
+  PDA/build number but not the full prop set, and fabricating the rest creates new tells). SoC table already
+  has lahaina (SD888/S21-US), kona (SD865/S20-US), exynos2100, gs101 (Tensor) — so several are cheap to add.
+- **2026-07-31 - Make Coverage.java's spoofed/real badge byte-accurate** - status: `idea`. Coverage classifies
+  a signal spoofed/real by STATIC set membership, not by verifying the bytes actually returned. This produced a
+  false "boot_id leaking real" signal during the Cash App investigation (the .specter_bid redirect was actually
+  working fine). Low priority, but the badge misleads a leak hunt — have it read back the actual returned value
+  where feasible (or at least mark declaratively-classified rows as "expected" vs "verified").
 - **2026-07-30 - Remaining multi-sentence Settings/dialog copy (v0.19.3 gauntlet finding)** - status: `idea`.
   The v0.19.3 polish pass enforced "one short line, no paragraphs" across Settings + Protections + the
   Protection-status screen, but three PRE-EXISTING strings elsewhere in MainActivity.java still violate the

@@ -158,11 +158,14 @@ def _seeded(seed):
     return r
 
 
-# Minimum plausible Android major version. A fresh account on Android < 9 (2018) is a red flag — too
-# old for a phone in real use today. Kept as a named constant so the coherence test and both language
-# generators agree on the floor. (The device DB tops out around A12, so this can't go much higher
-# without starving the pool; revisit when devices.json gains newer phones.)
-MIN_ANDROID_MAJOR = 9
+# Minimum plausible Android major version. We never claim to be a device older than Android 11 (2020):
+# an Android-9/10 profile on a real Android-11+ host is itself a giveaway (the SIGSEGV-sensitive
+# ro.build.version.sdk / ro.product.first_api_level leak the REAL host SDK during a brief startup
+# window before the native late-map arms, so a claimed SDK 28 vs a real 30 is a detectable contradiction
+# — see the Cash App failure investigation). Kept as a named constant so the coherence test and both
+# language generators agree on the floor. devices.json is stocked with real A11+ US devices to keep the
+# pool from starving at this floor.
+MIN_ANDROID_MAJOR = 11
 
 # Marketing-name substrings that identify a tablet / TV box. We generate a phone number + SIM + IMEI,
 # so a WiFi tablet or TV box is incoherent. Matched against the device row's NAME (row[0]).

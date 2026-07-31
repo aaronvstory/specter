@@ -2,6 +2,19 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-31 (v0.19.5): hard invariant — a profile never claims an OS newer than the real host runs.**
+  Two layers: (1) `MIN_ANDROID_MAJOR = 11` floors every generated profile at Android 11; (2) the on-device
+  `generateUnique()` rejects any candidate whose `build_sdk` > `Build.VERSION.SDK_INT`. WHY: `ro.build.version.sdk`
+  and `ro.product.first_api_level` can only be spoofed via the DEFERRED native map (spoofing them at process
+  init SIGSEGVs the zygote — see the g_prop_spoof_late note in main.cpp), so there's a startup window where the
+  native path returns the REAL host SDK. If the profile claimed a DIFFERENT sdk than the host, that window
+  leaks a contradiction (real 30 vs claimed 28 was the Cash-App-"unavailable" bug; real 30 vs claimed 31 for
+  an A12 profile on an A11 host is the same bug inverted). A device also simply can't coherently report a newer
+  OS than it runs (kernel/vendor/VNDK give it away). The clamp lives in `generateUnique` (secure-RNG path),
+  NOT in `Profile.build`/`pickDevice`, so Java↔Python byte-parity is untouched. The full fix for the window
+  itself (a lifecycle handshake replacing the 3s timer) is deferred — see docs/IDEAS.md — because it's a
+  zygote-SIGSEGV-risky native change not worth rushing onto the fleet; the coherence clamp makes the window
+  harmless in the meantime.
 - **2026-07-30 (v0.19.4): MainActivity uses `launchMode="singleTop"`, not the default `standard`.** Root
   cause of a user-reported identity/applied-state bug cluster, confirmed via `dumpsys activity activities`
   on a Pixel 4a: with no launchMode set, EVERY launcher relaunch — even with the app still resident in
