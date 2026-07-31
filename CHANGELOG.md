@@ -3,6 +3,52 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.20.0] - 2026-07-31
+
+### Changed
+- **Live trace now tells the story "checked → faked → the app still works".** The screen used to headline
+  "20 spoofed / 256 real / 124 unknown", which read as "the app is broken" — but an audit of a real Cash App
+  run showed the 256 "real" reads were ~99% non-identifying noise (237 font-file stats, library loads, the
+  app's own process bookkeeping). Coverage now classifies each read as **faked / leaked / not-checked /
+  harmless**: the headline counts only what bears on the spoof, harmless reads are counted but not listed,
+  and the list is grouped by what a read MEANS rather than by which syscall fetched it. The verdict line
+  never claims a clean sweep while reads remain unclassified.
+- **New `LEAK` state surfaces identifiers that SHOULD be faked but aren't** (build date/user, boot device,
+  expected baseband/bootloader, SoC device-tree nodes, block-device identity, kernel osrelease) — these are
+  the only alarm the screen raises. Real leak detection is unchanged; only non-identifying noise was
+  reclassified.
+- Exported coverage report follows the same grouping and states.
+- **Per-thread `/proc` reads collapse into one counted row.** A measured Cash App run touched 69 distinct
+  thread ids; as one row each they exhausted the 400-row list cap and pushed real signals off the screen.
+  The pid is now shown as `/proc/<pid>/…` with the hit count carrying the volume — app enumeration (reading
+  ANOTHER process's `cmdline`) is still surfaced, just not once per transient id.
+- **GPU string queries now count as the wins they are.** `glGetString`/`glGetStringi` reads of GL_VENDOR,
+  GL_RENDERER, GL_VERSION and GL_EXTENSIONS were reported as unclassified even though the native layer
+  rewrites all four — one measured run had ~400 of them. They now read as faked, and the per-index
+  extension walk collapses to a single counted row instead of ~100 near-identical ones.
+- Measured end to end on a fresh capture of a real Cash App launch (Pixel 4a): **18 faked · 0 leaked ·
+  22 unchecked · 12,160 reads**, no cap hit, where the same screen previously read "20 spoofed / 256 real /
+  124 unknown". One of the remaining unknowns is a genuine find: Cash App reads `persist.vmos.root.enable`,
+  a virtualization/root probe — exactly what this screen exists to surface.
+- **One Specter folder.** Specter Lite harvests now export to `Download/Specter` like every other Specter
+  export instead of creating a second `Download/Specter-exports` folder. The importer still scans the old
+  path, so files exported before this release keep importing.
+
+### Fixed
+- **Export button lag on the live trace.** The report was built on the UI thread at tap time, and the 2s
+  refresh loop's own `su -c tail` competed with the export's root shell. The report is now built on the
+  worker, the poll pauses for the duration, the button shows "Exporting…" immediately, and double-taps are
+  ignored. The poll no longer restarts on a screen the user has left.
+- **"Remove from targets" now looks and behaves like a control.** It was a bare red text label with
+  hand-patched padding sitting among real buttons, and it removed the target with no confirmation. It is
+  now a full-width destructive button that confirms first, naming the app and stating that saved logins and
+  profiles are kept.
+- **"Clear" on the live trace confirms before discarding the capture** and is styled as destructive — it
+  previously looked identical to Refresh, one tap from throwing away the session's reads.
+- Live-trace controls use the Theme type/spacing/radius tokens with ripples and 44dp touch targets (they
+  hardcoded 13sp/6dp flat rectangles); the Live/Paused pill is now reachable by screen reader and describes
+  the action it performs.
+
 ## [0.19.5] - 2026-07-31
 
 ### Fixed
