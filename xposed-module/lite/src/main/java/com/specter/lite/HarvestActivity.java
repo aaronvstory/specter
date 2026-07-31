@@ -21,7 +21,7 @@ import java.util.Map;
 /**
  * Specter Lite — a root-FREE harvester. Reads every identifier + device field obtainable WITHOUT root on
  * this device, then exports a Specter profile envelope (same format the main app's vault import consumes)
- * to public Download/Specter-exports/ with a readable name (Specter-<mfr>-<model>-<stamp>.json). Copy that
+ * to public Download/Specter/ with a readable name (Specter-<mfr>-<model>-<stamp>.json). Copy that
  * file to another device (or it's already in Download on this one) and import it in Specter to clone this
  * device as closely as the root layer allows.
  *
@@ -321,8 +321,11 @@ public class HarvestActivity extends Activity {
     private static void put(Map<String, String> m, String k, String v) { if (v != null && !v.isEmpty()) m.put(k, v); }
     private String safeStamp() { return String.valueOf(System.currentTimeMillis()); }
 
-    /** Public Download subfolder for exports — the user asked for a clearly-named place, not the app sandbox. */
-    static final String EXPORT_DIR = "Specter-exports";
+    /** Public Download subfolder for exports. Deliberately the SAME folder every other Specter export uses
+     *  (AppDataVault.EXPORT_DIR / Vault.EXPORT_DIR = /sdcard/Download/Specter) — one Specter folder on the
+     *  user's device, not one per feature. The main app's import scan still also reads the old
+     *  Download/Specter-exports/ path, so files exported before this change still import. */
+    static final String EXPORT_DIR = "Specter";
 
     /** A human-readable filename: "Specter-<Manufacturer>-<Model>-<MMDDYY_HHMM>.json", sanitized to a safe
      *  filesystem token (spaces/parens/slashes -> '-'). Falls back to a timestamp if device fields are absent. */
@@ -335,7 +338,7 @@ public class HarvestActivity extends Activity {
         return "Specter-" + base + "-" + stamp + ".json";
     }
 
-    /** Write the envelope to public Download/Specter-exports/<name>. API 29+ uses MediaStore (scoped
+    /** Write the envelope to public Download/Specter/<name>. API 29+ uses MediaStore (scoped
      *  storage — no permission needed to write the app's own Downloads entry); API 24–28 writes the file
      *  directly. Returns a user-facing location string. */
     private String writeExport(String name, String content) throws Exception {

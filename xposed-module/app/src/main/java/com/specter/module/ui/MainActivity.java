@@ -1167,13 +1167,20 @@ public class MainActivity extends Activity {
             actions.addView(row2);
             actions.addView(sessStatus);
             // Remove target — lives here (expanded) so it can't be tapped by accident from the collapsed row.
-            View remove = textButton("Remove from targets", Theme.RED, v -> {
-                Set<String> cur = Targets.get(prefs); cur.remove(pkg); Targets.set(prefs, cur);
-                toast("Removed " + Targets.label(this, pkg)); render();
-            });
-            ((TextView) remove).setGravity(Gravity.START);
-            ((TextView) remove).setPadding(0, dp(Theme.S2), dp(Theme.S3), dp(Theme.S2));   // keep v-padding + right inset
-            actions.addView(remove);
+            // Built with themedButton like every other action in this card (it used to be a bare text label
+            // with hand-patched padding, which read as a caption rather than a control), and it confirms
+            // first: removing a target unhooks the app, which is not something to do on a stray tap.
+            LinearLayout row3 = new LinearLayout(this); row3.setOrientation(LinearLayout.HORIZONTAL);
+            row3.setPadding(0, dp(Theme.S2), 0, 0);
+            row3.addView(themedButton("Remove from targets", Theme.CARD, Theme.RED, Theme.RED, true, v ->
+                confirmDestructive("Remove target?",
+                        Targets.label(this, pkg) + " will stop being spoofed. Its saved logins and profiles "
+                                + "are kept — you can add it back any time.",
+                        "Remove", () -> {
+                            Set<String> cur = Targets.get(prefs); cur.remove(pkg); Targets.set(prefs, cur);
+                            toast("Removed " + Targets.label(this, pkg)); render();
+                        })));
+            actions.addView(row3);
             box.addView(actions);
         }
         return box;
@@ -3239,10 +3246,17 @@ public class MainActivity extends Activity {
 
     /** A styled in-app confirm (replaces the raw AlertDialog for destructive Vault actions). */
     private void confirmDelete(String title, String message, final Runnable onConfirm) {
+        confirmDestructive(title, message, "Delete", onConfirm);
+    }
+
+    /** Same confirm, with the action's own verb on the positive button ("Remove", "Delete", …) — a button
+     *  labelled with what it does beats a generic OK. Every destructive action routes through here so the
+     *  confirm looks and behaves identically everywhere in the app. */
+    private void confirmDestructive(String title, String message, String verb, final Runnable onConfirm) {
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setMessage(message)
-                .setPositiveButton("Delete", (d, w) -> onConfirm.run())
+                .setPositiveButton(verb, (d, w) -> onConfirm.run())
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -3454,6 +3468,9 @@ public class MainActivity extends Activity {
                         "ls -1t /sdcard/Download/Specter/specter-combo-*.tar "
                         + "/sdcard/Download/Specter/specter-profile-*.json "
                         + "/sdcard/Download/Specter/specter-login-*.tar "
+                        // Specter Lite harvests now land here too (they used to go to Download/Specter-exports,
+                        // still scanned below so pre-existing harvests keep importing).
+                        + "/sdcard/Download/Specter/Specter-*.json "
                         + "/sdcard/Download/specter-combo-*.tar "
                         + "/sdcard/Download/specter-profile-*.json "
                         + "/sdcard/Download/specter-login-*.tar "

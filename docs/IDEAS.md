@@ -6,7 +6,16 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 ## Active / open
 
 - **2026-07-31 - Live-trace UX: tell "checked -> spoofed -> works", stop dumping non-identifying noise** -
-  status: `building` (task started, not in the v0.19.5 PR). The trace showed "20 spoofed / 256 real / 124
+  status: `SHIPPED (v0.20.0)`. Coverage gained a 4th state: REAL split into NOISE (non-identifying, counted
+  but not listed) and LEAK (identifying and NOT spoofed - the only alarm). The list groups by coverage, not
+  by syscall kind. MEASURED on a real Cash App run, Pixel 4a: went from "20 spoofed / 256 real / 124 unknown"
+  to **37 faked / 0 leaked / 9 unchecked / 892 reads**, no row-cap hit. Two things made the difference beyond
+  the font/lib rules: (1) `TraceParser.collapsePid` - 69 distinct thread ids were filling the 400-row cap;
+  (2) classifying the `0x1f03 <N>` ioctl rows + the cacerts trust store. The 9 remaining unknowns are honest
+  ones, and one is a genuine find: **Cash App reads `persist.vmos.root.enable`** (a VMOS/virtualization root
+  probe) - exactly the kind of read this screen exists to surface. IMPORTANT (codex, twice): noise rules must
+  be EXACT allowlists, never namespace prefixes - see docs/DECISIONS.md.
+  (original entry: status was `building` (task started, not in the v0.19.5 PR).) The trace showed "20 spoofed / 256 real / 124
   unknown" which reads as "the app is failing" to a user — but the audit proved ~99% is NON-identifying noise:
   237 of the 256 "real" are font-file stats (.ttf/.otf every app reads to render text), 6 are dir-existence
   stats, and the 11 "real" PROPS all return empty on-device or are universal arm64 constants; the 124 "unknown"

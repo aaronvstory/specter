@@ -8,11 +8,11 @@ import java.util.Map;
 /**
  * Pure (Android-free) parser for the SpecterTrace capture ({@code diag.log}). The raw log is one line
  * per intercepted read — {@code "<date> <time> <pid> <tid> I SpecterTrace: <verb> <target>"} — and is
- * dominated by high-frequency noise ({@code /proc/<pid>/status} self-reads, {@code sys.boot_completed}
- * polling) that says nothing about fingerprinting. This collapses the stream into a small, readable set
- * of per-signal rows: one {@link Row} per distinct (verb, target), with a hit count, so the Diagnostics
- * screen can show "the app read <signal> N times" grouped by kind — exactly the "what does the target
- * grab" view the user asked for. No Android deps so it's unit-testable in the JVM harness.
+ * dominated by high-frequency repetition. This collapses the stream into a small, readable set of
+ * per-signal rows: one {@link Row} per distinct (kind, target), with a hit count, so the Diagnostics screen
+ * can show "the app read &lt;signal&gt; N times". Transient process ids are folded to {@code /proc/<pid>/} so
+ * hundreds of thread reads become one counted row. Classification of those rows is {@link Coverage}'s job,
+ * not this class's. No Android deps so it's unit-testable in the JVM harness.
  */
 public final class TraceParser {
     private TraceParser() {}
@@ -25,40 +25,42 @@ public final class TraceParser {
         public final String verb;    // the raw trace verb: open/openat/prop/stat/access/...
         public final String target;  // the prop key or file path
         public int count;            // how many times it was read in the captured window
+        Coverage.State coverage;     // memoised classification (see Coverage.of(Row)); null until first use
         Row(Kind kind, String verb, String target) { this.kind = kind; this.verb = verb; this.target = target; }
     }
 
-    /** A trace line is noise if it reveals nothing about device fingerprinting: process self-introspection,
-     *  the linker/loader's own churn (getauxval/dlsym, loading system libs+framework jars+ART images), or
-     *  the ubiquitous boot-completed / debug-prop polling every app spams. These swamp the log and would
-     *  bury the handful of lines that actually identify the device. */
-    static boolean isNoise(String verb, String target, String callerPid) {
+    /** A trace line is dropped only when it has NO analytical value at all — the loader's auxv reads and the
+     *  boot/runtime polling every app spams. This is volume control, NOT a judgement about identity: a row
+     *  removed here can never be displayed, not even as an honest UNKNOWN, so deciding "is this
+     *  device-identifying?" belongs to {@link Coverage}, which classifies what survives. */
+    static boolean isNoise(String verb, String target) {
         if (target == null || target.isEmpty()) return true;
-        // Loader/linker internals — not device signals: auxv reads, symbol lookups.
-        if (verb.equals("getauxval") || verb.equals("dlsym")) return true;
-        // /proc/self/... — the app reading its OWN process; introspection, not a device signal.
-        if (target.startsWith("/proc/self/")) return true;
+        // NOTE (codex): this filter DROPS a row before {@link Coverage} ever sees it, so anything removed
+        // here can never be shown — not even as an honest UNKNOWN. Keep it to rows with no analytical value
+        // AT ALL (volume control), and leave "is this identifying?" to Coverage. In particular /proc/self/maps
+        // + status and unrecognised dlsym symbols are deliberately NOT dropped here: they're tamper-detection
+        // surfaces the user should see classified, not silently swallowed.
+        if (verb.equals("getauxval")) return true;   // auxv: kernel ABI vector, no device identity
         if (target.startsWith("/proc/")) {
             int slash = target.indexOf('/', 6);
             String seg = slash < 0 ? target.substring(6) : target.substring(6, slash);
             boolean allDigits = !seg.isEmpty();
             for (int i = 0; i < seg.length(); i++) if (!Character.isDigit(seg.charAt(i))) { allDigits = false; break; }
-            // /proc/<pid>/... — filter ONLY the app's own pid (self-introspection). A read of ANOTHER
-            // process's /proc entry (/proc/<otherPid>/cmdline etc.) is app-enumeration — a real
-            // fingerprinting signal we WANT to surface. /proc/cpuinfo, /proc/version (non-digit) are kept.
-            if (allDigits && callerPid != null && seg.equals(callerPid)) return true;
+            // NOTE: the app's OWN /proc/<pid>/… is no longer dropped here. collapsePid() folds every pid into
+            // one row anyway, so the volume argument is gone — and self-introspection includes maps/status,
+            // which are tamper-detection surfaces worth showing. Coverage decides; we just collapse.
+            // Scheduler bookkeeping on ANY pid is per-thread churn, not a device signal. A measured Cash App
+            // run produced 69 distinct thread ids × ~5 leaves — enough distinct rows to fill the UI's cap and
+            // push the real signals off the list. The leaf, not the pid, is what makes it noise.
+            if (allDigits && slash > 0) {
+                String leaf = target.substring(slash + 1);
+                if (leaf.equals("timerslack_ns") || leaf.equals("oom_score_adj") || leaf.equals("oom_adj")
+                        || leaf.equals("sched") || leaf.equals("cgroup")) return true;
+            }
         }
-        // Library / framework loading: dlopen of system libs, .jar/.art/.oat/.vdex, and the lib dirs
-        // themselves. High volume, zero identity content.
-        if (target.endsWith(".so") || target.endsWith(".jar") || target.endsWith(".art")
-                || target.endsWith(".oat") || target.endsWith(".vdex") || target.endsWith(".apk")
-                || target.equals("/system/lib64") || target.equals("/system/lib")
-                || target.equals("/system_ext/lib64") || target.equals("/vendor/lib64")
-                || target.equals("/system")) return true;
-        // Boot / runtime polling props that every app spams and that carry no identity.
+        // Boot / runtime polling props every app spams, with no identity content at all.
         if (target.equals("sys.boot_completed") || target.equals("sys.usb.config")
-                || target.startsWith("cache_key.") || target.startsWith("debug.")
-                || target.startsWith("vendor.debug.") || target.equals("heapprofd.enable")) return true;
+                || target.startsWith("cache_key.") || target.equals("heapprofd.enable")) return true;
         return false;
     }
 
@@ -81,17 +83,17 @@ public final class TraceParser {
         for (String line : raw.split("\n")) {
             int tag = line.indexOf("SpecterTrace: ");
             if (tag < 0) continue;
-            // Extract the caller pid from the logcat prefix ("<date> <time> <pid> <tid> I SpecterTrace:")
-            // so isNoise can filter the app's OWN /proc/<pid> reads while KEEPING reads of other pids
-            // (app-enumeration is a real signal). Prefix format is stable across the capture.
-            String callerPid = pidOf(line, tag);
             String rest = line.substring(tag + "SpecterTrace: ".length()).trim();
             if (rest.isEmpty()) continue;
             int sp = rest.indexOf(' ');
             String verb = sp < 0 ? rest : rest.substring(0, sp);
             String target = sp < 0 ? "" : rest.substring(sp + 1).trim();
-            if (isNoise(verb, target, callerPid)) continue;
+            if (isNoise(verb, target)) continue;
             Kind kind = kindOf(verb);
+            target = collapsePid(target);
+            // glGetStringi(GL_EXTENSIONS, i) is called once PER INDEX — ~100 rows differing only by the
+            // index. Collapse the index so it reads as one signal ("the app enumerated GL extensions ×100").
+            if (verb.equals("glGetStringi")) target = collapseTrailingIndex(target);
             // Dedup by (kind, target), NOT (verb, target): the user cares that the app STAT'd a path, not
             // which syscall variant (stat vs fstatat vs newfstatat) it used — those would otherwise render
             // as identical-looking duplicate rows. Counts across variants sum into the one row.
@@ -107,17 +109,30 @@ public final class TraceParser {
         return new ArrayList<>(byKey.values());
     }
 
-    /** Pull the caller pid from a logcat line's prefix: "&lt;date&gt; &lt;time&gt; &lt;pid&gt; &lt;tid&gt; I SpecterTrace:".
-     *  {@code tagIdx} is the index of "SpecterTrace: " on that line. Returns the pid token (3rd
-     *  whitespace field) or null if the prefix isn't the expected shape (then no self-pid filtering). */
-    static String pidOf(String line, int tagIdx) {
-        // The token just before "<tid> I SpecterTrace:" — walk back over: SpecterTrace tag, "I", tid, pid.
-        String pre = line.substring(0, tagIdx).trim();     // "<date> <time> <pid> <tid> I"
-        String[] parts = pre.split("\\s+");
-        // Expected tail: ... <pid> <tid> <level>. pid is 3rd from the end.
-        if (parts.length < 3) return null;
-        String pid = parts[parts.length - 3];
-        for (int i = 0; i < pid.length(); i++) if (!Character.isDigit(pid.charAt(i))) return null;
-        return pid.isEmpty() ? null : pid;
+    /** Drop a trailing {@code " <digits>"} loop index, so a per-index query ({@code "0x1f03 0"},
+     *  {@code "0x1f03 1"}, …) folds into one counted row. Leaves anything else untouched. */
+    static String collapseTrailingIndex(String target) {
+        if (target == null) return null;
+        int sp = target.lastIndexOf(' ');
+        if (sp <= 0 || sp == target.length() - 1) return target;
+        for (int i = sp + 1; i < target.length(); i++) if (!Character.isDigit(target.charAt(i))) return target;
+        return target.substring(0, sp);
     }
+
+    /** Rewrite {@code /proc/<digits>/rest} to {@code /proc/<pid>/rest} so reads across many process/thread
+     *  ids collapse into ONE counted row. The interesting fact is "the app read <leaf> 40 times", not forty
+     *  near-identical rows differing only by a transient id — those alone can exhaust the UI's row cap and
+     *  push real signals off the screen. The count still shows the volume. Non-numeric segments
+     *  (/proc/cpuinfo, /proc/self/...) are untouched. */
+    static String collapsePid(String target) {
+        final String pre = "/proc/";
+        if (target == null || !target.startsWith(pre)) return target;
+        int slash = target.indexOf('/', pre.length());
+        if (slash < 0) return target;
+        String seg = target.substring(pre.length(), slash);
+        if (seg.isEmpty()) return target;
+        for (int i = 0; i < seg.length(); i++) if (!Character.isDigit(seg.charAt(i))) return target;
+        return pre + "<pid>" + target.substring(slash);
+    }
+
 }

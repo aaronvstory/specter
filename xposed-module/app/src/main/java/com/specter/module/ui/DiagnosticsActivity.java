@@ -20,10 +20,12 @@ import java.util.List;
 /**
  * Live "what does the target grab" viewer. Reads the diagnostics capture ({@link DiagnosticsCmd#LOG_PATH},
  * written by {@link DiagnosticsService}), parses it with {@link TraceParser}, and renders the deduped
- * per-signal rows grouped into Props / Files / Stat/access — so the user sees, as they use a scoped
- * target, exactly which device signals it read and how often. Auto-refreshes every 2s; a manual Refresh
- * and Clear are provided. READ-ONLY: this only observes the capture, it applies nothing — safe for any
- * scoped app (the native companion still guards APPLY).
+ * per-signal rows grouped by COVERAGE — faked / leaked / not-yet-classified — so the user sees the story
+ * "this was checked, this got faked, the app still works" rather than a wall of syscalls. Reads that carry
+ * no device identity ({@link Coverage.State#NOISE}: fonts, library loads, scheduler bookkeeping) are counted
+ * but not listed: they are ~99% of any trace, and showing them made a WORKING spoof look broken.
+ * Auto-refreshes every 2s; a manual Refresh, Export and Clear are provided. READ-ONLY: this only observes
+ * the capture, it applies nothing — safe for any scoped app (the native companion still guards APPLY).
  */
 public final class DiagnosticsActivity extends Activity {
     /** Optional intent extra: the package the caller just monitored, shown as "watching <app>". Absent when
@@ -35,13 +37,18 @@ public final class DiagnosticsActivity extends Activity {
     private static final long BLINK_MS = 650;        // live-dot flash period
 
     private LinearLayout list;                        // rows container (rebuilt each refresh)
-    private LinearLayout statRow;                      // the KPI tile row (signals/spoofed/real/reads)
+    private LinearLayout statRow;                      // the KPI tile row (faked/leaked/unchecked/reads)
     private TextView summary;
     private View liveDot;                             // the flashing-red "capturing" indicator
     private boolean dotOn = true;
     private final Handler h = new Handler(Looper.getMainLooper());
     private volatile boolean live = true;
     private volatile boolean reading = false;   // one in-flight read at a time (no su-exec pileup)
+    private volatile boolean exporting = false; // guards double-taps on Export while su is working
+    private volatile boolean resumed = false;   // foreground state — an export finishing must not restart
+                                                // the su-polling loop on a backgrounded screen
+    private Button exportBtn;                   // held so the export can show progress on the button itself
+    private volatile int generation = 0;        // bumped by Clear; a read carrying an older value is dropped
     private volatile List<TraceParser.Row> lastRows = java.util.Collections.emptyList();  // for Export
     private final Runnable blink = new Runnable() {
         @Override public void run() {
@@ -86,7 +93,7 @@ public final class DiagnosticsActivity extends Activity {
         who.setText(subjectLine());
         root.addView(who);
 
-        // Stat tiles (signals / spoofed / real / reads) — a scannable KPI row, not a run-on string.
+        // Stat tiles (faked / leaked / unchecked / reads) — a scannable KPI row, not a run-on string.
         statRow = new LinearLayout(this);
         statRow.setOrientation(LinearLayout.HORIZONTAL);
         statRow.setPadding(0, dp(10), 0, 0);
@@ -108,15 +115,35 @@ public final class DiagnosticsActivity extends Activity {
         Button refreshBtn = flatButton("Refresh");
         refreshBtn.setOnClickListener(v -> refresh());
         btns.addView(refreshBtn);
-        Button exportBtn = flatButton("Export");
+        exportBtn = flatButton("Export");
         exportBtn.setOnClickListener(v -> exportLog());
         btns.addView(exportBtn);
-        Button clearBtn = flatButton("Clear");
-        // Clear off the UI thread — `su -c : > log` + waitFor() blocks; inline it would ANR if su is slow.
-        clearBtn.setOnClickListener(v -> new Thread(() -> {
-            clearLog();
-            runOnUiThread(this::refresh);
-        }, "specter-diag-clear").start());
+        // Clear DISCARDS the capture, so it reads as destructive (red) and confirms first — it used to look
+        // and behave exactly like Refresh, one tap away from throwing away the session's reads.
+        final Button clearBtn = flatButton("Clear");
+        clearBtn.setTextColor(Theme.RED);
+        clearBtn.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Clear captured reads?")
+                .setMessage("Everything recorded so far is discarded. Export first if you want to keep it.")
+                .setPositiveButton("Clear", (d, w) -> {
+                    clearBtn.setEnabled(false);
+                    generation++;   // invalidate any read already in flight against the pre-clear log
+                    // Off the UI thread — `su -c : > log` + waitFor() blocks; inline it would ANR if su is slow.
+                    new Thread(() -> {
+                        clearLog();
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            clearBtn.setEnabled(true);
+                            // Don't force `reading = false` here — an in-flight pre-clear read clears it in
+                            // its own finally, and stomping it would allow two concurrent `su -c tail`.
+                            // Its result is already discarded by the generation check; the 2s tick (or
+                            // Refresh) picks up the cleared log on the next pass.
+                            refresh();
+                        });
+                    }, "specter-diag-clear").start();
+                })
+                .setNegativeButton("Cancel", null)
+                .show());
         btns.addView(clearBtn);
         root.addView(btns);
 
@@ -128,12 +155,15 @@ public final class DiagnosticsActivity extends Activity {
     }
 
     @Override protected void onResume() {
-        super.onResume(); live = true;
-        h.removeCallbacks(tick); h.post(tick);
+        super.onResume();
+        // Don't resume the poll mid-export — the export deliberately paused it and will restore it when the
+        // su round-trip finishes. Resuming here too would leave two self-rescheduling tick loops running.
+        resumed = true;
+        if (!exporting) { live = true; h.removeCallbacks(tick); h.post(tick); }
         h.removeCallbacks(blink); h.post(blink);
     }
     @Override protected void onPause() {
-        super.onPause(); live = false;
+        super.onPause(); live = false; resumed = false;
         h.removeCallbacks(tick); h.removeCallbacks(blink);
     }
 
@@ -159,10 +189,21 @@ public final class DiagnosticsActivity extends Activity {
     private void refresh() {
         if (reading) return;
         reading = true;
+        final int gen = generation;   // snapshot: a Clear bumps this and invalidates reads already in flight
         new Thread(() -> {
             final String raw = readLog();
             final List<TraceParser.Row> rows = TraceParser.parse(raw, MAX_ROWS);
-            h.post(() -> { try { render(raw, rows); } finally { reading = false; } });
+            h.post(() -> {
+                boolean stale = gen != generation;
+                try {
+                    // A read that STARTED before a Clear would render pre-clear rows over a cleared log
+                    // (codex). Drop its result.
+                    if (!stale && !isFinishing() && !isDestroyed()) render(raw, rows);
+                } finally { reading = false; }
+                // ...and re-read now that we're free, so a Clear that happened mid-read still repaints
+                // immediately instead of waiting for the next 2s tick (or forever, if the screen is paused).
+                if (stale && !isFinishing() && !isDestroyed()) refresh();
+            });
         }, "specter-diag-read").start();
     }
 
@@ -177,44 +218,50 @@ public final class DiagnosticsActivity extends Activity {
             return;
         }
         summary.setTextSize(11);
-        int props = 0, files = 0, stat = 0, hits = 0, spoofed = 0, real = 0;
+        int hits = 0, spoofed = 0, leaking = 0, noise = 0, unknown = 0;
         for (TraceParser.Row r : rows) {
             hits += r.count;
-            if (r.kind == TraceParser.Kind.PROP) props++;
-            else if (r.kind == TraceParser.Kind.FILE) files++;
-            else if (r.kind == TraceParser.Kind.STAT) stat++;
-            Coverage.State c = Coverage.of(r.verb, r.target);
-            if (c == Coverage.State.SPOOFED) spoofed++;
-            else if (c == Coverage.State.REAL) real++;
+            switch (Coverage.of(r)) {
+                case SPOOFED: spoofed++; break;
+                case LEAK: leaking++; break;
+                case NOISE: noise++; break;
+                default: unknown++; break;
+            }
         }
-        statRow.addView(statTile(String.valueOf(rows.size()), "signals", Theme.INK));
-        statRow.addView(statTile(String.valueOf(spoofed), "spoofed", Theme.SAGE));
-        statRow.addView(statTile(String.valueOf(real), "real", Theme.DIM));
-        statRow.addView(statTile(String.valueOf(hits), "reads", Theme.GOLD));
-        summary.setText(props + " props · " + files + " files · " + stat + " stat"
+        // The headline answers "is the app seeing the fake device?" — identifiers we control vs identifiers
+        // leaking. Non-identifying reads (fonts, libc, the app's own /proc) are the bulk of any trace and are
+        // NOT a verdict on the spoof, so they're a muted count, not a scary "256 real".
+        statRow.addView(statTile(String.valueOf(spoofed), "faked", Theme.SAGE));
+        statRow.addView(statTile(String.valueOf(leaking), "leaked", leaking > 0 ? Theme.RED : Theme.DIM));
+        statRow.addView(statTile(String.valueOf(unknown), "unchecked", Theme.GOLD));
+        statRow.addView(statTile(String.valueOf(hits), "reads", Theme.INK));
+        // "signals", not "reads": these counts are per DISTINCT signal (the parser dedups), while the `reads`
+        // tile is the raw hit total. Saying "reads" here would imply the two numbers should reconcile.
+        summary.setText(verdict(spoofed, leaking, unknown) + "  ·  " + noise + " harmless signals hidden"
                 + (rows.size() >= MAX_ROWS ? "  ·  list capped at " + MAX_ROWS : ""));
 
-        addGroup("Properties", TraceParser.Kind.PROP, rows);
-        addGroup("Files", TraceParser.Kind.FILE, rows);
-        addGroup("Stat / access", TraceParser.Kind.STAT, rows);
-        addGroup("Other", TraceParser.Kind.OTHER, rows);
+        // Order tells the story: what we protected, then what escaped, then what we can't judge.
+        // NOISE rows are omitted entirely — showing them is what made a working spoof look broken.
+        addCoverageGroup("Faked — the app saw the wrong device", Coverage.State.SPOOFED, Theme.SAGE, rows);
+        addCoverageGroup("Leaked — real values got through", Coverage.State.LEAK, Theme.RED, rows);
+        addCoverageGroup("Not checked yet", Coverage.State.UNKNOWN, Theme.GOLD, rows);
     }
 
-    /** A distinct accent color per kind so the eye can group reads at a glance (a left rule on each row). */
-    private static int accentFor(TraceParser.Kind kind) {
-        switch (kind) {
-            case PROP: return Theme.GOLD;
-            case FILE: return Theme.BLUE;
-            case STAT: return Theme.SAGE;
-            default:   return Theme.DIM;
-        }
+    /** One plain sentence a non-technical user can act on. Never claims a clean sweep while reads remain
+     *  unclassified — "nothing got through" would be an overclaim when we simply couldn't judge N of them. */
+    private static String verdict(int spoofed, int leaking, int unknown) {
+        if (leaking > 0) return leaking + " real value" + (leaking == 1 ? "" : "s") + " got through";
+        if (spoofed == 0 && unknown == 0) return "No device info read yet";
+        if (unknown > 0) return "No known leaks · " + unknown + " signal" + (unknown == 1 ? "" : "s") + " we can't judge";
+        return "Nothing real got through";
     }
 
-    private void addGroup(String name, TraceParser.Kind kind, List<TraceParser.Row> rows) {
+    /** Render one coverage bucket (spoofed / leaking / unclassified). Groups by what the read MEANS rather
+     *  than by which syscall fetched it — the syscall was never the question the user is asking. */
+    private void addCoverageGroup(String name, Coverage.State state, int accent, List<TraceParser.Row> rows) {
         int n = 0;
-        for (TraceParser.Row r : rows) if (r.kind == kind) n++;
+        for (TraceParser.Row r : rows) if (Coverage.of(r) == state) n++;
         if (n == 0) return;
-        final int accent = accentFor(kind);
 
         // Group header: colored dot + name + count.
         LinearLayout hdr = new LinearLayout(this);
@@ -244,8 +291,18 @@ public final class DiagnosticsActivity extends Activity {
         hdr.addView(badge);
         list.addView(hdr);
 
+        String note = groupNote(state);
+        if (note != null) {
+            TextView n2 = new TextView(this);
+            n2.setText(note);
+            n2.setTextColor(Theme.DIM);
+            n2.setTextSize(11);
+            n2.setPadding(dp(2), 0, dp(2), dp(6));
+            list.addView(n2);
+        }
+
         for (TraceParser.Row r : rows) {
-            if (r.kind != kind) continue;
+            if (Coverage.of(r) != state) continue;
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
@@ -264,23 +321,19 @@ public final class DiagnosticsActivity extends Activity {
             tgt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             row.addView(tgt);
 
-            // Coverage badge: is this signal SPOOFED by Specter, left REAL (non-identifying), or UNKNOWN?
-            // (UNKNOWN gets no badge — never over-claim.) This is the flagship "what's protected" readout.
-            Coverage.State cov = Coverage.of(r.verb, r.target);
-            if (cov != Coverage.State.UNKNOWN) {
-                TextView cb = new TextView(this);
-                boolean spoofed = cov == Coverage.State.SPOOFED;
-                cb.setText(spoofed ? "spoofed" : "real");
-                cb.setTextColor(spoofed ? Theme.ON_GOLD : Theme.DIM);
-                cb.setTextSize(10);
-                cb.setPadding(dp(7), dp(1), dp(7), dp(2));
-                cb.setBackground(roundRect(spoofed ? Theme.SAGE : Theme.BG2, spoofed ? Theme.SAGE : Theme.LINE, dp(8)));
-                LinearLayout.LayoutParams cbl = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                cbl.setMargins(dp(8), 0, 0, 0);
-                cb.setLayoutParams(cbl);
-                row.addView(cb);
-            }
+            // The group header already states the coverage, so the per-row badge names the READ KIND instead
+            // (prop vs file vs stat) — which the old kind-grouping used to convey.
+            TextView kb = new TextView(this);
+            kb.setText(kindLabel(r.kind));
+            kb.setTextColor(Theme.DIM);
+            kb.setTextSize(10);
+            kb.setPadding(dp(7), dp(1), dp(7), dp(2));
+            kb.setBackground(roundRect(Theme.BG2, Theme.LINE, dp(8)));
+            LinearLayout.LayoutParams kbl = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            kbl.setMargins(dp(8), 0, 0, 0);
+            kb.setLayoutParams(kbl);
+            row.addView(kb);
 
             // Count pill — only when read more than once (a single read needs no ×1 clutter).
             if (r.count > 1) {
@@ -297,6 +350,24 @@ public final class DiagnosticsActivity extends Activity {
                 row.addView(cnt);
             }
             list.addView(row);
+        }
+    }
+
+    /** One plain line telling the user what a group MEANS and whether to care. Null = self-evident. */
+    private static String groupNote(Coverage.State state) {
+        switch (state) {
+            case LEAK: return "These identify the real phone. Worth spoofing.";
+            case UNKNOWN: return "We don't know if these identify the phone. Report any that look device-specific.";
+            default: return null;
+        }
+    }
+
+    private static String kindLabel(TraceParser.Kind kind) {
+        switch (kind) {
+            case PROP: return "prop";
+            case FILE: return "file";
+            case STAT: return "stat";
+            default:   return "other";
         }
     }
 
@@ -366,7 +437,20 @@ public final class DiagnosticsActivity extends Activity {
      *  far more useful than the raw 90k-line diag.log. Built from the in-memory parsed rows; staged in the
      *  app's own dir then su-copied out (Download isn't app-writable). */
     private void exportLog() {
-        final String report = DiagReport.build(lastRows);
+        if (exporting) return;              // a second tap while su is still working is a no-op, not a queue
+        exporting = true;
+        // Acknowledge the tap IMMEDIATELY. The su round-trip below can take a second or more (Magisk may
+        // have to spawn a fresh root shell), and with no feedback the button reads as laggy/broken.
+        exportBtn.setText("Exporting…");
+        exportBtn.setEnabled(false);
+        android.widget.Toast.makeText(this, "Writing coverage report…", android.widget.Toast.LENGTH_SHORT).show();
+        // Pause the 2s poll for the duration: its own `su -c tail` competes with ours for the su daemon,
+        // which is what makes the export feel slow.
+        final boolean wasLive = live;
+        live = false;
+        h.removeCallbacks(tick);
+
+        final List<TraceParser.Row> snapshot = lastRows;
         final String name = "specter-coverage-" + System.currentTimeMillis() + ".txt";
         final String dir = com.specter.module.gen.AppDataVault.EXPORT_DIR;   // /sdcard/Download/Specter
         final String dest = dir + "/" + name;
@@ -374,8 +458,10 @@ public final class DiagnosticsActivity extends Activity {
             boolean ok = false;
             java.io.File staged = new java.io.File(getFilesDir(), name);
             try {
+                // Build the report HERE, not on the click: it walks every row four times (once per group).
+                byte[] bytes = DiagReport.build(snapshot).getBytes("UTF-8");
                 try (java.io.FileOutputStream fos = new java.io.FileOutputStream(staged)) {
-                    fos.write(report.getBytes("UTF-8"));
+                    fos.write(bytes);
                 }
                 Process p = Runtime.getRuntime().exec(new String[]{"su", "-c",
                         "mkdir -p '" + dir + "' && cp '" + staged.getAbsolutePath() + "' '" + dest + "' && chmod 644 '" + dest + "'"});
@@ -386,9 +472,18 @@ public final class DiagnosticsActivity extends Activity {
             //noinspection ResultOfMethodCallIgnored
             staged.delete();
             final boolean done = ok;
-            h.post(() -> android.widget.Toast.makeText(this,
-                    done ? "Coverage report -> " + dest : "Export failed (grant root?)",
-                    android.widget.Toast.LENGTH_LONG).show());
+            h.post(() -> {
+                exporting = false;
+                if (isFinishing() || isDestroyed()) return;   // don't touch ANY UI on a dead activity
+                exportBtn.setText("Export");
+                exportBtn.setEnabled(true);
+                android.widget.Toast.makeText(this,
+                        done ? "Saved to Download/Specter" : "Export failed (grant root?)",
+                        android.widget.Toast.LENGTH_LONG).show();
+                // Only resume polling if the screen is STILL in the foreground — the user may have left
+                // while su was working, and onPause deliberately stopped the loop (codex).
+                if (wasLive && resumed) { live = true; h.removeCallbacks(tick); h.post(tick); }
+            });
         }, "specter-diag-export").start();
     }
 
@@ -400,12 +495,20 @@ public final class DiagnosticsActivity extends Activity {
     private View buildLiveToggle() {
         LinearLayout pill = new LinearLayout(this);
         pill.setOrientation(LinearLayout.HORIZONTAL);
-        pill.setGravity(Gravity.CENTER_VERTICAL);
-        pill.setBackgroundColor(Theme.BTN);
-        pill.setPadding(dp(14), dp(6), dp(14), dp(6));
+        pill.setGravity(Gravity.CENTER);
+        // Same fill/edge/radius/ripple + 44dp height as the other controls in this row — it read as a status
+        // badge before, so users didn't know it was tappable (codex).
+        pill.setBackground(new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Theme.BTN_HI),
+                roundRect(Theme.BTN, Theme.BTN_EDGE, dp(Theme.R_CTRL)), null));
+        pill.setMinimumHeight(dp(44));
+        pill.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S4), dp(Theme.S2));
+        pill.setClickable(true);
+        pill.setFocusable(true);
+        pill.setContentDescription("Pause live trace");
         LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        plp.setMargins(0, 0, dp(8), 0);
+        plp.setMargins(0, 0, dp(Theme.S2), 0);
         pill.setLayoutParams(plp);
 
         liveDot = new View(this);
@@ -418,12 +521,15 @@ public final class DiagnosticsActivity extends Activity {
         liveLabel = new TextView(this);
         liveLabel.setText("Live");
         liveLabel.setTextColor(Theme.INK);
-        liveLabel.setTextSize(13);
+        liveLabel.setTextSize(Theme.T_LABEL);
         pill.addView(liveLabel);
 
         pill.setOnClickListener(v -> {
             live = !live;
             liveLabel.setText(live ? "Live" : "Paused");
+            // Describe the ACTION the tap performs, not the current state — a screen reader announcing
+            // "Live" gives no hint that activating it pauses.
+            v.setContentDescription(live ? "Pause live trace" : "Resume live trace");
             // Clear any queued tick before re-arming, or a fast toggle stacks a second self-rescheduling loop.
             h.removeCallbacks(tick);
             if (live) h.post(tick);
@@ -456,21 +562,27 @@ public final class DiagnosticsActivity extends Activity {
         return t;
     }
 
+    /** A control built from the Theme tokens the rest of the app uses (type scale, spacing scale, control
+     *  radius, button fill+edge) with a ripple and a real 44dp touch target — it used to hardcode 13sp/6dp
+     *  and a square flat color, which is why this screen's controls didn't match the rest of the app. */
     private Button flatButton(String text) {
         Button btn = new Button(this);
         btn.setText(text);
         btn.setAllCaps(false);
         btn.setTextColor(Theme.INK);
-        btn.setTextSize(13);
-        btn.setBackgroundColor(Theme.BTN);
+        btn.setTextSize(Theme.T_LABEL);
+        android.graphics.drawable.GradientDrawable bg = roundRect(Theme.BTN, Theme.BTN_EDGE, dp(Theme.R_CTRL));
+        btn.setBackground(new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Theme.BTN_HI), bg, null));
+        btn.setStateListAnimator(null);
         btn.setMinWidth(0);
-        btn.setMinHeight(0);
         btn.setMinimumWidth(0);
-        btn.setMinimumHeight(0);
-        btn.setPadding(dp(14), dp(6), dp(14), dp(6));
+        btn.setMinHeight(dp(44));           // accessible touch target (was effectively ~28dp)
+        btn.setMinimumHeight(dp(44));
+        btn.setPadding(dp(Theme.S4), dp(Theme.S2), dp(Theme.S4), dp(Theme.S2));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 0, dp(8), 0);
+        lp.setMargins(0, 0, dp(Theme.S2), 0);
         btn.setLayoutParams(lp);
         return btn;
     }

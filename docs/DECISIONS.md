@@ -2,6 +2,25 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-07-31 (v0.20.0): the live trace hides NON-IDENTIFYING reads from the verdict, but NEVER by a
+  whole-namespace prefix — every noise rule is an exact allowlist grounded in a measured trace.** WHY: the
+  screen previously counted 256 "real" reads, of which ~99% were font stats, library loads and per-thread
+  scheduler files. Presenting those as if a value had leaked made a WORKING spoof look broken, which is the
+  opposite of what the screen is for. But the first cut of the fix used broad prefixes (`/system/`, `/apex/`,
+  `/vendor/lib`, `vendor.*`, `sys.*`, `ro.hardware.*`, `/proc/self/*`), and codex correctly flagged that as a
+  worse bug in the other direction: `/vendor/lib*` names the SoC's drivers, `ro.hardware.gralloc|egl|vulkan`
+  name the GPU vendor, and `/proc/self/maps` + `status` are exactly what injection/tamper detection reads.
+  Decision: NOISE is only ever an exact key/path (or a proven-narrow shape like `/system/fonts/*.ttf`), and
+  anything unproven stays UNKNOWN. An honest "we can't judge this" is acceptable; a wrong "harmless" hides a
+  real leak, and that is the one failure this screen must not have. Corollary: `LEAK` is likewise reserved for
+  signals with an actual identifying value — boot-slot state and hostname were demoted to UNKNOWN because a
+  false alarm costs the screen its credibility just as much as a missed leak does.
+- **2026-07-31 (v0.20.0): TraceParser collapses `/proc/<digits>/` to `/proc/<pid>/` instead of dropping it.**
+  WHY: a measured Cash App run touched 69 distinct thread ids; as one row each they alone exhausted the UI's
+  400-row cap and pushed the real signals off the screen. Dropping them would have lost app-enumeration (a
+  read of ANOTHER process's `cmdline` IS a fingerprinting signal), so the pid is collapsed and the hit count
+  carries the volume — "the app read /proc/<pid>/comm ×40" is the fact worth showing, not forty near-identical
+  rows differing only by a transient id.
 - **2026-07-31 (v0.19.5): OS-version spoof is gated on an `os_version_spoof_enabled` policy flag (exact
   host-SDK match), enforced at the apply boundary.** WHY: `ro.build.version.sdk` / `ro.product.first_api_level`
   can only be spoofed via the DEFERRED native map (spoofing them at process init SIGSEGVs the zygote — see the
