@@ -2,6 +2,23 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-01 (v0.21.0): the US device pool only grows with REAL dumped build.prop values — 4 devices, not 12.**
+  WHY: the pool was 7 with ZERO Samsung (every Samsung row in devices.json is an EU/KR F/N/B variant, which
+  `_is_us_model` correctly rejects — a US carrier + an international model is itself a coherence tell). Research
+  found 245 real US Samsung A11+ builds in a device-telemetry corpus, but a device row also needs
+  `ro.build.version.security_patch`, and that corpus records attestation data with NO patch column. Only 4
+  builds had a full dumped build.prop with the patch date. Decision: ship those 4 (pool 7 -> 11, target met)
+  rather than complete the other 9 by deriving the patch from the PDA date-code — that rule decoded only 2 of 3
+  known-good samples, so it would have put invented dates in the dataset. A fabricated field is worse than a
+  smaller pool: it's a tell that survives every rotation.
+- **2026-08-01: CODENAME_SOC in build_hardware_dataset.py is the SOURCE of hardware.json — hand-edits to the
+  generated file are silently reverted.** WHY: an earlier audit hand-corrected six codenames in
+  data/hardware.json (sunfish=sm7150 not sm6150, sargo/bonito=sdm670, kiev/nairo=lito, a71naxx=sm7150) but
+  never updated the generator's map, so this change's regeneration reverted all six and
+  `test_known_device_socs` — which pins exactly those values — failed. Fixed in the generator, so the script
+  and the pinned facts now agree. Corollary: never hand-edit data/hardware.json; fix CODENAME_SOC/SOC_SPECS
+  and regenerate. A per-codename `GPU_RENDERER_OVERRIDE` exists for platforms shipping more than one Adreno
+  (lito covers both Adreno 619 "kiev" and 620 "nairo").
 - **2026-07-31 (v0.20.0): the live trace hides NON-IDENTIFYING reads from the verdict, but NEVER by a
   whole-namespace prefix — every noise rule is an exact allowlist grounded in a measured trace.** WHY: the
   screen previously counted 256 "real" reads, of which ~99% were font stats, library loads and per-thread

@@ -40,8 +40,20 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
   that currently thins rotation on hosts whose SDK few pool devices share). Needs a new Java->native signalling
   channel (none exists today) + repeated zygote/app-launch stress testing — codex rated it "low but nonzero
   SIGSEGV risk". Own PR, not overnight on the fleet.
-- **2026-07-31 - Expand devices.json with real A11+ US devices (esp. Samsung)** - status: `researching`
-  (deferred from v0.19.5). At `MIN_ANDROID_MAJOR=11` the effective US phone pool is only 7 devices with ZERO
+- **2026-07-31 - Expand devices.json with real A11+ US devices (esp. Samsung)** - status: `SHIPPED (v0.21.0,
+  2026-08-01) - pool 7 -> 11, target met`. Added 4 real US-carrier Samsung phones: S21 `SM-G991U` (o1q),
+  S21+ `SM-G996U` (t2q, Android 11 - useful, the fleet hosts are A11), S21 Ultra `SM-G998U` (p3q), S22
+  `SM-S901U` (r0q). Pool is now google 5 / samsung 4 / lge 1 / motorola 1, by release {11: 6, 12: 5}.
+  New SoCs `taro` (SD8Gen1) + `kalama` (SD8Gen2) in SOC_SPECS + soc_topology + the Java mirror; launch APIs
+  added both languages. Byte-parity re-proven over the real dataset (40 seeds x 53 RNG-sensitive fields, 0
+  mismatches). **Why only 4 and not 12:** a device row needs a real `security_patch`, and the telemetry corpus
+  that yielded 245 US builds records ATTESTATION data with no patch column - only 4 had a full dumped
+  build.prop. Deriving the rest from the PDA date-code decoded just 2 of 3 known-good samples, so it was
+  rejected (see docs/DECISIONS.md). REMAINING (if the pool ever needs to be bigger): S22+/S22U/S23U/S20
+  family/A52/A53/S21FE US fingerprints are all VERIFIED REAL and listed in that decision entry - they need
+  only a patch date, obtainable by a first-party `getprop ro.build.version.security_patch` on a device
+  running that firmware, or by extracting system.img from the Samsung firmware package.
+  (original entry: status was `researching` (deferred from v0.19.5).) At `MIN_ANDROID_MAJOR=11` the effective US phone pool is only 7 devices with ZERO
   Samsung (the dataset's Samsung A11 rows are all Europe/N-region, filtered by `_is_us_model`) — thin rotation
   + a non-Samsung skew that is itself distributionally odd for a US fleet. Add real A11/12/13 US devices
   (Samsung S21/S22/S23 US variants SM-G99xU, A-series US, recent Pixels, Motorola) with COMPLETE real

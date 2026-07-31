@@ -115,7 +115,8 @@ def test_every_dataset_release_has_a_real_sdk_mapping():
     releases = {row[5].split(":")[1] for row in devices if len(row) > 5 and ":" in row[5]}
     # rough era check: major version N should map to an SDK in a sane band, never the default fallback.
     era = {"4": (14, 20), "5": (21, 22), "6": (23, 23), "7": (24, 25), "8": (26, 27),
-           "9": (28, 28), "10": (29, 29), "11": (30, 30), "12": (31, 32)}
+           "9": (28, 28), "10": (29, 29), "11": (30, 30), "12": (31, 32), "13": (33, 33),
+           "14": (34, 34)}
     for rel in sorted(releases):
         assert rel in G._SDK_BY_RELEASE, f"release {rel!r} in devices.json has no explicit SDK mapping"
         sdk = G.sdk_for_release(rel)
@@ -315,3 +316,49 @@ def test_generated_os_is_plausibly_recent():
         assert _release_major(p) >= P.MIN_ANDROID_MAJOR, \
             "OS below the floor (%d): Android %s (%s)" % (
                 P.MIN_ANDROID_MAJOR, p["build_release"], p["build_fingerprint"])
+
+
+def test_cpuinfo_cluster_order_matches_topology_capacity():
+    """/proc/cpuinfo and /sys cpu_capacity must agree on WHICH core is which.
+
+    A real big.LITTLE Android device enumerates little cores first: CPU0 is the efficiency core and the
+    last CPU is the prime core, which is what soc_topology's cpu_capacity encodes (low -> high). The
+    generator's SOC_SPECS lists clusters big-first, so emitting them in declaration order made
+    /proc/cpuinfo claim CPU0 was the Cortex-X while cpu_capacity said CPU0 was the little core — a single
+    profile asserting two contradictory things about the same core, readable by anything that parses both.
+    """
+    hardware = P._load_hardware()
+    topo = P._load_soc_topology()
+    for codename, e in hardware.items():
+        soc = e.get("soc")
+        t = topo.get(soc) or {}
+        caps = (t.get("cpu_capacity") or "").split()
+        parts = [l.split(":")[1].strip() for l in e.get("cpuinfo", "").split("\n")
+                 if l.startswith("CPU part")]
+        if not caps or len(parts) != len(caps):
+            continue
+        if caps[0] == caps[-1]:
+            continue   # homogeneous SoC: nothing to order
+        assert int(caps[0]) < int(caps[-1]), (
+            f"{codename}: cpu_capacity is not little-first ({caps[0]} .. {caps[-1]})")
+        assert parts[0] != parts[-1], (
+            f"{codename}: heterogeneous SoC {soc} reports one CPU part for every core")
+        # Cores sharing a capacity are the SAME physical cluster, so they must report the SAME CPU part.
+        # This is what actually distinguishes little-first from big-first: with the clusters emitted in the
+        # wrong order the part runs (1,3,4) land against the capacity runs (4,3,1) and the groups disagree.
+        # (An earlier version of this test asserted `parts[0] in {parts at caps[0]}`, which is a tautology —
+        # index 0 is always in that set — and passed on the pre-fix data. codex caught it.)
+        by_cap = {}
+        for part, cap in zip(parts, caps):
+            by_cap.setdefault(cap, set()).add(part)
+        for cap, cap_parts in by_cap.items():
+            assert len(cap_parts) == 1, (
+                f"{codename}: cores with capacity {cap} report {sorted(cap_parts)} — one capacity cluster "
+                f"cannot contain two different CPU parts; cpuinfo and cpu_capacity are misaligned")
+        # …and the largest-capacity cluster must be the one with the fewest cores (the prime core), which
+        # pins the direction rather than merely the grouping.
+        assert len(by_cap) >= 2
+        biggest = max(by_cap, key=lambda c: int(c))
+        assert caps.count(biggest) <= caps.count(caps[0]), (
+            f"{codename}: the highest-capacity cluster has more cores than the lowest — capacity vector "
+            f"looks big-first")

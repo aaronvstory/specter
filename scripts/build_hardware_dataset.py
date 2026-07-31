@@ -92,6 +92,17 @@ SOC_SPECS = {
         "cpu_parts": [(0x41, 0xd0d, 1), (0x41, 0xd0d, 3), (0x41, 0xd05, 4)],
         "hardware": "Qualcomm Technologies, Inc KONA", "bogomips": "38.40", "cores": 8,
     },
+    "sm7150": {  # SD730/730G — Pixel 4a, Galaxy A71. Real cpuinfo Hardware line is "SDMMAGPIE"
+        # (the platform's internal name), NOT "SM7150" — pinned by test_known_device_socs.
+        "gpu_renderer": "Adreno (TM) 618", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
+        "cpu_parts": [(0x41, 0xd0b, 2), (0x41, 0xd05, 6)],
+        "hardware": "Qualcomm Technologies, Inc SDMMAGPIE", "bogomips": "38.40", "cores": 8,
+    },
+    "sdm670": {  # SD670 — Pixel 3a / 3a XL. Device tree is "qcom,sdm670" (NOT sm670).
+        "gpu_renderer": "Adreno (TM) 615", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
+        "cpu_parts": [(0x41, 0xd0b, 2), (0x41, 0xd05, 6)],
+        "hardware": "Qualcomm Technologies, Inc SDM670", "bogomips": "38.40", "cores": 8,
+    },
     "lito": {  # SD765G — Pixel 5, Pixel 4a 5G, A90 5G
         "gpu_renderer": "Adreno (TM) 620", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
         "cpu_parts": [(0x41, 0xd0d, 1), (0x41, 0xd0d, 1), (0x41, 0xd05, 6)],
@@ -101,6 +112,18 @@ SOC_SPECS = {
         "gpu_renderer": "Adreno (TM) 660", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
         "cpu_parts": [(0x41, 0xd44, 1), (0x41, 0xd0d, 3), (0x41, 0xd05, 4)],
         "hardware": "Qualcomm Technologies, Inc LAHAINA", "bogomips": "38.40", "cores": 8,
+    },
+    "taro": {  # SD 8 Gen 1 (SM8450) — Galaxy S22 family (US). 1x Cortex-X2 (0xd48) +
+        # 3x Cortex-A710 (0xd47) + 4x Cortex-A510 (0xd46), Adreno 730.
+        "gpu_renderer": "Adreno (TM) 730", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
+        "cpu_parts": [(0x41, 0xd48, 1), (0x41, 0xd47, 3), (0x41, 0xd46, 4)],
+        "hardware": "Qualcomm Technologies, Inc TARO", "bogomips": "38.40", "cores": 8,
+    },
+    "kalama": {  # SD 8 Gen 2 (SM8550) — Galaxy S23 Ultra (US). 1x Cortex-X3 (0xd4e) +
+        # 2x A715 (0xd4d) + 2x A710 (0xd47) + 3x A510 (0xd46), Adreno 740.
+        "gpu_renderer": "Adreno (TM) 740", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
+        "cpu_parts": [(0x41, 0xd4e, 1), (0x41, 0xd4d, 2), (0x41, 0xd47, 2), (0x41, 0xd46, 3)],
+        "hardware": "Qualcomm Technologies, Inc KALAMA", "bogomips": "38.40", "cores": 8,
     },
     # --- Samsung Exynos ---
     "exynos9820": {  # S10 (EU) — Exynos 9820
@@ -165,25 +188,42 @@ SOC_SPECS = {
 # European Samsung variants (SM-*F/EEA, *N Korea) are Exynos. Grounded per model.
 CODENAME_SOC = {
     # Google Pixel (all Snapdragon / Tensor)
-    "blueline": "sdm845", "crosshatch": "sdm845", "sargo": "sm6150", "bonito": "sm6150",
-    "flame": "msmnile", "coral": "msmnile", "sunfish": "sm6150", "bramble": "lito",
+    # NOTE: these six were hand-corrected in data/hardware.json by the 2026-07-28 SoC audit but the map
+    # below was never updated, so ANY regeneration silently reverted them (the "original sunfish bug" the
+    # coherence test pins: 4a is SD730G/sm7150, not the sm6150 default). Fixed at the source 2026-08-01 —
+    # tests/test_coherence.py::test_known_device_socs is the authority for these values.
+    "blueline": "sdm845", "crosshatch": "sdm845", "sargo": "sdm670", "bonito": "sdm670",
+    "flame": "msmnile", "coral": "msmnile", "sunfish": "sm7150", "bramble": "lito",
     "redfin": "lito", "barbet": "lito", "oriole": "gs101", "raven": "gs101",
     # LG
     "judyln": "sdm845", "mh2lm": "msmnile",
     # Motorola
-    "racer": "lahaina", "sofiap": "sdm665", "kiev": "sm6150", "nairo": "sm6150",
+    "racer": "lahaina", "sofiap": "sdm665", "kiev": "lito", "nairo": "lito",
     "ali": "sdm660", "evert": "sdm660", "river": "sdm660", "ocean": "bengal",
     "channel": "trinket", "smith": "kona", "beckham": "msm8998",
     # Samsung Galaxy A / M (mid/budget, Exynos)
     "a01core": "exynos850", "a20": "exynos7884", "a40": "exynos7884", "a50": "exynos9610",
     "a50s": "exynos9611", "a51": "exynos9611", "a52q": "exynos1280", "a6lte": "exynos7870",
-    "a6plte": "sdm660", "a70q": "sm6150", "a71": "sm6150", "a7y18lte": "exynos7885",
+    "a6plte": "sdm660", "a70q": "sm6150", "a71": "sm7150", "a7y18lte": "exynos7885",
     "m20lte": "exynos7904", "m21": "exynos9611", "r3q": "sdm855",
     # Samsung flagship (US = Snapdragon, EU/KR = Exynos)
     "beyond0": "exynos9820", "beyond1": "exynos9820", "beyond2": "exynos9820", "beyond2q": "msmnile",
     "beyondx": "exynos9820", "crownlte": "exynos9810", "d2q": "exynos9825", "d2s": "exynos9825",
     "c2q": "exynos990", "c2s": "exynos990", "r5q": "msmnile", "r8s": "exynos990", "r8q": "kona",
     "z3s": "exynos990", "o1s": "exynos2100",
+    # US-carrier Samsung flagships (2026-07-31). US variants are SNAPDRAGON where the EU/KR twin is
+    # Exynos — e.g. o1s (EU S21) is exynos2100 but o1q (US S21) is SD888/lahaina. SoC per model taken
+    # from the device-telemetry corpus's own chipset_model column, not inferred:
+    #   SM-G991U/G996U/G998U/G990U -> SM8350 (lahaina) · SM-S901U/S906U/S908U -> SM8450 (taro)
+    #   SM-S918U -> SM8550 (kalama) · SM-G981U/G986U/G988U -> SM8250 (kona) · SM-A536U -> s5e8825
+    "o1q": "lahaina", "t2q": "lahaina", "p3q": "lahaina", "r9q": "lahaina",
+    "r0q": "taro", "g0q": "taro", "b0q": "taro",
+    "dm3q": "kalama",
+    "x1q": "kona", "y2q": "kona", "z3q": "kona",
+    "a53x": "exynos1280",
+    # A52 5G US (a52xq) is SM7225 / SD750G — the lito family, NOT the Exynos of the 4G a52q. Must be
+    # mapped explicitly: longest-prefix would otherwise resolve "a52xq" via a shorter "a5.." stem.
+    "a52xq": "lito",
     # tablet in pool (kept for completeness; filtered out by non-phone marker at profile time)
     "gta3xlwifi": "exynos7904",
 }
@@ -252,10 +292,19 @@ SENSORS_BY_VENDOR = {
 
 def build_cpuinfo(soc_spec):
     """Assemble a realistic /proc/cpuinfo body from a SoC spec. One block per core with the
-    ARM/QC processor lines; a trailing Hardware line. Coherent core count + part IDs."""
+    ARM/QC processor lines; a trailing Hardware line. Coherent core count + part IDs.
+
+    Cluster order matters and is NOT free: a real big.LITTLE Android device enumerates the LITTLE
+    cores first, so CPU0 is the efficiency core and the last CPU is the prime core — which is exactly
+    what data/soc_topology.json encodes (cpu_capacity "286 286 286 286 851 851 851 1024", little->big).
+    SOC_SPECS lists cpu_parts big-first (prime cluster first, the way chips are marketed), so emitting
+    them in declaration order made /proc/cpuinfo claim CPU0 was the Cortex-X while cpu_capacity said
+    CPU0 was the little core — one profile asserting two different things about the same core (codex).
+    Reverse the cluster list here so both signals agree. Pre-existing for every SoC; fixed 2026-08-01.
+    """
     lines = []
     idx = 0
-    for impl, part, count in soc_spec["cpu_parts"]:
+    for impl, part, count in reversed(soc_spec["cpu_parts"]):
         for _ in range(count):
             lines.append(f"processor\t: {idx}")
             lines.append("BogoMIPS\t: " + soc_spec["bogomips"])
@@ -305,6 +354,15 @@ def _soc_for_codename(codename):
     return CODENAME_SOC[best] if best else DEFAULT_SOC
 
 
+# A few platforms ship MORE THAN ONE Adreno across their device family, so the SoC alone doesn't fix the
+# renderer string: lito covers SD750G (Adreno 619, Moto G 5G "kiev") and SD765G (Adreno 620, Pixel 5 /
+# 4a5G / Moto One 5G "nairo"). Per-codename override, checked before the SoC default.
+# Authority: tests/test_coherence.py::_KNOWN_DEVICE_SOC.
+GPU_RENDERER_OVERRIDE = {
+    "kiev": "Adreno (TM) 619",
+}
+
+
 def _brand_of(row):
     """Sensor-vendor family from the device row's brand slot (row[2])."""
     b = row[1].lower()
@@ -316,10 +374,15 @@ def _brand_of(row):
 
 def _tier_cameras(codename):
     flagship = ("flame", "coral", "oriole", "raven", "redfin", "o1s", "c2q", "c2s", "d2q", "d2s",
-                "z3s", "beyond1", "beyond2", "beyondx", "r8q", "r8s", "racer", "smith")
+                "z3s", "beyond1", "beyond2", "beyondx", "r8q", "r8s", "racer", "smith",
+                # US-carrier Samsung flagships: S20 (x1q/y2q/z3q), S21 (o1q/t2q/p3q), S22 (r0q/g0q/b0q),
+                # S23 Ultra (dm3q). All quad-camera-class devices like their EU twins above.
+                "x1q", "y2q", "z3q", "o1q", "t2q", "p3q", "r0q", "g0q", "b0q", "dm3q")
     mid = ("a51", "a52q", "a70q", "a71", "a50", "sunfish", "bramble", "barbet", "sargo",
            "bonito", "blueline", "crosshatch", "judyln", "mh2lm", "beyond0", "crownlte", "r3q", "r5q",
-           "kiev", "nairo", "sofiap", "river", "evert")
+           "kiev", "nairo", "sofiap", "river", "evert",
+           # S21 FE (r9q) is triple-camera, and the US A5x mid-range (a52xq/a53x) likewise.
+           "r9q", "a52xq", "a53x")
     if codename.startswith(flagship): return ["0", "1", "2", "3"]
     if codename.startswith(mid): return ["0", "1", "2"]
     return ["0", "1"]
@@ -328,9 +391,14 @@ def _tier_cameras(codename):
 def _entry(codename, soc, brand):
     spec = SOC_SPECS[soc]
     sensors = SENSORS_BY_VENDOR[brand]
+    renderer = spec["gpu_renderer"]
+    for stem, gpu in GPU_RENDERER_OVERRIDE.items():
+        if codename.startswith(stem):
+            renderer = gpu
+            break
     return {
         "soc": soc,
-        "gpu_renderer": spec["gpu_renderer"],
+        "gpu_renderer": renderer,
         "gpu_vendor": spec["gpu_vendor"],
         "gles_version": spec["gles_version"],
         "cores": spec["cores"],

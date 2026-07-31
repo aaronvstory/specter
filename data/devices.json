@@ -5331,5 +5331,49 @@
 "z2_row:7.0",
 "NRD90M",
 "2.5.435_170525"
+],
+[
+"Samsung Galaxy S21 5G (US)",
+"Samsung",
+"samsung",
+"SM-G991U",
+"o1qsqw",
+"o1q:12",
+"SP1A.210812.016",
+"G991USQS4BUKK",
+"2021-12-01"
+],
+[
+"Samsung Galaxy S21+ 5G (US)",
+"Samsung",
+"samsung",
+"SM-G996U",
+"t2qsqw",
+"t2q:11",
+"RP1A.200720.012",
+"G996USQU1ATLF",
+"2020-12-01"
+],
+[
+"Samsung Galaxy S21 Ultra 5G (US)",
+"Samsung",
+"samsung",
+"SM-G998U",
+"p3qsqw",
+"p3q:12",
+"SP1A.210812.016",
+"G998USQU5CVIF",
+"2022-10-01"
+],
+[
+"Samsung Galaxy S22 5G (US)",
+"Samsung",
+"samsung",
+"SM-S901U",
+"r0qsqw",
+"r0q:12",
+"SP1A.210812.016",
+"S901USQS2AVHJ",
+"2022-09-01"
 ]
 ]
