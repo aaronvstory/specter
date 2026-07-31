@@ -134,8 +134,9 @@ FACTORY_RESET_MAX_DAYS_AFTER_PATCH = 540   # ~18 months: a plausible ownership w
 SECONDS_PER_DAY = 86400
 
 
-# Android release -> API level (Build.VERSION.SDK_INT / ro.build.version.sdk). A profile that claims
-# Android 9 must not report SDK 30 (the real Pixel 4) — that mismatch is itself a fingerprint. Pure
+# Android release -> API level (Build.VERSION.SDK_INT / ro.build.version.sdk). A profile's claimed
+# release and its SDK must agree (e.g. Android 11 -> SDK 30, Android 12 -> SDK 31) — a mismatch is itself
+# a fingerprint. Pure
 # function of the release string (no RNG), so Java mirrors it byte-for-byte. Handles "10"/"11" and
 # older "9"/"8.1.0" forms; unknown -> a safe modern default.
 _SDK_BY_RELEASE = {

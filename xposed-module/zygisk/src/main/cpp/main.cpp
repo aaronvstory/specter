@@ -887,16 +887,32 @@ public:
         // read them during process init and spoofing then SIGSEGVs the zygote. So spoof them LATE — only
         // after g_props_ready flips (a detached ~1s timer below), which is long after init but well before
         // any user-triggered fingerprint read.
+        // GATED on os_version_spoof_enabled: because these two ONLY spoof late, there's a startup window
+        // where the native path returns the REAL host value. If the profile's claimed OS != the host's, that
+        // window leaks a claimed-vs-host contradiction — so the Java layer (IdentityService) sets this flag
+        // to "0" whenever the claimed sdk/first_api don't EXACTLY match the host, and we then leave these two
+        // reporting the real host on BOTH paths (never spoofed). One flag, read by both native + HookEntry,
+        // so the layers can never disagree. "1" (or absent, for older profiles) = spoof as before.
+        auto osv = profile.find("os_version_spoof_enabled");
+        bool spoof_os_version = (osv == profile.end()) || osv->second != "0";
         auto sdk = profile.find("build_sdk");
-        if (sdk != profile.end() && !sdk->second.empty()) {
-            // ro.build.version.sdk = the CURRENT OS the profile claims (build_sdk).
+        if (spoof_os_version && sdk != profile.end() && !sdk->second.empty()) {
+            // ro.build.version.sdk = the CURRENT OS the profile claims (build_sdk). The flag guarantees this
+            // == the real host sdk, so the deferred-window read (real) and the post-arm read (claimed) agree.
             g_prop_spoof_late["ro.build.version.sdk"] = sdk->second;
-            // ro.product.first_api_level = the device's LAUNCH API — build_first_api when the profile carries
-            // it (a device that shipped on an older OS and updated has first_api < sdk), else fall back to the
-            // current sdk (== the old behaviour; correct for devices whose launch OS == the claimed release).
-            auto fa = profile.find("build_first_api");
-            g_prop_spoof_late["ro.product.first_api_level"] =
-                (fa != profile.end() && !fa->second.empty()) ? fa->second : sdk->second;
+            // ro.product.first_api_level = the device's LAUNCH API. It ALSO leaks real in the deferred window,
+            // and the profile's claimed build_first_api may not equal the real host launch-API (we only gate
+            // the flag on the SDK matching, not first_api — see IdentityService.osVersionMatchesHost). So pin
+            // it to the REAL HOST value instead of the profile's claim: read it here via the standard libc
+            // getter (our hook isn't installed yet at this point in postAppSpecialize, so this returns the
+            // true value), guaranteeing the pre-arm (real) and post-arm (this same real value) reads agree.
+            char host_fa[PROP_VALUE_MAX] = {0};
+            if (__system_property_get("ro.product.first_api_level", host_fa) > 0 && host_fa[0])
+                g_prop_spoof_late["ro.product.first_api_level"] = host_fa;
+            // If the host value is unreadable, DON'T fall back to the profile's claim: that would make the
+            // pre-arm window leak the real host while the post-arm read returns a fabricated value — the exact
+            // contradiction we're avoiding. Omit the entry so first_api reports the real host on BOTH paths
+            // (coherent by definition). (codex-flagged.)
         }
         // Verified-boot / lock-state props (native path). A rooted device leaks unlocked/orange/test-keys
         // here — a heavy root flag independent of the model spoof. OEM-agnostic device STATE (a stock

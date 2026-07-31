@@ -217,21 +217,75 @@ public final class IdentityService {
         }
     }
 
-    /** Generate a fresh, validated, never-before-used profile and record it. */
+    /** Generate a fresh, validated, never-before-used profile and record it. Prefers a device whose OS
+     *  version exactly matches the host so the OS-version family can be coherently spoofed (see
+     *  {@link #stampOsVersionPolicy}); falls back to any valid profile if the pool has no exact match. */
     public Map<String, String> generateUnique() {
         synchronized (LEDGER_LOCK) {
             List<List<String>> devices = loadDevices();
             Map<String, Map<String, String>> hardware = loadHardware();
             UsedStore store = loadLedger();
             Generators.Rng r = secureRng();
+            // Coherence: ro.build.version.sdk / ro.product.first_api_level can only be spoofed via the DEFERRED
+            // native map (spoofing them at init SIGSEGVs the zygote), so during a startup window the native
+            // path returns the REAL host value. Claiming ANY value != host therefore leaks a contradiction in
+            // that window (and a device can't coherently report a different OS than it runs anyway). So the
+            // OS-version SDK is only spoofed when the profile's claimed build_sdk EXACTLY matches the host's;
+            // otherwise SDK_INT/sdk are left reporting the host (see stampOsVersionPolicy). first_api is NOT
+            // part of the match (it would over-thin the pool) — it's host-pinned in the native layer instead.
+            // To keep the spoof
+            // ACTIVE we prefer a pool device that matches the host — but the pool is thin (may lack the host's
+            // exact OS), so this is a best-effort PREFERENCE, never a hard filter that could starve generation.
+            // On-device-only (secureRng, not the seeded byte-parity path), so it never affects Java<->Python
+            // parity. See the Cash App failure investigation + docs/DECISIONS.md.
+            Map<String, String> fallback = null;
             for (int tries = 0; tries < 1000; tries++) {
                 Map<String, String> p = Profile.build(r, devices, true, country, hardware);
                 if (!Profile.isValid(p)) continue;
                 if (store.collides(p)) continue;
-                if (store.record(p)) { saveLedger(store); return p; }
+                if (osVersionMatchesHost(p)) {
+                    if (store.record(p)) { saveLedger(store); return stampOsVersionPolicy(p); }
+                } else if (fallback == null) {
+                    fallback = p;   // remember the first non-matching valid profile, but keep hunting for a match
+                }
+            }
+            // No OS-matching device in the pool after 1000 tries (thin pool vs this host's OS) — apply a valid
+            // profile with the OS-version spoof DISABLED (stampOsVersionPolicy sets the flag to "0").
+            if (fallback != null && store.record(fallback)) {
+                saveLedger(store);
+                return stampOsVersionPolicy(fallback);
             }
             throw new RuntimeException("could not generate a fresh valid profile in 1000 tries");
         }
+    }
+
+    /** True iff the profile's claimed OS MAJOR (build_sdk) matches the real host SDK. That's the axis apps
+     *  actually key off (Build.VERSION.SDK_INT + ro.build.version.sdk) and the one whose deferred-window leak
+     *  broke Cash App. We deliberately do NOT also require build_first_api to match the host: on a device that
+     *  shipped older and updated (e.g. the Pixel 4a: launch API 29, now SDK 30) only a handful of pool devices
+     *  would ever match both, collapsing model rotation to one phone — a same-model "fleet" is its own tell.
+     *  So we match on SDK; when spoofing is ON, the native layer pins ro.product.first_api_level to the REAL
+     *  HOST first_api (see main.cpp) so THAT prop stays coherent too regardless of the claimed device's launch
+     *  API. (Fuller first_api coherence — a pool device that also matches host launch-API — is a dataset
+     *  follow-up; see docs/IDEAS.md.) */
+    private static boolean osVersionMatchesHost(Map<String, String> p) {
+        // CANONICAL string equality, not a numeric parse: the native layer publishes build_sdk VERBATIM as
+        // ro.build.version.sdk, so a non-canonical form ("030", " 30 ", "+30") that parses to the host SDK
+        // would stamp the flag "1" yet make native publish the raw string — reintroducing the very
+        // contradiction the flag prevents. Our own generator always writes the canonical form, so this only
+        // bites a hand-edited/imported profile; requiring exact string equality closes it. (codex-flagged.)
+        return Integer.toString(android.os.Build.VERSION.SDK_INT).equals(p.get("build_sdk"));
+    }
+
+    /** Stamp the applied-time OS-version-spoof policy onto the profile: os_version_spoof_enabled = "1" iff the
+     *  claimed OS matches the host (so sdk/first_api/SDK_INT can be coherently spoofed), else "0" (both the
+     *  native deferred map and HookEntry read this ONE flag and leave the OS-version family reporting the real
+     *  host, so the two layers can never disagree). Every apply path (generate/restore/import/edit) routes
+     *  through apply() which calls this, so no profile bypasses the invariant. Mutates + returns the same map. */
+    static Map<String, String> stampOsVersionPolicy(Map<String, String> p) {
+        if (p == null) return null;
+        p.put("os_version_spoof_enabled", osVersionMatchesHost(p) ? "1" : "0");
+        return p;
     }
 
     /** Serialize a profile to the flat JSON string the hook consumes. */
@@ -265,6 +319,14 @@ public final class IdentityService {
         Map<String, String> p = new java.util.LinkedHashMap<>(profile);
         Profile.backfillDerived(p);
         Profile.backfillHardware(p, loadHardware());
+        // Stamp the OS-version-spoof policy for THIS host at apply time: a restored/imported/edited profile
+        // may claim an OS that doesn't match this device (e.g. a saved Android-9 identity, or a profile made
+        // on a different-SDK phone). stampOsVersionPolicy sets os_version_spoof_enabled="0" in that case, so
+        // both the native layer and HookEntry leave sdk/first_api/SDK_INT reporting the real host instead of
+        // leaking a claimed-vs-host contradiction. Recomputed here (not trusting any flag carried in the
+        // incoming profile) so the policy always reflects the CURRENT host. This is the common apply boundary
+        // for every path (generate/restore/import/edit), so nothing bypasses the invariant.
+        stampOsVersionPolicy(p);
         RootWriter.write(shell, pkg, toJson(p));
     }
 

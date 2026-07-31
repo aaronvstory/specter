@@ -3,6 +3,27 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.19.5] - 2026-07-31
+
+### Fixed
+- **Coherence: never claim an Android version older than the real host (Cash App failure fix).** Generated
+  profiles no longer claim a device older than Android 11, closing the likely cause of Cash App's
+  "unavailable to you at this time" on its newer (5.62) build — the app was seeing a too-old claimed SDK.
+- **OS-version coherence via a per-apply policy flag (`os_version_spoof_enabled`).**
+  `ro.build.version.sdk` / `ro.product.first_api_level` can only be spoofed via a DEFERRED native map
+  (spoofing them at process init SIGSEGVs the zygote), so during a brief startup window the native path
+  returns the REAL host value — a claimed-vs-host mismatch there is a contradiction. Fix: the OS-version
+  family (SDK_INT / ro.build.version.sdk / first_api / RELEASE) is only spoofed when the profile's claimed
+  SDK EXACTLY matches the host; otherwise it reports the real host. Enforced at the apply boundary via one
+  flag both the native layer and the Java hooks read, so generated / restored / imported / edited profiles
+  all obey it and the two layers can never disagree. `ro.product.first_api_level` is pinned to the real
+  host value when spoofing so it stays coherent regardless of the claimed device's launch API. Verified
+  on-device (Pixel 4a): SDK-30 profiles on the SDK-30 host stamp the flag on; model rotation preserved.
+
+### Changed
+- `MIN_ANDROID_MAJOR` raised 9 -> 11 (Python + Java, byte-parity preserved). No profile ever claims a
+  pre-Android-11 device again.
+
 ## [0.19.4] - 2026-07-31
 
 ### Changed

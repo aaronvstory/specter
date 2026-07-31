@@ -76,9 +76,11 @@ public final class Profile {
             "sim_subscriber_imsi", "sim_serial_iccid", "gmail",
     };
 
-    // Minimum plausible Android major. A fresh account on Android < 9 (2018) reads as a red flag.
+    // Minimum plausible Android major. We never claim a device older than Android 11 (2020): the
+    // SIGSEGV-sensitive ro.build.version.sdk / ro.product.first_api_level leak the REAL host SDK during
+    // a brief startup window, so a claimed SDK 28 on a real SDK 30 host is a detectable contradiction.
     // Mirror of profile.MIN_ANDROID_MAJOR — MUST match, or the pool differs and byte-parity breaks.
-    static final int MIN_ANDROID_MAJOR = 9;
+    static final int MIN_ANDROID_MAJOR = 11;
     // Tablet / TV markers (device NAME, row 0). We emit a phone number + SIM + IMEI, so a WiFi tablet
     // or TV box is incoherent. Mirror of profile._NON_PHONE_MARKERS.
     static final String[] NON_PHONE_MARKERS = {

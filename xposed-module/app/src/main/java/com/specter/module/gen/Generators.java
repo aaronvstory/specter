@@ -264,7 +264,8 @@ public final class Generators {
 
     /** Unix seconds of a plausible factory reset. Mirrors Python factory_reset_epoch. */
     // Android release -> API level (Build.VERSION.SDK_INT / ro.build.version.sdk). Mirrors
-    // generators.sdk_for_release: a profile claiming Android 9 must not report SDK 30. Pure, no RNG.
+    // generators.sdk_for_release: a profile's release and SDK must agree (Android 11 -> 30, 12 -> 31) —
+    // a mismatch is itself a fingerprint. Pure, no RNG.
     private static final Map<String, Integer> SDK_BY_RELEASE = new java.util.HashMap<>();
     static {
         SDK_BY_RELEASE.put("15", 35); SDK_BY_RELEASE.put("14", 34); SDK_BY_RELEASE.put("13", 33);

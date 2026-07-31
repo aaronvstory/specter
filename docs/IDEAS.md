@@ -5,6 +5,46 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-07-31 - Live-trace UX: tell "checked -> spoofed -> works", stop dumping non-identifying noise** -
+  status: `building` (task started, not in the v0.19.5 PR). The trace showed "20 spoofed / 256 real / 124
+  unknown" which reads as "the app is failing" to a user — but the audit proved ~99% is NON-identifying noise:
+  237 of the 256 "real" are font-file stats (.ttf/.otf every app reads to render text), 6 are dir-existence
+  stats, and the 11 "real" PROPS all return empty on-device or are universal arm64 constants; the 124 "unknown"
+  are all /proc/<pid>/ runtime paths + ioctl numbers. The trace's PURPOSE is a confidence surface: surface
+  (a) checked+spoofed = the win, (b) genuinely-identifying-and-still-real = the ONLY real alarm (an identifier
+  that should be spoofed but isn't), and hide/collapse the non-identifying noise from the headline counts. Do
+  NOT soften real-leak detection — just stop presenting noise as leaks. Coverage.java already has the
+  SPOOFED/REAL/UNKNOWN classifier; the fix is mostly UI (DiagnosticsActivity) + tightening what counts as
+  noise. Serve across apps (DevInfo/Dasher/CashApp/FPJS), not just one.
+- **2026-07-31 - Re-test FPJS for a unique visitorId** - status: `idea`. We stopped FPJS testing a while
+  back; the app is much more advanced now (native prop coverage, boot_id/cpuinfo redirect, SDK coherence, UA
+  fix). Re-run the FPJS demo + Server-API flow (see CLAUDE.md "FPJS measurement") across two applied profiles
+  and check whether the visitorId now DIFFERS between them (previously it stayed constant — the leak hunt that
+  drove much of this work). Use `push --no-clear` on the demo to preserve the user's API keys.
+- **2026-07-31 - Lifecycle handshake to arm the deferred native prop map (replace the 3s timer)** - status:
+  `idea` (deferred from v0.19.5). `ro.build.version.sdk`/`first_api_level` are spoofed via a deferred map armed
+  by a FIXED 3000ms detached-thread timer, leaving a startup window where the native path returns real values.
+  v0.19.5 made that window harmless via the `os_version_spoof_enabled` flag (spoof the OS version only when the
+  profile's SDK exactly matches the host; else report host), but the robust fix is to arm the map on a concrete
+  lifecycle event (an LSPosed hook right before `Application.attachBaseContext()`) instead of a timer — that
+  eliminates the window entirely, so a profile could safely claim ANY SDK (removing the exact-match constraint
+  that currently thins rotation on hosts whose SDK few pool devices share). Needs a new Java->native signalling
+  channel (none exists today) + repeated zygote/app-launch stress testing — codex rated it "low but nonzero
+  SIGSEGV risk". Own PR, not overnight on the fleet.
+- **2026-07-31 - Expand devices.json with real A11+ US devices (esp. Samsung)** - status: `researching`
+  (deferred from v0.19.5). At `MIN_ANDROID_MAJOR=11` the effective US phone pool is only 7 devices with ZERO
+  Samsung (the dataset's Samsung A11 rows are all Europe/N-region, filtered by `_is_us_model`) — thin rotation
+  + a non-Samsung skew that is itself distributionally odd for a US fleet. Add real A11/12/13 US devices
+  (Samsung S21/S22/S23 US variants SM-G99xU, A-series US, recent Pixels, Motorola) with COMPLETE real
+  build.prop data (exact fingerprint/incremental/first_api/patch) + matching real hardware.json SoC entries.
+  Source from physical devices or a verified build.prop dump repo — NOT firmware-site fragments (they give the
+  PDA/build number but not the full prop set, and fabricating the rest creates new tells). SoC table already
+  has lahaina (SD888/S21-US), kona (SD865/S20-US), exynos2100, gs101 (Tensor) — so several are cheap to add.
+- **2026-07-31 - Make Coverage.java's spoofed/real badge byte-accurate** - status: `idea`. Coverage classifies
+  a signal spoofed/real by STATIC set membership, not by verifying the bytes actually returned. This produced a
+  false "boot_id leaking real" signal during the Cash App investigation (the .specter_bid redirect was actually
+  working fine). Low priority, but the badge misleads a leak hunt — have it read back the actual returned value
+  where feasible (or at least mark declaratively-classified rows as "expected" vs "verified").
 - **2026-07-30 - Remaining multi-sentence Settings/dialog copy (v0.19.3 gauntlet finding)** - status: `idea`.
   The v0.19.3 polish pass enforced "one short line, no paragraphs" across Settings + Protections + the
   Protection-status screen, but three PRE-EXISTING strings elsewhere in MainActivity.java still violate the
