@@ -3,6 +3,41 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.21.0] - 2026-08-01
+
+### Added
+- **US device pool expanded 7 -> 11, and Samsung is no longer absent from it.** Every Samsung row already in
+  `data/devices.json` was a Europe/Korea F/N/B variant, which `_is_us_model` correctly rejects (a US carrier
+  paired with an international model is itself a coherence tell), so a US profile could only ever be a Pixel,
+  an LG G8 or a Moto G Pro. Added four real US-carrier Samsung phones — Galaxy S21 (`SM-G991U`), S21+
+  (`SM-G996U`), S21 Ultra (`SM-G998U`) and S22 (`SM-S901U`) — taking the pool to google 5 / samsung 4 /
+  lge 1 / motorola 1. Android-11 devices went 5 -> 6, which is what the SDK-match rule actually rotates
+  through on the A11 fleet.
+- Every field of the new rows (product, codename, release, build ID, incremental, security patch) is verbatim
+  from a real dumped `build.prop`. Nothing was interpolated: the research turned up 245 verified US Samsung
+  builds, but only four came with a real security-patch date, and the PDA date-code rule that would have
+  filled the rest decoded just two of three known-good samples — so the other nine were left out rather than
+  shipped with an invented field. See `docs/DECISIONS.md`.
+- Snapdragon 8 Gen 1 (`taro`) and 8 Gen 2 (`kalama`) SoC profiles — GPU renderer, CPU part layout, per-core
+  capacity/frequency/cache vectors — in the hardware dataset, the SoC topology, and the Java mirror.
+- Real launch APIs for the US Samsung models in both generators, so `ro.product.first_api_level` is the
+  device's actual launch API rather than defaulting to the running SDK (S21 launched on Android 11 and runs
+  12; first_api 30 vs sdk 31, as on a real handset).
+
+### Fixed
+- **Six devices silently reverted to the wrong SoC on every hardware-dataset regeneration.** An earlier audit
+  hand-corrected `data/hardware.json` (Pixel 4a is SD730G/`sm7150`, not the `sm6150` default; Pixel 3a/3a XL
+  are `sdm670`; Moto G 5G / One 5G are `lito`; Galaxy A71 is `sm7150`) but never updated `CODENAME_SOC` in
+  the generator that produces the file — so regenerating undid all six, exactly the "sunfish bug" that
+  `test_known_device_socs` pins. Fixed at the source; the generated file and the pinned facts now agree.
+  `data/hardware.json` must never be hand-edited.
+- **`/proc/cpuinfo` and `cpu_capacity` disagreed about which core is which, on every device.** A real
+  big.LITTLE Android phone enumerates little cores first — CPU0 is the efficiency core, the last CPU is the
+  prime core — which is how the SoC topology encodes capacity. The generator emitted CPU parts big-first, so
+  a profile's `/proc/cpuinfo` said CPU0 was the Cortex-X while its `cpu_capacity` said CPU0 was the little
+  core: one device asserting two contradictory things about the same core, to anything that reads both.
+  Pre-existing for all SoCs; now emitted little-first, with a coherence test pinning the agreement.
+
 ## [0.20.0] - 2026-07-31
 
 ### Changed

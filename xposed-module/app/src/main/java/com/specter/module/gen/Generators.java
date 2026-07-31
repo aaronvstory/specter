@@ -320,6 +320,16 @@ public final class Generators {
         LAUNCH_API_BY_MODEL.put("SM-G781B", 29); LAUNCH_API_BY_MODEL.put("SM-G991B", 30);
         LAUNCH_API_BY_MODEL.put("SM-G988B", 29); LAUNCH_API_BY_MODEL.put("SM-M205F", 27);
         LAUNCH_API_BY_MODEL.put("SM-M215F", 29);
+        // US-carrier Samsung flagships/mid (2026-07-31). Launch API = the Android the model SHIPPED with:
+        // S20 (Feb 2020)=29 · S21 + S21 FE=30 · S22 (Feb 2022)=31 · S23 (Feb 2023)=33 · A52 5G=30 ·
+        // A53 5G=31 · A13 5G=31. MUST stay identical to generators.py.
+        LAUNCH_API_BY_MODEL.put("SM-G981U", 29); LAUNCH_API_BY_MODEL.put("SM-G986U", 29);
+        LAUNCH_API_BY_MODEL.put("SM-G988U", 29); LAUNCH_API_BY_MODEL.put("SM-G991U", 30);
+        LAUNCH_API_BY_MODEL.put("SM-G996U", 30); LAUNCH_API_BY_MODEL.put("SM-G998U", 30);
+        LAUNCH_API_BY_MODEL.put("SM-G990U", 30); LAUNCH_API_BY_MODEL.put("SM-S901U", 31);
+        LAUNCH_API_BY_MODEL.put("SM-S906U", 31); LAUNCH_API_BY_MODEL.put("SM-S908U", 31);
+        LAUNCH_API_BY_MODEL.put("SM-S918U", 33); LAUNCH_API_BY_MODEL.put("SM-A526U", 30);
+        LAUNCH_API_BY_MODEL.put("SM-A536U", 31); LAUNCH_API_BY_MODEL.put("SM-A136U", 31);
         // Xiaomi/Redmi/POCO, Motorola, OnePlus (2026-07-28, GSMArena-sourced, launch<current only). MIUI traps
         // handled (Mi A1=25, POCOPHONE F1=27, Redmi Note 5 Pro=25). MUST stay identical to generators.py.
         LAUNCH_API_BY_MODEL.put("GM1900", 28); LAUNCH_API_BY_MODEL.put("GM1910", 28);

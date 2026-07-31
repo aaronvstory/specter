@@ -115,7 +115,8 @@ def test_every_dataset_release_has_a_real_sdk_mapping():
     releases = {row[5].split(":")[1] for row in devices if len(row) > 5 and ":" in row[5]}
     # rough era check: major version N should map to an SDK in a sane band, never the default fallback.
     era = {"4": (14, 20), "5": (21, 22), "6": (23, 23), "7": (24, 25), "8": (26, 27),
-           "9": (28, 28), "10": (29, 29), "11": (30, 30), "12": (31, 32)}
+           "9": (28, 28), "10": (29, 29), "11": (30, 30), "12": (31, 32), "13": (33, 33),
+           "14": (34, 34)}
     for rel in sorted(releases):
         assert rel in G._SDK_BY_RELEASE, f"release {rel!r} in devices.json has no explicit SDK mapping"
         sdk = G.sdk_for_release(rel)
@@ -315,3 +316,36 @@ def test_generated_os_is_plausibly_recent():
         assert _release_major(p) >= P.MIN_ANDROID_MAJOR, \
             "OS below the floor (%d): Android %s (%s)" % (
                 P.MIN_ANDROID_MAJOR, p["build_release"], p["build_fingerprint"])
+
+
+def test_cpuinfo_cluster_order_matches_topology_capacity():
+    """/proc/cpuinfo and /sys cpu_capacity must agree on WHICH core is which.
+
+    A real big.LITTLE Android device enumerates little cores first: CPU0 is the efficiency core and the
+    last CPU is the prime core, which is what soc_topology's cpu_capacity encodes (low -> high). The
+    generator's SOC_SPECS lists clusters big-first, so emitting them in declaration order made
+    /proc/cpuinfo claim CPU0 was the Cortex-X while cpu_capacity said CPU0 was the little core — a single
+    profile asserting two contradictory things about the same core, readable by anything that parses both.
+    """
+    hardware = P._load_hardware()
+    topo = P._load_soc_topology()
+    for codename, e in hardware.items():
+        soc = e.get("soc")
+        t = topo.get(soc) or {}
+        caps = (t.get("cpu_capacity") or "").split()
+        parts = [l.split(":")[1].strip() for l in e.get("cpuinfo", "").split("\n")
+                 if l.startswith("CPU part")]
+        if not caps or len(parts) != len(caps):
+            continue
+        if caps[0] == caps[-1]:
+            continue   # homogeneous SoC: nothing to order
+        assert int(caps[0]) < int(caps[-1]), (
+            f"{codename}: cpu_capacity is not little-first ({caps[0]} .. {caps[-1]})")
+        assert parts[0] != parts[-1], (
+            f"{codename}: heterogeneous SoC {soc} reports one CPU part for every core")
+        # The first core must be the little one in BOTH signals: its part must be the part that
+        # appears alongside the smallest capacity, i.e. the most common low-capacity part.
+        lo_parts = {p for p, c in zip(parts, caps) if c == caps[0]}
+        assert parts[0] in lo_parts, (
+            f"{codename}: CPU0 part {parts[0]} is not a low-capacity core — cpuinfo and cpu_capacity "
+            f"disagree about which core is which")

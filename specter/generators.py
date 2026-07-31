@@ -186,6 +186,15 @@ _LAUNCH_API_BY_MODEL = {
     "SM-N960F": 27, "SM-N950F": 25, "SM-N975F": 28, "SM-N986B": 29, "SM-G770F": 29,
     "SM-G780F": 29, "SM-G781B": 29, "SM-G991B": 30, "SM-G988B": 29, "SM-M205F": 27,
     "SM-M215F": 29,
+    # US-carrier Samsung flagships/mid (2026-07-31). Launch API = the Android the model SHIPPED with,
+    # which for every Galaxy S is the release current at its announcement:
+    #   S20 (Feb 2020) = Android 10/29 · S21 + S21 FE = Android 11/30 · S22 (Feb 2022) = Android 12/31
+    #   S23 (Feb 2023) = Android 13/33 · A52 5G (Mar 2021) = 30 · A53 5G (Mar 2022) = 31 · A13 5G = 31
+    "SM-G981U": 29, "SM-G986U": 29, "SM-G988U": 29,
+    "SM-G991U": 30, "SM-G996U": 30, "SM-G998U": 30, "SM-G990U": 30,
+    "SM-S901U": 31, "SM-S906U": 31, "SM-S908U": 31,
+    "SM-S918U": 33,
+    "SM-A526U": 30, "SM-A536U": 31, "SM-A136U": 31,
     # Xiaomi/Redmi/POCO, Motorola, OnePlus (2026-07-28, GSMArena-sourced, launch<current only). MIUI
     # traps handled: Mi A1=25, POCOPHONE F1=27, Redmi Note 5 Pro=25 (all shipped older Android than MIUI).
     "GM1900": 28, "GM1910": 28, "MI 9": 28,
