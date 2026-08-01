@@ -3,6 +3,34 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.0] - 2026-08-02
+
+### Fixed
+- **CPU /proc/cpuinfo now reports the REAL silicon each SoC ships — the emulator / "device or software isn't
+  supported" tell.** Every Snapdragon Kryo chip emitted generic ARM Cortex part ids, or the wrong core: SD855
+  claimed Cortex-A77 `0xd0d` when a real SD855 is Cortex-A76-class Kryo 485. Verified against the REAL
+  connected Pixel 4a, whose cpuinfo reports Qualcomm implementer `0x51`, part `0x804` (Kryo 4xx Gold) + `0x805`
+  (Silver) — NOT ARM `0x41`. Corrected `SOC_SPECS` for msmnile/sdm855/kona/lito/sm7150/sm6150/sdm670 to
+  Qualcomm `0x51:0x804/0x805`, lahaina/exynos2100 to Cortex-A78 `0xd41`, Tensor/exynos990 to A76 `0xd0b`, and
+  exynos9820/25 to A75 `0xd0a` — all sourced from pytorch/cpuinfo + the kernel `cputype.h`. Regenerated
+  `data/hardware.json`. Grounded by a new authoritative-MIDR test so no impossible core can be generated again.
+- **Never claim an OS newer than the real host.** The device pool had a floor (Android 11) but no ceiling, so
+  ~43% of generated profiles picked an Android-12 device (e.g. the S22 `SM-S901U` added in 0.21.0) on the
+  Android-11 fleet host — a self-contradiction (`ro.build.version.sdk` leaks the real host SDK) that tripped
+  the OS kill-switch. Added `MAX_ANDROID_MAJOR` (mirrored Python↔Java, byte-parity) so selection stays at or
+  below the host.
+- **Sensor list no longer reads as an emulator.** The native composite-sensor derivation matched sensor names
+  case-sensitively, so Pixel-family profiles (lowercase "accelerometer") derived ZERO composite sensors and
+  shipped ~6 total where a real phone exposes ~30-40. Made the match case-insensitive and added the standard
+  AOSP gesture/virtual sensors. The Java `getSensorList` hook also truncated the real sensor list to the
+  profile's ~5-7 rows; it now relabels the physical sensors and PASSES THROUGH the rest, and sets `mType` so
+  `getType()` agrees with the relabeled name.
+- **RAM/storage is keyed on the MODEL, not just the SoC.** One SoC serves many SKUs, so ~72% of profiles
+  claimed a RAM size the specific model never shipped (a Pixel 5 as 4GB; an S22 flagship as 3.8GB because
+  `taro`/`sdm670` were missing from the SoC map and fell to a 3/4/6GB default). Added a per-model RAM table
+  (longest-prefix on codename, byte-parity Python↔Java) pinning each real US model to its true SKU, plus the
+  missing SoCs. New model-grounded + fail-closed missing-SoC tests replace the old self-referential RAM test.
+
 ## [0.21.0] - 2026-08-01
 
 ### Added

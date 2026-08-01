@@ -120,7 +120,7 @@ public class GeneratorsTest {
             java.util.Set<Integer> allowed = new java.util.HashSet<>();
             for (int i : e.getValue()) allowed.add(Generators.RAM_GB[i]);
             for (int s = 0; s < 30; s++) {
-                String[] rs = Generators.ramStorageBytes(seeded(s * 7 + 3), e.getKey());
+                String[] rs = Generators.ramStorageBytes(seeded(s * 7 + 3), e.getKey(), "");
                 long gb = Math.round(Long.parseLong(rs[0]) / (double) (1024L * 1024L * 1024L));
                 check(allowed.contains((int) gb) || allowed.contains((int) gb + 1),
                         "soc " + e.getKey() + " ram " + gb + "GB in allowed " + allowed);
@@ -128,7 +128,7 @@ public class GeneratorsTest {
         }
         // Budget SoC never gets a flagship RAM tier.
         for (int s = 0; s < 50; s++) {
-            long ramB = Long.parseLong(Generators.ramStorageBytes(seeded(s), "trinket")[0]);
+            long ramB = Long.parseLong(Generators.ramStorageBytes(seeded(s), "trinket", "")[0]);
             check(ramB / (double) (1024L * 1024L * 1024L) <= 4.5, "trinket (budget) ram <= 4GB");
         }
 

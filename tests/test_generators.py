@@ -76,6 +76,41 @@ def test_ram_matches_soc_tier():
         assert int(ram_bytes) / (1024 ** 3) <= 4.5, "trinket (budget) must not get >4GB RAM"
 
 
+def test_ram_matches_the_actual_generated_model():
+    # Model-grounded (not self-referential): over real generated profiles, the reported RAM must round to a
+    # size the CLAIMED MODEL actually shipped. The old test validated the SoC table against itself and stayed
+    # green while ~72% of profiles claimed a RAM size the model never sold. Real retail RAM SKUs per model:
+    from specter import profile as P
+    real_ram_gb = {
+        "Pixel 4a (5G)": {6}, "Pixel 5": {8}, "Pixel 5a": {6}, "moto g pro": {4},
+        "LM-G850l": {6}, "SM-G996U": {8},   # LG G8 6GB · Galaxy S21+ 8GB
+    }
+    seen = set()
+    for _ in range(600):
+        p = P.generate_unique(None)
+        m = p["build_model"]
+        seen.add(m)
+        want = real_ram_gb.get(m)
+        if want is None:
+            continue   # only assert models whose real SKU we've pinned
+        gb = round(int(p["total_ram"]) / (1024 ** 3))
+        # reported totalMem is nominal minus a 3-8% kernel/reserved shave, so an 8GB device reports ~7-8.
+        assert gb in want or (gb + 1) in want, f"{m}: reported {gb}GB, real SKU is {sorted(want)}GB"
+    # the whole current US pool is covered by the pin above (guards against a model slipping through unpinned)
+    assert real_ram_gb.keys() >= seen, f"unpinned models generated: {seen - real_ram_gb.keys()}"
+
+
+def test_every_hardware_soc_has_a_ram_tier():
+    # The RAM fallback was SILENT: a SoC present in hardware.json but absent from _RAM_IDX_FOR_SOC hit the
+    # 3/4/6GB default, so a Galaxy S22 (taro) generated as low as 3.8GB. Assert every SoC the pool can pick
+    # is mapped explicitly (fail-closed), so a newly-added device can't silently mis-size its RAM.
+    from specter import profile as P
+    hw = P._load_hardware()
+    pool_socs = {e["soc"] for cn, e in hw.items() if cn != "_default"}
+    missing = sorted(s for s in pool_socs if s not in G._RAM_IDX_FOR_SOC)
+    assert not missing, f"SoCs in hardware.json with no RAM tier (fall to default): {missing}"
+
+
 def test_kernel_version_android_tag_coherent_with_release():
     # The kernel's -androidN branch tag can never be NEWER than the OS release running it. release<10
     # devices get a -perf kernel (no -androidN tag). Verify across many seeds + releases.

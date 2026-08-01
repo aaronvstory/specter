@@ -57,9 +57,11 @@ SOC_SPECS = {
         "cpu_parts": [(0x41, 0xd05, 4), (0x41, 0xd05, 4)], "hardware": "Qualcomm Technologies, Inc SDM665",
         "bogomips": "38.40", "cores": 8,
     },
-    "sm6150": {  # SD675/730 class — Pixel 4a, Moto G 5G
+    "sm6150": {  # SD675/730 class — Moto G 5G. Kryo 4xx (Qualcomm impl 0x51), NOT generic ARM Cortex —
+        # a real SD7xx phone reports 0x51 gold/silver (device-proven on a Pixel 4a, 2026-08-02), so the old
+        # generic-ARM 0x41:0xd0b/0xd05 was an emulator tell. 2 gold (0x804) + 6 silver (0x805).
         "gpu_renderer": "Adreno (TM) 612", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd0b, 2), (0x41, 0xd05, 6)], "hardware": "Qualcomm Technologies, Inc SM6150",
+        "cpu_parts": [(0x51, 0x804, 2), (0x51, 0x805, 6)], "hardware": "Qualcomm Technologies, Inc SM6150",
         "bogomips": "38.40", "cores": 8,
     },
     "trinket": {  # SD665/662 — budget Motos, Galaxy A-series
@@ -82,35 +84,41 @@ SOC_SPECS = {
         "cpu_parts": [(0x51, 0x802, 4), (0x51, 0x803, 4)], "hardware": "Qualcomm Technologies, Inc SDM845",
         "bogomips": "38.40", "cores": 8,
     },
-    "msmnile": {  # SD855 — Pixel 4, S10, Note10, G8
+    "msmnile": {  # SD855 — Pixel 4, S10, Note10, G8. Kryo 485 (Qualcomm impl 0x51): 4 gold (0x804, the
+        # prime+3 gold — same part id, distinguished only by clock in cpu_capacity) + 4 silver (0x805).
+        # The old 0x41:0xd0d was Cortex-A77 (wrong core AND wrong scheme) — the Cash-App "emulator" tell.
         "gpu_renderer": "Adreno (TM) 640", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd0d, 1), (0x41, 0xd0d, 3), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x51, 0x804, 4), (0x51, 0x805, 4)],
         "hardware": "Qualcomm Technologies, Inc SM8150", "bogomips": "38.40", "cores": 8,
     },
-    "kona": {  # SD865 — S20, Note20 Ultra, S20 FE 5G
+    "kona": {  # SD865 — S20, Note20 Ultra, S20 FE 5G. Kryo 585 = same 4xx part-id family (0x804/0x805).
         "gpu_renderer": "Adreno (TM) 650", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd0d, 1), (0x41, 0xd0d, 3), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x51, 0x804, 4), (0x51, 0x805, 4)],
         "hardware": "Qualcomm Technologies, Inc KONA", "bogomips": "38.40", "cores": 8,
     },
     "sm7150": {  # SD730/730G — Pixel 4a, Galaxy A71. Real cpuinfo Hardware line is "SDMMAGPIE"
-        # (the platform's internal name), NOT "SM7150" — pinned by test_known_device_socs.
+        # (the platform's internal name), NOT "SM7150" — pinned by test_known_device_socs. Kryo 4xx:
+        # DEVICE-PROVEN on the real Pixel 4a (2026-08-02) — impl 0x51, 2x 0x804 gold + 6x 0x805 silver.
         "gpu_renderer": "Adreno (TM) 618", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd0b, 2), (0x41, 0xd05, 6)],
+        "cpu_parts": [(0x51, 0x804, 2), (0x51, 0x805, 6)],
         "hardware": "Qualcomm Technologies, Inc SDMMAGPIE", "bogomips": "38.40", "cores": 8,
     },
-    "sdm670": {  # SD670 — Pixel 3a / 3a XL. Device tree is "qcom,sdm670" (NOT sm670).
+    "sdm670": {  # SD670 — Pixel 3a / 3a XL. Device tree is "qcom,sdm670" (NOT sm670). Kryo 360 (Gold=A75,
+        # Silver=A55) — reports Qualcomm impl 0x51, same 0x804/0x805 Kryo part-id family. 2 gold + 6 silver.
         "gpu_renderer": "Adreno (TM) 615", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd0b, 2), (0x41, 0xd05, 6)],
+        "cpu_parts": [(0x51, 0x804, 2), (0x51, 0x805, 6)],
         "hardware": "Qualcomm Technologies, Inc SDM670", "bogomips": "38.40", "cores": 8,
     },
-    "lito": {  # SD765G — Pixel 5, Pixel 4a 5G, A90 5G
+    "lito": {  # SD765G — Pixel 5, Pixel 4a 5G, A90 5G. Kryo 475 = 4xx family (Qualcomm impl 0x51).
+        # 2 gold (0x804: 1 prime + 1 gold, same part id) + 6 silver (0x805).
         "gpu_renderer": "Adreno (TM) 620", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd0d, 1), (0x41, 0xd0d, 1), (0x41, 0xd05, 6)],
+        "cpu_parts": [(0x51, 0x804, 2), (0x51, 0x805, 6)],
         "hardware": "Qualcomm Technologies, Inc LITO", "bogomips": "38.40", "cores": 8,
     },
-    "lahaina": {  # SD888 — S21, motorola edge
+    "lahaina": {  # SD888 — S21, motorola edge. Cortex-based (ARM impl 0x41): 1x X1 (0xd44) + 3x A78 (0xd41)
+        # + 4x A55 (0xd05). The old 0xd0d was Cortex-A77 — wrong; SD888 mid cores are A78 0xd41.
         "gpu_renderer": "Adreno (TM) 660", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd44, 1), (0x41, 0xd0d, 3), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x41, 0xd44, 1), (0x41, 0xd41, 3), (0x41, 0xd05, 4)],
         "hardware": "Qualcomm Technologies, Inc LAHAINA", "bogomips": "38.40", "cores": 8,
     },
     "taro": {  # SD 8 Gen 1 (SM8450) — Galaxy S22 family (US). 1x Cortex-X2 (0xd48) +
@@ -126,24 +134,27 @@ SOC_SPECS = {
         "hardware": "Qualcomm Technologies, Inc KALAMA", "bogomips": "38.40", "cores": 8,
     },
     # --- Samsung Exynos ---
-    "exynos9820": {  # S10 (EU) — Exynos 9820
+    "exynos9820": {  # S10 (EU) — Exynos 9820: 2x Exynos-M4 (impl 0x53 part 0x003) + 2x A75 (0xd0a) + 4x A55.
+        # Old 0xd0d was Cortex-A77 (wrong; 9820 big-mid is A75), and M4's Samsung part id is 0x003 not 0x001.
         "gpu_renderer": "Mali-G76", "gpu_vendor": "ARM", "gles_version": "3.2",
-        "cpu_parts": [(0x53, 0x001, 2), (0x41, 0xd0d, 2), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x53, 0x003, 2), (0x41, 0xd0a, 2), (0x41, 0xd05, 4)],
         "hardware": "Samsung EXYNOS9820", "bogomips": "26.00", "cores": 8,
     },
-    "exynos9825": {  # Note10 (EU) — Exynos 9825
+    "exynos9825": {  # Note10 (EU) — Exynos 9825 (9820 shrink): same 2x M4 + 2x A75 + 4x A55.
         "gpu_renderer": "Mali-G76", "gpu_vendor": "ARM", "gles_version": "3.2",
-        "cpu_parts": [(0x53, 0x002, 2), (0x41, 0xd0d, 2), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x53, 0x003, 2), (0x41, 0xd0a, 2), (0x41, 0xd05, 4)],
         "hardware": "Samsung EXYNOS9825", "bogomips": "26.00", "cores": 8,
     },
-    "exynos990": {  # S20/Note20 (EU) — Exynos 990
+    "exynos990": {  # S20/Note20 (EU) — Exynos 990: 2x Exynos-M5 (0x53 part 0x004) + 2x A76 (0xd0b) + 4x A55.
+        # Old 0xd0d was Cortex-A77 — wrong; 990's middle cluster is Cortex-A76 0xd0b.
         "gpu_renderer": "Mali-G77", "gpu_vendor": "ARM", "gles_version": "3.2",
-        "cpu_parts": [(0x53, 0x004, 2), (0x41, 0xd0d, 2), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x53, 0x004, 2), (0x41, 0xd0b, 2), (0x41, 0xd05, 4)],
         "hardware": "Samsung EXYNOS990", "bogomips": "26.00", "cores": 8,
     },
-    "exynos2100": {  # S21 (EU) — Exynos 2100
+    "exynos2100": {  # S21 (EU) — Exynos 2100: 1x X1 (0xd44) + 3x A78 (0xd41) + 4x A55. All ARM cores (no
+        # Mongoose). Old 0xd0d was Cortex-A77 — wrong; the 2100 mid cluster is Cortex-A78 0xd41.
         "gpu_renderer": "Mali-G78", "gpu_vendor": "ARM", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd44, 1), (0x41, 0xd0d, 3), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x41, 0xd44, 1), (0x41, 0xd41, 3), (0x41, 0xd05, 4)],
         "hardware": "Samsung EXYNOS2100", "bogomips": "26.00", "cores": 8,
     },
     "exynos7884": {  # A20/A40 budget — Exynos 7884
@@ -177,9 +188,10 @@ SOC_SPECS = {
         "bogomips": "26.00", "cores": 8,
     },
     # --- Google Tensor ---
-    "gs101": {  # Pixel 6 / 6 Pro — Tensor
+    "gs101": {  # Pixel 6 / 6 Pro — Google Tensor: 2x X1 (0xd44) + 2x A76 (0xd0b) + 4x A55. Old 0xd0d was
+        # Cortex-A77 — wrong; Tensor's middle pair is Cortex-A76 0xd0b (confirmed real Pixel 6 cpuinfo).
         "gpu_renderer": "Mali-G78", "gpu_vendor": "ARM", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd44, 2), (0x41, 0xd0d, 2), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x41, 0xd44, 2), (0x41, 0xd0b, 2), (0x41, 0xd05, 4)],
         "hardware": "Google Tensor", "bogomips": "31.25", "cores": 8,
     },
 }
@@ -245,9 +257,10 @@ SOC_SPECS.update({
         "cpu_parts": [(0x53, 0x001, 4), (0x41, 0xd03, 4)], "hardware": "Samsung EXYNOS9810",
         "bogomips": "26.00", "cores": 8,
     },
-    "sdm855": {  # A90 5G — SD855
+    "sdm855": {  # A90 5G — SD855. Kryo 485 (Qualcomm impl 0x51): 4 gold (0x804) + 4 silver (0x805), same
+        # as msmnile. Old 0x41:0xd0d (Cortex-A77) was the wrong scheme AND wrong core.
         "gpu_renderer": "Adreno (TM) 640", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x41, 0xd0d, 1), (0x41, 0xd0d, 3), (0x41, 0xd05, 4)],
+        "cpu_parts": [(0x51, 0x804, 4), (0x51, 0x805, 4)],
         "hardware": "Qualcomm Technologies, Inc SM8150", "bogomips": "38.40", "cores": 8,
     },
 })

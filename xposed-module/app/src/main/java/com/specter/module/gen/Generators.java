@@ -473,8 +473,9 @@ public final class Generators {
         RAM_IDX_FOR_SOC.put("exynos990", new int[]{4, 5});     RAM_IDX_FOR_SOC.put("exynos9825", new int[]{4, 5});
         RAM_IDX_FOR_SOC.put("kona", new int[]{4, 5});          RAM_IDX_FOR_SOC.put("exynos2100", new int[]{4, 5});
         RAM_IDX_FOR_SOC.put("lahaina", new int[]{4, 5});       RAM_IDX_FOR_SOC.put("sdm855", new int[]{3, 4, 5});
+        RAM_IDX_FOR_SOC.put("taro", new int[]{4, 5});          RAM_IDX_FOR_SOC.put("kalama", new int[]{4, 5});
         RAM_IDX_FOR_SOC.put("exynos9810", new int[]{3, 4});    RAM_IDX_FOR_SOC.put("msm8998", new int[]{2, 3, 4});
-        RAM_IDX_FOR_SOC.put("sdm845", new int[]{2, 3, 4});
+        RAM_IDX_FOR_SOC.put("sdm845", new int[]{2, 3, 4});     RAM_IDX_FOR_SOC.put("sdm670", new int[]{1, 2, 3});
         RAM_IDX_FOR_SOC.put("sm6150", new int[]{2, 3, 4});     RAM_IDX_FOR_SOC.put("sm7150", new int[]{2, 3, 4});
         RAM_IDX_FOR_SOC.put("lito", new int[]{2, 3, 4});
         RAM_IDX_FOR_SOC.put("gs101", new int[]{4});            RAM_IDX_FOR_SOC.put("exynos9610", new int[]{2, 3});
@@ -486,13 +487,40 @@ public final class Generators {
         RAM_IDX_FOR_SOC.put("sdm665", new int[]{1, 2, 3});
     }
 
+    // Per-MODEL RAM index override (into RAM_GB). One SoC serves many SKUs, so the SoC map is a 2-3-wide
+    // spread and ~72% of profiles claimed a RAM size the specific MODEL never shipped. Keyed on the
+    // product-stripped codename, this pins each real US-pool model to its true SKU. Checked BEFORE the SoC
+    // map. MUST stay byte-identical to Python _RAM_IDX_FOR_MODEL.
+    static final java.util.Map<String, int[]> RAM_IDX_FOR_MODEL = new java.util.HashMap<>();
+    static {
+        RAM_IDX_FOR_MODEL.put("bramble", new int[]{3});  RAM_IDX_FOR_MODEL.put("redfin", new int[]{4});
+        RAM_IDX_FOR_MODEL.put("barbet", new int[]{3});   RAM_IDX_FOR_MODEL.put("sofiap", new int[]{2});
+        RAM_IDX_FOR_MODEL.put("mh2lm", new int[]{3});    RAM_IDX_FOR_MODEL.put("t2q", new int[]{4});
+        RAM_IDX_FOR_MODEL.put("o1s", new int[]{4});      RAM_IDX_FOR_MODEL.put("p3q", new int[]{4, 5});
+        RAM_IDX_FOR_MODEL.put("r9q", new int[]{3, 4});
+        RAM_IDX_FOR_MODEL.put("flame", new int[]{3});    RAM_IDX_FOR_MODEL.put("coral", new int[]{3});
+        RAM_IDX_FOR_MODEL.put("oriole", new int[]{4});   RAM_IDX_FOR_MODEL.put("raven", new int[]{5});
+    }
+
     /**
      * RAM+storage as one coherent pair (both in BYTES), returned as {ramBytes, storageBytes}.
-     * The RAM tier is constrained to what {@code soc} realistically ships with. RNG order:
-     * ram-tier idx (against the SoC subset), ram-shave, storage-capacity idx, storage-fill.
+     * The RAM tier is constrained to what the MODEL (preferred) or its {@code soc} realistically ships with.
+     * RNG order: ram-tier idx (against the model/SoC subset), ram-shave, storage-capacity idx, storage-fill.
      */
-    public static String[] ramStorageBytes(Rng r, String soc) {
-        int[] idxs = RAM_IDX_FOR_SOC.getOrDefault(soc == null ? "" : soc, RAM_IDX_DEFAULT);
+    /** RAM index set for a device by LONGEST-prefix match against RAM_IDX_FOR_MODEL, or null. Pool codenames
+     *  carry variant suffixes (t2qsqw) while keys are clean stems (t2q); exact match misses. MUST match
+     *  Python _ram_idx_for_model. */
+    static int[] ramIdxForModel(String codename) {
+        String cn = codename == null ? "" : codename.toLowerCase();
+        String best = null;
+        for (String stem : RAM_IDX_FOR_MODEL.keySet())
+            if (cn.startsWith(stem) && (best == null || stem.length() > best.length())) best = stem;
+        return best != null ? RAM_IDX_FOR_MODEL.get(best) : null;
+    }
+
+    public static String[] ramStorageBytes(Rng r, String soc, String codename) {
+        int[] idxs = ramIdxForModel(codename);
+        if (idxs == null) idxs = RAM_IDX_FOR_SOC.getOrDefault(soc == null ? "" : soc, RAM_IDX_DEFAULT);
         int ramIdx = idxs[r.next(idxs.length)];
         long ramGb = RAM_GB[ramIdx];
         long ramNominal = ramGb * 1024L * 1024L * 1024L;

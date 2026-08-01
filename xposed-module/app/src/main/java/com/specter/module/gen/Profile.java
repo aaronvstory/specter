@@ -81,6 +81,10 @@ public final class Profile {
     // a brief startup window, so a claimed SDK 28 on a real SDK 30 host is a detectable contradiction.
     // Mirror of profile.MIN_ANDROID_MAJOR — MUST match, or the pool differs and byte-parity breaks.
     static final int MIN_ANDROID_MAJOR = 11;
+    // CEILING mirror of profile.MAX_ANDROID_MAJOR — never claim an OS newer than the real host (a claimed
+    // SDK 31 on a real SDK 30 host is a self-contradiction: "device or software isn't supported"). Whole
+    // fleet is Android 11, so 11 is both floor and ceiling; bump BOTH sides in lockstep on a host upgrade.
+    static final int MAX_ANDROID_MAJOR = 11;
     // Tablet / TV markers (device NAME, row 0). We emit a phone number + SIM + IMEI, so a WiFi tablet
     // or TV box is incoherent. Mirror of profile._NON_PHONE_MARKERS.
     static final String[] NON_PHONE_MARKERS = {
@@ -107,7 +111,8 @@ public final class Profile {
     static boolean isPlausiblePhone(List<String> dev) {
         if (dev.size() <= 5) return false;
         for (String m : NON_PHONE_MARKERS) if (dev.get(0).contains(m)) return false;
-        return releaseMajorOf(dev) >= MIN_ANDROID_MAJOR;
+        int major = releaseMajorOf(dev);
+        return major >= MIN_ANDROID_MAJOR && major <= MAX_ANDROID_MAJOR;
     }
 
     // Mirror of profile._is_us_model — MUST match or the device pool differs and byte-parity breaks.
@@ -231,7 +236,7 @@ public final class Profile {
         // Resolve the per-model hardware bundle ONCE (pure lookup, no RNG) BEFORE ramStorage so the RAM
         // tier can be constrained to the SoC — its SoC also drives soc_platform below. Mirrors profile.py.
         Map<String, String> hwEntry = resolveHardware(codename, hardware);
-        String[] ramStorage = Generators.ramStorageBytes(r, hwEntry.get("soc"));   // SoC-coherent RAM+storage
+        String[] ramStorage = Generators.ramStorageBytes(r, hwEntry.get("soc"), codename);   // model/SoC-coherent RAM+storage
         p.put("total_ram", ramStorage[0]);
         p.put("total_storage", ramStorage[1]);
         // Build.HOST leaks the real build-farm hostname (e.g. "abfarm-00902" = Google infra — incoherent

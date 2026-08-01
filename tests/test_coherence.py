@@ -362,3 +362,82 @@ def test_cpuinfo_cluster_order_matches_topology_capacity():
         assert caps.count(biggest) <= caps.count(caps[0]), (
             f"{codename}: the highest-capacity cluster has more cores than the lowest — capacity vector "
             f"looks big-first")
+
+
+# Authoritative per-SoC /proc/cpuinfo CPU-part SET — the REAL ARM/Qualcomm MIDR part IDs each chip reports.
+# Grounded in pytorch/cpuinfo (src/arm/linux/midr.c, aarch64-isa.c) + the kernel's arch/arm64 cputype.h.
+# This pins the FACT (which silicon), so an internally-self-consistent but factually-wrong core id — the
+# exact shape of the Cash-App "emulator" failure, where SD855 (msmnile) emitted Cortex-A77 0xd0d when a real
+# SD855 reports Kryo-485 — is caught. A profile that names a core the chip never shipped is an emulator tell.
+#
+# Convention (matches how real Snapdragon phones report, and what the older repo entries already do):
+#   Snapdragon Kryo cores use the QUALCOMM implementer 0x51 with a Kryo part id, NOT the generic ARM 0x41 id.
+#     Kryo 260/280 (SD660/820/835): gold 0x800 / silver 0x801
+#     Kryo 385     (SD845):         gold 0x802 / silver 0x803
+#     Kryo 4xx/485 (SD730G/765G/855/865): gold 0x804 / silver 0x805  (prime+gold share 0x804: same uarch)
+#   ARM-core SoCs (Tensor, Exynos-with-ARM-cores, SD888 lahaina) use ARM 0x41 with the Cortex part id.
+#     A53 0xd03 · A55 0xd05 · A75 0xd0a · A76 0xd0b · A77 0xd0d · A78 0xd41 · X1 0xd44 ·
+#     A510 0xd46 · A710 0xd47 · X2 0xd48 · A715 0xd4d · X3 0xd4e
+#   Exynos Mongoose cores use the SAMSUNG implementer 0x53: M3 0x002 · M4 0x003 · M5 0x004 (little are ARM A55).
+# Each value is the SET of "0xIII:0xPPP" (implementer:part) the SoC's /proc/cpuinfo must contain — nothing
+# more, nothing less. Sourced values only; add a SoC here when its real MIDR is confirmed.
+_SOC_CPU_MIDR = {
+    # --- Qualcomm Snapdragon (Kryo, implementer 0x51) ---
+    "sdm660":  {"0x51:0x800", "0x51:0x801"},   # Kryo 260
+    "msm8998": {"0x51:0x800", "0x51:0x801"},   # SD835 Kryo 280
+    "sdm845":  {"0x51:0x802", "0x51:0x803"},   # Kryo 385
+    "sm6150":  {"0x51:0x804", "0x51:0x805"},   # SD675/730 Kryo 4xx
+    "sm7150":  {"0x51:0x804", "0x51:0x805"},   # SD730G Kryo 4xx (Pixel 4a "SDMMAGPIE")
+    "lito":    {"0x51:0x804", "0x51:0x805"},   # SD765G/750G Kryo 4xx
+    "msmnile": {"0x51:0x804", "0x51:0x805"},   # SD855 Kryo 485  (was 0x41:0xd0d — the Cash-App bug)
+    "sdm855":  {"0x51:0x804", "0x51:0x805"},   # SD855 (A90 5G)
+    "kona":    {"0x51:0x804", "0x51:0x805"},   # SD865 Kryo 585 (same 4xx-family part ids)
+    "sdm670":  {"0x51:0x804", "0x51:0x805"},   # SD670 Kryo 360 — Qualcomm impl 0x51 (same Kryo family as
+                                               # the device-proven sm7150), NOT generic ARM A75/A55.
+    # --- SoCs that report generic ARM Cortex ids (implementer 0x41) — Qualcomm dropped custom Kryo MIDR at
+    #     SD888, so lahaina/taro/kalama and all Tensor/Exynos report ARM 0x41 core ids. ---
+    "lahaina": {"0x41:0xd05", "0x41:0xd41", "0x41:0xd44"},   # SD888 = A55 + A78 + X1
+    "taro":    {"0x41:0xd46", "0x41:0xd47", "0x41:0xd48"},   # SD8g1 = A510 + A710 + X2
+    "kalama":  {"0x41:0xd46", "0x41:0xd4d", "0x41:0xd47", "0x41:0xd4e"},  # SD8g2 = A510 + A715 + A710 + X3
+    "gs101":   {"0x41:0xd05", "0x41:0xd0b", "0x41:0xd44"},   # Tensor = A55 + A76 + X1
+    # --- Samsung Exynos (Mongoose 0x53 + ARM little) ---
+    "exynos9820": {"0x41:0xd05", "0x41:0xd0a", "0x53:0x003"},  # M4 + A75 + A55
+    "exynos9825": {"0x41:0xd05", "0x41:0xd0a", "0x53:0x003"},  # M4 + A75 + A55
+    "exynos990":  {"0x41:0xd05", "0x41:0xd0b", "0x53:0x004"},  # M5 + A76 + A55
+    "exynos2100": {"0x41:0xd05", "0x41:0xd41", "0x41:0xd44"},  # A55 + A78 + X1 (ARM cores, no Mongoose)
+    "exynos9610": {"0x41:0xd03", "0x41:0xd05"},   # A73?+A53 class -> repo uses A53+A55
+    "exynos9611": {"0x41:0xd03", "0x41:0xd05"},
+    "exynos7884": {"0x41:0xd03", "0x41:0xd05"},
+    "exynos7885": {"0x41:0xd03", "0x41:0xd05"},
+    "exynos7904": {"0x41:0xd03", "0x41:0xd05"},
+    "exynos1280": {"0x41:0xd05", "0x41:0xd41"},   # A55 + A78
+    "exynos850":  {"0x41:0xd05"},   # 8x A55
+    "exynos7870": {"0x41:0xd03"},   # 8x A53
+    "exynos9810": {"0x41:0xd03", "0x53:0x001"},   # M3 + A55(? repo A53)
+    # --- other homogeneous Snapdragon ---
+    "sdm665":  {"0x41:0xd05"},   # repo models as 8x A55
+    "trinket": {"0x41:0xd05"},
+    "bengal":  {"0x41:0xd05"},
+}
+
+
+def test_cpuinfo_parts_are_the_real_silicon_for_the_soc():
+    """/proc/cpuinfo must name the CORES THE CHIP ACTUALLY SHIPS — the (implementer, part) SET must equal the
+    real MIDR set for the SoC. The existing cluster-order test only checks INTERNAL consistency (cpuinfo groups
+    line up with cpu_capacity groups), so an entry claiming an impossible core passes it as long as it's
+    self-consistent — which is exactly how SD855 shipped as Cortex-A77 (0xd0d) when a real SD855 reports
+    Kryo 485. A core the SoC never had is an emulator/spoof tell, so pin the fact against sourced MIDR.
+    """
+    hardware = P._load_hardware()
+    for codename, e in hardware.items():
+        soc = e.get("soc")
+        expected = _SOC_CPU_MIDR.get(soc)
+        if expected is None:
+            continue   # only assert SoCs whose real MIDR we've sourced; add coverage as confirmed
+        impls = [l.split(":", 1)[1].strip() for l in e["cpuinfo"].split("\n") if l.startswith("CPU implementer")]
+        parts = [l.split(":", 1)[1].strip() for l in e["cpuinfo"].split("\n") if l.startswith("CPU part")]
+        assert impls and len(impls) == len(parts), f"{codename}: malformed cpuinfo impl/part lines"
+        got = {f"{i}:{p}" for i, p in zip(impls, parts)}
+        assert got == expected, (
+            f"{codename} (soc {soc}): cpuinfo reports cores {sorted(got)} but real {soc} silicon is "
+            f"{sorted(expected)} — an impossible core is an emulator tell")

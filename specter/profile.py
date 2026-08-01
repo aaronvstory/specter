@@ -167,6 +167,16 @@ def _seeded(seed):
 # pool from starving at this floor.
 MIN_ANDROID_MAJOR = 11
 
+# Maximum plausible Android major — the CEILING the floor above was missing. A profile must NEVER claim an
+# OS NEWER than the real host: ro.build.version.sdk / first_api_level leak the real host SDK during the brief
+# startup window before the native late-map arms (the SIGSEGV-sensitive path can't be spoofed early), so a
+# claimed SDK 31 (Android 12) on a real SDK 30 (Android 11) host is a self-contradiction a detector reads
+# directly — the exact "device or software isn't supported" shape. The whole fleet + product target is
+# Android 11, so 11 is both floor and ceiling here; bump BOTH this and Java Profile.MAX_ANDROID_MAJOR in
+# lockstep if the host OS is ever upgraded (they MUST match or the device pool differs and byte-parity breaks).
+# Without this, ~43% of generated profiles picked an A12 device and tripped the runtime os-version kill-switch.
+MAX_ANDROID_MAJOR = 11
+
 # Marketing-name substrings that identify a tablet / TV box. We generate a phone number + SIM + IMEI,
 # so a WiFi tablet or TV box is incoherent. Matched against the device row's NAME (row[0]).
 _NON_PHONE_MARKERS = ("Tab", "Nexus 7", "Nexus 9", "Nexus 10", "Nexus Player", "Shield", "Pixel C")
@@ -195,7 +205,8 @@ def _is_plausible_phone(dev):
         return False
     if any(m in dev[0] for m in _NON_PHONE_MARKERS):
         return False
-    return _release_major_of(dev) >= MIN_ANDROID_MAJOR
+    major = _release_major_of(dev)
+    return MIN_ANDROID_MAJOR <= major <= MAX_ANDROID_MAJOR
 
 
 def _pick_device(r, devices, us_bias, brands=None):
@@ -282,7 +293,7 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
         "build_kernel_version": G.kernel_version(r, release),
         "build_radio": G.radio_version(r),
         # walrus keeps the RNG draw AT this position (between radio and host) to preserve Java parity
-        "total_ram": (_ram_storage := G.ram_storage_bytes(r, _hw_entry.get("soc", "")))[0],
+        "total_ram": (_ram_storage := G.ram_storage_bytes(r, _hw_entry.get("soc", ""), codename))[0],
         "total_storage": _ram_storage[1],
         "build_host": G.build_host(r),
         "build_display": build_id,

@@ -28,6 +28,8 @@
 #include <set>
 #include <mutex>
 #include <utility>
+#include <algorithm>       // std::transform for case-insensitive sensor-name matching
+#include <cctype>          // std::tolower
 #include <fcntl.h>
 
 #include <dlfcn.h>          // dlsym(RTLD_DEFAULT, ...) to resolve libc symbol addresses
@@ -1000,24 +1002,43 @@ public:
             for (size_t i = 0; i < physical; i++) {
                 const std::string &nm = g_sensor_labels[i].first;
                 const std::string &vd = g_sensor_labels[i].second;
-                auto has = [&](const char *kw) { return nm.find(kw) != std::string::npos; };
-                if (has("Accel")) {
+                // Case-INSENSITIVE keyword match: OEM sensor names differ in case — Samsung uses
+                // "LSM6DSO Acceleration Sensor" but Pixels use "BMI160 accelerometer" (lowercase). A
+                // case-sensitive find("Accel") matched Samsung but SILENTLY missed every Pixel, so the
+                // whole google family derived ZERO composite sensors and shipped only ~6 physical ones —
+                // a hard emulator/device-farm tell. Lowercase both sides so both brands derive the full set.
+                std::string low = nm;
+                std::transform(low.begin(), low.end(), low.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                auto has = [&](const char *kw) { return low.find(kw) != std::string::npos; };
+                if (has("accel")) {
                     derived.emplace_back(nm + "-Uncalibrated", vd);
                     derived.emplace_back("Gravity Sensor", vd);
                     derived.emplace_back("Linear Acceleration Sensor", vd);
                     derived.emplace_back("Significant Motion Detector", vd);
                     derived.emplace_back("Step Detector", vd);
                     derived.emplace_back("Step Counter", vd);
+                    // Standard AOSP composite/gesture virtual sensors every modern accel-bearing phone
+                    // exposes — real devices list ~30-40 total; without these the count sat at ~6-16 (a tell).
+                    derived.emplace_back("Tilt Detector", vd);
+                    derived.emplace_back("Pickup Gesture", vd);
+                    derived.emplace_back("Motion Detect", vd);
+                    derived.emplace_back("Stationary Detect", vd);
+                    derived.emplace_back("Device Orientation", vd);
+                    derived.emplace_back("Wake Up Motion", vd);
+                    derived.emplace_back("Double Tap", vd);
                 }
-                if (has("Gyro")) {
+                if (has("gyro")) {
                     derived.emplace_back(nm + "-Uncalibrated", vd);
                     derived.emplace_back("Game Rotation Vector Sensor", vd);
                 }
-                if (has("Magneto")) {
+                if (has("magneto") || has("magnetic")) {
                     derived.emplace_back(nm + "-Uncalibrated", vd);
                     derived.emplace_back("Geomagnetic Rotation Vector Sensor", vd);
                 }
-                if (has("Accel"))
+                if ((has("accel") || has("gyro")) && (has("magneto") || has("magnetic")))
+                    derived.emplace_back("Rotation Vector Sensor", vd);
+                if (has("accel"))
                     derived.emplace_back("Orientation Sensor", vd);
             }
             // Append derived sensors, skipping any name already present (dedupe: no two identical entries).

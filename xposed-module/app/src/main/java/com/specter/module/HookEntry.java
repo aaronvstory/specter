@@ -807,25 +807,37 @@ public class HookEntry implements IXposedHookLoadPackage {
                         java.util.List<Object> out = new java.util.ArrayList<>();
                         int idx = 0;
                         for (Object sensor : in) {
-                            if (idx >= rows.length) break;
-                            String[] parts = rows[idx].split("\\|");
-                            if (parts.length >= 2) {
-                                try {
-                                    Field nm = sensor.getClass().getDeclaredField("mName");
-                                    nm.setAccessible(true); nm.set(sensor, parts[0]);
-                                    Field vn = sensor.getClass().getDeclaredField("mVendor");
-                                    vn.setAccessible(true); vn.set(sensor, parts[1]);
-                                    // The high-entropy fields FPJS hashes: resolution / maxRange / power /
-                                    // version. Leaving them REAL leaks the exact Pixel-4 sensor chip even
-                                    // after the name/vendor are relabeled. Set coherent per-type values
-                                    // derived from the sensor type (SpoofLogic — pure, testable).
-                                    int type = parts.length >= 3 ? parseIntSafe(parts[2]) : 0;
-                                    float[] rmp = SpoofLogic.sensorRmp(type, parts[0]);
-                                    setFloatFieldSafe(sensor, "mMaxRange", rmp[0]);
-                                    setFloatFieldSafe(sensor, "mResolution", rmp[1]);
-                                    setFloatFieldSafe(sensor, "mPower", rmp[2]);
-                                    setIntFieldSafe(sensor, "mVersion", 1);
-                                } catch (Throwable ignored) {}
+                            // Relabel the first N sensors (one per profile row) to the claimed device's
+                            // chips, then PASS THROUGH the remaining REAL sensors unchanged. Truncating at
+                            // rows.length (the old `break`) dropped every sensor past the ~5-7 physical rows,
+                            // so a hooked phone reported ~6 sensors where a real device exposes ~35 — a hard
+                            // device-farm/emulator tell. Keeping the real count (with the physical chips
+                            // relabeled) is what a genuine device looks like. The name/vendor of the extra
+                            // composite/derived sensors are Android-framework-standard, not device-identifying,
+                            // so passing them through leaks nothing.
+                            if (idx < rows.length) {
+                                String[] parts = rows[idx].split("\\|");
+                                if (parts.length >= 2) {
+                                    try {
+                                        Field nm = sensor.getClass().getDeclaredField("mName");
+                                        nm.setAccessible(true); nm.set(sensor, parts[0]);
+                                        Field vn = sensor.getClass().getDeclaredField("mVendor");
+                                        vn.setAccessible(true); vn.set(sensor, parts[1]);
+                                        // The high-entropy fields FPJS hashes: resolution / maxRange / power /
+                                        // version. Leaving them REAL leaks the exact Pixel-4 sensor chip even
+                                        // after the name/vendor are relabeled. Set coherent per-type values
+                                        // derived from the sensor type (SpoofLogic — pure, testable). Also set
+                                        // mType so getType() agrees with the relabeled name/rmp (positional zip
+                                        // otherwise applies pressure-sensor ranges onto a real proximity sensor).
+                                        int type = parts.length >= 3 ? parseIntSafe(parts[2]) : 0;
+                                        if (type > 0) setIntFieldSafe(sensor, "mType", type);
+                                        float[] rmp = SpoofLogic.sensorRmp(type, parts[0]);
+                                        setFloatFieldSafe(sensor, "mMaxRange", rmp[0]);
+                                        setFloatFieldSafe(sensor, "mResolution", rmp[1]);
+                                        setFloatFieldSafe(sensor, "mPower", rmp[2]);
+                                        setIntFieldSafe(sensor, "mVersion", 1);
+                                    } catch (Throwable ignored) {}
+                                }
                             }
                             out.add(sensor);
                             idx++;

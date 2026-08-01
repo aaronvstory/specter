@@ -388,9 +388,11 @@ _RAM_IDX_FOR_SOC = {
     # flagships: 6/8/12 GB
     "exynos9820": [3, 4, 5], "msmnile": [3, 4, 5], "exynos990": [4, 5], "exynos9825": [4, 5],
     "kona": [4, 5], "exynos2100": [4, 5], "lahaina": [4, 5], "sdm855": [3, 4, 5],
+    "taro": [4, 5], "kalama": [4, 5],   # SD8g1/8g2 flagships (S22/S23) — 8/12GB; were missing -> 3-4GB default
     "exynos9810": [3, 4], "msm8998": [2, 3, 4], "sdm845": [2, 3, 4],
     # upper-mid: 4/6/8 GB
     "sm6150": [2, 3, 4], "sm7150": [2, 3, 4], "lito": [2, 3, 4], "gs101": [4], "exynos9610": [2, 3],
+    "sdm670": [1, 2, 3],   # SD670 (Pixel 3a) — 4GB; was missing -> default (coincidentally same, now explicit)
     # mid: 3/4/6 GB
     "sdm660": [1, 2, 3], "exynos7904": [1, 2, 3], "exynos9611": [1, 2, 3], "exynos1280": [2, 3],
     # budget: 2/3/4 GB
@@ -399,11 +401,42 @@ _RAM_IDX_FOR_SOC = {
 }
 _RAM_IDX_DEFAULT = [1, 2, 3]   # unknown SoC -> 3/4/6 GB (safe modern mid)
 
-def ram_storage_bytes(r, soc=""):
+# Per-MODEL RAM index override (into _RAM_GB=[2,3,4,6,8,12]). The SoC map above is a 2-3-wide spread because
+# one SoC serves many SKUs, so ~72% of profiles claimed a RAM size the specific MODEL never shipped — itself
+# a coherence tell (a real Pixel 5 is 8GB, full stop; never 4 or 6). Keyed on the product-stripped codename
+# exactly like _SCREEN_KNOWN, this pins each real US-pool model to its true retail SKU(s). Checked BEFORE the
+# SoC map; falls through to it for any codename not listed. Grounded in each model's real spec.
+# MUST stay byte-identical to Java RAM_IDX_FOR_MODEL.
+_RAM_IDX_FOR_MODEL = {
+    "bramble": [3],       # Pixel 4a 5G — 6GB
+    "redfin":  [4],       # Pixel 5 — 8GB
+    "barbet":  [3],       # Pixel 5a — 6GB
+    "sofiap":  [2],       # moto g pro — 4GB
+    "mh2lm":   [3],       # LG G8 ThinQ — 6GB
+    "t2q":     [4],       # Galaxy S21+ (SM-G996U) — 8GB
+    "o1s": [4], "p3q": [4, 5], "r9q": [3, 4],   # S21 / S21 Ultra (12/16) / S21 FE — extra US S21 family
+    "flame": [3], "coral": [3],                  # Pixel 4 / 4 XL — 6GB
+    "oriole": [4], "raven": [5],                 # Pixel 6 (8GB) / 6 Pro (12GB)
+}
+
+
+def _ram_idx_for_model(codename):
+    """RAM index set for a device by LONGEST-prefix match against _RAM_IDX_FOR_MODEL, or None. Pool
+    codenames carry variant suffixes (t2qsqw, o1sxxx) while the table keys are clean stems (t2q, o1s), so an
+    exact match misses — longest-prefix picks the right SKU (and 'a52xq' beats a shorter 'a52' stem). Pure,
+    no RNG -> byte-parity safe. MUST match Java ramIdxForModel."""
+    cn = (codename or "").lower()
+    best = None
+    for stem in _RAM_IDX_FOR_MODEL:
+        if cn.startswith(stem) and (best is None or len(stem) > len(best)):
+            best = stem
+    return _RAM_IDX_FOR_MODEL[best] if best else None
+
+def ram_storage_bytes(r, soc="", codename=""):
     """RAM+storage as one coherent pair, (ram_bytes, storage_bytes). Mirrors Java ramStorageBytes.
-    RAM tier is constrained to what the SoC realistically ships with (no 8GB budget phones).
-    RNG order: ram-tier idx (against the SoC subset), ram-shave, storage-capacity idx, storage-fill."""
-    idxs = _RAM_IDX_FOR_SOC.get(soc, _RAM_IDX_DEFAULT)
+    RAM tier is constrained to what the MODEL (preferred) or its SoC realistically ships with — no 8GB budget
+    phones, no 4GB Pixel 5. RNG order: ram-tier idx, ram-shave, storage-capacity idx, storage-fill."""
+    idxs = _ram_idx_for_model(codename) or _RAM_IDX_FOR_SOC.get(soc, _RAM_IDX_DEFAULT)
     ram_idx = idxs[r(len(idxs))]
     ram_gb = _RAM_GB[ram_idx]
     ram_nominal = ram_gb * 1024 * 1024 * 1024
