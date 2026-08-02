@@ -3,6 +3,14 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.7] - 2026-08-02
+
+### Changed
+- **Specter Probe now has its own distinct launcher icon.** It used a generic Android system icon
+  (ic_menu_info_details); it now shows the Specter ghost logo in INDIGO (#7C6BFF) — visually distinct from
+  the gold main app (#E7B94E) and the teal Specter Lite (#3FD0C9), so the three are easy to tell apart in
+  the app drawer.
+
 ## [0.22.6] - 2026-08-02
 
 ### Fixed
