@@ -30,6 +30,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   `taro`/`sdm670` were missing from the SoC map and fell to a 3/4/6GB default). Added a per-model RAM table
   (longest-prefix on codename, byte-parity Python↔Java) pinning each real US model to its true SKU, plus the
   missing SoCs. New model-grounded + fail-closed missing-SoC tests replace the old self-referential RAM test.
+- **Baseband is keyed on the SoC, not drawn at random.** `Build.getRadioVersion()` picked a modem prefix
+  uniformly at random, so ~5/6 of profiles reported a baseband that contradicts the claimed silicon (a
+  Pixel 6 reporting the SD855 modem). Each SoC now maps to its one real modem family; the old selection draw
+  is kept (discarded) so downstream fields stay byte-identical.
+- **ARM-GPU (Mali/Tensor) profiles hide the Adreno kgsl node.** `/sys/class/kgsl/kgsl-3d0/gpu_model` leaked
+  the host's real Adreno number under a Mali `GL_RENDERER`, and a Mali device having a kgsl node at all is
+  incoherent. An ARM-GPU profile now makes the whole `/sys/class/kgsl` tree read `ENOENT`, like real Mali
+  hardware. (Latent in today's all-Adreno US pool, closed at the root.)
+- **Dropped decommissioned Sprint and a filler Motorola TAC.** Sprint's network shut down in 2022 (T-Mobile
+  merger), so a live Sprint SIM in 2026 is a temporal tell; and `35123456` was sequential filler, not a real
+  GSMA TAC. Both removed from Python and Java in lockstep (byte-parity preserved).
+- **`com.specter`/`.lite`/`.probe` are hidden from every app, not just scoped callers.** Their presence
+  reveals the module regardless of who queries the package list, so a non-scoped fingerprinter could
+  enumerate them. Added the missing test that `com.specter.lite` is treated as sensitive.
+- **Budget Samsung devices no longer claim a barometer + grip sensor** (flagship/mid-only parts), tiered the
+  same way cameras already are.
 
 ## [0.21.0] - 2026-08-01
 
