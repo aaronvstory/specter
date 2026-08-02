@@ -776,3 +776,9 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 - **Left the SM-G996U security_patch (2020-12-01) as-is despite predating the S21+ launch.** WHY: it's a real
   dumped build.prop value (per the 0.21.0 provenance note); a factory image built weeks before retail is
   plausible. Changing verified real data on a hypothesis would make it less accurate, not more.
+- **A vault login restore signs `appliedSig` from `enabledProfile()`, though it applies the RAW fingerprint.**
+  WHY: the restore must push the fingerprint the login was captured under (gating it could unbind the login),
+  but the hero pill recomputes the signature from `enabledProfile()`. Signing the raw map meant the pill read
+  "Ready" right after a restore — and a user tapping Apply from there re-wipes the login just restored. The
+  residual delta is bookkeeping (`spoof_accounts`), not identity, so signing the gated map is the truthful
+  reading of "this identity is live on that app".

@@ -9,6 +9,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - **Restoring a saved login now updates the Identity tab.** A Vault restore re-applies the login's linked
   fingerprint to the device, but the Identity tab kept showing the previously generated identity as
   "Applied". It now shows the restored fingerprint — under its vault name — and the correct applied state.
+- **A login restore now honours the identifier toggles.** It pushed the raw saved fingerprint, overriding
+  identifiers switched off in Settings; it now pushes the same filtered map the Apply button does.
 
 ## [0.22.7] - 2026-08-02
 
