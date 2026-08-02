@@ -571,9 +571,10 @@ public class MainActivity extends Activity {
         final Map<String, String> known = new LinkedHashMap<>(appliedByPkg);
         // The wipe ends the session being monitored — flush that capture first. State teardown happens here
         // (UI thread); the su work runs as the FIRST thing on the wipe thread, so it completes before the wipe.
-        // ponytail: the skip decision needs su, so it now lives on the wipe thread — which means an Apply
-        // where EVERY target turns out to be skipped still flushes the capture. It is archived, not lost, and
-        // moving the flush after the decision would race the wipe (the exact bug this shape exists to avoid).
+        // ponytail: the skip decision needs su, so it now lives on the wipe thread — which means the flush
+        // fires for a monitored target this Apply may end up SKIPPING (including the case where every target
+        // is skipped). The capture is archived, not lost; moving the flush after the decision would have to
+        // hop back to the UI thread mid-wipe, which is the exact race this two-half shape exists to avoid.
         final String flushPkg = beginFlushBeforeWipe(pkgs);
         opBusy = true;
         render();   // reflect the busy state immediately (hero button -> "Applying…", disabled)
