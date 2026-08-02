@@ -209,8 +209,8 @@ public final class Profile {
         // device has a FIXED hardware id, so a changing id at L1 is a red flag. Constant, so it
         // consumes no RNG and the byte-parity draw order is unchanged. Mirrors profile.py.
         p.put("media_drm_security_level", "L3");
-        p.put("bluetooth_mac", Generators.macUpper(r));
-        p.put("wifi_mac", Generators.macUpper(r));
+        p.put("bluetooth_mac", Generators.macWithOui(r, brand));   // factory BT MAC carries the maker's OUI
+        p.put("wifi_mac", Generators.macUpper(r));                 // WiFi MAC stays randomized (per-network)
         p.put("wifi_bssid", Generators.macLower(r));
         p.put("wifi_ssid", Generators.ssid(r));
         p.put("mobile_number", Generators.phoneForCountry(r, country.phoneKind));
