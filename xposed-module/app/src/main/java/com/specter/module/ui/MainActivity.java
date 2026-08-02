@@ -2727,10 +2727,12 @@ public class MainActivity extends Activity {
                     // in-memory state is now stale — it would keep showing the last generated identity as
                     // "Applied". Adopt the restored one (by its vault name) whenever the apply succeeded,
                     // even if the login half failed: the device really is wearing this fingerprint now.
-                    // …but only while THIS Activity is still the live one: after a rotation/back the
-                    // replacement already loaded its own state from prefs, and persisting here would
-                    // stomp it with a stale instance's view of the world.
-                    if (fFp != null && alive()) {
+                    // Done even if a rotation replaced this Activity mid-restore: the persisted state has
+                    // to match the device. Worst case it overwrites an identity generated in those few
+                    // seconds — that one was never applied to anything, this one is live on the app.
+                    // (ponytail: the replacement's in-memory copy stays stale until it reloads; making it
+                    // observe the result needs state ownership outside the Activity.)
+                    if (fFp != null) {
                         profile = new LinkedHashMap<>(fFp);
                         activeVaultLabel = e.fingerprint;
                         appliedTargets = e.pkg;
@@ -2742,8 +2744,10 @@ public class MainActivity extends Activity {
                         appliedSig = applySignature(enabledProfile(), java.util.Collections.singleton(e.pkg));
                         persistCurrentState();
                     }
-                    if (fErr == null) status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + ".");
-                    else status.setText(sessionErrorMessage(e.pkg, false, fErr));
+                    if (alive()) {
+                        if (fErr == null) status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + ".");
+                        else status.setText(sessionErrorMessage(e.pkg, false, fErr));
+                    }
                 } finally { opBusy = false; if (alive()) render(); }
             });
         }, "specter-appdata-restore").start();
