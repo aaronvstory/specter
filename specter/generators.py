@@ -252,12 +252,40 @@ def _codename_hash(cn):
     return h
 
 
+# Real battery DESIGN capacity (mAh) per pool model, keyed by codename stem (longest-prefix, like the RAM
+# and SoC maps). A hash-derived value is stable but wrong-for-the-model (a moto g pro is 5000mAh, not a
+# hash bucket); a per-model DB is what a fingerprinter would need to catch a wrong-but-plausible value. These
+# are the real retail capacities. Unmapped codenames fall back to the codename hash (stable + in-range).
+# MUST match Java BATTERY_MAH_FOR_MODEL.
+_BATTERY_MAH_FOR_MODEL = {
+    # current US pool
+    "bramble": 3885,   # Pixel 4a 5G
+    "redfin": 4080,    # Pixel 5
+    "barbet": 4680,    # Pixel 5a
+    "sofiap": 4000,    # moto g pro (XT2043, KX50 cell)
+    "mh2lm": 3500,     # LG G8 ThinQ
+    "t2q": 4800,       # Galaxy S21+ (SM-G996U)
+    # other real US models the pool can gain
+    "flame": 2800, "coral": 3700,          # Pixel 4 / 4 XL
+    "sunfish": 3140,                        # Pixel 4a
+    "oriole": 4614, "raven": 5003,         # Pixel 6 / 6 Pro
+    "o1s": 4000, "p3q": 5000, "r9q": 4500, # S21 / S21 Ultra / S21 FE
+    "r0q": 3700, "b0q": 5000,              # S22 / S22 Ultra
+    "sargo": 3000, "bonito": 3700,         # Pixel 3a / 3a XL
+    "blueline": 2915, "crosshatch": 3430,  # Pixel 3 / 3 XL
+}
+
+
 def battery_uah_for(codename):
-    """A plausible, per-device-STABLE battery DESIGN capacity in µAh (BatteryManager full-capacity read).
-    Derived from the codename so it's stable per model (2800-4600 mAh in 100mAh steps). Pure, no RNG ->
-    byte-parity safe. MUST match Java Generators.batteryUahFor."""
+    """Battery DESIGN capacity in µAh (BatteryManager full-capacity read). The real per-model value when the
+    codename is a known pool model, else a stable hash-derived plausible value. Pure, no RNG -> byte-parity
+    safe. MUST match Java Generators.batteryUahFor."""
     cn = (codename or "").lower()
-    mah = 2800 + (_codename_hash(cn) % 19) * 100
+    best = None
+    for stem in _BATTERY_MAH_FOR_MODEL:
+        if cn.startswith(stem) and (best is None or len(stem) > len(best)):
+            best = stem
+    mah = _BATTERY_MAH_FOR_MODEL[best] if best else 2800 + (_codename_hash(cn) % 19) * 100
     return mah * 1000
 
 

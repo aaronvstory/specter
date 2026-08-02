@@ -3,6 +3,22 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.1] - 2026-08-02
+
+### Fixed
+- **Battery design capacity is the model's real value, not a hash bucket.** `battery_uah_for` derived the
+  capacity by hashing the codename into a plausible range, so a moto g pro (real 5000mAh) or a Pixel 5a
+  (4680mAh) reported an arbitrary in-range number a per-model battery DB would flag. Added a per-model mAh
+  table (longest-prefix on codename, byte-parity Python↔Java) pinning each pool model to its real retail
+  capacity; unmapped codenames still fall back to the stable hash. New model-grounded test. Codename
+  lowercasing for the model lookups is `Locale.ROOT` so a non-ASCII device locale can't break Python↔Java
+  parity (Turkish `I`).
+
+### Changed
+- **Tightened three multi-sentence UI strings** to one short line each (guided-setup intro, the post-setup
+  reboot dialog, and the "Reset Google identity" description) — the terse-copy rule the v0.19.3 pass applied
+  elsewhere, closing a pre-existing gauntlet nit.
+
 ## [0.22.0] - 2026-08-02
 
 ### Fixed

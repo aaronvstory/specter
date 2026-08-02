@@ -87,7 +87,7 @@ public final class Generators {
 
     /** brand -> {fixed prefix, total length}. Prefix chars are literal; the rest are drawn from SERIAL_ALPHABET. */
     static String[] serialSpecForBrand(String brand) {
-        String b = brand == null ? "" : brand.toLowerCase();
+        String b = brand == null ? "" : brand.toLowerCase(Locale.ROOT);
         if (b.contains("samsung"))  return new String[]{"R", "11"};   // Samsung: always "R" + 10, 11 total
         if (b.contains("google"))   return new String[]{"",  "14"};   // Pixel: 14 alnum (e.g. 9B151FFAZ00FPF)
         if (b.contains("motorola") || b.equals("moto")) return new String[]{"ZY", "12"}; // modern Moto "ZY..."
@@ -393,7 +393,7 @@ public final class Generators {
     }
 
     public static int[] screenForDevice(String codename) {
-        String cn = codename == null ? "" : codename.toLowerCase();
+        String cn = codename == null ? "" : codename.toLowerCase(Locale.ROOT);
         int[] k = SCREEN_KNOWN.get(cn);
         if (k != null) return k;
         if (cn.isEmpty()) return SCREEN_POOL[0];
@@ -407,14 +407,32 @@ public final class Generators {
         return 40 + (int) (codenameHash(androidId == null ? "" : androidId) % 420L);
     }
 
-    /** A plausible, per-device-STABLE battery DESIGN capacity in µAh (what BatteryManager.
-     *  getIntProperty(BATTERY_PROPERTY_CHARGE_COUNTER)-style reads expose as full capacity). Derived from
-     *  the device codename so it's stable per model and coherent-ish (a real phone battery, 2800-4600 mAh
-     *  in 100mAh steps). Pure, no RNG. MUST match Python Generators.battery_uah_for (byte-parity). */
+    // Real battery DESIGN capacity (mAh) per pool model, longest-prefix on codename. MUST match Python
+    // _BATTERY_MAH_FOR_MODEL. Unmapped codenames fall back to the codename hash.
+    static final java.util.Map<String, Integer> BATTERY_MAH_FOR_MODEL = new java.util.HashMap<>();
+    static {
+        BATTERY_MAH_FOR_MODEL.put("bramble", 3885); BATTERY_MAH_FOR_MODEL.put("redfin", 4080);
+        BATTERY_MAH_FOR_MODEL.put("barbet", 4680);  BATTERY_MAH_FOR_MODEL.put("sofiap", 4000);
+        BATTERY_MAH_FOR_MODEL.put("mh2lm", 3500);   BATTERY_MAH_FOR_MODEL.put("t2q", 4800);
+        BATTERY_MAH_FOR_MODEL.put("flame", 2800);   BATTERY_MAH_FOR_MODEL.put("coral", 3700);
+        BATTERY_MAH_FOR_MODEL.put("sunfish", 3140);
+        BATTERY_MAH_FOR_MODEL.put("oriole", 4614);  BATTERY_MAH_FOR_MODEL.put("raven", 5003);
+        BATTERY_MAH_FOR_MODEL.put("o1s", 4000);     BATTERY_MAH_FOR_MODEL.put("p3q", 5000);
+        BATTERY_MAH_FOR_MODEL.put("r9q", 4500);     BATTERY_MAH_FOR_MODEL.put("r0q", 3700);
+        BATTERY_MAH_FOR_MODEL.put("b0q", 5000);     BATTERY_MAH_FOR_MODEL.put("sargo", 3000);
+        BATTERY_MAH_FOR_MODEL.put("bonito", 3700);  BATTERY_MAH_FOR_MODEL.put("blueline", 2915);
+        BATTERY_MAH_FOR_MODEL.put("crosshatch", 3430);
+    }
+
+    /** Battery DESIGN capacity in µAh — the real per-model value when the codename is a known pool model,
+     *  else a stable hash-derived plausible value. Pure, no RNG. MUST match Python battery_uah_for. */
     public static long batteryUahFor(String codename) {
-        String cn = codename == null ? "" : codename.toLowerCase();
-        long mah = 2800 + (codenameHash(cn) % 19) * 100L;   // 2800..4600 mAh
-        return mah * 1000L;                                  // -> µAh
+        String cn = codename == null ? "" : codename.toLowerCase(Locale.ROOT);
+        String best = null;
+        for (String stem : BATTERY_MAH_FOR_MODEL.keySet())
+            if (cn.startsWith(stem) && (best == null || stem.length() > best.length())) best = stem;
+        long mah = best != null ? BATTERY_MAH_FOR_MODEL.get(best) : 2800 + (codenameHash(cn) % 19) * 100L;
+        return mah * 1000L;   // -> µAh
     }
 
     public static String factoryResetEpoch(Rng r, String securityPatch) {
@@ -537,7 +555,7 @@ public final class Generators {
      *  carry variant suffixes (t2qsqw) while keys are clean stems (t2q); exact match misses. MUST match
      *  Python _ram_idx_for_model. */
     static int[] ramIdxForModel(String codename) {
-        String cn = codename == null ? "" : codename.toLowerCase();
+        String cn = codename == null ? "" : codename.toLowerCase(Locale.ROOT);
         String best = null;
         for (String stem : RAM_IDX_FOR_MODEL.keySet())
             if (cn.startsWith(stem) && (best == null || stem.length() > best.length())) best = stem;
@@ -595,7 +613,7 @@ public final class Generators {
         return sb.toString();
     }
 
-    public static String macLower(Rng r) { return macUpper(r).toLowerCase(); }
+    public static String macLower(Rng r) { return macUpper(r).toLowerCase(Locale.ROOT); }
 
     /** NANP US phone: 1 + area [2-9]XX + exchange [2-9]XX + 4 digits. */
     // Real, currently-assigned US geographic area codes — MUST be byte-identical to
