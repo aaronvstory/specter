@@ -299,7 +299,7 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
         "build_bootloader": G.bootloader(r, brand, bl_base),
         "build_hardware": codename,
         "build_board": codename,
-        "build_kernel_version": G.kernel_version(r, release),
+        "build_kernel_version": G.kernel_version(r, release, _hw_entry.get("soc", "")),
         "build_radio": G.radio_version(r, _hw_entry.get("soc", "")),
         # walrus keeps the RNG draw AT this position (between radio and host) to preserve Java parity
         "total_ram": (_ram_storage := G.ram_storage_bytes(r, _hw_entry.get("soc", ""), codename))[0],

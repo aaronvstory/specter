@@ -245,7 +245,7 @@ public final class Profile {
         // baseband, RAM tier and soc_platform below coherently. Mirrors profile.py's _hw_entry. Pure -> the
         // resolution itself consumes no RNG, so its position doesn't affect byte-parity.
         Map<String, String> hwEntry = resolveHardware(codename, hardware);
-        p.put("build_kernel_version", Generators.kernelVersion(r, release));
+        p.put("build_kernel_version", Generators.kernelVersion(r, release, hwEntry.get("soc")));  // SoC-coherent kernel base
         p.put("build_radio", Generators.radioVersion(r, hwEntry.get("soc")));   // SoC-coherent baseband
         String[] ramStorage = Generators.ramStorageBytes(r, hwEntry.get("soc"), codename);   // model/SoC-coherent RAM+storage
         p.put("total_ram", ramStorage[0]);

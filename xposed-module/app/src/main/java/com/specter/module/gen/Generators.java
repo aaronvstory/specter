@@ -158,13 +158,37 @@ public final class Generators {
     // Android). Keeping to real branches means the kernel string never looks synthetic.
     static final String[] KERNEL_BASES = {"4.9", "4.14", "4.19", "5.4", "5.10", "5.15"};
 
+    // Real Linux kernel base per SoC — the base was drawn at random, so a profile could claim an impossible
+    // kernel (a 5.15 on an A11 SD855). MUST match Python _KERNEL_BASE_BY_SOC. Unknown SoC -> keep the draw.
+    static final java.util.Map<String, String> KERNEL_BASE_BY_SOC = new java.util.HashMap<>();
+    static {
+        KERNEL_BASE_BY_SOC.put("sdm660", "4.4"); KERNEL_BASE_BY_SOC.put("msm8998", "4.4");
+        KERNEL_BASE_BY_SOC.put("sdm845", "4.9"); KERNEL_BASE_BY_SOC.put("sdm670", "4.9");
+        KERNEL_BASE_BY_SOC.put("sm6150", "4.14"); KERNEL_BASE_BY_SOC.put("sm7150", "4.19");
+        KERNEL_BASE_BY_SOC.put("lito", "4.19");   KERNEL_BASE_BY_SOC.put("sdm665", "4.14");
+        KERNEL_BASE_BY_SOC.put("msmnile", "4.14"); KERNEL_BASE_BY_SOC.put("sdm855", "4.14");
+        KERNEL_BASE_BY_SOC.put("kona", "4.19");   KERNEL_BASE_BY_SOC.put("lahaina", "5.4");
+        KERNEL_BASE_BY_SOC.put("taro", "5.10");   KERNEL_BASE_BY_SOC.put("kalama", "5.15");
+        KERNEL_BASE_BY_SOC.put("gs101", "5.10");
+        KERNEL_BASE_BY_SOC.put("exynos9820", "4.14"); KERNEL_BASE_BY_SOC.put("exynos9825", "4.14");
+        KERNEL_BASE_BY_SOC.put("exynos990", "4.19");  KERNEL_BASE_BY_SOC.put("exynos2100", "5.4");
+        KERNEL_BASE_BY_SOC.put("exynos9610", "4.14"); KERNEL_BASE_BY_SOC.put("exynos9611", "4.14");
+        KERNEL_BASE_BY_SOC.put("exynos1280", "5.10"); KERNEL_BASE_BY_SOC.put("exynos7884", "4.4");
+        KERNEL_BASE_BY_SOC.put("exynos7885", "4.4");  KERNEL_BASE_BY_SOC.put("exynos7904", "4.4");
+        KERNEL_BASE_BY_SOC.put("exynos7870", "4.4");  KERNEL_BASE_BY_SOC.put("exynos850", "4.14");
+        KERNEL_BASE_BY_SOC.put("exynos9810", "4.9");  KERNEL_BASE_BY_SOC.put("trinket", "4.14");
+        KERNEL_BASE_BY_SOC.put("bengal", "4.19");
+    }
+
     /** os.version / uname kernel string, e.g. "4.14.180-perf-g0a1b2c3". High-entropy fingerprint signal.
-     *  The "-androidN" branch tag must be COHERENT with the OS — a kernel can't be branched for a NEWER
-     *  Android than the one running it. Keep the exact RNG draw order (base, patch, branch, tag-num, hex)
-     *  for byte-parity with Python, then CLAMP the drawn tag to {@code release}; release &lt; 10 (no
-     *  -androidN tag) falls back to "-perf" (common on Android &lt;= 9). */
-    public static String kernelVersion(Rng r, String release) {
-        String base = KERNEL_BASES[r.next(KERNEL_BASES.length)];
+     *  The kernel base is the SoC's real one (kept the drawn base for byte-parity, then override). The
+     *  "-androidN" branch tag must be COHERENT with the OS — a kernel can't be branched for a NEWER Android
+     *  than the one running it. Keep the exact RNG draw order (base, patch, branch, tag-num, hex) for
+     *  byte-parity with Python, then CLAMP the drawn tag to {@code release}. MUST match Python kernel_version. */
+    public static String kernelVersion(Rng r, String release, String soc) {
+        String drawnBase = KERNEL_BASES[r.next(KERNEL_BASES.length)];
+        String socBase = KERNEL_BASE_BY_SOC.get(soc == null ? "" : soc);
+        String base = socBase != null ? socBase : drawnBase;
         int patch = 50 + r.next(250);
         int branch = r.next(2);          // 0 => -perf, 1 => -androidN
         int tagnum = 10 + r.next(4);     // 10..13 (draw consumed regardless, for parity)

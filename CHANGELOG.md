@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.4] - 2026-08-02
+
+### Fixed
+- **Kernel version base is the SoC's real Linux kernel, not a random pick.** `kernel_version` drew the base
+  uniformly from 4.9..5.15, so an Android-11 Snapdragon 855 profile could claim a 5.15 kernel — impossible
+  for that silicon/OS. Keyed the base on the SoC (device-proven: a real Pixel 4 / SD855 reads 4.14; sourced
+  per SoC from NIST CAVP + Sony SODP + AOSP redbull — SD765G/730G 4.19, SD888/Exynos2100 5.4, ...). The old
+  base draw is kept (discarded) so the -androidN-tag clamp and git-hash suffix stay byte-parity-identical.
+  New SoC-grounded test.
+
 ## [0.22.3] - 2026-08-02
 
 ### Fixed
