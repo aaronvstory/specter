@@ -2717,16 +2717,22 @@ public class MainActivity extends Activity {
                     // in-memory state is now stale — it would keep showing the last generated identity as
                     // "Applied". Adopt the restored one (by its vault name) whenever the apply succeeded,
                     // even if the login half failed: the device really is wearing this fingerprint now.
-                    if (fFp != null) {
+                    // …but only while THIS Activity is still the live one: after a rotation/back the
+                    // replacement already loaded its own state from prefs, and persisting here would
+                    // stomp it with a stale instance's view of the world.
+                    if (fFp != null && alive()) {
                         profile = new LinkedHashMap<>(fFp);
                         activeVaultLabel = e.fingerprint;
                         appliedTargets = e.pkg;
-                        appliedSig = applySignature(fFp, java.util.Collections.singleton(e.pkg));
+                        // Sign the map the way render() recomputes it (enabledProfile(), not the raw
+                        // fingerprint) or the pill can never read Applied — and a user who then taps
+                        // Apply re-wipes the login this restore just put back.
+                        appliedSig = applySignature(enabledProfile(), java.util.Collections.singleton(e.pkg));
                         persistCurrentState();
                     }
                     if (fErr == null) status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + ".");
                     else status.setText(sessionErrorMessage(e.pkg, false, fErr));
-                } finally { opBusy = false; render(); }
+                } finally { opBusy = false; if (alive()) render(); }
             });
         }, "specter-appdata-restore").start();
     }
