@@ -619,9 +619,14 @@ public class MainActivity extends Activity {
 
     /** Profile with disabled ids removed (Build.* device bundle always kept if device_spoof on), plus
      *  the protection gate keys for any protection the user turned off (so the hooks skip it). */
-    private Map<String, String> enabledProfile() {
+    private Map<String, String> enabledProfile() { return enabledProfile(profile); }
+
+    /** Same, for a map that is not (yet) the current identity — a vault fingerprint a restore is about to
+     *  push. Every apply path runs its bytes through this, so the user's toggles hold everywhere. Safe off
+     *  the UI thread: it only reads SharedPreferences. */
+    private Map<String, String> enabledProfile(Map<String, String> src) {
         Map<String, String> out = new LinkedHashMap<>();
-        for (Map.Entry<String, String> e : profile.entrySet())
+        for (Map.Entry<String, String> e : src.entrySet())
             if (Toggles.isEnabled(prefs, e.getKey())) out.put(e.getKey(), e.getValue());
         Protections.applyGates(prefs, out);
         // The Gmail identifier's own inline switch (Identity tab) IS the opt-in control for account
@@ -2676,6 +2681,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             StringBuilder note = new StringBuilder();
             String err = null;
+            Map<String, String> appliedFp = null;   // non-null once the linked fingerprint really landed
             // 1) STAGE FIRST — copy the vaulted tarball to the staging path and confirm it's there BEFORE we
             //    touch (wipe) the live app. If the login can't be staged, we abort with the app untouched
             //    (the old order wiped via the fingerprint-apply first, so a staging failure destroyed the
@@ -2690,7 +2696,13 @@ public class MainActivity extends Activity {
                     if (fp != null && !fp.isEmpty()) {
                         try {
                             com.specter.module.gen.SessionMigrator.clearData(e.pkg);
-                            svc.apply(e.pkg, fp);
+                            // Push what APPLY would push — the toggle/gate-filtered map, not the raw vault
+                            // bytes. The login was captured while the app ran under an applied (filtered)
+                            // profile, so this is the closer match to capture time, it stops a restore from
+                            // silently overriding identifiers the user switched off, and it keeps ONE apply
+                            // semantic across every path (so the applied-signature below is exact).
+                            svc.apply(e.pkg, enabledProfile(fp));
+                            appliedFp = fp;
                             note.append("fingerprint ").append(e.fingerprint).append(" applied; ");
                         } catch (Throwable t) { note.append("fingerprint apply failed (").append(t.getMessage()).append("); "); }
                     } else note.append("linked fingerprint missing; ");
@@ -2708,11 +2720,35 @@ public class MainActivity extends Activity {
                 }
             }
             final String fErr = err; final String fNote = note.toString();
+            final Map<String, String> fFp = appliedFp;
             runOnUiThread(() -> {
                 try {
-                    if (fErr == null) status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + ".");
-                    else status.setText(sessionErrorMessage(e.pkg, false, fErr));
-                } finally { opBusy = false; }
+                    // The restore just pushed the LINKED fingerprint onto the device, so the Identity tab's
+                    // in-memory state is now stale — it would keep showing the last generated identity as
+                    // "Applied". Adopt the restored one (by its vault name) whenever the apply succeeded,
+                    // even if the login half failed: the device really is wearing this fingerprint now.
+                    // Done even if a rotation replaced this Activity mid-restore: the persisted state has
+                    // to match the device. Worst case it overwrites an identity generated in those few
+                    // seconds — that one was never applied to anything, this one is live on the app.
+                    // (ponytail: the replacement's in-memory copy stays stale until it reloads; making it
+                    // observe the result needs state ownership outside the Activity.)
+                    if (fFp != null) {
+                        profile = new LinkedHashMap<>(fFp);
+                        activeVaultLabel = e.fingerprint;
+                        appliedTargets = e.pkg;
+                        // Sign the bytes that were actually pushed — profile is now fFp, so enabledProfile()
+                        // recomputes exactly the map svc.apply() got. The target half stays {e.pkg}: the
+                        // restore reached that ONE app, so with other targets selected the pill correctly
+                        // reads Ready. (ponytail: appliedTargets/appliedSig is one global slot for the whole
+                        // target set — per-package applied state is the real fix, see docs/IDEAS.md.)
+                        appliedSig = applySignature(enabledProfile(), java.util.Collections.singleton(e.pkg));
+                        persistCurrentState();
+                    }
+                    if (alive()) {
+                        if (fErr == null) status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + ".");
+                        else status.setText(sessionErrorMessage(e.pkg, false, fErr));
+                    }
+                } finally { opBusy = false; if (alive()) render(); }
             });
         }, "specter-appdata-restore").start();
     }

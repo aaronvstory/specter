@@ -934,3 +934,9 @@ honesty pass on the status page. codex "trustworthy go/no-go" items still OPEN (
   target app launches (bootstrap via the framework gate or an init.d/service.d writer).
 - IDEA (gauntlet minor): heartbeat write path /data/data/<pkg>/files assumes user 0 — a work-profile/secondary
   user target would read as false-WARN (safe, not false-GREEN). Multi-user: resolve the per-user data dir.
+- IDEA 2026-08-02 (from the PR-42 review): track APPLIED state PER PACKAGE, not as one global
+  `appliedTargets`/`appliedSig` pair. The single slot assumes one identity is pushed to the whole target
+  set atomically, which a per-app vault restore (and any partial apply) breaks: the pill drops to "Ready",
+  and tapping Apply from there wipes+reapplies EVERY selected target — destroying a login that was just
+  restored to one of them. Status: idea. Pre-existing, not introduced by PR 42; the same hazard already
+  exists whenever an apply only reaches some of its targets.
