@@ -8,6 +8,20 @@ def r(n):
     return secrets.randbelow(n)
 
 
+def test_battery_capacity_is_the_models_real_mAh():
+    # A known pool model must report its REAL battery design capacity, not a hash bucket — a per-model DB is
+    # what a fingerprinter needs to catch a wrong-but-plausible value. Real retail capacities:
+    real_mah = {
+        "bramble": 3885, "redfin": 4080, "barbet": 4680, "sofiap": 4000, "mh2lm": 3500, "t2q": 4800,
+    }
+    for stem, mah in real_mah.items():
+        got = G.battery_uah_for(stem + "xyz")   # a variant suffix must still resolve via longest-prefix
+        assert got == mah * 1000, f"{stem}: battery {got} uAh != real {mah} mAh"
+    # an unmapped codename still falls back to a stable, in-range plausible value
+    fb = G.battery_uah_for("some_unknown_codename") // 1000
+    assert 2800 <= fb <= 4600, f"fallback battery {fb} mAh out of plausible range"
+
+
 def test_luhn_check_and_validate_agree():
     for _ in range(200):
         body = G.digits(r, 14)

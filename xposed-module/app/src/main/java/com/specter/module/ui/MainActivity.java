@@ -1900,8 +1900,8 @@ public class MainActivity extends Activity {
             h.setTextColor(Theme.INK); h.setTextSize(16);
             h.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
             intro.addView(h);
-            TextView d = value("Installs the native layer, adds your target apps to LSPosed scope, blocks OS "
-                    + "updates, and sets software DRM — then reboots to activate everything. Safe to run again.");
+            TextView d = value("Installs everything, scopes your apps, blocks OS updates, sets software DRM, "
+                    + "then reboots — safe to run again.");
             d.setTextColor(Theme.SOFT); d.setPadding(0, dp(Theme.S1), 0, 0);
             intro.addView(d);
             content.addView(intro);
@@ -2062,8 +2062,8 @@ public class MainActivity extends Activity {
         if (!alive()) return;
         // Honest copy: only claim "everything" when the required steps actually passed this run.
         boolean ok = setupResults != null && setupRequiredOk();
-        String msg = ok ? "Required layers installed. Reboot now to activate them."
-                : "Setup finished with some steps incomplete (see the list). Reboot to activate what installed.";
+        String msg = ok ? "Installed. Reboot to activate."
+                : "Some steps incomplete (see list). Reboot to activate what installed.";
         new AlertDialog.Builder(this)
                 .setTitle("Reboot to finish")
                 .setMessage(msg)
@@ -2500,7 +2500,7 @@ public class MainActivity extends Activity {
         TextView gsfLab = label("Reset Google identity");   // match the Widevine card's header emphasis
         gsfLab.setTextColor(Theme.INK); gsfLab.setTextSize(14);
         card.addView(gsfLab);
-        TextView d = value("Gives the device a fresh Google id. Signs out of Google and reboots.");
+        TextView d = value("Fresh Google ID — signs out of Google, then reboots.");
         d.setTextColor(Theme.DIM); d.setTextSize(12); d.setTextIsSelectable(false);
         card.addView(d);
         Button go = button("Reset GSF + reboot", false, v ->
