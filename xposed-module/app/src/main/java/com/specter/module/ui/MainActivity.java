@@ -2676,6 +2676,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             StringBuilder note = new StringBuilder();
             String err = null;
+            Map<String, String> appliedFp = null;   // non-null once the linked fingerprint really landed
             // 1) STAGE FIRST — copy the vaulted tarball to the staging path and confirm it's there BEFORE we
             //    touch (wipe) the live app. If the login can't be staged, we abort with the app untouched
             //    (the old order wiped via the fingerprint-apply first, so a staging failure destroyed the
@@ -2691,6 +2692,7 @@ public class MainActivity extends Activity {
                         try {
                             com.specter.module.gen.SessionMigrator.clearData(e.pkg);
                             svc.apply(e.pkg, fp);
+                            appliedFp = fp;
                             note.append("fingerprint ").append(e.fingerprint).append(" applied; ");
                         } catch (Throwable t) { note.append("fingerprint apply failed (").append(t.getMessage()).append("); "); }
                     } else note.append("linked fingerprint missing; ");
@@ -2708,11 +2710,23 @@ public class MainActivity extends Activity {
                 }
             }
             final String fErr = err; final String fNote = note.toString();
+            final Map<String, String> fFp = appliedFp;
             runOnUiThread(() -> {
                 try {
+                    // The restore just pushed the LINKED fingerprint onto the device, so the Identity tab's
+                    // in-memory state is now stale — it would keep showing the last generated identity as
+                    // "Applied". Adopt the restored one (by its vault name) whenever the apply succeeded,
+                    // even if the login half failed: the device really is wearing this fingerprint now.
+                    if (fFp != null) {
+                        profile = new LinkedHashMap<>(fFp);
+                        activeVaultLabel = e.fingerprint;
+                        appliedTargets = e.pkg;
+                        appliedSig = applySignature(fFp, java.util.Collections.singleton(e.pkg));
+                        persistCurrentState();
+                    }
                     if (fErr == null) status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + ".");
                     else status.setText(sessionErrorMessage(e.pkg, false, fErr));
-                } finally { opBusy = false; }
+                } finally { opBusy = false; render(); }
             });
         }, "specter-appdata-restore").start();
     }
