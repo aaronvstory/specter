@@ -77,8 +77,11 @@ static const char *RESET_PATHS[] = {
 static const int RESET_PATHS_N = sizeof(RESET_PATHS) / sizeof(RESET_PATHS[0]);
 
 // A minimal parser for the flat {"k":"v",...} string-only profile JSON. The generator emits exactly
-// this shape (see RootWriter.java / the on-device .json files); no nesting, no numbers, no escapes
-// beyond plain ASCII values. Returns k->v.
+// this shape (see RootWriter.java / the on-device .json files); no nesting and no numbers. Values ARE
+// escaped though — org.json writes '/' as "\/", so build_fingerprint lands on disk as
+// "lge\/mh2lm\/...". Taking the raw bytes handed every NATIVE prop read a value with backslashes in
+// it, which is both wrong and a giveaway no real device produces. Unescaped below, same set the Java
+// parser handles (SpoofLogic.readJsonString). Returns k->v.
 inline std::map<std::string, std::string> parse_flat_json(const std::string &s) {
     std::map<std::string, std::string> m;
     size_t i = 0, n = s.size();
@@ -100,9 +103,23 @@ inline std::map<std::string, std::string> parse_flat_json(const std::string &s) 
         while (i < n && (s[i] == ' ' || s[i] == '\t')) i++;
         if (i >= n || s[i] != '"') break;       // values are always quoted strings
         i++;                                    // opening quote of value
-        size_t vs = i;
-        while (i < n && s[i] != '"') i++;
-        std::string val = s.substr(vs, i - vs);
+        std::string val;
+        while (i < n && s[i] != '"') {
+            if (s[i] == '\\' && i + 1 < n) {
+                char e = s[++i];
+                switch (e) {                    // \u is not emitted (profiles are ASCII), so the
+                    case 'n': val += '\n'; break;   // default arm covers \/ \\ \" — the literal char.
+                    case 'r': val += '\r'; break;
+                    case 't': val += '\t'; break;
+                    case 'b': val += '\b'; break;
+                    case 'f': val += '\f'; break;
+                    default:  val += e;   break;
+                }
+                i++;
+                continue;
+            }
+            val += s[i++];
+        }
         if (i < n) i++;                         // closing quote
         if (!key.empty()) m[key] = val;
     }

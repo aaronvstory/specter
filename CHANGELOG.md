@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.10] - 2026-08-03
+
+### Fixed
+- **Native prop reads no longer serve a backslash-mangled build fingerprint.** org.json writes `/` as
+  `\/`, so the profile on disk holds `lge\/mh2lm\/...`. The Java layer unescaped it; the native
+  layer's flat-JSON parser did not, so any app reading `ro.build.fingerprint` through
+  `__system_property_get` got a value containing backslashes — wrong, and a giveaway no real device
+  produces. The native parser now unescapes the same set the Java one does. The self-test fixture spelled
+  the fingerprint unescaped, which is why this went unseen; it now uses the real on-disk form.
+
 ## [0.22.9] - 2026-08-02
 
 ### Fixed
