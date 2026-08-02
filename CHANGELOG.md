@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.6] - 2026-08-02
+
+### Fixed
+- **Specter's own launcher icon no longer disappears.** v0.22.0 hid com.specter/.lite/.probe from EVERY app's
+  package enumeration to keep a fingerprinter from seeing the module — but the launcher is a normal app, so it
+  hit the hide too and the home-screen/app-drawer icon vanished (the app became unlaunchable without ADB).
+  com.specter* is now hidden ONLY from SCOPED apps (the ones being spoofed), via the same caller-gate as every
+  other sensitive package — the launcher, Settings, and the user see it normally. The anti-detection value (an
+  app you're spoofing can't enumerate the module) is preserved; the usability break is gone.
+
 ## [0.22.5] - 2026-08-02
 
 ### Fixed
