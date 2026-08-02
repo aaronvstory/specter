@@ -4,9 +4,9 @@ Updated 2026-08-03. An Android device-config + on-device QA project. Describe th
 purpose (see CLAUDE.md "Session framing"). Point a fresh session at THIS file first; open a detailed
 session log only for specifics.
 
-## STATE — main at v0.22.9, tree clean, Python + JVM tests green
+## STATE — main at v0.22.10, tree clean, Python + JVM + native tests green
 
-Last two merges, both about the applied-state model in the Identity tab:
+Three merges. #42/#43 are the applied-state model in the Identity tab; #44 is a native leak the probe caught.
 
 - **#42 (v0.22.8)** — a Vault login restore now updates the Identity tab. Restoring a login re-applies its
   linked fingerprint to the device, but `restoreAppData` only touched the status line, so the tab kept
@@ -20,32 +20,44 @@ Last two merges, both about the applied-state model in the Identity tab:
   skips any app already carrying exactly those bytes — confirmed against the profile file on the device
   (`liveCarries`), not just remembered state — and the pill has a middle state, "On 1 of 2 apps".
   `restoreCurrentState` migrates the old persisted pair, so upgrading doesn't read "Ready".
+- **#44 (v0.22.10)** — the probe's java-vs-native dual read caught `prop_ro_build_fingerprint_native`
+  coming back as `lge\/mh2lm\/...`. org.json escapes `/` as `\/`, so that is what sits in the profile on
+  disk; the Java parser unescapes, the native `parse_flat_json` took the raw substring. So every native
+  `__system_property_get` of a slash-bearing prop served backslashes — a tell no real device produces.
+  Same bug silently killed the `ro.build.type` derivation (`fp.find(":user/")` could never match). The
+  native parser now also matches Java on `\uXXXX` and drops (rather than truncates) an unterminated value.
 
 ## NEXT — open items
 
 1. **One path is unverified on-device**: `liveCarries()` returning false when a target's profile file is
-   missing, so Apply re-applies instead of skipping. Setup was staged then aborted (see 4). To re-run:
-   two targets selected and both carrying the current identity, delete one's
-   `/data/local/tmp/specter/<pkg>.json`, tap Apply → that one is re-applied, the other is skipped and its
-   app data survives. What IS verified: the pill's middle state, a marker file in a skipped app surviving
-   an Apply, profile-file mtimes, the v0.22.8→v0.22.9 prefs migration, and (read-only) that all 71 profile
-   keys round-trip identically through `toJson`/`parseFlatJson`, which is what the byte comparison relies on.
-2. **`/data/local/tmp/specter/com.specter.probe.json` was deleted** and not restored — left over from that
-   aborted setup. The probe is unspoofed until the next Apply that includes it.
-3. **Pixel 4 (`9B151FFAZ00FPF`) was never reachable on 2026-08-03** — `adb devices` only ever showed the 4a,
-   and Windows reported one live ADB interface. Nothing on it was updated. Check the cable, the USB mode
+   missing, so Apply re-applies instead of skipping. To re-run: two targets selected and both carrying the
+   current identity, delete one's `/data/local/tmp/specter/<pkg>.json`, tap Apply → that one is re-applied,
+   the other is skipped and its app data survives. What IS verified: the pill's middle state, a marker file
+   in a skipped app surviving an Apply, profile-file mtimes, the v0.22.8→v0.22.9 prefs migration, and
+   (read-only) that all 71 profile keys round-trip identically through `toJson`/`parseFlatJson`.
+2. **Pixel 4 (`9B151FFAZ00FPF`) was never reachable on 2026-08-03** — `adb devices` only ever showed the 4a,
+   and Windows listed only *remembered* (Status `Unknown`) records for the P4, so it is not enumerating at
+   all. Nothing on it was updated; it is still on its pre-session version. Check the cable, the USB mode
    (File transfer, not charging-only), and any "Allow USB debugging" prompt on its screen.
-4. **SOLVED — Specter's prefs are redirected by LSPosed; see the new first bullet under "Verify on-device"
-   in CLAUDE.md.** The live store is `/data/misc/<uuid>/prefs/com.specter/specter.xml`, not
+3. **Two items on the 4a's status page need a human, not a code change**: Cash App reads "Hooks unverified ·
+   open app, then re-check" (open Cash App once, then Re-check), and "Timezone vs IP" is amber because the
+   exit IP geolocates to Los Angeles while the applied profile's timezone is America/Chicago — the TZ
+   auto-match is deliberately gated on an on-device VPN transport, and none is connected.
+4. **SOLVED — Specter's prefs are redirected by LSPosed; see the first bullet under "Verify on-device" in
+   CLAUDE.md.** The live store is `/data/misc/<uuid>/prefs/com.specter/specter.xml`, not
    `/data/data/com.specter/shared_prefs/specter.xml` (a stale orphan). This is why the UI and the "persisted
-   state" disagreed on target set, identity, and `save_on_apply`. Two leftovers on the 4a from chasing it:
-   `save_on_apply` is currently **false** in the live store (toggled while testing, not restored), and the
-   live target set is **Cash App only**. Neither was changed on purpose — flip them back in the app UI.
+   state" disagreed on target set, identity, and `save_on_apply`. `save_on_apply` was restored to true; the
+   live target set is **Cash App only**, which is the user's own setting and was left alone.
 
 ## Device state
 
-4a (`17031JEC204747`, sunfish): app v0.22.9, Lite 1.6, probe 1.0, native layer md5-matches the bundled one.
-Rebooted cleanly on 2026-08-03 (boot_count 44) — no recovery screen, despite the earlier warning about one.
+4a (`17031JEC204747`, sunfish): app v0.22.10, Lite 1.6, probe 1.0, native layer v0.22.10 md5-matching the
+bundled one. Status page green on root access, LSPosed module, app-hiding gate ("Active in system_server"),
+native layer, mock location and VPN interface masking. Probe after the last reboot: 9/9 identity fields match
+the applied profile and all 23 dual-read prop keys agree java-vs-native.
+Rebooted cleanly four times on 2026-08-03 (now boot_count 47) — no recovery screen, despite the old warning.
+**A reboot is owed after every `adb install -r`**: the install de-registers the module in the LSPosed runtime,
+which shows up as the status page's app-hiding gate reading "Scoped, but not loaded".
 Both phones are FREE test devices (memory `p4-now-free-test-device`). Deny an app's location permission
 before launching it if unsure (`pm revoke <pkg> ACCESS_FINE/COARSE_LOCATION`) — simpler than Lockito.
 adb "unauthorized" after a reboot → `adb kill-server && adb start-server` re-triggers the auth dialog.
