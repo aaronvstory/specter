@@ -238,7 +238,10 @@ _SCREEN_KNOWN = {
     "m21": (1080, 2340, 411), "a51": (1080, 2400, 405), "a71": (1080, 2400, 393),
     # US-pool models that were falling to the random _SCREEN_POOL (their build_device wasn't listed) — e.g.
     # a Galaxy S21+ generated as 720x1520/295dpi, a budget-phone screen, a hard model tell. Real specs:
-    "sofiap": (1080, 2300, 399),   # moto g pro (build_device sofiap_sprout — matched by prefix). 6.4" FHD+
+    # NOTE: "sofiap" is shared by the Moto G Pro (build_device sofiap_ao/sofiap_sprout) AND the Moto G Stylus
+    # (sofiap_retail), which have different screens — but only the G Pro is a selectable A11 US pool device, so
+    # this value only ever reaches the G Pro. If the Stylus ever becomes selectable, split by the full stem.
+    "sofiap": (1080, 2300, 399),   # moto g pro. 6.4" FHD+ (1080x2300, 399ppi)
     "mh2lm": (1440, 3120, 564),    # LG G8 ThinQ (QHD+ POLED)
     "t2q": (1080, 2400, 394),      # Galaxy S21+ (SM-G996U)
     "p3q": (1440, 3200, 515),      # Galaxy S21 Ultra
