@@ -774,7 +774,9 @@ Checked the generated profile for cross-field incoherence beyond what's already 
   clean before every apply" line reads as un-Apple (emoji-in-primary-text, states an implementation detail as
   a banner). Rethink: remove decorative emoji from primary text, move mechanism notes behind an (i), calmer
   hierarchy, more whitespace, fewer always-visible labels. NOT urgent — after the current Cash/fleet testing.
-- **2026-07-29 · Lock the hardware-anchor identifiers ON (Widevine/serial/etc.).** status: `idea -> should-do`.
+- **2026-07-29 · Lock the hardware-anchor identifiers ON (Widevine/serial/etc.).** status: `SHIPPED (v0.22.2)`.
+  media_drm_id/media_drm_security_level/serial are now locked ON (no off switch); Toggles ignores the pref
+  and the UI shows a locked row. (original note:)
   media_drm_id (+ serial, and arguably the other stable hardware anchors) default ON but are user-toggleable
   off. Turning Widevine off re-introduces the exact intermittent-leak failure mode we think caused GeerGit's
   non-deterministic bans (see ANTI-FINGERPRINT-STRATEGY 2026-07-29). Either lock these ON (no off switch) or

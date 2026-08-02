@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.2] - 2026-08-02
+
+### Changed
+- **Hardware-anchor identifiers are locked ON.** Widevine `media_drm_id` (+ its security level) and the build
+  `serial` can no longer be toggled off. Turning one off re-opened the intermittent-leak failure mode: a
+  device-intelligence SDK reads the STABLE hardware id, which survives an id rotation and re-links every
+  identity (the non-deterministic-ban shape traced in ANTI-FINGERPRINT-STRATEGY 2026-07-29). `Toggles`
+  ignores the pref for these keys and the identity list renders them as a locked, always-on row.
+
 ## [0.22.1] - 2026-08-02
 
 ### Fixed
