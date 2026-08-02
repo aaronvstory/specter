@@ -565,19 +565,10 @@ public class MainActivity extends Activity {
             toast("Every identifier is toggled off — nothing to spoof. Enable some first.");
             return;
         }
-        // Already-applied guard, PER PACKAGE: an app already carrying exactly these bytes is skipped, so it
-        // is never needlessly wiped. That matters most right after a vault login restore — the restored app
-        // is left alone while the other targets get the identity, instead of the whole set being re-cleared
-        // and the login destroyed. Any DIFFERENT input still goes through the full clear below.
         final String sig = applySignature(toApply);
-        final List<String> pkgs = new ArrayList<>();
-        for (String pkg : targets) if (!sig.equals(appliedByPkg.get(pkg))) pkgs.add(pkg);
-        final int skipped = targets.size() - pkgs.size();
-        if (pkgs.isEmpty()) {
-            String msg = "Already applied. Relaunch the app(s), or tap \"Generate another identity\" for a new one.";
-            status.setText(msg); toast(msg);
-            return;
-        }
+        final List<String> pkgs = new ArrayList<>(targets);
+        // Snapshot for the worker: appliedByPkg is UI-thread-confined, and the skip decision below needs su.
+        final Map<String, String> known = new LinkedHashMap<>(appliedByPkg);
         // The wipe ends the session being monitored — flush that capture first. State teardown happens here
         // (UI thread); the su work runs as the FIRST thing on the wipe thread, so it completes before the wipe.
         final String flushPkg = beginFlushBeforeWipe(pkgs);
@@ -586,9 +577,16 @@ public class MainActivity extends Activity {
         status.setText("Deep-cleaning + applying to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
             finishFlush(flushPkg);   // disarm trace + archive the capture BEFORE anything is wiped
-            int cleared = 0, ok = 0; String lastErr = null; String clearErr = null;
+            int cleared = 0, ok = 0, skipped = 0; String lastErr = null; String clearErr = null;
             java.util.List<String> okPkgs = new ArrayList<>();
+            java.util.List<String> tried = new ArrayList<>();
             for (String pkg : pkgs) {
+                // Already-applied guard, PER PACKAGE: an app already carrying exactly these bytes is left
+                // alone, so it is never wiped for nothing. That is what protects a just-restored login when
+                // the other targets get the identity. Remembered state alone is not enough to decide this —
+                // it can outlive the profile file — so the device is asked as well.
+                if (sig.equals(known.get(pkg)) && liveCarries(pkg, toApply)) { skipped++; continue; }
+                tried.add(pkg);
                 // ALWAYS wipe data+cache before writing the profile. Applying an identity onto an install that
                 // still holds a PRIOR identity's data links the two accounts (the app carries over ids/session)
                 // — the single worst cross-identity leak. So if the clear FAILS we do NOT apply to that app
@@ -603,18 +601,26 @@ public class MainActivity extends Activity {
             // Auto-align timezone to the proxy exit IP — but ONLY when actually routed through a VPN/proxy
             // (never align to the phone's own home/carrier IP). One lookup for the whole applied set.
             String tzAligned = autoAlignTimezone(okPkgs);
-            final int clearedN = cleared, okN = ok; final String clrErr = clearErr, err = lastErr;
+            final int clearedN = cleared, okN = ok, skippedN = skipped;
+            final String clrErr = clearErr, err = lastErr;
             final String tzMsg = tzAligned;
-            final boolean allClean = clearedN == pkgs.size();   // every target wiped -> the no-carry-over claim holds
-            final boolean allApplied = okN == pkgs.size();      // every target cleared AND applied
+            final int triedN = tried.size();
+            final java.util.List<String> triedPkgs = tried;
+            final boolean allClean = clearedN == triedN;    // every app it touched wiped -> no carry-over
+            final boolean allApplied = okN == triedN;       // every app it touched cleared AND applied
             runOnUiThread(() -> {
                 try {
-                    // Only claim "no carry-over" when EVERY target was actually cleared.
-                    if (allClean) toast("Wiped and applied to " + pkgs.size() + " app(s).");
-                    else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
+                    if (triedN == 0) {
+                        String msg = "Already applied. Relaunch the app(s), or tap \"Generate another identity\" for a new one.";
+                        status.setText(msg); toast(msg);
+                        return;
+                    }
+                    // Only claim "no carry-over" when EVERY app it touched was actually cleared.
+                    if (allClean) toast("Wiped and applied to " + triedN + " app(s).");
+                    else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + triedN
                             + " app(s) done — grant root in Magisk?");
-                    String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
-                            + (skipped > 0 ? " " + skipped + " already had it." : "")
+                    String m = "Applied to " + okN + "/" + triedN + " app(s)."
+                            + (skippedN > 0 ? " " + skippedN + " already had it." : "")
                             + (clrErr != null ? " Clear error: " + clrErr : "")
                             + (err != null ? " Apply error: " + err + " (grant root in Magisk?)" : "")
                             + (tzMsg != null ? " " + tzMsg : "")
@@ -622,7 +628,7 @@ public class MainActivity extends Activity {
                     status.setText(m); toast(m);
                     // Record per package what each app now carries. A target that failed to clear or apply
                     // carries something unknown, so it is dropped rather than left claiming an old identity.
-                    for (String pkg : pkgs) {
+                    for (String pkg : triedPkgs) {
                         if (okPkgs.contains(pkg)) appliedByPkg.put(pkg, sig);
                         else appliedByPkg.remove(pkg);
                     }
@@ -666,6 +672,17 @@ public class MainActivity extends Activity {
         for (Map.Entry<String, String> e : new java.util.TreeMap<>(applied).entrySet())
             sb.append(e.getKey()).append('=').append(e.getValue()).append('\n');
         return sb.toString();
+    }
+
+    /** True if {@code pkg}'s profile file on the device still holds this identity — the ground truth behind
+     *  a skip in {@link #apply()}. Remembered state can outlive the file (deleted by hand, the directory
+     *  wiped, another tool rewriting it), and a skip on a stale entry would leave that app running
+     *  un-spoofed forever with the UI insisting it was fine. Needs su, so call it off the UI thread. */
+    private boolean liveCarries(String pkg, Map<String, String> applied) {
+        Map<String, String> live = readLiveProfile(pkg);
+        if (live == null) return false;   // no profile file -> the hook has nothing; apply for real
+        String want = applied.get("android_id");
+        return want == null || want.equals(live.get("android_id"));
     }
 
     /** Packages carrying the identity currently on screen, comma-separated ("" if none). This is what the
