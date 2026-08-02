@@ -83,13 +83,13 @@ public class MainActivity extends Activity {
      *  A login's `fingerprint` field is the vault-label to re-apply on restore (may be "" / stale — restore
      *  handles both). The user organizes by APP, so pkg is the primary index, not the fingerprint label. */
     private final Map<String, java.util.List<com.specter.module.gen.AppDataVault.Entry>> loginsByApp = new LinkedHashMap<>();
-    private String appliedTargets = "";                 // comma-sep pkgs the CURRENT profile was applied to
-                                                        // ("" until Apply succeeds — vault saves only applied)
-    private String appliedSig = "";                      // signature (android_id + target set) of the LAST
-                                                        // successful apply — so a second APPLY of the SAME
-                                                        // unchanged identity says "already applied" instead
-                                                        // of silently re-doing it + re-prompting to save.
-    // `profile`/`appliedTargets`/`appliedSig` above are otherwise pure in-memory session state: with no
+    /** pkg -> signature of the identity bytes currently applied to THAT package. Per-package, because the
+     *  apply paths are: a vault login restore pushes one identity to ONE app while the other targets keep
+     *  whatever they already had. The old single "identity + target set" pair could not describe that — it
+     *  read "Ready" whenever the selected set was bigger than the app just restored to, and an Apply from
+     *  there wiped every target, destroying the login the restore had just put back. */
+    private final Map<String, String> appliedByPkg = new LinkedHashMap<>();
+    // `profile`/`appliedByPkg` above are otherwise pure in-memory session state: with no
     // durable copy, any fresh onCreate() (a relaunch that outlives this Activity instance, or a genuine
     // process death) lost the current identity AND the "already applied" memory, then onCreate()
     // unconditionally regenerate()'d a brand-new one out from under whatever was showing. Persisted here
@@ -98,13 +98,12 @@ public class MainActivity extends Activity {
     private void persistCurrentState() {
         try {
             org.json.JSONObject j = new org.json.JSONObject(IdentityService.toJson(profile));
-            j.put("_appliedTargets", appliedTargets);
-            j.put("_appliedSig", appliedSig);
+            j.put("_appliedByPkg", new org.json.JSONObject(appliedByPkg));
             j.put("_activeVaultLabel", activeVaultLabel);
             prefs.edit().putString(KEY_CURRENT_STATE, j.toString()).apply();
         } catch (Throwable ignored) {}   // best-effort — a failed persist just means the next fresh onCreate regenerates
     }
-    /** Restores profile/appliedTargets/appliedSig/activeVaultLabel from the last persistCurrentState().
+    /** Restores profile/appliedByPkg/activeVaultLabel from the last persistCurrentState().
      *  Returns true iff a profile was actually restored (false -> caller should regenerate as before). */
     private boolean restoreCurrentState() {
         String raw = prefs.getString(KEY_CURRENT_STATE, null);
@@ -119,8 +118,25 @@ public class MainActivity extends Activity {
             }
             if (p.isEmpty()) return false;
             profile = p;
-            appliedTargets = j.optString("_appliedTargets", "");
-            appliedSig = j.optString("_appliedSig", "");
+            appliedByPkg.clear();
+            org.json.JSONObject a = j.optJSONObject("_appliedByPkg");
+            if (a != null) {
+                for (java.util.Iterator<String> it = a.keys(); it.hasNext(); ) {
+                    String k = it.next();
+                    appliedByPkg.put(k, a.getString(k));
+                }
+            } else {
+                // Upgrade from the single-slot pair. The old signature was "<bytes>|<target set>", so its
+                // bytes half still identifies the identity those targets carry. Without this an upgrade
+                // reads "Ready" and invites an Apply that re-wipes apps already carrying the identity.
+                String sig = j.optString("_appliedSig", "");
+                String tgts = j.optString("_appliedTargets", "");
+                if (!sig.isEmpty() && !tgts.isEmpty()) {
+                    int bar = sig.lastIndexOf('|');
+                    String bytes = bar < 0 ? sig : sig.substring(0, bar);
+                    for (String pkg : tgts.split(",")) if (!pkg.isEmpty()) appliedByPkg.put(pkg, bytes);
+                }
+            }
             activeVaultLabel = j.optString("_activeVaultLabel", "");
             return true;
         } catch (Throwable t) { return false; }
@@ -521,7 +537,9 @@ public class MainActivity extends Activity {
                 final Map<String, String> p = svc.generateUnique();
                 runOnUiThread(() -> {
                     profile = p;
-                    appliedTargets = ""; appliedSig = "";   // fresh identity — not applied to anything yet
+                    // appliedByPkg is NOT cleared: it records what each app is actually wearing, which a new
+                    // identity on screen does not change. Nothing matches the fresh one, so this still reads
+                    // "not applied to anything yet" — while apply() keeps knowing which apps to skip.
                     activeVaultLabel = "";                  // …and not in the vault yet either
                     persistCurrentState();
                     status.setText("New identity ready — not yet applied.");
@@ -547,30 +565,32 @@ public class MainActivity extends Activity {
             toast("Every identifier is toggled off — nothing to spoof. Enable some first.");
             return;
         }
+        final String sig = applySignature(toApply);
         final List<String> pkgs = new ArrayList<>(targets);
-        // Already-applied guard: re-APPLYING the SAME thing to the SAME targets is a no-op we skip (so we
-        // don't needlessly wipe + re-prompt to save). Any DIFFERENT input always goes through the full clear
-        // below. Sign off the EXACT bytes that get applied (`toApply`) + the target set — so editing ANY
-        // field, flipping ANY identifier toggle, or changing ANY protection gate changes the signature and
-        // a re-APPLY actually re-applies (the old android_id-only signature made all those edits a silent
-        // no-op: "Already applied", nothing pushed).
-        final String sig = applySignature(toApply, targets);
-        if (!appliedSig.isEmpty() && appliedSig.equals(sig)) {
-            String msg = "Already applied. Relaunch the app(s), or tap \"Generate another identity\" for a new one.";
-            status.setText(msg); toast(msg);
-            return;
-        }
+        // Snapshot for the worker: appliedByPkg is UI-thread-confined, and the skip decision below needs su.
+        final Map<String, String> known = new LinkedHashMap<>(appliedByPkg);
         // The wipe ends the session being monitored — flush that capture first. State teardown happens here
         // (UI thread); the su work runs as the FIRST thing on the wipe thread, so it completes before the wipe.
+        // ponytail: the skip decision needs su, so it now lives on the wipe thread — which means the flush
+        // fires for a monitored target this Apply may end up SKIPPING (including the case where every target
+        // is skipped). The capture is archived, not lost; moving the flush after the decision would have to
+        // hop back to the UI thread mid-wipe, which is the exact race this two-half shape exists to avoid.
         final String flushPkg = beginFlushBeforeWipe(pkgs);
         opBusy = true;
         render();   // reflect the busy state immediately (hero button -> "Applying…", disabled)
         status.setText("Deep-cleaning + applying to " + pkgs.size() + " app(s)…");
         new Thread(() -> {
             finishFlush(flushPkg);   // disarm trace + archive the capture BEFORE anything is wiped
-            int cleared = 0, ok = 0; String lastErr = null; String clearErr = null;
+            int cleared = 0, ok = 0, skipped = 0; String lastErr = null; String clearErr = null;
             java.util.List<String> okPkgs = new ArrayList<>();
+            java.util.List<String> tried = new ArrayList<>();
             for (String pkg : pkgs) {
+                // Already-applied guard, PER PACKAGE: an app already carrying exactly these bytes is left
+                // alone, so it is never wiped for nothing. That is what protects a just-restored login when
+                // the other targets get the identity. Remembered state alone is not enough to decide this —
+                // it can outlive the profile file — so the device is asked as well.
+                if (sig.equals(known.get(pkg)) && liveCarries(pkg, toApply)) { skipped++; continue; }
+                tried.add(pkg);
                 // ALWAYS wipe data+cache before writing the profile. Applying an identity onto an install that
                 // still holds a PRIOR identity's data links the two accounts (the app carries over ids/session)
                 // — the single worst cross-identity leak. So if the clear FAILS we do NOT apply to that app
@@ -585,29 +605,39 @@ public class MainActivity extends Activity {
             // Auto-align timezone to the proxy exit IP — but ONLY when actually routed through a VPN/proxy
             // (never align to the phone's own home/carrier IP). One lookup for the whole applied set.
             String tzAligned = autoAlignTimezone(okPkgs);
-            final int clearedN = cleared, okN = ok; final String clrErr = clearErr, err = lastErr;
+            final int clearedN = cleared, okN = ok, skippedN = skipped;
+            final String clrErr = clearErr, err = lastErr;
             final String tzMsg = tzAligned;
-            final boolean allClean = clearedN == pkgs.size();   // every target wiped -> the no-carry-over claim holds
-            final boolean allApplied = okN == pkgs.size();      // every target cleared AND applied
+            final int triedN = tried.size();
+            final java.util.List<String> triedPkgs = tried;
+            final boolean allApplied = okN == triedN;       // every app it touched cleared AND applied
             runOnUiThread(() -> {
                 try {
-                    // Only claim "no carry-over" when EVERY target was actually cleared.
-                    if (allClean) toast("Wiped and applied to " + pkgs.size() + " app(s).");
-                    else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
-                            + " app(s) done — grant root in Magisk?");
-                    String m = "Applied to " + okN + "/" + pkgs.size() + " app(s)."
+                    if (triedN == 0) {
+                        String msg = "Already applied. Relaunch the app(s), or tap \"Generate another identity\" for a new one.";
+                        status.setText(msg); toast(msg);
+                        return;
+                    }
+                    // Claim "wiped AND applied" only when every app it touched got both. A clear that
+                    // succeeded but whose apply failed is NOT done — saying so would hide an unspoofed app.
+                    if (allApplied) toast("Wiped and applied to " + triedN + " app(s).");
+                    else toast("⚠️ Only " + okN + "/" + triedN + " app(s) done — grant root in Magisk?");
+                    String m = "Applied to " + okN + "/" + triedN + " app(s)."
+                            + (skippedN > 0 ? " " + skippedN + " already had it." : "")
                             + (clrErr != null ? " Clear error: " + clrErr : "")
                             + (err != null ? " Apply error: " + err + " (grant root in Magisk?)" : "")
                             + (tzMsg != null ? " " + tzMsg : "")
                             + (clrErr == null && err == null ? " Relaunch them to see it." : "");
                     status.setText(m); toast(m);
-                    if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
-                    // Record the applied signature (so a repeat Apply is a no-op) ONLY when the WHOLE set fully
-                    // cleared+applied — else a partial failure must remain retryable, not be suppressed as "done".
-                    if (allApplied) {
-                        appliedSig = sig;
-                        if (prefs.getBoolean("save_on_apply", true)) promptSaveName(appliedTargets);
+                    // Record per package what each app now carries. A target that failed to clear or apply
+                    // carries something unknown, so it is dropped rather than left claiming an old identity.
+                    for (String pkg : triedPkgs) {
+                        if (okPkgs.contains(pkg)) appliedByPkg.put(pkg, sig);
+                        else appliedByPkg.remove(pkg);
                     }
+                    // Prompt to vault it only when the WHOLE selected set carries it — a partial failure
+                    // must remain retryable, not be suppressed as "done".
+                    if (allApplied && prefs.getBoolean("save_on_apply", true)) promptSaveName(appliedTargets());
                     persistCurrentState();
                 } finally {
                     opBusy = false;
@@ -636,16 +666,53 @@ public class MainActivity extends Activity {
         return out;
     }
 
-    /** Signature identifying "exactly THIS applied to this target set" — every key=value in the applied
-     *  map (sorted, so order-independent) plus the sorted package set. Two Applies match iff the applied
-     *  bytes AND the targets are both unchanged, which is exactly when a re-apply would be a true no-op.
-     *  Hashing the whole applied map (not just android_id) means a field edit, an identifier toggle, or a
+    /** Signature identifying "exactly THESE bytes" — every key=value in the applied map, sorted so it is
+     *  order-independent. Recorded per package, so an app matches iff re-applying to it would be a true
+     *  no-op. Signing the whole map (not just android_id) means a field edit, an identifier toggle, or a
      *  protection-gate change all shift the signature and make the next APPLY actually push. */
-    private String applySignature(Map<String, String> applied, Set<String> targets) {
+    private String applySignature(Map<String, String> applied) {
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, String> e : new java.util.TreeMap<>(applied).entrySet())
             sb.append(e.getKey()).append('=').append(e.getValue()).append('\n');
-        return sb.append('|').append(new java.util.TreeSet<>(targets)).toString();
+        return sb.toString();
+    }
+
+    /** True if {@code pkg}'s profile file on the device still holds this identity — the ground truth behind
+     *  a skip in {@link #apply()}. Remembered state can outlive the file (deleted by hand, the directory
+     *  wiped, another tool rewriting it), and a skip on a stale entry would leave that app running
+     *  un-spoofed forever with the UI insisting it was fine. Needs su, so call it off the UI thread. */
+    private boolean liveCarries(String pkg, Map<String, String> applied) {
+        Map<String, String> live = readLiveProfile(pkg);
+        if (live == null) return false;   // no profile file -> the hook has nothing; apply for real
+        for (Map.Entry<String, String> e : applied.entrySet()) {
+            // readLiveProfile drops these three, so they can never match — and they are not identity:
+            // a transient monitor flag and a policy re-stamped on every apply.
+            if (e.getKey().equals("trace") || e.getKey().equals("os_version_spoof_enabled")
+                    || e.getKey().equals(com.specter.module.SpoofLogic.TRUE_ANDROID_ID_KEY)) continue;
+            // The live map is a SUPERSET (apply() backfills derived + per-model hardware), so check that
+            // every byte we meant to push is still there — not just that some profile file exists.
+            if (!e.getValue().equals(live.get(e.getKey()))) return false;
+        }
+        return true;
+    }
+
+    /** Packages carrying the identity currently on screen, comma-separated ("" if none). This is what the
+     *  vault records as an entry's targets, so it must name only apps the CURRENT identity actually reached. */
+    private String appliedTargets() {
+        String sig = applySignature(enabledProfile());
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : appliedByPkg.entrySet())
+            if (sig.equals(e.getValue())) sb.append(sb.length() > 0 ? "," : "").append(e.getKey());
+        return sb.toString();
+    }
+
+    /** How many of {@code targets} already carry the identity on screen. 0 = Ready, all = Applied, and in
+     *  between is a real state the UI has to be able to say out loud (one app restored, others not). */
+    private int appliedCount(Set<String> targets) {
+        String sig = applySignature(enabledProfile());
+        int n = 0;
+        for (String pkg : targets) if (sig.equals(appliedByPkg.get(pkg))) n++;
+        return n;
     }
 
     private void toast(String m) { Toast.makeText(this, m, Toast.LENGTH_LONG).show(); }
@@ -990,12 +1057,15 @@ public class MainActivity extends Activity {
         dev.setPadding(0, dp(Theme.S1), 0, 0);
         c.addView(dev);
 
-        boolean applied = !appliedTargets.isEmpty()
-                && appliedSig.equals(applySignature(enabledProfile(), Targets.get(prefs)));
         Set<String> tgts = Targets.get(prefs);
-        // Status pill (icon-dot + word) so state reads at a glance, not text alone.
-        c.addView(statusPill(opBusy ? "Applying…" : applied ? "Applied" : "Ready",
-                opBusy ? Theme.GOLD : applied ? Theme.SAGE : Theme.SOFT));
+        int appliedN = appliedCount(tgts);
+        boolean applied = appliedN > 0 && appliedN == tgts.size();
+        // Status pill (icon-dot + word) so state reads at a glance, not text alone. "On 1 of 3 apps" is its
+        // own state — after a login restore one target carries this identity and the rest do not, and
+        // rounding that down to "Ready" is what used to invite an Apply that wiped the restored app.
+        String pill = opBusy ? "Applying…" : appliedN == 0 ? "Ready"
+                : applied ? "Applied" : "On " + appliedN + " of " + tgts.size() + " apps";
+        c.addView(statusPill(pill, opBusy ? Theme.GOLD : appliedN == 0 ? Theme.SOFT : Theme.SAGE));
 
         // Primary: Apply to N apps — disabled + progress label while an apply/restore is running.
         int napps = tgts.size();
@@ -1030,7 +1100,7 @@ public class MainActivity extends Activity {
         save.setOnCheckedChangeListener((b, on) -> prefs.edit().putBoolean("save_on_apply", on).apply());
         c.addView(save);
         // Already applied but not yet in the vault -> a quiet one-tap save link (only when it's actionable).
-        if (applied && activeVaultLabel.isEmpty()) {
+        if (appliedN > 0 && activeVaultLabel.isEmpty()) {
             TextView saveNow = new TextView(this);
             saveNow.setText("Save this identity to the vault");
             saveNow.setTextColor(Theme.GOLD);
@@ -1042,7 +1112,7 @@ public class MainActivity extends Activity {
             nlp.topMargin = dp(Theme.S2);
             saveNow.setLayoutParams(nlp);
             saveNow.setPadding(dp(Theme.S1), dp(Theme.S2), dp(Theme.S2), dp(Theme.S2));
-            saveNow.setOnClickListener(v -> promptSaveName(appliedTargets));
+            saveNow.setOnClickListener(v -> promptSaveName(appliedTargets()));
             c.addView(saveNow);
         }
         return c;
@@ -2735,13 +2805,10 @@ public class MainActivity extends Activity {
                     if (fFp != null) {
                         profile = new LinkedHashMap<>(fFp);
                         activeVaultLabel = e.fingerprint;
-                        appliedTargets = e.pkg;
-                        // Sign the bytes that were actually pushed — profile is now fFp, so enabledProfile()
-                        // recomputes exactly the map svc.apply() got. The target half stays {e.pkg}: the
-                        // restore reached that ONE app, so with other targets selected the pill correctly
-                        // reads Ready. (ponytail: appliedTargets/appliedSig is one global slot for the whole
-                        // target set — per-package applied state is the real fix, see docs/IDEAS.md.)
-                        appliedSig = applySignature(enabledProfile(), java.util.Collections.singleton(e.pkg));
+                        // Record it against THIS app only — the restore reached one target, and the others
+                        // still carry whatever they had. Sign the bytes actually pushed: profile is now fFp,
+                        // so enabledProfile() recomputes exactly the map svc.apply() got.
+                        appliedByPkg.put(e.pkg, applySignature(enabledProfile()));
                         persistCurrentState();
                     }
                     if (alive()) {
@@ -2833,8 +2900,9 @@ public class MainActivity extends Activity {
         saveRow.setOrientation(LinearLayout.HORIZONTAL);
         saveRow.addView(button("Save current to vault", true, v -> {
             if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL on the Identity tab first."); return; }
-            if (appliedTargets.isEmpty()) { toast("Apply this identity to an app first — the vault only stores applied profiles."); return; }
-            promptSaveName(appliedTargets);
+            String at = appliedTargets();
+            if (at.isEmpty()) { toast("Apply this identity to an app first — the vault only stores applied profiles."); return; }
+            promptSaveName(at);
         }));
         saveCard.addView(saveRow);
         content.addView(saveCard);
@@ -3667,8 +3735,8 @@ public class MainActivity extends Activity {
         if (saved == null || saved.isEmpty()) { toast("Could not read that saved profile."); return; }
         profile = new LinkedHashMap<>(saved);
         activeVaultLabel = labelStr;   // restoring a fingerprint makes IT the active one for AppData linkage
-        appliedSig = "";   // a restored identity is new state — force the next APPLY/RESTORE to actually run
-        appliedTargets = "";
+        // appliedByPkg keeps its entries: they describe what each app is wearing, and this restore has not
+        // touched any app yet. Nothing matches the just-loaded identity, so it still reads "not applied".
         persistCurrentState();
         Set<String> targets = Targets.get(prefs);
         if (targets.isEmpty()) {
@@ -3678,9 +3746,8 @@ public class MainActivity extends Activity {
         }
         final Map<String, String> toApply = enabledProfile();   // applies protection gates too
         final List<String> pkgs = new ArrayList<>(targets);
-        final String sig = applySignature(toApply, targets);   // record on full success so an immediate APPLY
-                                                                // of the just-restored identity is a no-op (not
-                                                                // a needless second deep-clean of the same apps)
+        final String sig = applySignature(toApply);   // recorded per app it reaches, so an immediate APPLY is a
+                                                      // no-op there (not a needless second deep-clean)
         // Same as APPLY: tear the monitor state down here, finish the su work on the wipe thread (see apply()).
         final String flushPkg = beginFlushBeforeWipe(pkgs);
         opBusy = true;
@@ -3705,8 +3772,10 @@ public class MainActivity extends Activity {
             final boolean allClean = clearedN == pkgs.size();
             runOnUiThread(() -> {
                 try {
-                    if (okN > 0) appliedTargets = String.join(",", okPkgs);   // only the apps it actually reached
-                    if (okN == pkgs.size()) appliedSig = sig;   // every target restored -> a repeat APPLY is a no-op
+                    for (String pkg : pkgs) {   // only the apps it actually reached carry the identity
+                        if (okPkgs.contains(pkg)) appliedByPkg.put(pkg, sig);
+                        else appliedByPkg.remove(pkg);
+                    }
                     persistCurrentState();
                     if (allClean) toast("Wiped and restored to " + pkgs.size() + " app(s).");
                     else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
