@@ -35,12 +35,12 @@ Last two merges, both about the applied-state model in the Identity tab:
 3. **Pixel 4 (`9B151FFAZ00FPF`) was never reachable on 2026-08-03** — `adb devices` only ever showed the 4a,
    and Windows reported one live ADB interface. Nothing on it was updated. Check the cable, the USB mode
    (File transfer, not charging-only), and any "Allow USB debugging" prompt on its screen.
-4. **The 4a's live app state did not match its own prefs file.** The UI showed one target (Cash App) and a
-   different identity, while `/data/data/com.specter/shared_prefs/specter.xml` read via `adb shell su` held
-   two targets and the older identity, with an unchanged mtime. Another session was working the same phone,
-   so this wasn't chased down — but do NOT trust an `adb shell su` read of that file as the app's live
-   state until it is understood (cf. the `adb push` mount-namespace note in CLAUDE.md). The Apply was
-   aborted rather than risk wiping the app the live UI had selected.
+4. **SOLVED — Specter's prefs are redirected by LSPosed; see the new first bullet under "Verify on-device"
+   in CLAUDE.md.** The live store is `/data/misc/<uuid>/prefs/com.specter/specter.xml`, not
+   `/data/data/com.specter/shared_prefs/specter.xml` (a stale orphan). This is why the UI and the "persisted
+   state" disagreed on target set, identity, and `save_on_apply`. Two leftovers on the 4a from chasing it:
+   `save_on_apply` is currently **false** in the live store (toggled while testing, not restored), and the
+   live target set is **Cash App only**. Neither was changed on purpose — flip them back in the app UI.
 
 ## Device state
 

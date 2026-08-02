@@ -87,6 +87,19 @@ signals (what FPJS actually saw), which is how the UA-leak root cause was found.
   SAME across two different profiles, Specter isn't winning — diff the raw signals to find what's constant.
 
 ## Verify on-device (autonomous, no clicking)
+- **Specter's OWN SharedPreferences do NOT live at `/data/data/com.specter/shared_prefs/specter.xml`.**
+  LSPosed (this device runs JingMatrix's fork, Magisk module `zygisk_vector`) redirects an enabled MODULE's
+  prefs to `/data/misc/<uuid>/prefs/com.specter/specter.xml`, so the module's hooks can read them from inside
+  target apps. The uuid is in `/data/adb/lspd/config/modules_config.db` (`strings … | grep /data/misc/`).
+  **Read the redirected file — the `/data/data` one is a stale orphan** that can be MONTHS out of date while
+  looking plausible: it parses fine and holds a real identity. Verified 2026-08-03 on the 4a, where the two
+  disagreed on the target set, the current identity, and `save_on_apply`, and only the redirected one tracked
+  live UI taps. HYPOTHESIS for how they split: `adb install -r` de-registers the module in the LSPosed runtime
+  (memory `never-reinstall-lsposed-module-to-fix`), so the app runs unhooked and writes to the normal path;
+  after the next reboot LSPosed re-registers and the app reads the redirected path again, orphaning whatever
+  was written in that window. So repeated `install -r` + reboot cycles can silently roll the UI's state back.
+  NOT affected (checked: the uuid dir contains only `prefs`): the vault at `/data/data/com.specter/files/vault`,
+  saved AppData, and applied profiles at `/data/local/tmp/specter/<pkg>.json`.
 - **`adb push` of a LARGE file silently no-ops on this rooted device** — it reports success but the file is
   ABSENT from a normal `adb shell` afterwards (adbd is in a Magisk/zygisk mount namespace; its sync target
   is a different overlay). Small files sometimes survive; a ~800KB `.so` vanishes. WORKAROUND: stream the
