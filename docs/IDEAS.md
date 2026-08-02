@@ -5,7 +5,16 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
-- **2026-08-02 - Coherence-audit remaining gaps (codex, after v0.22.3)** - status: `idea`. A fresh audit of the
+- **2026-08-02 - Coherence-audit remaining gaps (codex)** - status: `mostly SHIPPED (v0.22.3-0.22.5)`.
+  FIXED: screen (v0.22.3), storage (v0.22.3), kernel-by-SoC (v0.22.4), Bluetooth MAC vendor OUI (v0.22.5).
+  REMAINING (harder, need data/native work, NOT quick byte-parity tables):
+  (1) GL_VERSION/EGL/extensions/compressed-format/precision coherence — a native-layer task (the GL string
+  hooks exist; need per-SoC extension lists + version strings, and gles_version is a flat "3.2" for all).
+  (2) Model-specific IMEI TAC — a TAC identifies the EXACT model, so it needs a real per-model TAC-database
+  import (GSMA/osmocom); the current brand-coherent TAC is valid-for-brand, and inventing a per-model TAC
+  would be WORSE (wrong exact model). Do via a sourced TAC dataset, not hand-authored. (3) codec/input-device
+  lists are shared templates across models — model-observable but low flag-value; per-model enumeration needs
+  harvested data. Original note (still valid for context): A fresh audit of the
   generator found gaps still open after screen/storage: (1) GL identity incomplete — no GL_VERSION/EGL/compressed-
   format/precision, and gles_version is a flat "3.2" for every SoC (host driver extensions can contradict the
   claimed Adreno). (2) kernel base drawn random per-profile, not SoC/era-derived (a 5.15 kernel on an A11 Pixel 5
