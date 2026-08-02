@@ -10,10 +10,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   supported" tell.** Every Snapdragon Kryo chip emitted generic ARM Cortex part ids, or the wrong core: SD855
   claimed Cortex-A77 `0xd0d` when a real SD855 is Cortex-A76-class Kryo 485. Verified against the REAL
   connected Pixel 4a, whose cpuinfo reports Qualcomm implementer `0x51`, part `0x804` (Kryo 4xx Gold) + `0x805`
-  (Silver) — NOT ARM `0x41`. Corrected `SOC_SPECS` for msmnile/sdm855/kona/lito/sm7150/sm6150/sdm670 to
-  Qualcomm `0x51:0x804/0x805`, lahaina/exynos2100 to Cortex-A78 `0xd41`, Tensor/exynos990 to A76 `0xd0b`, and
-  exynos9820/25 to A75 `0xd0a` — all sourced from pytorch/cpuinfo + the kernel `cputype.h`. Regenerated
-  `data/hardware.json`. Grounded by a new authoritative-MIDR test so no impossible core can be generated again.
+  (Silver) — NOT ARM `0x41`. Corrected `SOC_SPECS` per Kryo generation: msmnile/sdm855/lito/sm7150/sm6150
+  (Kryo 4xx) to `0x51:0x804/0x805`; sdm670 (Kryo 360 = 3xx) to `0x51:0x802/0x803`; **kona/SD865 (Kryo 585) to
+  the MIXED form its kernel actually reports — gold as ARM Cortex-A77 `0x41:0xd0d`, silver as Qualcomm
+  `0x51:0x805`**; lahaina/exynos2100 to Cortex-A78 `0xd41`; Tensor/exynos990 to A76 `0xd0b`; exynos9820/25 to
+  A75 `0xd0a` — all sourced from pytorch/cpuinfo + the kernel `cputype.h`. Regenerated `data/hardware.json`.
+  Grounded by a new authoritative-MIDR test so no impossible core can be generated again.
 - **Never claim an OS newer than the real host.** The device pool had a floor (Android 11) but no ceiling, so
   ~43% of generated profiles picked an Android-12 device (e.g. the S22 `SM-S901U` added in 0.21.0) on the
   Android-11 fleet host — a self-contradiction (`ro.build.version.sdk` leaks the real host SDK) that tripped
