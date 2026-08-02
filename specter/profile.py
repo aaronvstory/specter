@@ -220,7 +220,13 @@ def _pick_device(r, devices, us_bias, brands=None):
                 and _is_us_model(d[2], d[3])]
         if pool:
             return pool[r(len(pool))]
-    return devices[r(len(devices))]
+    # Fallback (us_bias off, or the biased pool came up empty): still never pick an implausible device — a
+    # tablet/TV or an OS newer than the host must not slip through here (that would re-open the "claim a newer
+    # OS than the host" hole the ceiling closes). Filter on _is_plausible_phone; only if THAT is also empty do
+    # we fall all the way back to the raw list. MUST match Java pickDevice.
+    plausible = [d for d in devices if _is_plausible_phone(d)]
+    src = plausible if plausible else devices
+    return src[r(len(src))]
 
 
 def build_profile(r, devices, us_bias=True, country="US", hardware=None):

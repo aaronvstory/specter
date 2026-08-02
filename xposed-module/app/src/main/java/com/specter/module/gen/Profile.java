@@ -127,6 +127,15 @@ public final class Profile {
         return US_SAMSUNG_MODEL.matcher(model == null ? "" : model).find();
     }
 
+    /** Fallback pool for the degenerate path (bias off / empty biased pool): still plausible-only, so an
+     *  implausible device (tablet/TV, or OS newer than the host) never slips through. MUST match Python. */
+    private static List<String> plausibleFallback(Generators.Rng r, List<List<String>> devices) {
+        List<List<String>> plausible = new ArrayList<>();
+        for (List<String> d : devices) if (isPlausiblePhone(d)) plausible.add(d);
+        List<List<String>> src = plausible.isEmpty() ? devices : plausible;
+        return src.get(r.next(src.size()));
+    }
+
     static List<String> pickDevice(Generators.Rng r, List<List<String>> devices, boolean usBias) {
         if (usBias) {
             List<List<String>> pool = new ArrayList<>();
@@ -135,7 +144,7 @@ public final class Profile {
                         && isPlausiblePhone(d) && isUsModel(d.get(2), d.get(3))) pool.add(d);
             if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
         }
-        return devices.get(r.next(devices.size()));
+        return plausibleFallback(r, devices);
     }
 
     static List<String> pickDevice(Generators.Rng r, List<List<String>> devices, boolean bias, Country country) {
@@ -147,7 +156,7 @@ public final class Profile {
                         && isPlausiblePhone(d) && isUsModel(d.get(2), d.get(3))) pool.add(d);
             if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
         }
-        return devices.get(r.next(devices.size()));
+        return plausibleFallback(r, devices);
     }
 
     /** Build a full identity for the US (back-compat overload; seeded output unchanged). */

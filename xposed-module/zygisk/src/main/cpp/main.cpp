@@ -88,7 +88,10 @@ static bool is_root_path(const char *path);              // defined below with t
 // contradicts the claimed ARM GPU. Prefix-match so kgsl-3d0/gpu_model, /gpumodel, /gpu_busy_percentage etc.
 // are all hidden together.
 static bool is_kgsl_path(const char *path) {
-    return path && strncmp(path, "/sys/class/kgsl", 15) == 0;
+    if (!path || strncmp(path, "/sys/class/kgsl", 15) != 0) return false;
+    // Require a component boundary so we match "/sys/class/kgsl" and "/sys/class/kgsl/..." but NOT a sibling
+    // like "/sys/class/kgslfoo".
+    return path[15] == '\0' || path[15] == '/';
 }
 
 // A path a file-op should make disappear (ENOENT) for THIS identity: a root-indicator when hiding root, or
@@ -199,6 +202,9 @@ static int my_lstat(const char *path, struct stat *st) {
 }
 static int my_fstatat(int dirfd, const char *path, struct stat *st, int flags) {
     if (g_trace) trace_path("fstatat", path);
+    // bionic's stat() routes through fstatat, so a root/kgsl probe via stat("/system/bin/su") or a stat of
+    // the Adreno node lands here — must hide (ENOENT) the same as my_stat, or the path leaks despite hooking.
+    if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     int r = orig_fstatat(dirfd, path, st, flags);
     // The reset markers are absolute paths, so dirfd is irrelevant when the path matches.
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
@@ -206,6 +212,7 @@ static int my_fstatat(int dirfd, const char *path, struct stat *st, int flags) {
 }
 static int my_statx(int dirfd, const char *path, int flags, unsigned int mask, struct statx *stx) {
     if (g_trace) trace_path("statx", path);
+    if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     int r = orig_statx(dirfd, path, flags, mask, stx);
     if (r == 0 && stx && g_reset_epoch != 0 && is_reset_marker(path)) {
         stx->stx_mtime.tv_sec = g_reset_epoch; stx->stx_mtime.tv_nsec = 0;
@@ -1020,6 +1027,11 @@ public:
             // device with an accel/gyro/mag exposes these exact derived sensors.
             size_t physical = g_sensor_labels.size();
             std::vector<std::pair<std::string, std::string>> derived;
+            // Whole-set capability flags: a Rotation Vector fuses accel+gyro+mag, which live in SEPARATE
+            // physical rows, so it can't be decided from one name — track presence across ALL physical
+            // sensors and add it once after the loop (the per-name check never fired — codex + reviewer).
+            bool set_accel = false, set_gyro = false, set_mag = false;
+            std::string fusion_vendor;
             for (size_t i = 0; i < physical; i++) {
                 const std::string &nm = g_sensor_labels[i].first;
                 const std::string &vd = g_sensor_labels[i].second;
@@ -1057,11 +1069,17 @@ public:
                     derived.emplace_back(nm + "-Uncalibrated", vd);
                     derived.emplace_back("Geomagnetic Rotation Vector Sensor", vd);
                 }
-                if ((has("accel") || has("gyro")) && (has("magneto") || has("magnetic")))
-                    derived.emplace_back("Rotation Vector Sensor", vd);
-                if (has("accel"))
+                if (has("accel")) {
                     derived.emplace_back("Orientation Sensor", vd);
+                    set_accel = true;
+                    if (fusion_vendor.empty()) fusion_vendor = vd;
+                }
+                if (has("gyro")) set_gyro = true;
+                if (has("magneto") || has("magnetic")) set_mag = true;
             }
+            // Rotation Vector fuses accel + (gyro or mag) across the whole set — added once, not per name.
+            if (set_accel && (set_gyro || set_mag))
+                derived.emplace_back("Rotation Vector Sensor", fusion_vendor);
             // Append derived sensors, skipping any name already present (dedupe: no two identical entries).
             std::set<std::string> present;
             for (auto &s : g_sensor_labels) present.insert(s.first);
@@ -1437,7 +1455,11 @@ private:
             applied += hookSym("__system_property_read_callback", (void *) my_prop_read, (void **) &orig_prop_read);
             applied += hookSym("__system_property_get",           (void *) my_prop_get,  (void **) &orig_prop_get);
         }
-        if (g_reset_epoch != 0) {
+        // The stat family carries BOTH the reset-marker mtime spoof AND the path-hiding (root/kgsl) ENOENT
+        // check, so install the WHOLE family whenever either is needed. bionic's stat()/lstat() route through
+        // fstatat, and a native detector often stats /system/bin/su (or the kgsl node) via fstatat/statx to
+        // dodge the access() hooks — so fstatat + statx MUST be covered too, not just stat/lstat (codex).
+        if (g_reset_epoch != 0 || g_hide_root || g_hide_kgsl) {
             applied += hookSym("stat",      (void *) my_stat,    (void **) &orig_stat);
             applied += hookSym("lstat",     (void *) my_lstat,   (void **) &orig_lstat);
             applied += hookSym("fstatat",   (void *) my_fstatat, (void **) &orig_fstatat);
@@ -1454,11 +1476,6 @@ private:
         if (g_hide_root) {
             applied += hookSym("access", (void *) my_access, (void **) &orig_access);
             applied += hookSym("faccessat", (void *) my_faccessat, (void **) &orig_faccessat);
-            // stat/lstat carry the root-hide check too; install them if not already (reset path installs them).
-            if (g_reset_epoch == 0) {
-                applied += hookSym("stat",  (void *) my_stat,  (void **) &orig_stat);
-                applied += hookSym("lstat", (void *) my_lstat, (void **) &orig_lstat);
-            }
         }
         if (g_spoof_hwcap || g_trace) {
             applied += hookSym("getauxval", (void *) my_getauxval, (void **) &orig_getauxval);

@@ -745,6 +745,12 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   loosening — that still guards the su boundary).
 - **setup_done gates on required steps only; LspScope requires enabled=1.** WHY: "any step succeeded" hid the
   first-run banner even when scope/native failed; a disabled-but-scoped module yields no hooks (false success).
+- **Kryo MIDR is per-GENERATION, and SD865 is MIXED-implementer (gauntlet-corrected).** WHY: the kernel
+  cputype.h note is explicit — Kryo 2xx=0x800/1 (A73/53), 3xx=0x802/3 (A75/55, incl SD670/845), 4xx=0x804/5
+  (A76/55, incl SD855/730/765), but Kryo **5XX (SD865) Gold/Prime ID as ARM Cortex-A77 0x41:0xd0d** while its
+  Silver IDs as Qualcomm 0x51:0x805 — a mixed-implementer cpuinfo. So kona = 4x0x41:0xd0d + 4x0x51:0x805, and
+  sdm670 (Kryo 360 = 3xx) = 0x51:0x802/0x803, NOT the 4xx 0x804/0x805 an earlier pass wrongly used. Kryo 6XX
+  (SD888) reports pure ARM (X1 0xd44 / A78 0xd41 / A55 0xd05). Authority: pytorch/cpuinfo uarch.c + cputype.h.
 - **/proc/cpuinfo reports the SoC's REAL Kryo/Cortex MIDR, not generic ARM ids.** WHY: real Snapdragon phones
   report the QUALCOMM implementer 0x51 with a Kryo part id (device-proven: a real Pixel 4a reads 0x51:0x804/
   0x805, NOT ARM 0x41). The generator emitted generic ARM ids, and worse used Cortex-A77 0xd0d for SD855

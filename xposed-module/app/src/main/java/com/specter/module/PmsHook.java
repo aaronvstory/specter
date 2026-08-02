@@ -124,10 +124,11 @@ final class PmsHook {
         // (not just our scoped targets). A non-scoped fingerprinter enumerating installed packages must not
         // find com.specter/.lite/.probe. The broader sensitive set (the user's root/hook/gps/proxy apps) stays
         // caller-gated below — we only hide THOSE from an app we're actively spoofing, to avoid perturbing
-        // package visibility system-wide. (self-query is excluded so the module can still see itself.)
+        // package visibility system-wide. Exception: a package in the caller's OWN uid (self, or a shared-uid
+        // sibling) can always see it — a package sharing a uid legitimately sees its co-residents — so only
+        // hide when the target is NOT among the caller set.
         if (isOwnPackage(target)) {
-            for (String caller : callerPackages(a[uidIdx + 1]))
-                if (!caller.equals(target)) { mp.setResult(true); return; }
+            if (!callerPackages(a[uidIdx + 1]).contains(target)) { mp.setResult(true); return; }
             return;
         }
 

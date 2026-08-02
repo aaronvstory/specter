@@ -91,9 +91,11 @@ SOC_SPECS = {
         "cpu_parts": [(0x51, 0x804, 4), (0x51, 0x805, 4)],
         "hardware": "Qualcomm Technologies, Inc SM8150", "bogomips": "38.40", "cores": 8,
     },
-    "kona": {  # SD865 — S20, Note20 Ultra, S20 FE 5G. Kryo 585 = same 4xx part-id family (0x804/0x805).
+    "kona": {  # SD865 — S20, Note20 Ultra, S20 FE 5G. Kryo 585 is MIXED-implementer (kernel cputype.h note):
+        # the 5XX Prime/Gold cores ID as ARM Cortex-A77 (0x41:0xd0d), the Silver as Qualcomm Kryo 4xx Silver
+        # (0x51:0x805). So 4 gold=A77 + 4 silver. NOT the all-0x51 4xx family (that's SD855/730/765, Kryo 4xx).
         "gpu_renderer": "Adreno (TM) 650", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x51, 0x804, 4), (0x51, 0x805, 4)],
+        "cpu_parts": [(0x41, 0xd0d, 4), (0x51, 0x805, 4)],
         "hardware": "Qualcomm Technologies, Inc KONA", "bogomips": "38.40", "cores": 8,
     },
     "sm7150": {  # SD730/730G — Pixel 4a, Galaxy A71. Real cpuinfo Hardware line is "SDMMAGPIE"
@@ -103,10 +105,11 @@ SOC_SPECS = {
         "cpu_parts": [(0x51, 0x804, 2), (0x51, 0x805, 6)],
         "hardware": "Qualcomm Technologies, Inc SDMMAGPIE", "bogomips": "38.40", "cores": 8,
     },
-    "sdm670": {  # SD670 — Pixel 3a / 3a XL. Device tree is "qcom,sdm670" (NOT sm670). Kryo 360 (Gold=A75,
-        # Silver=A55) — reports Qualcomm impl 0x51, same 0x804/0x805 Kryo part-id family. 2 gold + 6 silver.
+    "sdm670": {  # SD670 — Pixel 3a / 3a XL. Device tree is "qcom,sdm670" (NOT sm670). Kryo 360 is the 3XX
+        # family (Gold=A75, Silver=A55): Qualcomm impl 0x51, part 0x802 (3xx gold) / 0x803 (3xx silver) — same
+        # as SD845, NOT the 4xx 0x804/0x805 (that's SD855/730/765). 2 gold + 6 silver.
         "gpu_renderer": "Adreno (TM) 615", "gpu_vendor": "Qualcomm", "gles_version": "3.2",
-        "cpu_parts": [(0x51, 0x804, 2), (0x51, 0x805, 6)],
+        "cpu_parts": [(0x51, 0x802, 2), (0x51, 0x803, 6)],
         "hardware": "Qualcomm Technologies, Inc SDM670", "bogomips": "38.40", "cores": 8,
     },
     "lito": {  # SD765G — Pixel 5, Pixel 4a 5G, A90 5G. Kryo 475 = 4xx family (Qualcomm impl 0x51).

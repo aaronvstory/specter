@@ -391,9 +391,9 @@ _SOC_CPU_MIDR = {
     "lito":    {"0x51:0x804", "0x51:0x805"},   # SD765G/750G Kryo 4xx
     "msmnile": {"0x51:0x804", "0x51:0x805"},   # SD855 Kryo 485  (was 0x41:0xd0d — the Cash-App bug)
     "sdm855":  {"0x51:0x804", "0x51:0x805"},   # SD855 (A90 5G)
-    "kona":    {"0x51:0x804", "0x51:0x805"},   # SD865 Kryo 585 (same 4xx-family part ids)
-    "sdm670":  {"0x51:0x804", "0x51:0x805"},   # SD670 Kryo 360 — Qualcomm impl 0x51 (same Kryo family as
-                                               # the device-proven sm7150), NOT generic ARM A75/A55.
+    "kona":    {"0x41:0xd0d", "0x51:0x805"},   # SD865 Kryo 585 — MIXED impl: gold IDs as ARM Cortex-A77
+                                               # (0xd0d), silver as Qualcomm Kryo-4xx (0x805). kernel cputype.h.
+    "sdm670":  {"0x51:0x802", "0x51:0x803"},   # SD670 Kryo 360 — 3XX family (gold=A75), like SD845 (0x802/3).
     # --- SoCs that report generic ARM Cortex ids (implementer 0x41) — Qualcomm dropped custom Kryo MIDR at
     #     SD888, so lahaina/taro/kalama and all Tensor/Exynos report ARM 0x41 core ids. ---
     "lahaina": {"0x41:0xd05", "0x41:0xd41", "0x41:0xd44"},   # SD888 = A55 + A78 + X1
