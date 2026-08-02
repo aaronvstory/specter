@@ -3,6 +3,23 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.3] - 2026-08-02
+
+### Fixed
+- **Screen resolution/density is the model's real spec, not a random pool pick.** 7 US-pool models (incl. the
+  live Galaxy S21+, LG G8, moto g pro) had a `build_device` slot absent from the known-screen table, so they
+  fell to a hash-picked pool value — a Galaxy S21+ generated as 720x1520 (a budget-phone screen), a hard
+  model tell. Added their real specs (S21+ 1080x2400@394, LG G8 1440x3120@564, moto g pro 1080x2300@399, ...)
+  and made the lookup longest-prefix so a suffixed device (`sofiap_sprout` -> `sofiap`) resolves. Byte-parity
+  Python<->Java; new model-grounded test.
+- **Storage capacity is the model's real SKU, not a RAM-tier-random 32/64/256 GB.** All current-pool models
+  are 128 GB; the generator could pair any of 32/64/256 with them. Added a per-model base-storage table
+  (longest-prefix, byte-parity); the reported capacity still carries the realistic format reserve. New test.
+
+### Notes
+- A fresh coherence audit (codex) surfaced further gaps to work down next: GL_VERSION/extension coherence,
+  kernel-version-by-SoC, model-specific IMEI TAC, and hardware/factory MAC OUI. Logged in docs/IDEAS.md.
+
 ## [0.22.2] - 2026-08-02
 
 ### Changed

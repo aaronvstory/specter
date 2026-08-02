@@ -236,6 +236,21 @@ _SCREEN_KNOWN = {
     "a50": (1080, 2340, 403), "a50s": (1080, 2340, 403), "a70q": (1080, 2400, 393),
     "a30s": (720, 1560, 268), "a10": (720, 1520, 269), "a20": (720, 1560, 294),
     "m21": (1080, 2340, 411), "a51": (1080, 2400, 405), "a71": (1080, 2400, 393),
+    # US-pool models that were falling to the random _SCREEN_POOL (their build_device wasn't listed) — e.g.
+    # a Galaxy S21+ generated as 720x1520/295dpi, a budget-phone screen, a hard model tell. Real specs:
+    # NOTE: "sofiap" is shared by the Moto G Pro (build_device sofiap_ao/sofiap_sprout) AND the Moto G Stylus
+    # (sofiap_retail), which have different screens — but only the G Pro is a selectable A11 US pool device, so
+    # this value only ever reaches the G Pro. If the Stylus ever becomes selectable, split by the full stem.
+    "sofiap": (1080, 2300, 399),   # moto g pro. 6.4" FHD+ (1080x2300, 399ppi)
+    "mh2lm": (1440, 3120, 564),    # LG G8 ThinQ (QHD+ POLED)
+    "t2q": (1080, 2400, 394),      # Galaxy S21+ (SM-G996U)
+    "p3q": (1440, 3200, 515),      # Galaxy S21 Ultra
+    "r9q": (1080, 2340, 407),      # Galaxy S21 FE
+    "r0q": (1080, 2340, 425),      # Galaxy S22
+    "b0q": (1440, 3088, 500),      # Galaxy S22 Ultra
+    "x1q": (1440, 3200, 563),      # Galaxy S20
+    "y2q": (1440, 3200, 525),      # Galaxy S20+
+    "z3q": (1440, 3200, 511),      # Galaxy S20 Ultra
 }
 _SCREEN_POOL = [
     (1080, 2340, 440), (1080, 2400, 408), (1080, 2280, 440), (1080, 2340, 403),
@@ -298,13 +313,19 @@ def boot_count_for(android_id):
 
 
 def screen_for_device(codename):
-    """(width, height, densityDpi) for a device codename. Known -> real spec; else a deterministic pool
-    pick. Never the real host device unless the profile legitimately claims it."""
+    """(width, height, densityDpi) for a device codename. Known -> real spec (LONGEST-prefix, since the
+    build_device slot can carry a suffix like "sofiap_sprout" that must still match "sofiap"); else a
+    deterministic pool pick. Never the real host device unless the profile legitimately claims it. MUST
+    match Java screenForDevice."""
     cn = (codename or "").lower()
-    if cn in _SCREEN_KNOWN:
-        return _SCREEN_KNOWN[cn]
     if not cn:
         return _SCREEN_POOL[0]
+    best = None
+    for stem in _SCREEN_KNOWN:
+        if cn.startswith(stem) and (best is None or len(stem) > len(best)):
+            best = stem
+    if best is not None:
+        return _SCREEN_KNOWN[best]
     return _SCREEN_POOL[_codename_hash(cn) % len(_SCREEN_POOL)]
 
 
@@ -482,6 +503,29 @@ def _ram_idx_for_model(codename):
             best = stem
     return _RAM_IDX_FOR_MODEL[best] if best else None
 
+# Real base storage capacity (GB) per pool model. The SKU is model-specific — a Pixel 5 is 128GB, full stop,
+# never the 32/64/256 the RAM-tier storage pool allows. Longest-prefix on codename; None -> keep the pooled
+# draw. MUST match Java storageGbForModel.
+_STORAGE_GB_FOR_MODEL = {
+    "bramble": 128, "redfin": 128, "barbet": 128, "sofiap": 128, "mh2lm": 128, "t2q": 128,
+    "flame": 64, "coral": 64, "sunfish": 128,      # Pixel 4 base 64, 4a 128
+    "oriole": 128, "raven": 128,                    # Pixel 6 / 6 Pro base 128
+    "o1s": 128, "p3q": 128, "r9q": 128, "r0q": 128, "b0q": 128,
+    "sargo": 64, "bonito": 64, "blueline": 64, "crosshatch": 64,
+}
+
+
+def _storage_gb_for_model(codename):
+    """Real base storage GB for a device by longest-prefix, or None. Pure -> byte-parity safe. MUST match
+    Java storageGbForModel."""
+    cn = (codename or "").split("_")[0].lower()
+    best = None
+    for stem in _STORAGE_GB_FOR_MODEL:
+        if cn.startswith(stem) and (best is None or len(stem) > len(best)):
+            best = stem
+    return _STORAGE_GB_FOR_MODEL[best] if best else None
+
+
 def ram_storage_bytes(r, soc="", codename=""):
     """RAM+storage as one coherent pair, (ram_bytes, storage_bytes). Mirrors Java ramStorageBytes.
     RAM tier is constrained to what the MODEL (preferred) or its SoC realistically ships with — no 8GB budget
@@ -494,7 +538,8 @@ def ram_storage_bytes(r, soc="", codename=""):
     ram = str((ram_reported // (1024 * 1024)) * 1024 * 1024)
 
     pool = _STORAGE_FOR_RAM[ram_idx]
-    st_gb = pool[r(len(pool))]
+    drawn = pool[r(len(pool))]                 # keep the draw (byte-parity); overridden below if the model pins it
+    st_gb = _storage_gb_for_model(codename) or drawn
     st_nominal = st_gb * 1000 * 1000 * 1000
     storage = str(st_nominal * (90 + r(5)) // 100)
     return ram, storage
