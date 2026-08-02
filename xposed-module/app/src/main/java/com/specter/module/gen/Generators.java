@@ -375,6 +375,12 @@ public final class Generators {
         SCREEN_KNOWN.put("a10", new int[]{720, 1520, 269}); SCREEN_KNOWN.put("a20", new int[]{720, 1560, 294});
         SCREEN_KNOWN.put("m21", new int[]{1080, 2340, 411}); SCREEN_KNOWN.put("a51", new int[]{1080, 2400, 405});
         SCREEN_KNOWN.put("a71", new int[]{1080, 2400, 393});
+        // US-pool models that were falling to the random SCREEN_POOL (build_device wasn't listed). Real specs.
+        SCREEN_KNOWN.put("sofiap", new int[]{1080, 2300, 399}); SCREEN_KNOWN.put("mh2lm", new int[]{1440, 3120, 564});
+        SCREEN_KNOWN.put("t2q", new int[]{1080, 2400, 394});   SCREEN_KNOWN.put("p3q", new int[]{1440, 3200, 515});
+        SCREEN_KNOWN.put("r9q", new int[]{1080, 2340, 407});   SCREEN_KNOWN.put("r0q", new int[]{1080, 2340, 425});
+        SCREEN_KNOWN.put("b0q", new int[]{1440, 3088, 500});   SCREEN_KNOWN.put("x1q", new int[]{1440, 3200, 563});
+        SCREEN_KNOWN.put("y2q", new int[]{1440, 3200, 525});   SCREEN_KNOWN.put("z3q", new int[]{1440, 3200, 511});
     }
     private static final int[][] SCREEN_POOL = {
         {1080, 2340, 440}, {1080, 2400, 408}, {1080, 2280, 440}, {1080, 2340, 403},
@@ -394,9 +400,13 @@ public final class Generators {
 
     public static int[] screenForDevice(String codename) {
         String cn = codename == null ? "" : codename.toLowerCase(Locale.ROOT);
-        int[] k = SCREEN_KNOWN.get(cn);
-        if (k != null) return k;
         if (cn.isEmpty()) return SCREEN_POOL[0];
+        // Longest-prefix (the build_device slot can carry a suffix like "sofiap_sprout" -> "sofiap"). MUST
+        // match Python screen_for_device.
+        String best = null;
+        for (String stem : SCREEN_KNOWN.keySet())
+            if (cn.startsWith(stem) && (best == null || stem.length() > best.length())) best = stem;
+        if (best != null) return SCREEN_KNOWN.get(best);
         return SCREEN_POOL[(int) (codenameHash(cn) % SCREEN_POOL.length)];
     }
 
@@ -573,11 +583,30 @@ public final class Generators {
         String ram = String.valueOf((ramReported / (1024L * 1024L)) * 1024L * 1024L);
 
         int[] pool = STORAGE_FOR_RAM[ramIdx];
-        long stGb = pool[r.next(pool.length)];
+        long drawn = pool[r.next(pool.length)];          // keep the draw (byte-parity); model may override
+        Integer modelGb = storageGbForModel(codename);
+        long stGb = modelGb != null ? modelGb : drawn;
         // usable storage is ~90-94% of nominal after formatting/system.
         long stNominal = stGb * 1000L * 1000L * 1000L;   // storage is marketed in decimal GB
         String storage = String.valueOf(stNominal * (90 + r.next(5)) / 100);
         return new String[]{ram, storage};
+    }
+
+    // Real base storage (GB) per pool model, longest-prefix. MUST match Python _STORAGE_GB_FOR_MODEL.
+    static final java.util.Map<String, Integer> STORAGE_GB_FOR_MODEL = new java.util.HashMap<>();
+    static {
+        for (String k : new String[]{"bramble","redfin","barbet","sofiap","mh2lm","t2q","sunfish",
+                "oriole","raven","o1s","p3q","r9q","r0q","b0q"}) STORAGE_GB_FOR_MODEL.put(k, 128);
+        for (String k : new String[]{"flame","coral","sargo","bonito","blueline","crosshatch"})
+            STORAGE_GB_FOR_MODEL.put(k, 64);
+    }
+
+    static Integer storageGbForModel(String codename) {
+        String cn = codename == null ? "" : codename.split("_")[0].toLowerCase(Locale.ROOT);
+        String best = null;
+        for (String stem : STORAGE_GB_FOR_MODEL.keySet())
+            if (cn.startsWith(stem) && (best == null || stem.length() > best.length())) best = stem;
+        return best != null ? STORAGE_GB_FOR_MODEL.get(best) : null;
     }
 
     /** 15-digit Luhn-valid IMEI; if a valid 8-digit TAC is given, use it as the first 8 digits. */

@@ -8,6 +8,36 @@ def r(n):
     return secrets.randbelow(n)
 
 
+def test_screen_is_the_models_real_resolution():
+    # A pooled model must report its REAL screen (w,h,densityDpi), not a random pool pick — a Galaxy S21+
+    # was generating as 720x1520 (a budget-phone screen), a hard model tell. Longest-prefix on build_device
+    # (which can carry a suffix like "sofiap_sprout"). Real specs:
+    real = {
+        "sofiap_sprout": (1080, 2300, 399),   # moto g pro (suffix must still resolve)
+        "mh2lm": (1440, 3120, 564),           # LG G8
+        "t2q": (1080, 2400, 394),             # Galaxy S21+
+        "bramble": (1080, 2400, 400),         # Pixel 4a 5G
+        "redfin": (1080, 2340, 440),          # Pixel 5
+    }
+    for dev, spec in real.items():
+        assert G.screen_for_device(dev) == spec, f"{dev}: screen {G.screen_for_device(dev)} != real {spec}"
+
+
+def test_storage_is_the_models_real_sku():
+    # A pooled model reports its real base storage SKU, not a RAM-tier-random 32/64/256. All current-pool
+    # models are 128GB; a rounded reported capacity lands ~115-122GB after the format reserve.
+    from specter import profile as P
+    known_128 = {"Pixel 4a (5G)", "Pixel 5", "Pixel 5a", "moto g pro", "LM-G850l", "SM-G996U"}
+    seen = set()
+    for _ in range(400):
+        p = P.generate_unique(None)
+        m = p["build_model"]; seen.add(m)
+        if m in known_128:
+            gb = round(int(p["total_storage"]) / 1e9)
+            assert 112 <= gb <= 122, f"{m}: storage {gb}GB not ~128 (SKU)"
+    assert known_128 <= seen, f"unpinned pool models: {seen - known_128}"
+
+
 def test_battery_capacity_is_the_models_real_mAh():
     # A known pool model must report its REAL battery design capacity, not a hash bucket — a per-model DB is
     # what a fingerprinter needs to catch a wrong-but-plausible value. Real retail capacities:

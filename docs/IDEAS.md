@@ -5,6 +5,15 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-08-02 - Coherence-audit remaining gaps (codex, after v0.22.3)** - status: `idea`. A fresh audit of the
+  generator found gaps still open after screen/storage: (1) GL identity incomplete — no GL_VERSION/EGL/compressed-
+  format/precision, and gles_version is a flat "3.2" for every SoC (host driver extensions can contradict the
+  claimed Adreno). (2) kernel base drawn random per-profile, not SoC/era-derived (a 5.15 kernel on an A11 Pixel 5
+  is impossible). (3) IMEI TAC is brand-only, not model-specific (a Pixel 5 can get a Pixel-4 TAC). (4) Bluetooth/
+  factory MAC uses a locally-administered addr, no vendor OUI. (5) codec/input-device lists are shared templates
+  across models. Do the tractable byte-parity ones (kernel-by-SoC, MAC OUI, TAC-by-model) like radio/RAM/battery
+  were; GL-extension coherence is a bigger native-layer task. All same "wrong-but-plausible -> real" class.
+
 - **2026-08-02 - Flaky test_generator_high_entropy_fields_rarely_collide** - status: `SHIPPED (v0.22.1)`.
   The uniqueness test asserted ZERO collisions over 2000 real-CSPRNG draws; a legitimate birthday-bound chance
   collision on a small-keyspace field (~46-bit MAC) failed it a few tenths of a percent of runs. Now tolerates
@@ -646,7 +655,7 @@ Checked the generated profile for cross-field incoherence beyond what's already 
 - Deferred to keep the 2.1 PR single-concern. The area-code table is the one worth doing next in Phase 2.
 
 - **2026-07-26 · NEXT IMPORTANT JOB (user request): named/dated profile vault with restore + delete.**
-  status: `idea` — build after current prop-leak/coherence work lands. Requirements from the user:
+  status: `SHIPPED (v0.17.0+)` (Vault.java: MMDDYY-Day-HHMM-Name labels, save/list/restore/delete/rename/import — the entry was stale). Original: — build after current prop-leak/coherence work lands. Requirements from the user:
   - When generating/saving a profile, let the user attach a NAME, and prefill a unique timestamp label like
     `072626-Sun-1924-Name` (MMDDYY-DayAbbr-HHMM-Name; Name optional/user-filled).
   - Show a LIST of previously-generated profiles (the vault). From the list: RESTORE a past profile (re-apply
