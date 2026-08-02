@@ -668,6 +668,28 @@ public final class Generators {
 
     public static String macLower(Rng r) { return macUpper(r).toLowerCase(Locale.ROOT); }
 
+    // Real IEEE-registered manufacturer OUIs per brand — a factory/Bluetooth MAC carries the maker's OUI,
+    // unlike the locally-administered WiFi MAC Android randomizes per-network. MUST match Python _MAC_OUI_BY_BRAND.
+    static final java.util.Map<String, String[]> MAC_OUI_BY_BRAND = new java.util.HashMap<>();
+    static {
+        MAC_OUI_BY_BRAND.put("google",   new String[]{"3C:5A:B4", "F4:F5:E8", "AC:67:84", "D8:6C:63", "70:3A:CB"});
+        MAC_OUI_BY_BRAND.put("samsung",  new String[]{"00:1A:8A", "9C:73:B1", "64:1B:2F", "38:8A:06", "08:EC:A9"});
+        MAC_OUI_BY_BRAND.put("lge",      new String[]{"A0:39:F7", "00:1C:62", "00:24:83", "98:D6:F7"});
+        MAC_OUI_BY_BRAND.put("lg",       new String[]{"A0:39:F7", "00:1C:62", "00:24:83", "98:D6:F7"});
+        MAC_OUI_BY_BRAND.put("motorola", new String[]{"50:16:F4", "00:24:37", "40:83:1D", "CC:C3:EA"});
+    }
+
+    /** MAC with the brand's REAL manufacturer OUI + 3 random bytes (Bluetooth/factory MAC). Unknown brand ->
+     *  locally-administered MAC. RNG: one OUI pick + 3 byte draws. MUST match Python mac_with_oui. */
+    public static String macWithOui(Rng r, String brand) {
+        String[] ouis = MAC_OUI_BY_BRAND.get(brand == null ? "" : brand.toLowerCase(Locale.ROOT));
+        if (ouis == null) return macUpper(r);
+        String oui = ouis[r.next(ouis.length)];
+        StringBuilder sb = new StringBuilder(oui);
+        for (int i = 0; i < 3; i++) sb.append(':').append(String.format("%02X", r.next(256)));
+        return sb.toString();
+    }
+
     /** NANP US phone: 1 + area [2-9]XX + exchange [2-9]XX + 4 digits. */
     // Real, currently-assigned US geographic area codes — MUST be byte-identical to
     // specter/generators.py _US_AREA_CODES (same values, same order) or the seeded phone diverges.

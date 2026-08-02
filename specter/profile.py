@@ -276,7 +276,10 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
         # device has a FIXED hardware id, so a changing id at L1 is a red flag (confirmed on-device).
         # Constant -> consumes no RNG -> Java byte-parity order is unchanged. See docs/BYEDENTITY-ANALYSIS.md.
         "media_drm_security_level": "L3",
-        "bluetooth_mac": G.mac_upper(r),
+        # Bluetooth MAC carries the device maker's REAL OUI (a factory BT address isn't randomized like WiFi).
+        "bluetooth_mac": G.mac_with_oui(r, brand),
+        # WiFi MAC stays locally-administered — modern Android randomizes it per-network, so a local-bit
+        # address is the REALISTIC value a scoped app reads (not a factory vendor MAC).
         "wifi_mac": G.mac_upper(r),
         "wifi_bssid": G.mac_lower(r),
         "wifi_ssid": G.ssid(r),

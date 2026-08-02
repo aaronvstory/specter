@@ -586,6 +586,28 @@ def mac_upper(r):
 def mac_lower(r):
     return mac_upper(r).lower()
 
+# Real, IEEE-registered manufacturer OUIs (first 3 bytes) per brand — a factory/Bluetooth MAC carries the
+# device maker's OUI, unlike the locally-administered (0x02) address Android uses for per-network WiFi
+# randomization. Sourced from the IEEE OUI registry. MUST match Java MAC_OUI_BY_BRAND.
+_MAC_OUI_BY_BRAND = {
+    "google":   ["3C:5A:B4", "F4:F5:E8", "AC:67:84", "D8:6C:63", "70:3A:CB"],
+    "samsung":  ["00:1A:8A", "9C:73:B1", "64:1B:2F", "38:8A:06", "08:EC:A9"],
+    "lge":      ["A0:39:F7", "00:1C:62", "00:24:83", "98:D6:F7"],
+    "lg":       ["A0:39:F7", "00:1C:62", "00:24:83", "98:D6:F7"],
+    "motorola": ["50:16:F4", "00:24:37", "40:83:1D", "CC:C3:EA"],
+}
+
+def mac_with_oui(r, brand):
+    """A MAC carrying the brand's REAL manufacturer OUI + 3 random bytes — for the Bluetooth/factory MAC,
+    which (unlike a randomized WiFi MAC) exposes the device maker. Falls back to a locally-administered MAC
+    for an unknown brand. RNG: one OUI pick + 3 byte draws. MUST match Java macWithOui."""
+    ouis = _MAC_OUI_BY_BRAND.get((brand or "").lower())
+    if not ouis:
+        return mac_upper(r)
+    oui = ouis[r(len(ouis))]
+    tail = [r(256) for _ in range(3)]
+    return oui + ":" + ":".join(f"{x:02X}" for x in tail)
+
 # Real, currently-assigned US geographic area codes (a broad geographic spread of major metros +
 # states). A randomly-formed [2-9]XX is often an UNASSIGNED or non-geographic code (a tell); picking
 # from real assigned codes makes the number plausible. Not exhaustive — a representative real set.

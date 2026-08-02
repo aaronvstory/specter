@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.5] - 2026-08-02
+
+### Fixed
+- **Bluetooth/factory MAC carries the device maker's real IEEE OUI.** The BT MAC was a locally-administered
+  (0x02) random address — but a factory Bluetooth address exposes the manufacturer via its OUI (unlike a
+  WiFi MAC, which Android randomizes per-network, so that one correctly stays locally-administered). Added a
+  per-brand table of real IEEE-registered OUIs (Google 3C:5A:B4/…, Samsung 00:1A:8A/…, LG A0:39:F7/…,
+  Motorola 50:16:F4/…) and use one for the BT MAC. Byte-parity Python<->Java; new OUI-grounded test.
+
 ## [0.22.4] - 2026-08-02
 
 ### Fixed

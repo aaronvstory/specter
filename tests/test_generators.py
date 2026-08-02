@@ -23,6 +23,27 @@ def test_screen_is_the_models_real_resolution():
         assert G.screen_for_device(dev) == spec, f"{dev}: screen {G.screen_for_device(dev)} != real {spec}"
 
 
+def test_bluetooth_mac_carries_a_real_vendor_oui():
+    # The Bluetooth/factory MAC must carry the device maker's REAL IEEE OUI (not a locally-administered
+    # 0x02 address) — a factory BT address isn't randomized like a WiFi MAC. Per brand:
+    from specter import profile as P
+    brand_ouis = {
+        "google": {"3C:5A:B4", "F4:F5:E8", "AC:67:84", "D8:6C:63", "70:3A:CB"},
+        "samsung": {"00:1A:8A", "9C:73:B1", "64:1B:2F", "38:8A:06", "08:EC:A9"},
+        "lge": {"A0:39:F7", "00:1C:62", "00:24:83", "98:D6:F7"},
+        "motorola": {"50:16:F4", "00:24:37", "40:83:1D", "CC:C3:EA"},
+    }
+    for _ in range(300):
+        p = P.generate_unique(None)
+        oui = p["bluetooth_mac"][:8]
+        expected = brand_ouis.get(p["build_brand"].lower())
+        if expected is not None:
+            assert oui in expected, f"{p['build_brand']}: BT OUI {oui} not a real vendor OUI"
+        # the local-admin bit (0x02 in the first octet) must NOT be set on a vendor MAC
+        first = int(p["bluetooth_mac"][:2], 16)
+        assert first & 0x02 == 0, f"BT MAC {p['bluetooth_mac']} has the local-admin bit set (not a factory MAC)"
+
+
 def test_kernel_base_is_the_socs_real_family():
     # The kernel base must be the SoC's real Linux kernel, not a random pick — a 5.15 kernel on an A11
     # Snapdragon 855 is impossible. Device-proven: a real Pixel 4 (SD855) reads 4.14. Sourced per SoC.
