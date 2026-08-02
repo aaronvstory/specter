@@ -745,3 +745,34 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   loosening — that still guards the su boundary).
 - **setup_done gates on required steps only; LspScope requires enabled=1.** WHY: "any step succeeded" hid the
   first-run banner even when scope/native failed; a disabled-but-scoped module yields no hooks (false success).
+- **Kryo MIDR is per-GENERATION, and SD865 is MIXED-implementer (gauntlet-corrected).** WHY: the kernel
+  cputype.h note is explicit — Kryo 2xx=0x800/1 (A73/53), 3xx=0x802/3 (A75/55, incl SD670/845), 4xx=0x804/5
+  (A76/55, incl SD855/730/765), but Kryo **5XX (SD865) Gold/Prime ID as ARM Cortex-A77 0x41:0xd0d** while its
+  Silver IDs as Qualcomm 0x51:0x805 — a mixed-implementer cpuinfo. So kona = 4x0x41:0xd0d + 4x0x51:0x805, and
+  sdm670 (Kryo 360 = 3xx) = 0x51:0x802/0x803, NOT the 4xx 0x804/0x805 an earlier pass wrongly used. Kryo 6XX
+  (SD888) reports pure ARM (X1 0xd44 / A78 0xd41 / A55 0xd05). Authority: pytorch/cpuinfo uarch.c + cputype.h.
+- **/proc/cpuinfo reports the SoC's REAL Kryo/Cortex MIDR, not generic ARM ids.** WHY: real Snapdragon phones
+  report the QUALCOMM implementer 0x51 with a Kryo part id (device-proven: a real Pixel 4a reads 0x51:0x804/
+  0x805, NOT ARM 0x41). The generator emitted generic ARM ids, and worse used Cortex-A77 0xd0d for SD855
+  (which is A76-class Kryo 485) — an impossible core = an emulator tell that flagged Cash App. SD855/865/765G/
+  730G/670 -> 0x51:0x804(gold)/0x805(silver); SD888(lahaina)+ report ARM 0x41 (Qualcomm dropped custom MIDR
+  at SD888). Pinned by tests/test_coherence.py::test_cpuinfo_parts_are_the_real_silicon_for_the_soc.
+- **Device pool has a CEILING (MAX_ANDROID_MAJOR), not just a floor.** WHY: a profile must never claim an OS
+  newer than the real host (ro.build.version.sdk leaks the host SDK early); ~43% of profiles picked A12 devices
+  on the A11 fleet host, tripping the OS kill-switch. Set to 11 (whole fleet); bump Python+Java in lockstep on
+  a host upgrade (they must match or byte-parity breaks).
+- **Baseband/kernel are SoC-derived, not RNG-drawn; the old prefix DRAW is KEPT (discarded) for byte-parity.**
+  WHY: a random modem prefix contradicted the silicon ~5/6 of the time. Keying it on the SoC while preserving
+  the RNG-consumption position keeps Java<->Python byte-identical.
+- **RAM/storage keyed on MODEL (longest-prefix codename) before SoC.** WHY: one SoC serves many RAM SKUs, so
+  ~72% of profiles claimed a size the model never shipped (Pixel 5 as 4GB). Per-model table pins the real SKU;
+  fail-closed test asserts every hardware.json SoC has a RAM tier (taro/sdm670 were silently defaulting).
+- **ARM-GPU (Mali/Tensor) profiles HIDE the whole /sys/class/kgsl tree (ENOENT).** WHY: a Mali device has no
+  Adreno kgsl node; leaving it meant the host's real Adreno number leaked under a Mali GL_RENDERER, and the
+  node's mere existence contradicts the ARM GPU. Latent today (US pool is all-Adreno) but closed at the root.
+- **com.specter/.lite/.probe are hidden from EVERY app, not just scoped callers.** WHY: their presence reveals
+  the module regardless of who asks; a non-scoped fingerprinter could enumerate them. The broader sensitive
+  set (user's root/hook/proxy apps) stays caller-gated to avoid perturbing system-wide package visibility.
+- **Left the SM-G996U security_patch (2020-12-01) as-is despite predating the S21+ launch.** WHY: it's a real
+  dumped build.prop value (per the 0.21.0 provenance note); a factory image built weeks before retail is
+  plausible. Changing verified real data on a hypothesis would make it less accurate, not more.

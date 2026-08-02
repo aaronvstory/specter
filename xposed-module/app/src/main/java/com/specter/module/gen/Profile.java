@@ -24,10 +24,11 @@ public final class Profile {
     static final Set<String> US_COMMON_BRANDS = new HashSet<>(Arrays.asList(
             "samsung", "google", "motorola", "lge"));
 
-    /** {mccmnc, name} US carriers (MCC 310/311), same order as Python US_CARRIERS. */
+    /** {mccmnc, name} US carriers — the LIVE list is Country.US.carriers; this partial copy is unused. Kept
+     *  in sync (Sprint removed) to avoid it misleading a future reader. */
     static final String[][] US_CARRIERS = {
             {"310260", "T-Mobile"}, {"311480", "Verizon"}, {"310410", "AT&T"},
-            {"310120", "Sprint"}, {"311580", "US Cellular"}, {"310030", "AT&T"},
+            {"311580", "US Cellular"}, {"310030", "AT&T"},
             {"310160", "T-Mobile"}, {"311870", "Boost Mobile"},
     };
 
@@ -81,6 +82,10 @@ public final class Profile {
     // a brief startup window, so a claimed SDK 28 on a real SDK 30 host is a detectable contradiction.
     // Mirror of profile.MIN_ANDROID_MAJOR — MUST match, or the pool differs and byte-parity breaks.
     static final int MIN_ANDROID_MAJOR = 11;
+    // CEILING mirror of profile.MAX_ANDROID_MAJOR — never claim an OS newer than the real host (a claimed
+    // SDK 31 on a real SDK 30 host is a self-contradiction: "device or software isn't supported"). Whole
+    // fleet is Android 11, so 11 is both floor and ceiling; bump BOTH sides in lockstep on a host upgrade.
+    static final int MAX_ANDROID_MAJOR = 11;
     // Tablet / TV markers (device NAME, row 0). We emit a phone number + SIM + IMEI, so a WiFi tablet
     // or TV box is incoherent. Mirror of profile._NON_PHONE_MARKERS.
     static final String[] NON_PHONE_MARKERS = {
@@ -107,7 +112,8 @@ public final class Profile {
     static boolean isPlausiblePhone(List<String> dev) {
         if (dev.size() <= 5) return false;
         for (String m : NON_PHONE_MARKERS) if (dev.get(0).contains(m)) return false;
-        return releaseMajorOf(dev) >= MIN_ANDROID_MAJOR;
+        int major = releaseMajorOf(dev);
+        return major >= MIN_ANDROID_MAJOR && major <= MAX_ANDROID_MAJOR;
     }
 
     // Mirror of profile._is_us_model — MUST match or the device pool differs and byte-parity breaks.
@@ -121,6 +127,15 @@ public final class Profile {
         return US_SAMSUNG_MODEL.matcher(model == null ? "" : model).find();
     }
 
+    /** Fallback pool for the degenerate path (bias off / empty biased pool): still plausible-only, so an
+     *  implausible device (tablet/TV, or OS newer than the host) never slips through. MUST match Python. */
+    private static List<String> plausibleFallback(Generators.Rng r, List<List<String>> devices) {
+        List<List<String>> plausible = new ArrayList<>();
+        for (List<String> d : devices) if (isPlausiblePhone(d)) plausible.add(d);
+        List<List<String>> src = plausible.isEmpty() ? devices : plausible;
+        return src.get(r.next(src.size()));
+    }
+
     static List<String> pickDevice(Generators.Rng r, List<List<String>> devices, boolean usBias) {
         if (usBias) {
             List<List<String>> pool = new ArrayList<>();
@@ -129,7 +144,7 @@ public final class Profile {
                         && isPlausiblePhone(d) && isUsModel(d.get(2), d.get(3))) pool.add(d);
             if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
         }
-        return devices.get(r.next(devices.size()));
+        return plausibleFallback(r, devices);
     }
 
     static List<String> pickDevice(Generators.Rng r, List<List<String>> devices, boolean bias, Country country) {
@@ -141,7 +156,7 @@ public final class Profile {
                         && isPlausiblePhone(d) && isUsModel(d.get(2), d.get(3))) pool.add(d);
             if (!pool.isEmpty()) return pool.get(r.next(pool.size()));
         }
-        return devices.get(r.next(devices.size()));
+        return plausibleFallback(r, devices);
     }
 
     /** Build a full identity for the US (back-compat overload; seeded output unchanged). */
@@ -226,12 +241,13 @@ public final class Profile {
         // Build.HARDWARE/BOARD are the board codename too.
         p.put("build_hardware", codename);
         p.put("build_board", codename);
-        p.put("build_kernel_version", Generators.kernelVersion(r, release));
-        p.put("build_radio", Generators.radioVersion(r));
-        // Resolve the per-model hardware bundle ONCE (pure lookup, no RNG) BEFORE ramStorage so the RAM
-        // tier can be constrained to the SoC — its SoC also drives soc_platform below. Mirrors profile.py.
+        // Resolve the per-model hardware bundle ONCE (pure lookup, no RNG) up front so the SoC can drive the
+        // baseband, RAM tier and soc_platform below coherently. Mirrors profile.py's _hw_entry. Pure -> the
+        // resolution itself consumes no RNG, so its position doesn't affect byte-parity.
         Map<String, String> hwEntry = resolveHardware(codename, hardware);
-        String[] ramStorage = Generators.ramStorageBytes(r, hwEntry.get("soc"));   // SoC-coherent RAM+storage
+        p.put("build_kernel_version", Generators.kernelVersion(r, release));
+        p.put("build_radio", Generators.radioVersion(r, hwEntry.get("soc")));   // SoC-coherent baseband
+        String[] ramStorage = Generators.ramStorageBytes(r, hwEntry.get("soc"), codename);   // model/SoC-coherent RAM+storage
         p.put("total_ram", ramStorage[0]);
         p.put("total_storage", ramStorage[1]);
         // Build.HOST leaks the real build-farm hostname (e.g. "abfarm-00902" = Google infra — incoherent

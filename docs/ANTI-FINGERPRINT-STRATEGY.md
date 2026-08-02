@@ -819,3 +819,27 @@ Being explicit about which is which so we don't overpromise:
 
 Strategic framing: Specter makes the DEVICE coherent and aligns TZ/WebRTC/VPN-visibility to the proxy's
 apparent location; the proxy owns clean IP reputation, residential DNS, and UDP/QUIC + realistic latency.
+
+## CPU/hardware coherence audit — the Cash App "emulator" failure (2026-08-02, PROVEN on-device)
+A multi-signal audit (evidence + a real Pixel 4a read) found the generated profiles carried several
+hardware-IMPOSSIBLE signals that read as an emulator/"device or software isn't supported":
+- **/proc/cpuinfo named cores the SoC never shipped.** SD855 was emitted as Cortex-A77 (0xd0d) — it is
+  A76-class Kryo 485. Worse, ALL Snapdragon Kryo chips used generic ARM implementer 0x41 when a REAL
+  Snapdragon reports the QUALCOMM implementer 0x51 with a Kryo part id (device-proven: a real Pixel 4a reads
+  0x51:0x804 gold / 0x805 silver). FIXED at the data source; pinned by an authoritative-MIDR test so no
+  impossible core can regenerate. (SD888+ correctly report ARM 0x41 — Qualcomm dropped custom Kryo MIDR then.)
+- **~43% of profiles claimed Android 12 on the A11 host** (no OS ceiling) — a self-contradiction the OS
+  kill-switch trips. FIXED with MAX_ANDROID_MAJOR.
+- **Sensor list read as ~6 on Pixels** (the native composite-sensor derivation matched names case-sensitively,
+  so the lowercase Pixel names derived ZERO composites) and the Java hook truncated the real list. FIXED —
+  probe now reports hw_sensor_count=29 on-device (was ~6), a realistic count.
+- **~72% claimed a RAM size the model never shipped** (RAM keyed on SoC, not model; taro/sdm670 defaulted to
+  3-4GB so an S22 flagship generated as 3.8GB). FIXED with a per-model SKU table.
+- **Baseband drawn at random** (contradicted the SoC ~5/6 of the time) -> SoC-keyed. **Mali/Tensor kgsl node**
+  leaked the host Adreno under a Mali renderer -> ARM-GPU profiles hide the kgsl tree (ENOENT).
+PROVEN on-device (probe dual-read, SM-G996U/SD888 profile): cpuinfo Hardware=LAHAINA, 8 procs, RAM 8GB,
+sdk_int=30 (<= host), radio g8350 (SD888 modem), sensors 29. The generated profile carried the correct ARM
+cores 0xd05(A55)x4 + 0xd41(A78)x3 + 0xd44(X1)x1.
+Epistemic note: codex flagged that a cpuinfo mismatch is likely NOT the SOLE Cash trigger (Play Integrity /
+attestation is stronger) — so this closes a real, proven coherence defect and a plausible contributor, not a
+guaranteed pass. Verify the actual pass/block on a real signup attempt.

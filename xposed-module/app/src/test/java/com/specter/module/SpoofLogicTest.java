@@ -89,6 +89,7 @@ public class SpoofLogicTest {
         // Installed-app filter: hide root / hooking-framework / anti-fp packages, keep ordinary ones.
         check(SpoofLogic.isSensitivePackage("com.specter"), "hide the module");
         check(SpoofLogic.isSensitivePackage("com.specter.probe"), "hide the probe");
+        check(SpoofLogic.isSensitivePackage("com.specter.lite"), "hide the harvest/lite app");
         check(SpoofLogic.isSensitivePackage("com.topjohnwu.magisk"), "hide Magisk manager");
         check(SpoofLogic.isSensitivePackage("org.lsposed.manager"), "hide LSPosed");
         check(SpoofLogic.isSensitivePackage("io.github.auag0.hidemocklocation"), "hide mock-location hider");

@@ -37,10 +37,13 @@ def _is_us_model(brand, model):
 
 # real US carriers (MCC 310/311) so the SIM identity is coherent for a US driver
 US_CARRIERS = [
+    # Sprint (310120 / 312530) removed: the network was decommissioned in 2022 after the T-Mobile merger,
+    # so a freshly-provisioned SIM in 2026 never comes up as Sprint (a live Sprint operator is a temporal
+    # tell). The remaining carriers cover the same US MCC space (310/311).
     ("310260", "T-Mobile"), ("311480", "Verizon"), ("310410", "AT&T"),
-    ("310120", "Sprint"), ("311580", "US Cellular"), ("310030", "AT&T"),
+    ("311580", "US Cellular"), ("310030", "AT&T"),
     ("310160", "T-Mobile"), ("311870", "Boost Mobile"),
-    ("310004", "Verizon"), ("310090", "AT&T"), ("312530", "Sprint"),
+    ("310004", "Verizon"), ("310090", "AT&T"),
     ("311882", "Mint Mobile"), ("310240", "T-Mobile"),
 ]
 
@@ -167,6 +170,16 @@ def _seeded(seed):
 # pool from starving at this floor.
 MIN_ANDROID_MAJOR = 11
 
+# Maximum plausible Android major — the CEILING the floor above was missing. A profile must NEVER claim an
+# OS NEWER than the real host: ro.build.version.sdk / first_api_level leak the real host SDK during the brief
+# startup window before the native late-map arms (the SIGSEGV-sensitive path can't be spoofed early), so a
+# claimed SDK 31 (Android 12) on a real SDK 30 (Android 11) host is a self-contradiction a detector reads
+# directly — the exact "device or software isn't supported" shape. The whole fleet + product target is
+# Android 11, so 11 is both floor and ceiling here; bump BOTH this and Java Profile.MAX_ANDROID_MAJOR in
+# lockstep if the host OS is ever upgraded (they MUST match or the device pool differs and byte-parity breaks).
+# Without this, ~43% of generated profiles picked an A12 device and tripped the runtime os-version kill-switch.
+MAX_ANDROID_MAJOR = 11
+
 # Marketing-name substrings that identify a tablet / TV box. We generate a phone number + SIM + IMEI,
 # so a WiFi tablet or TV box is incoherent. Matched against the device row's NAME (row[0]).
 _NON_PHONE_MARKERS = ("Tab", "Nexus 7", "Nexus 9", "Nexus 10", "Nexus Player", "Shield", "Pixel C")
@@ -195,7 +208,8 @@ def _is_plausible_phone(dev):
         return False
     if any(m in dev[0] for m in _NON_PHONE_MARKERS):
         return False
-    return _release_major_of(dev) >= MIN_ANDROID_MAJOR
+    major = _release_major_of(dev)
+    return MIN_ANDROID_MAJOR <= major <= MAX_ANDROID_MAJOR
 
 
 def _pick_device(r, devices, us_bias, brands=None):
@@ -206,7 +220,13 @@ def _pick_device(r, devices, us_bias, brands=None):
                 and _is_us_model(d[2], d[3])]
         if pool:
             return pool[r(len(pool))]
-    return devices[r(len(devices))]
+    # Fallback (us_bias off, or the biased pool came up empty): still never pick an implausible device — a
+    # tablet/TV or an OS newer than the host must not slip through here (that would re-open the "claim a newer
+    # OS than the host" hole the ceiling closes). Filter on _is_plausible_phone; only if THAT is also empty do
+    # we fall all the way back to the raw list. MUST match Java pickDevice.
+    plausible = [d for d in devices if _is_plausible_phone(d)]
+    src = plausible if plausible else devices
+    return src[r(len(src))]
 
 
 def build_profile(r, devices, us_bias=True, country="US", hardware=None):
@@ -280,9 +300,9 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
         "build_hardware": codename,
         "build_board": codename,
         "build_kernel_version": G.kernel_version(r, release),
-        "build_radio": G.radio_version(r),
+        "build_radio": G.radio_version(r, _hw_entry.get("soc", "")),
         # walrus keeps the RNG draw AT this position (between radio and host) to preserve Java parity
-        "total_ram": (_ram_storage := G.ram_storage_bytes(r, _hw_entry.get("soc", "")))[0],
+        "total_ram": (_ram_storage := G.ram_storage_bytes(r, _hw_entry.get("soc", ""), codename))[0],
         "total_storage": _ram_storage[1],
         "build_host": G.build_host(r),
         "build_display": build_id,

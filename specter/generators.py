@@ -71,7 +71,7 @@ def serial_for_brand(r, brand):
 _TAC_BY_BRAND = {
     "samsung":  ["35207609", "35316805", "35847909", "35692106"],
     "google":   ["35815807", "35854108", "35161511"],
-    "motorola": ["35462106", "35404007", "35123456"],
+    "motorola": ["35462106", "35404007"],   # dropped "35123456" (sequential filler, not a real GSMA TAC)
     "oneplus":  ["86293403", "86891303", "86651004"],
     "lge":      ["35295406", "35878705"],
     "xiaomi":   ["86412604", "86734703"],
@@ -344,9 +344,31 @@ def soc_platform(product, hw_soc=None):
 
 _RADIO_PREFIXES = ["g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"]
 
-def radio_version(r):
-    """Build.getRadioVersion() baseband string (mirrors Java radioVersion). Confirmed FP leak."""
-    pre = _RADIO_PREFIXES[r(len(_RADIO_PREFIXES))]
+# Real modem/baseband prefix per SoC. Build.getRadioVersion() otherwise drew a prefix uniformly at random,
+# so ~5/6 of profiles reported a baseband that contradicts the claimed silicon (a Pixel 6/Tensor reporting
+# the SD855 modem). Each SoC has ONE real modem family, so key the prefix on the SoC. MUST match Java
+# RADIO_PREFIX_BY_SOC. Unknown SoC -> the generic-modern g7250 (Snapdragon X-series), never a mismatch.
+_RADIO_PREFIX_BY_SOC = {
+    "msmnile": "g8150", "sdm855": "g8150",              # SD855 modem
+    "kona": "g7250",                                     # SD865 (X55)
+    "lahaina": "g8350", "sm7150": "g7250", "lito": "g7250",  # SD888 / SD730G / SD765G
+    "sm6150": "g7150", "sdm845": "M8998", "msm8998": "M8998", "sdm670": "g6150",
+    "sdm660": "M8998", "sdm665": "g7150", "trinket": "g7150", "bengal": "g7150",
+    "taro": "g8450", "kalama": "g8550",                  # SD8g1 / SD8g2
+    "gs101": "g5123b",                                   # Google Tensor uses the Exynos g5123b modem
+    "exynos9820": "g8090", "exynos9825": "g8090", "exynos990": "g5123", "exynos2100": "g5123",
+    "exynos9610": "m8090", "exynos9611": "m8090", "exynos1280": "g5300", "exynos7884": "m7570",
+    "exynos7885": "m7570", "exynos7904": "m7570", "exynos7870": "m7570", "exynos850": "m7570",
+    "exynos9810": "g8090",
+}
+_RADIO_DEFAULT_PREFIX = "g7250"
+
+def radio_version(r, soc=""):
+    """Build.getRadioVersion() baseband string (mirrors Java radioVersion). Confirmed FP leak. The modem
+    prefix is the SoC's real baseband; the rest of the string is per-unit random. RNG order is preserved: the
+    old prefix-selection draw is kept (now discarded) so every downstream field's value is byte-identical."""
+    r(len(_RADIO_PREFIXES))   # keep the draw at this position for byte-parity; prefix is now SoC-derived
+    pre = _RADIO_PREFIX_BY_SOC.get(soc, _RADIO_DEFAULT_PREFIX)
     return f"{pre}-{digits(r,5)}-{digits(r,6)}-" + chr(ord('A')+r(6)) + f"-{digits(r,7)}"
 
 def bootloader(r, brand, device):
@@ -388,9 +410,11 @@ _RAM_IDX_FOR_SOC = {
     # flagships: 6/8/12 GB
     "exynos9820": [3, 4, 5], "msmnile": [3, 4, 5], "exynos990": [4, 5], "exynos9825": [4, 5],
     "kona": [4, 5], "exynos2100": [4, 5], "lahaina": [4, 5], "sdm855": [3, 4, 5],
+    "taro": [4, 5], "kalama": [4, 5],   # SD8g1/8g2 flagships (S22/S23) — 8/12GB; were missing -> 3-4GB default
     "exynos9810": [3, 4], "msm8998": [2, 3, 4], "sdm845": [2, 3, 4],
     # upper-mid: 4/6/8 GB
     "sm6150": [2, 3, 4], "sm7150": [2, 3, 4], "lito": [2, 3, 4], "gs101": [4], "exynos9610": [2, 3],
+    "sdm670": [1, 2, 3],   # SD670 (Pixel 3a) — 4GB; was missing -> default (coincidentally same, now explicit)
     # mid: 3/4/6 GB
     "sdm660": [1, 2, 3], "exynos7904": [1, 2, 3], "exynos9611": [1, 2, 3], "exynos1280": [2, 3],
     # budget: 2/3/4 GB
@@ -399,11 +423,42 @@ _RAM_IDX_FOR_SOC = {
 }
 _RAM_IDX_DEFAULT = [1, 2, 3]   # unknown SoC -> 3/4/6 GB (safe modern mid)
 
-def ram_storage_bytes(r, soc=""):
+# Per-MODEL RAM index override (into _RAM_GB=[2,3,4,6,8,12]). The SoC map above is a 2-3-wide spread because
+# one SoC serves many SKUs, so ~72% of profiles claimed a RAM size the specific MODEL never shipped — itself
+# a coherence tell (a real Pixel 5 is 8GB, full stop; never 4 or 6). Keyed on the product-stripped codename
+# exactly like _SCREEN_KNOWN, this pins each real US-pool model to its true retail SKU(s). Checked BEFORE the
+# SoC map; falls through to it for any codename not listed. Grounded in each model's real spec.
+# MUST stay byte-identical to Java RAM_IDX_FOR_MODEL.
+_RAM_IDX_FOR_MODEL = {
+    "bramble": [3],       # Pixel 4a 5G — 6GB
+    "redfin":  [4],       # Pixel 5 — 8GB
+    "barbet":  [3],       # Pixel 5a — 6GB
+    "sofiap":  [2],       # moto g pro — 4GB
+    "mh2lm":   [3],       # LG G8 ThinQ — 6GB
+    "t2q":     [4],       # Galaxy S21+ (SM-G996U) — 8GB
+    "o1s": [4], "p3q": [4, 5], "r9q": [3, 4],   # S21 / S21 Ultra (12/16) / S21 FE — extra US S21 family
+    "flame": [3], "coral": [3],                  # Pixel 4 / 4 XL — 6GB
+    "oriole": [4], "raven": [5],                 # Pixel 6 (8GB) / 6 Pro (12GB)
+}
+
+
+def _ram_idx_for_model(codename):
+    """RAM index set for a device by LONGEST-prefix match against _RAM_IDX_FOR_MODEL, or None. Pool
+    codenames carry variant suffixes (t2qsqw, o1sxxx) while the table keys are clean stems (t2q, o1s), so an
+    exact match misses — longest-prefix picks the right SKU (and 'a52xq' beats a shorter 'a52' stem). Pure,
+    no RNG -> byte-parity safe. MUST match Java ramIdxForModel."""
+    cn = (codename or "").lower()
+    best = None
+    for stem in _RAM_IDX_FOR_MODEL:
+        if cn.startswith(stem) and (best is None or len(stem) > len(best)):
+            best = stem
+    return _RAM_IDX_FOR_MODEL[best] if best else None
+
+def ram_storage_bytes(r, soc="", codename=""):
     """RAM+storage as one coherent pair, (ram_bytes, storage_bytes). Mirrors Java ramStorageBytes.
-    RAM tier is constrained to what the SoC realistically ships with (no 8GB budget phones).
-    RNG order: ram-tier idx (against the SoC subset), ram-shave, storage-capacity idx, storage-fill."""
-    idxs = _RAM_IDX_FOR_SOC.get(soc, _RAM_IDX_DEFAULT)
+    RAM tier is constrained to what the MODEL (preferred) or its SoC realistically ships with — no 8GB budget
+    phones, no 4GB Pixel 5. RNG order: ram-tier idx, ram-shave, storage-capacity idx, storage-fill."""
+    idxs = _ram_idx_for_model(codename) or _RAM_IDX_FOR_SOC.get(soc, _RAM_IDX_DEFAULT)
     ram_idx = idxs[r(len(idxs))]
     ram_gb = _RAM_GB[ram_idx]
     ram_nominal = ram_gb * 1024 * 1024 * 1024
