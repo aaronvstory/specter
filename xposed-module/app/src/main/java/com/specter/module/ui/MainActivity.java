@@ -609,7 +609,6 @@ public class MainActivity extends Activity {
             final String tzMsg = tzAligned;
             final int triedN = tried.size();
             final java.util.List<String> triedPkgs = tried;
-            final boolean allClean = clearedN == triedN;    // every app it touched wiped -> no carry-over
             final boolean allApplied = okN == triedN;       // every app it touched cleared AND applied
             runOnUiThread(() -> {
                 try {
@@ -618,10 +617,10 @@ public class MainActivity extends Activity {
                         status.setText(msg); toast(msg);
                         return;
                     }
-                    // Only claim "no carry-over" when EVERY app it touched was actually cleared.
-                    if (allClean) toast("Wiped and applied to " + triedN + " app(s).");
-                    else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + triedN
-                            + " app(s) done — grant root in Magisk?");
+                    // Claim "wiped AND applied" only when every app it touched got both. A clear that
+                    // succeeded but whose apply failed is NOT done — saying so would hide an unspoofed app.
+                    if (allApplied) toast("Wiped and applied to " + triedN + " app(s).");
+                    else toast("⚠️ Only " + okN + "/" + triedN + " app(s) done — grant root in Magisk?");
                     String m = "Applied to " + okN + "/" + triedN + " app(s)."
                             + (skippedN > 0 ? " " + skippedN + " already had it." : "")
                             + (clrErr != null ? " Clear error: " + clrErr : "")
@@ -684,8 +683,16 @@ public class MainActivity extends Activity {
     private boolean liveCarries(String pkg, Map<String, String> applied) {
         Map<String, String> live = readLiveProfile(pkg);
         if (live == null) return false;   // no profile file -> the hook has nothing; apply for real
-        String want = applied.get("android_id");
-        return want == null || want.equals(live.get("android_id"));
+        for (Map.Entry<String, String> e : applied.entrySet()) {
+            // readLiveProfile drops these three, so they can never match — and they are not identity:
+            // a transient monitor flag and a policy re-stamped on every apply.
+            if (e.getKey().equals("trace") || e.getKey().equals("os_version_spoof_enabled")
+                    || e.getKey().equals(com.specter.module.SpoofLogic.TRUE_ANDROID_ID_KEY)) continue;
+            // The live map is a SUPERSET (apply() backfills derived + per-model hardware), so check that
+            // every byte we meant to push is still there — not just that some profile file exists.
+            if (!e.getValue().equals(live.get(e.getKey()))) return false;
+        }
+        return true;
     }
 
     /** Packages carrying the identity currently on screen, comma-separated ("" if none). This is what the
