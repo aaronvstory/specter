@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.9] - 2026-08-02
+
+### Fixed
+- **Apply no longer wipes an app that already carries the identity.** Applied state is now tracked per
+  target app instead of as one "identity + whole target set" pair. With several target apps selected, the
+  status pill dropped to "Ready" after restoring a login to one of them — and tapping Apply from there
+  re-wiped every target, destroying the login just restored. Apply now skips apps already carrying exactly
+  those bytes, and the pill can say "On 1 of 3 apps".
+
 ## [0.22.8] - 2026-08-02
 
 ### Fixed

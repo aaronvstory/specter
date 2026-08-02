@@ -938,5 +938,5 @@ honesty pass on the status page. codex "trustworthy go/no-go" items still OPEN (
   `appliedTargets`/`appliedSig` pair. The single slot assumes one identity is pushed to the whole target
   set atomically, which a per-app vault restore (and any partial apply) breaks: the pill drops to "Ready",
   and tapping Apply from there wipes+reapplies EVERY selected target — destroying a login that was just
-  restored to one of them. Status: idea. Pre-existing, not introduced by PR 42; the same hazard already
-  exists whenever an apply only reaches some of its targets.
+  restored to one of them. Status: SHIPPED v0.22.9 — appliedByPkg replaces the global pair, and apply()
+  skips any app already carrying exactly those bytes, so it can no longer wipe a just-restored login.
