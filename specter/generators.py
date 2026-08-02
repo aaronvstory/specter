@@ -89,7 +89,23 @@ def _tac_for_brand(r, brand):
 
 _KERNEL_BASES = ["4.9", "4.14", "4.19", "5.4", "5.10", "5.15"]
 
-def kernel_version(r, release="13"):
+# Real Linux kernel base per SoC — an A11-era Snapdragon 855 ships 4.14 (device-proven on a real Pixel 4),
+# never 5.15. The base was otherwise drawn uniformly at random, so a profile could claim an impossible
+# kernel for its silicon/OS. Sourced: NIST CAVP (4.19 on SD750-class, 5.4 on SD888/Exynos2100), Sony SODP
+# (4.14 on SD855/845/665/660), AOSP redbull (4.19 on redfin/sunfish). Unknown SoC -> keep the drawn base.
+# MUST match Java KERNEL_BASE_BY_SOC.
+_KERNEL_BASE_BY_SOC = {
+    "sdm660": "4.4", "msm8998": "4.4", "sdm845": "4.9", "sdm670": "4.9",
+    "sm6150": "4.14", "sm7150": "4.19", "lito": "4.19", "sdm665": "4.14",
+    "msmnile": "4.14", "sdm855": "4.14", "kona": "4.19", "lahaina": "5.4",
+    "taro": "5.10", "kalama": "5.15", "gs101": "5.10",
+    "exynos9820": "4.14", "exynos9825": "4.14", "exynos990": "4.19", "exynos2100": "5.4",
+    "exynos9610": "4.14", "exynos9611": "4.14", "exynos1280": "5.10", "exynos7884": "4.4",
+    "exynos7885": "4.4", "exynos7904": "4.4", "exynos7870": "4.4", "exynos850": "4.14", "exynos9810": "4.9",
+    "trinket": "4.14", "bengal": "4.19",
+}
+
+def kernel_version(r, release="13", soc=""):
     """os.version kernel string, e.g. '4.14.180-perf-g0a1b2c3' (mirrors Java kernelVersion).
 
     The '-androidN' branch tag must be COHERENT with the OS: a kernel can't be branched for a NEWER
@@ -97,7 +113,8 @@ def kernel_version(r, release="13"):
     for byte-parity, then CLAMP the drawn android tag to the profile release. If release < 10 (no
     -androidN tag exists there) fall back to a '-perf' kernel (common on Android <=9).
     """
-    base = _KERNEL_BASES[r(len(_KERNEL_BASES))]
+    drawn_base = _KERNEL_BASES[r(len(_KERNEL_BASES))]   # keep the draw (byte-parity); SoC overrides below
+    base = _KERNEL_BASE_BY_SOC.get(soc) or drawn_base
     patch = 50 + r(250)
     branch = r(2)            # 0 => -perf, 1 => -androidN
     tagnum = 10 + r(4)       # 10..13 (draw consumed regardless, for parity)

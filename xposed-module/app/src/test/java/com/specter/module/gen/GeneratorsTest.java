@@ -75,7 +75,7 @@ public class GeneratorsTest {
             // devices get a -perf kernel (no -androidN tag exists there).
             for (String rel : new String[]{"9", "10", "11", "12", "13"}) {
                 Generators.Rng kg = seeded(s * 31 + 7);
-                String kv = Generators.kernelVersion(kg, rel);
+                String kv = Generators.kernelVersion(kg, rel, "");
                 int relN = Integer.parseInt(rel);
                 int idx = kv.indexOf("-android");
                 if (idx >= 0) {

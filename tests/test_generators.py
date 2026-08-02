@@ -23,6 +23,22 @@ def test_screen_is_the_models_real_resolution():
         assert G.screen_for_device(dev) == spec, f"{dev}: screen {G.screen_for_device(dev)} != real {spec}"
 
 
+def test_kernel_base_is_the_socs_real_family():
+    # The kernel base must be the SoC's real Linux kernel, not a random pick — a 5.15 kernel on an A11
+    # Snapdragon 855 is impossible. Device-proven: a real Pixel 4 (SD855) reads 4.14. Sourced per SoC.
+    from specter import profile as _P
+    want = {
+        "msmnile": "4.14", "sdm855": "4.14",   # SD855 (device-proven)
+        "lito": "4.19", "sm7150": "4.19",       # SD765G/730G (AOSP redbull)
+        "lahaina": "5.4",                        # SD888 (NIST)
+        "sdm665": "4.14",                        # SD665
+    }
+    for soc, base in want.items():
+        for s in range(20):
+            kv = G.kernel_version(_P._seeded(s * 13 + 1), "11", soc)
+            assert kv.split("-")[0].rsplit(".", 1)[0] == base, f"{soc}: kernel {kv} base != {base}"
+
+
 def test_storage_is_the_models_real_sku():
     # A pooled model reports its real base storage SKU, not a RAM-tier-random 32/64/256. All current-pool
     # models are 128GB; a rounded reported capacity lands ~115-122GB after the format reserve.
