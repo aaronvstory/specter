@@ -79,7 +79,24 @@ static const std::string *prop_spoof_lookup(const char *name) {
 static long g_reset_epoch = 0;                            // factory_reset_epoch (seconds), 0 = unset
 static bool g_hide_root = false;                          // hide root-indicator paths (ENOENT)
 static bool g_hide_vpn = false;                           // filter tun/ppp/wg from getifaddrs (native VPN mask)
+static bool g_hide_kgsl = false;                          // ARM-GPU (Mali) profile: kgsl node must read ENOENT
 static bool is_root_path(const char *path);              // defined below with the file hooks
+
+// The Adreno GPU sysfs node. A Qualcomm device exposes /sys/class/kgsl/kgsl-3d0/*; a Mali (Exynos/Tensor)
+// device has NO kgsl node at all. So for an ARM-GPU profile we must make the whole kgsl dir read ENOENT —
+// otherwise the host's real Adreno number leaks under a "Mali-G78" GL_RENDERER, and the node merely EXISTING
+// contradicts the claimed ARM GPU. Prefix-match so kgsl-3d0/gpu_model, /gpumodel, /gpu_busy_percentage etc.
+// are all hidden together.
+static bool is_kgsl_path(const char *path) {
+    return path && strncmp(path, "/sys/class/kgsl", 15) == 0;
+}
+
+// A path a file-op should make disappear (ENOENT) for THIS identity: a root-indicator when hiding root, or
+// the Adreno kgsl node when the profile claims a Mali GPU. Consolidates the guard so every open/stat/access
+// hook covers both without duplicating two conditions at ten call sites.
+static inline bool path_is_hidden(const char *path) {
+    return (g_hide_root && is_root_path(path)) || (g_hide_kgsl && is_kgsl_path(path));
+}
 
 // -------- passive tracer (GOAL 1.3) --------
 // When the profile carries "trace":"1", log every file open / prop / getauxval the target makes, so we
@@ -168,14 +185,14 @@ static statx_t orig_statx = nullptr;
 
 static int my_stat(const char *path, struct stat *st) {
     if (g_trace) trace_path("stat", path);
-    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     int r = orig_stat(path, st);
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
 }
 static int my_lstat(const char *path, struct stat *st) {
     if (g_trace) trace_path("lstat", path);
-    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     int r = orig_lstat(path, st);
     if (r == 0 && is_reset_marker(path)) spoof_stat(st);
     return r;
@@ -393,7 +410,7 @@ static bool is_root_path(const char *path) {
 // actually carry it, else pass 0 (unused by the kernel when not creating). (codex-flagged latent UB.)
 static int my_openat(int dirfd, const char *path, int flags, ...) {
     if (g_trace) trace_path("openat", path);
-    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     const char *rp = redirect_path(path);
     if (rp != path) return orig_openat(AT_FDCWD, rp, O_RDONLY | O_CLOEXEC);
     mode_t mode = 0;
@@ -402,7 +419,7 @@ static int my_openat(int dirfd, const char *path, int flags, ...) {
 }
 static int my_open(const char *path, int flags, ...) {
     if (g_trace) trace_path("open", path);
-    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     const char *rp = redirect_path(path);
     if (rp != path) return orig_open(rp, O_RDONLY | O_CLOEXEC);
     mode_t mode = 0;
@@ -415,7 +432,7 @@ using fopen_t = FILE *(*)(const char *, const char *);
 static fopen_t orig_fopen = nullptr;
 static FILE *my_fopen(const char *path, const char *mode) {
     if (g_trace) trace_path("fopen", path);
-    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return nullptr; }
+    if (path_is_hidden(path)) { errno = ENOENT; return nullptr; }
     const char *rp = redirect_path(path);
     if (rp != path) return orig_fopen(rp, mode);
     return orig_fopen(path, mode);
@@ -425,7 +442,7 @@ static FILE *my_fopen(const char *path, const char *mode) {
 using access_t = int (*)(const char *, int);
 static access_t orig_access = nullptr;
 static int my_access(const char *path, int mode) {
-    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     return orig_access(path, mode);
 }
 
@@ -436,7 +453,7 @@ static int my_access(const char *path, int mode) {
 using faccessat_t = int (*)(int, const char *, int, int);
 static faccessat_t orig_faccessat = nullptr;
 static int my_faccessat(int dirfd, const char *path, int mode, int flags) {
-    if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+    if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     return orig_faccessat(dirfd, path, mode, flags);
 }
 
@@ -452,7 +469,7 @@ static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5,
     if (number == __NR_openat) {
         const char *path = (const char *) a2;   // openat(dirfd, path, flags, mode)
         if (g_trace) trace_path("syscall.openat", path);
-        if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+        if (path_is_hidden(path)) { errno = ENOENT; return -1; }
         const char *rp = redirect_path(path);
         if (rp != path)
             return orig_syscall(number, (long) AT_FDCWD, (long) rp, (long)(O_RDONLY | O_CLOEXEC), 0, a5, a6);
@@ -467,7 +484,7 @@ static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5,
             ) {
         const char *path = (const char *) a2;
         if (g_trace) trace_path("syscall.faccessat", path);
-        if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+        if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     }
     // newfstatat(dirfd, path, statbuf, flags) / statx(dirfd, path, flags, mask, statbuf) — path is a2.
     else if (number == __NR_newfstatat
@@ -477,7 +494,7 @@ static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5,
             ) {
         const char *path = (const char *) a2;
         if (g_trace) trace_path("syscall.stat", path);
-        if (g_hide_root && is_root_path(path)) { errno = ENOENT; return -1; }
+        if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     }
     return orig_syscall(number, a1, a2, a3, a4, a5, a6);
 }
@@ -960,6 +977,10 @@ public:
         if (gr != profile.end()) g_gl_renderer = gr->second;
         auto gv = profile.find("hw_gpu_vendor");
         if (gv != profile.end()) g_gl_vendor = gv->second;
+        // A non-Qualcomm GPU vendor (ARM/Mali on Exynos/Tensor) means this device has NO Adreno kgsl node.
+        // Hide the whole /sys/class/kgsl tree (ENOENT) so the host's real Adreno number can't leak under a
+        // Mali GL_RENDERER, and so the node's mere existence doesn't contradict the claimed ARM GPU.
+        g_hide_kgsl = (gv != profile.end() && gv->second != "Qualcomm" && !gv->second.empty());
         auto gl = profile.find("hw_gles_version");
         if (gl != profile.end() && !gl->second.empty())
             g_gl_version = "OpenGL ES " + gl->second + " V@0.0";
@@ -1387,7 +1408,7 @@ public:
 
         if (g_prop_spoof.empty() && g_reset_epoch == 0 && g_cpuinfo_path.empty() &&
             g_bootid_path.empty() && !g_spoof_hwcap && !g_trace && !g_hide_root && !g_hide_vpn &&
-            g_gl_renderer.empty() && g_gl_vendor.empty() && g_gl_version.empty() &&
+            !g_hide_kgsl && g_gl_renderer.empty() && g_gl_vendor.empty() && g_gl_version.empty() &&
             g_sensor_labels.empty() && g_sys_redirect.empty()) return;
         installHooks();
     }
@@ -1423,8 +1444,8 @@ private:
             applied += hookSym("fstatat64", (void *) my_fstatat, (void **) &orig_fstatat);
             applied += hookSym("statx",     (void *) my_statx,   (void **) &orig_statx);
         }
-        // File hooks: needed for cpuinfo/boot_id/sysfs redirects, the tracer, AND root-hiding.
-        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || g_hide_root
+        // File hooks: needed for cpuinfo/boot_id/sysfs redirects, the tracer, root-hiding, AND kgsl-hiding.
+        if (!g_cpuinfo_path.empty() || !g_bootid_path.empty() || g_trace || g_hide_root || g_hide_kgsl
                 || !g_sys_redirect.empty()) {
             applied += hookSym("openat", (void *) my_openat, (void **) &orig_openat);
             applied += hookSym("open",   (void *) my_open,   (void **) &orig_open);

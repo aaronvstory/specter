@@ -24,10 +24,12 @@ public final class Country {
     // makers (Samsung/Google/Motorola/LG) so the device, carrier, and phone all read as one US device.
     public static final Country US = new Country("US", "United States",
             new String[][]{
+                    // Sprint (310120/312530) removed: network decommissioned 2022 (T-Mobile merger), a live
+                    // Sprint SIM in 2026 is a temporal tell. MUST match Python US_CARRIERS order for parity.
                     {"310260", "T-Mobile"}, {"311480", "Verizon"}, {"310410", "AT&T"},
-                    {"310120", "Sprint"}, {"311580", "US Cellular"}, {"310030", "AT&T"},
+                    {"311580", "US Cellular"}, {"310030", "AT&T"},
                     {"310160", "T-Mobile"}, {"311870", "Boost Mobile"},
-                    {"310004", "Verizon"}, {"310090", "AT&T"}, {"312530", "Sprint"},
+                    {"310004", "Verizon"}, {"310090", "AT&T"},
                     {"311882", "Mint Mobile"}, {"310240", "T-Mobile"},
             },
             "nanp",

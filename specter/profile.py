@@ -37,10 +37,13 @@ def _is_us_model(brand, model):
 
 # real US carriers (MCC 310/311) so the SIM identity is coherent for a US driver
 US_CARRIERS = [
+    # Sprint (310120 / 312530) removed: the network was decommissioned in 2022 after the T-Mobile merger,
+    # so a freshly-provisioned SIM in 2026 never comes up as Sprint (a live Sprint operator is a temporal
+    # tell). The remaining carriers cover the same US MCC space (310/311).
     ("310260", "T-Mobile"), ("311480", "Verizon"), ("310410", "AT&T"),
-    ("310120", "Sprint"), ("311580", "US Cellular"), ("310030", "AT&T"),
+    ("311580", "US Cellular"), ("310030", "AT&T"),
     ("310160", "T-Mobile"), ("311870", "Boost Mobile"),
-    ("310004", "Verizon"), ("310090", "AT&T"), ("312530", "Sprint"),
+    ("310004", "Verizon"), ("310090", "AT&T"),
     ("311882", "Mint Mobile"), ("310240", "T-Mobile"),
 ]
 
@@ -291,7 +294,7 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
         "build_hardware": codename,
         "build_board": codename,
         "build_kernel_version": G.kernel_version(r, release),
-        "build_radio": G.radio_version(r),
+        "build_radio": G.radio_version(r, _hw_entry.get("soc", "")),
         # walrus keeps the RNG draw AT this position (between radio and host) to preserve Java parity
         "total_ram": (_ram_storage := G.ram_storage_bytes(r, _hw_entry.get("soc", ""), codename))[0],
         "total_storage": _ram_storage[1],

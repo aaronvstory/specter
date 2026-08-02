@@ -111,16 +111,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "exynos850"
@@ -179,16 +169,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "exynos7884"
@@ -247,16 +227,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "exynos7884"
@@ -591,16 +561,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "exynos7870"
@@ -659,16 +619,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "sdm660"
@@ -865,16 +815,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "exynos7885"
@@ -2942,16 +2882,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "exynos7904"
@@ -3128,16 +3058,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "exynos7904"
@@ -3196,16 +3116,6 @@
     "name": "TMD4907 Light Sensor",
     "type": 5,
     "vendor": "AMS"
-   },
-   {
-    "name": "LPS22HH Pressure Sensor",
-    "type": 6,
-    "vendor": "STMicroelectronics"
-   },
-   {
-    "name": "Grip Sensor",
-    "type": 65637,
-    "vendor": "Samsung"
    }
   ],
   "soc": "exynos9611"

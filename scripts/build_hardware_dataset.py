@@ -401,9 +401,20 @@ def _tier_cameras(codename):
     return ["0", "1"]
 
 
+def _tier_sensors(codename, brand):
+    """Sensor list for a device, tiered by model class. A barometer (pressure, type 6) and a grip/SAR sensor
+    are flagship/mid features — a budget phone (2-camera tier) that reports them is incoherent. So for a
+    budget device drop those rows from the vendor list; flagship/mid keep the full set."""
+    base = SENSORS_BY_VENDOR[brand]
+    if _tier_cameras(codename) == ["0", "1"]:   # budget tier
+        drop = {6, 65637}   # pressure (barometer) + grip/SAR — not present on entry-level phones
+        return [s for s in base if s[2] not in drop]
+    return base
+
+
 def _entry(codename, soc, brand):
     spec = SOC_SPECS[soc]
-    sensors = SENSORS_BY_VENDOR[brand]
+    sensors = _tier_sensors(codename, brand)
     renderer = spec["gpu_renderer"]
     for stem, gpu in GPU_RENDERER_OVERRIDE.items():
         if codename.startswith(stem):

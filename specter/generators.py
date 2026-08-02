@@ -71,7 +71,7 @@ def serial_for_brand(r, brand):
 _TAC_BY_BRAND = {
     "samsung":  ["35207609", "35316805", "35847909", "35692106"],
     "google":   ["35815807", "35854108", "35161511"],
-    "motorola": ["35462106", "35404007", "35123456"],
+    "motorola": ["35462106", "35404007"],   # dropped "35123456" (sequential filler, not a real GSMA TAC)
     "oneplus":  ["86293403", "86891303", "86651004"],
     "lge":      ["35295406", "35878705"],
     "xiaomi":   ["86412604", "86734703"],
@@ -344,9 +344,31 @@ def soc_platform(product, hw_soc=None):
 
 _RADIO_PREFIXES = ["g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"]
 
-def radio_version(r):
-    """Build.getRadioVersion() baseband string (mirrors Java radioVersion). Confirmed FP leak."""
-    pre = _RADIO_PREFIXES[r(len(_RADIO_PREFIXES))]
+# Real modem/baseband prefix per SoC. Build.getRadioVersion() otherwise drew a prefix uniformly at random,
+# so ~5/6 of profiles reported a baseband that contradicts the claimed silicon (a Pixel 6/Tensor reporting
+# the SD855 modem). Each SoC has ONE real modem family, so key the prefix on the SoC. MUST match Java
+# RADIO_PREFIX_BY_SOC. Unknown SoC -> the generic-modern g7250 (Snapdragon X-series), never a mismatch.
+_RADIO_PREFIX_BY_SOC = {
+    "msmnile": "g8150", "sdm855": "g8150",              # SD855 modem
+    "kona": "g7250",                                     # SD865 (X55)
+    "lahaina": "g8350", "sm7150": "g7250", "lito": "g7250",  # SD888 / SD730G / SD765G
+    "sm6150": "g7150", "sdm845": "M8998", "msm8998": "M8998", "sdm670": "g6150",
+    "sdm660": "M8998", "sdm665": "g7150", "trinket": "g7150", "bengal": "g7150",
+    "taro": "g8450", "kalama": "g8550",                  # SD8g1 / SD8g2
+    "gs101": "g5123b",                                   # Google Tensor uses the Exynos g5123b modem
+    "exynos9820": "g8090", "exynos9825": "g8090", "exynos990": "g5123", "exynos2100": "g5123",
+    "exynos9610": "m8090", "exynos9611": "m8090", "exynos1280": "g5300", "exynos7884": "m7570",
+    "exynos7885": "m7570", "exynos7904": "m7570", "exynos7870": "m7570", "exynos850": "m7570",
+    "exynos9810": "g8090",
+}
+_RADIO_DEFAULT_PREFIX = "g7250"
+
+def radio_version(r, soc=""):
+    """Build.getRadioVersion() baseband string (mirrors Java radioVersion). Confirmed FP leak. The modem
+    prefix is the SoC's real baseband; the rest of the string is per-unit random. RNG order is preserved: the
+    old prefix-selection draw is kept (now discarded) so every downstream field's value is byte-identical."""
+    r(len(_RADIO_PREFIXES))   # keep the draw at this position for byte-parity; prefix is now SoC-derived
+    pre = _RADIO_PREFIX_BY_SOC.get(soc, _RADIO_DEFAULT_PREFIX)
     return f"{pre}-{digits(r,5)}-{digits(r,6)}-" + chr(ord('A')+r(6)) + f"-{digits(r,7)}"
 
 def bootloader(r, brand, device):

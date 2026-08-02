@@ -120,6 +120,17 @@ final class PmsHook {
         String target = pkgNameOf(targetSetting);
         if (target == null || !SpoofLogic.isSensitivePackage(target) || NEVER_HIDE.contains(target)) return;
 
+        // Specter's OWN packages betray the module regardless of who is asking, so hide them from EVERY app
+        // (not just our scoped targets). A non-scoped fingerprinter enumerating installed packages must not
+        // find com.specter/.lite/.probe. The broader sensitive set (the user's root/hook/gps/proxy apps) stays
+        // caller-gated below — we only hide THOSE from an app we're actively spoofing, to avoid perturbing
+        // package visibility system-wide. (self-query is excluded so the module can still see itself.)
+        if (isOwnPackage(target)) {
+            for (String caller : callerPackages(a[uidIdx + 1]))
+                if (!caller.equals(target)) { mp.setResult(true); return; }
+            return;
+        }
+
         // Derive the caller package(s) from the callingSetting ARG that's already passed in — NOT by calling
         // back into PMS (IPackageManager.getPackagesForUid re-enters shouldFilterApplication and, even with a
         // cleared identity that stops the recursion, a synchronous self-call into PMS from its own visibility
@@ -158,6 +169,12 @@ final class PmsHook {
             }
         } catch (Throwable ignored) {}
         return out;
+    }
+
+    /** Specter's own packages — hidden from every app, not just scoped callers, because their mere presence
+     *  reveals the module. Keep in sync with the scope test set. */
+    private static boolean isOwnPackage(String pkg) {
+        return "com.specter".equals(pkg) || "com.specter.lite".equals(pkg) || "com.specter.probe".equals(pkg);
     }
 
     /** The package name held by a PackageSetting/PackageStateInternal, via the version-correct field. */

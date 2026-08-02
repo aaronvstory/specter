@@ -113,7 +113,7 @@ public final class Generators {
     static {
         TAC_BY_BRAND.put("samsung",  new String[]{"35207609", "35316805", "35847909", "35692106"});
         TAC_BY_BRAND.put("google",   new String[]{"35815807", "35854108", "35161511"});
-        TAC_BY_BRAND.put("motorola", new String[]{"35462106", "35404007", "35123456"});
+        TAC_BY_BRAND.put("motorola", new String[]{"35462106", "35404007"});   // dropped "35123456" (filler)
         TAC_BY_BRAND.put("oneplus",  new String[]{"86293403", "86891303", "86651004"});
         TAC_BY_BRAND.put("lge",      new String[]{"35295406", "35878705"});
         TAC_BY_BRAND.put("xiaomi",   new String[]{"86412604", "86734703"});
@@ -437,9 +437,35 @@ public final class Generators {
     // (Qualcomm) or "M8998-2010..." Keeping a realistic vendor prefix avoids a synthetic-looking radio.
     static final String[] RADIO_PREFIXES = {"g8150", "g7250", "g6150", "M8998", "M8250", "MPSS.HI"};
 
-    /** Build.getRadioVersion() / Build.RADIO — SoC-plausible baseband string. Confirmed FP leak. */
-    public static String radioVersion(Rng r) {
-        String pre = RADIO_PREFIXES[r.next(RADIO_PREFIXES.length)];
+    // Real modem prefix per SoC — each SoC has ONE real modem family, so the baseband must be keyed on the
+    // SoC, not drawn at random (the old code contradicted the silicon ~5/6 of the time). MUST match Python
+    // _RADIO_PREFIX_BY_SOC. Unknown SoC -> generic-modern g7250.
+    static final java.util.Map<String, String> RADIO_PREFIX_BY_SOC = new java.util.HashMap<>();
+    static final String RADIO_DEFAULT_PREFIX = "g7250";
+    static {
+        RADIO_PREFIX_BY_SOC.put("msmnile", "g8150"); RADIO_PREFIX_BY_SOC.put("sdm855", "g8150");
+        RADIO_PREFIX_BY_SOC.put("kona", "g7250");
+        RADIO_PREFIX_BY_SOC.put("lahaina", "g8350"); RADIO_PREFIX_BY_SOC.put("sm7150", "g7250");
+        RADIO_PREFIX_BY_SOC.put("lito", "g7250");    RADIO_PREFIX_BY_SOC.put("sm6150", "g7150");
+        RADIO_PREFIX_BY_SOC.put("sdm845", "M8998");  RADIO_PREFIX_BY_SOC.put("msm8998", "M8998");
+        RADIO_PREFIX_BY_SOC.put("sdm670", "g6150");  RADIO_PREFIX_BY_SOC.put("sdm660", "M8998");
+        RADIO_PREFIX_BY_SOC.put("sdm665", "g7150");  RADIO_PREFIX_BY_SOC.put("trinket", "g7150");
+        RADIO_PREFIX_BY_SOC.put("bengal", "g7150");  RADIO_PREFIX_BY_SOC.put("taro", "g8450");
+        RADIO_PREFIX_BY_SOC.put("kalama", "g8550");  RADIO_PREFIX_BY_SOC.put("gs101", "g5123b");
+        RADIO_PREFIX_BY_SOC.put("exynos9820", "g8090"); RADIO_PREFIX_BY_SOC.put("exynos9825", "g8090");
+        RADIO_PREFIX_BY_SOC.put("exynos990", "g5123");  RADIO_PREFIX_BY_SOC.put("exynos2100", "g5123");
+        RADIO_PREFIX_BY_SOC.put("exynos9610", "m8090"); RADIO_PREFIX_BY_SOC.put("exynos9611", "m8090");
+        RADIO_PREFIX_BY_SOC.put("exynos1280", "g5300"); RADIO_PREFIX_BY_SOC.put("exynos7884", "m7570");
+        RADIO_PREFIX_BY_SOC.put("exynos7885", "m7570"); RADIO_PREFIX_BY_SOC.put("exynos7904", "m7570");
+        RADIO_PREFIX_BY_SOC.put("exynos7870", "m7570"); RADIO_PREFIX_BY_SOC.put("exynos850", "m7570");
+        RADIO_PREFIX_BY_SOC.put("exynos9810", "g8090");
+    }
+
+    /** Build.getRadioVersion() / Build.RADIO — SoC-coherent baseband string. Confirmed FP leak. The old
+     *  prefix-selection draw is kept (now discarded) so downstream fields are byte-identical. */
+    public static String radioVersion(Rng r, String soc) {
+        r.next(RADIO_PREFIXES.length);   // keep the draw for byte-parity; prefix is now SoC-derived
+        String pre = RADIO_PREFIX_BY_SOC.getOrDefault(soc == null ? "" : soc, RADIO_DEFAULT_PREFIX);
         // e.g. "g8150-00088-210507-B-7345963"
         return pre + "-" + digits(r, 5) + "-" + digits(r, 6) + "-"
                 + (char) ('A' + r.next(6)) + "-" + digits(r, 7);

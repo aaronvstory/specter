@@ -24,10 +24,11 @@ public final class Profile {
     static final Set<String> US_COMMON_BRANDS = new HashSet<>(Arrays.asList(
             "samsung", "google", "motorola", "lge"));
 
-    /** {mccmnc, name} US carriers (MCC 310/311), same order as Python US_CARRIERS. */
+    /** {mccmnc, name} US carriers — the LIVE list is Country.US.carriers; this partial copy is unused. Kept
+     *  in sync (Sprint removed) to avoid it misleading a future reader. */
     static final String[][] US_CARRIERS = {
             {"310260", "T-Mobile"}, {"311480", "Verizon"}, {"310410", "AT&T"},
-            {"310120", "Sprint"}, {"311580", "US Cellular"}, {"310030", "AT&T"},
+            {"311580", "US Cellular"}, {"310030", "AT&T"},
             {"310160", "T-Mobile"}, {"311870", "Boost Mobile"},
     };
 
@@ -231,11 +232,12 @@ public final class Profile {
         // Build.HARDWARE/BOARD are the board codename too.
         p.put("build_hardware", codename);
         p.put("build_board", codename);
-        p.put("build_kernel_version", Generators.kernelVersion(r, release));
-        p.put("build_radio", Generators.radioVersion(r));
-        // Resolve the per-model hardware bundle ONCE (pure lookup, no RNG) BEFORE ramStorage so the RAM
-        // tier can be constrained to the SoC — its SoC also drives soc_platform below. Mirrors profile.py.
+        // Resolve the per-model hardware bundle ONCE (pure lookup, no RNG) up front so the SoC can drive the
+        // baseband, RAM tier and soc_platform below coherently. Mirrors profile.py's _hw_entry. Pure -> the
+        // resolution itself consumes no RNG, so its position doesn't affect byte-parity.
         Map<String, String> hwEntry = resolveHardware(codename, hardware);
+        p.put("build_kernel_version", Generators.kernelVersion(r, release));
+        p.put("build_radio", Generators.radioVersion(r, hwEntry.get("soc")));   // SoC-coherent baseband
         String[] ramStorage = Generators.ramStorageBytes(r, hwEntry.get("soc"), codename);   // model/SoC-coherent RAM+storage
         p.put("total_ram", ramStorage[0]);
         p.put("total_storage", ramStorage[1]);
