@@ -44,10 +44,21 @@ int main() {
     CHECK(esc["c"] == "s\"t", "escape: \\\" -> \" (and does not end the value early)");
     CHECK(esc["d"] == "u\nv", "escape: \\n -> newline");
     CHECK(esc.size() == 4, "all four escaped values parsed");
-    // A value cut off mid-escape must terminate rather than read past the buffer; it keeps whatever it
-    // had (the closing quote never arrives), which is fine — the point is no overrun and no extra keys.
-    auto trunc = parse_flat_json("{\"k\": \"trailing\\");
-    CHECK(trunc.size() <= 1, "truncated escape terminates without inventing keys");
+    // \uXXXX must decode the same way the Java parser does, or a native prop read disagrees with the
+    // Java one on an imported profile carrying non-ASCII.
+    auto uni = parse_flat_json("{\"a\": \"\\u0041\", \"b\": \"caf\\u00e9\", \"c\": \"\\ud83d\\ude00\", "
+                               "\"d\": \"\\uZZZZ\"}");
+    CHECK(uni["a"] == "A", "\\u0041 -> A");
+    CHECK(uni["b"] == "caf\xC3\xA9", "\\u00e9 -> UTF-8 two-byte");
+    CHECK(uni["c"] == "\xF0\x9F\x98\x80", "surrogate pair -> UTF-8 four-byte");
+    CHECK(uni["d"] == "uZZZZ", "malformed \\u kept literally, no overrun");
+
+    // A value with no closing quote is DROPPED, not stored as a partial — the Java parser bails the same
+    // way (readJsonString returns -1), and the two must not disagree about a truncated profile.
+    CHECK(parse_flat_json("{\"k\": \"trailing\\").count("k") == 0, "value truncated mid-escape is dropped");
+    CHECK(parse_flat_json("{\"k\": \"no end quote").count("k") == 0, "unterminated value is dropped");
+    auto part = parse_flat_json("{\"a\": \"one\", \"b\": \"unterminated");
+    CHECK(part["a"] == "one" && part.count("b") == 0, "keys before an unterminated value still parse");
 
     // Empty / malformed input must not crash and yields no keys.
     CHECK(parse_flat_json("").empty(), "empty string");
