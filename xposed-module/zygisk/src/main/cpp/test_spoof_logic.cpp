@@ -8,12 +8,15 @@
 using namespace specter;
 
 // The real FPJS-demo profile shape (a raven Pixel 6 Pro row), trimmed — exercises the exact JSON the
-// generator writes: flat, all-string, spaces in values ("Pixel 6 Pro"), trailing keys.
+// generator writes: flat, all-string, spaces in values ("Pixel 6 Pro"), trailing keys. build_fingerprint
+// is written with org.json's ESCAPED slashes ("google\/raven\/..."), which is what actually lands in
+// /data/local/tmp/specter/<pkg>.json — this fixture used to spell it unescaped, so the parser handing
+// backslashes to every native prop read went unnoticed until the probe's dual read caught it.
 static const char *SAMPLE =
     "{\"android_id\": \"7ac1e43332d50594\", \"serial\": \"NS42FGH7HWQP87\", "
     "\"build_model\": \"raven\", \"build_manufacturer\": \"Google\", \"build_brand\": \"google\", "
     "\"build_device\": \"Pixel 6 Pro\", \"soc_platform\": \"gs101\", "
-    "\"build_fingerprint\": \"google/raven/Pixel 6 Pro:12/SD1A.210817.015.A4/7697517:user/release-keys\", "
+    "\"build_fingerprint\": \"google\\/raven\\/Pixel 6 Pro:12\\/SD1A.210817.015.A4\\/7697517:user\\/release-keys\", "
     "\"build_kernel_version\": \"4.14.143-android10-g85065886\", "
     "\"factory_reset_epoch\": \"1644830296\"}";
 
@@ -28,9 +31,34 @@ int main() {
     CHECK(p["build_device"] == "Pixel 6 Pro", "value with spaces");
     CHECK(p["build_fingerprint"] ==
           "google/raven/Pixel 6 Pro:12/SD1A.210817.015.A4/7697517:user/release-keys", "value with slashes/colons");
+    CHECK(p["build_fingerprint"].find('\\') == std::string::npos,
+          "fingerprint carries NO backslash — a native prop read must not serve \\/ to the app");
     CHECK(p["soc_platform"] == "gs101", "soc_platform");
     CHECK(p["factory_reset_epoch"] == "1644830296", "reset epoch (last key, no trailing comma)");
     CHECK(p.count("nonexistent") == 0, "absent key");
+
+    // Every escape org.json can emit, unescaped the same way the Java parser does.
+    auto esc = parse_flat_json("{\"a\": \"x\\/y\", \"b\": \"q\\\\r\", \"c\": \"s\\\"t\", \"d\": \"u\\nv\"}");
+    CHECK(esc["a"] == "x/y", "escape: \\/ -> /");
+    CHECK(esc["b"] == "q\\r", "escape: \\\\ -> \\");
+    CHECK(esc["c"] == "s\"t", "escape: \\\" -> \" (and does not end the value early)");
+    CHECK(esc["d"] == "u\nv", "escape: \\n -> newline");
+    CHECK(esc.size() == 4, "all four escaped values parsed");
+    // \uXXXX must decode the same way the Java parser does, or a native prop read disagrees with the
+    // Java one on an imported profile carrying non-ASCII.
+    auto uni = parse_flat_json("{\"a\": \"\\u0041\", \"b\": \"caf\\u00e9\", \"c\": \"\\ud83d\\ude00\", "
+                               "\"d\": \"\\uZZZZ\"}");
+    CHECK(uni["a"] == "A", "\\u0041 -> A");
+    CHECK(uni["b"] == "caf\xC3\xA9", "\\u00e9 -> UTF-8 two-byte");
+    CHECK(uni["c"] == "\xF0\x9F\x98\x80", "surrogate pair -> UTF-8 four-byte");
+    CHECK(uni["d"] == "uZZZZ", "malformed \\u kept literally, no overrun");
+
+    // A value with no closing quote is DROPPED, not stored as a partial — the Java parser bails the same
+    // way (readJsonString returns -1), and the two must not disagree about a truncated profile.
+    CHECK(parse_flat_json("{\"k\": \"trailing\\").count("k") == 0, "value truncated mid-escape is dropped");
+    CHECK(parse_flat_json("{\"k\": \"no end quote").count("k") == 0, "unterminated value is dropped");
+    auto part = parse_flat_json("{\"a\": \"one\", \"b\": \"unterminated");
+    CHECK(part["a"] == "one" && part.count("b") == 0, "keys before an unterminated value still parse");
 
     // Empty / malformed input must not crash and yields no keys.
     CHECK(parse_flat_json("").empty(), "empty string");

@@ -3,6 +3,23 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.22.10] - 2026-08-03
+
+### Fixed
+- **Native prop reads no longer serve a backslash-mangled build fingerprint.** org.json writes `/` as
+  `\/`, so the profile on disk holds `lge\/mh2lm\/...`. The Java layer unescaped it; the native
+  layer's flat-JSON parser did not, so any app reading `ro.build.fingerprint` through
+  `__system_property_get` got a value containing backslashes — wrong, and a giveaway no real device
+  produces. The native parser now unescapes the same set the Java one does. The self-test fixture spelled
+  the fingerprint unescaped, which is why this went unseen; it now uses the real on-disk form.
+- **`ro.build.type` is spoofed on the native path again.** It was derived by searching the fingerprint
+  for `:user/`, which could never match the escaped bytes (`:user\/release-keys`), so the prop silently
+  fell through to the host value. The same unescaping fixes it.
+- **Native and Java now agree on `\uXXXX` escapes and on truncated values.** The native parser decodes
+  `\uXXXX` to UTF-8 (combining surrogate pairs) instead of emitting `u0041`, and drops a value with no
+  closing quote instead of storing a partial — both matching the Java parser, so an imported or
+  hand-edited profile cannot make the two read differently.
+
 ## [0.22.9] - 2026-08-02
 
 ### Fixed

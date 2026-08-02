@@ -77,8 +77,57 @@ static const char *RESET_PATHS[] = {
 static const int RESET_PATHS_N = sizeof(RESET_PATHS) / sizeof(RESET_PATHS[0]);
 
 // A minimal parser for the flat {"k":"v",...} string-only profile JSON. The generator emits exactly
-// this shape (see RootWriter.java / the on-device .json files); no nesting, no numbers, no escapes
-// beyond plain ASCII values. Returns k->v.
+// this shape (see RootWriter.java / the on-device .json files); no nesting and no numbers. Values ARE
+// escaped though — org.json writes '/' as "\/", so build_fingerprint lands on disk as
+// "lge\/mh2lm\/...". Taking the raw bytes handed every NATIVE prop read a value with backslashes in
+// it, which is both wrong and a giveaway no real device produces. Unescaped below, same set the Java
+// parser handles (SpoofLogic.readJsonString). Returns k->v.
+// Decode a \uXXXX escape (i points just past the 'u') and append it to out as UTF-8, advancing i.
+// The Java parser decodes these too, so skipping them here would make a native prop read disagree with
+// the Java one on any imported/hand-edited profile carrying non-ASCII. A high surrogate followed by its
+// low half is combined first, so both sides end up with the same bytes.
+inline void append_utf8_escape(const std::string &s, size_t &i, std::string &out) {
+    const size_t n = s.size();
+    auto hex4 = [&](size_t at, unsigned &v) -> bool {
+        if (at + 4 > n) return false;
+        v = 0;
+        for (int k = 0; k < 4; k++) {
+            char h = s[at + k];
+            v <<= 4;
+            if (h >= '0' && h <= '9') v |= unsigned(h - '0');
+            else if (h >= 'a' && h <= 'f') v |= unsigned(h - 'a' + 10);
+            else if (h >= 'A' && h <= 'F') v |= unsigned(h - 'A' + 10);
+            else return false;
+        }
+        return true;
+    };
+    unsigned cp = 0;
+    if (!hex4(i, cp)) { out += 'u'; return; }   // malformed: keep the char, same as the default arm
+    i += 4;
+    if (cp >= 0xD800 && cp <= 0xDBFF && i + 6 <= n && s[i] == '\\' && s[i + 1] == 'u') {
+        unsigned lo = 0;
+        if (hex4(i + 2, lo) && lo >= 0xDC00 && lo <= 0xDFFF) {
+            cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+            i += 6;
+        }
+    }
+    if (cp < 0x80) {
+        out += char(cp);
+    } else if (cp < 0x800) {
+        out += char(0xC0 | (cp >> 6));
+        out += char(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+        out += char(0xE0 | (cp >> 12));
+        out += char(0x80 | ((cp >> 6) & 0x3F));
+        out += char(0x80 | (cp & 0x3F));
+    } else {
+        out += char(0xF0 | (cp >> 18));
+        out += char(0x80 | ((cp >> 12) & 0x3F));
+        out += char(0x80 | ((cp >> 6) & 0x3F));
+        out += char(0x80 | (cp & 0x3F));
+    }
+}
+
 inline std::map<std::string, std::string> parse_flat_json(const std::string &s) {
     std::map<std::string, std::string> m;
     size_t i = 0, n = s.size();
@@ -100,10 +149,27 @@ inline std::map<std::string, std::string> parse_flat_json(const std::string &s) 
         while (i < n && (s[i] == ' ' || s[i] == '\t')) i++;
         if (i >= n || s[i] != '"') break;       // values are always quoted strings
         i++;                                    // opening quote of value
-        size_t vs = i;
-        while (i < n && s[i] != '"') i++;
-        std::string val = s.substr(vs, i - vs);
-        if (i < n) i++;                         // closing quote
+        std::string val;
+        bool closed = false;
+        while (i < n) {
+            char c = s[i++];
+            if (c == '"') { closed = true; break; }
+            if (c != '\\') { val += c; continue; }
+            if (i >= n) break;                  // truncated mid-escape -> value never closes
+            char e = s[i++];
+            switch (e) {
+                case 'n': val += '\n'; break;
+                case 'r': val += '\r'; break;
+                case 't': val += '\t'; break;
+                case 'b': val += '\b'; break;
+                case 'f': val += '\f'; break;
+                case 'u': append_utf8_escape(s, i, val); break;
+                default:  val += e;   break;    // \/ \\ \" -> the literal char
+            }
+        }
+        // An unterminated value is dropped, NOT stored as a partial — the Java parser bails the same way
+        // (readJsonString returns -1), and the two must not disagree about a truncated profile.
+        if (!closed) break;
         if (!key.empty()) m[key] = val;
     }
     return m;
