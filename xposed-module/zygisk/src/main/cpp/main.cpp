@@ -204,6 +204,9 @@ static int my_fstatat(int dirfd, const char *path, struct stat *st, int flags) {
     if (g_trace) trace_path("fstatat", path);
     // bionic's stat() routes through fstatat, so a root/kgsl probe via stat("/system/bin/su") or a stat of
     // the Adreno node lands here — must hide (ENOENT) the same as my_stat, or the path leaks despite hooking.
+    // ponytail: matches ABSOLUTE paths only. A dirfd-relative probe (fstatat(fd,"su",...)) isn't caught — no
+    // real fingerprinter/root-check uses that form (they all pass absolute paths), and resolving dirfd->path
+    // per call would be heavy; upgrade to readlink(/proc/self/fd/dirfd)+join only if a real probe needs it.
     if (path_is_hidden(path)) { errno = ENOENT; return -1; }
     int r = orig_fstatat(dirfd, path, st, flags);
     // The reset markers are absolute paths, so dirfd is irrelevant when the path matches.
@@ -1077,8 +1080,10 @@ public:
                 if (has("gyro")) set_gyro = true;
                 if (has("magneto") || has("magnetic")) set_mag = true;
             }
-            // Rotation Vector fuses accel + (gyro or mag) across the whole set — added once, not per name.
-            if (set_accel && (set_gyro || set_mag))
+            // TYPE_ROTATION_VECTOR fuses accel + gyro + mag (all three) — the gyro-only and accel+mag
+            // variants are already emitted above as Game / Geomagnetic Rotation Vector. Added once across the
+            // whole set, not per name.
+            if (set_accel && set_gyro && set_mag)
                 derived.emplace_back("Rotation Vector Sensor", fusion_vendor);
             // Append derived sensors, skipping any name already present (dedupe: no two identical entries).
             std::set<std::string> present;
