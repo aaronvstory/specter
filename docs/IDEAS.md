@@ -5,6 +5,13 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-08-02 - User-configurable package-hide list (not hardcoded)** - status: `idea`. Specter hides a
+  built-in set of sensitive packages (Magisk/LSPosed/GPS-spoofers/proxy) from SCOPED apps' package enumeration.
+  That set is hardcoded. Better: an in-app UI to add/remove which packages get hidden (and from which scoped
+  apps), so the user controls it instead of a fixed list. Also: com.specter* self-hiding was removed from the
+  launcher path (v0.22.6) but stays hidden from scoped apps — a per-app toggle would make even that explicit.
+  Low urgency; the current behavior is sane, this is a control/polish improvement.
+
 - **2026-08-02 - Coherence-audit remaining gaps (codex)** - status: `mostly SHIPPED (v0.22.3-0.22.5)`.
   FIXED: screen (v0.22.3), storage (v0.22.3), kernel-by-SoC (v0.22.4), Bluetooth MAC vendor OUI (v0.22.5).
   REMAINING (harder, need data/native work, NOT quick byte-parity tables):
