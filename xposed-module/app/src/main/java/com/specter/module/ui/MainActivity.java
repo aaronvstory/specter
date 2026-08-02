@@ -1702,9 +1702,18 @@ public class MainActivity extends Activity {
             col.addView(val);
             r.addView(col);
 
+            final boolean locked = Toggles.isLocked(f.key);
             final Switch en = new Switch(this); tintSwitch(en);
             en.setChecked(on);
-            en.setOnCheckedChangeListener((vw, isOn) -> { Toggles.set(prefs, f.key, isOn); val.setTextColor(isOn ? Theme.INK : Theme.DIM); });
+            if (locked) {
+                // Hardware anchor (Widevine / serial): locked ON — toggling it off re-opens the stable-id
+                // re-link leak. Show it on-but-disabled so the state is honest, not silently un-toggleable.
+                en.setEnabled(false);
+                en.setAlpha(0.5f);
+                lab.setText(f.label + "  · locked");
+            } else {
+                en.setOnCheckedChangeListener((vw, isOn) -> { Toggles.set(prefs, f.key, isOn); val.setTextColor(isOn ? Theme.INK : Theme.DIM); });
+            }
             r.addView(en);
             c.addView(r);
         }
