@@ -1,0 +1,7 @@
+# theos build artifacts (built in WSL home; only the .deb is copied to dist/)
+.theos/
+obj/
+packages/
+*.deb
+# local scratch
+trace/captures/*_local.json

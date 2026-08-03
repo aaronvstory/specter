@@ -1,42 +1,90 @@
-# Specter-iOS — working directory
+# Specter for iOS
 
-Start of the iOS port. See `docs/IOS-PORT-FEASIBILITY.md` for the full plan and
-`handoffs/2026-08-03_ios-devices-network-diagnosis.md` for the device bench + network fixes.
+An iOS port of Specter, kept **fully separate from the Android tree** (all under `ios/`). Same idea as
+Android — generate one *coherent* device identity and enforce it consistently on-device — but built on
+the iOS jailbreak stack (ElleKit + Choicy + theos) instead of Xposed/LSPosed.
 
-## `trace/` — live device-read tracer (the iOS analog of the Android probe)
+**Read first:** `../docs/ios/DEEP-DIVE-FINDINGS.md` — the primary-source investigation that grounds this
+(what Crane does/doesn't spoof, the real read paths, the ceilings). `../docs/IOS-PORT-FEASIBILITY.md` for
+the overall plan; `../docs/ios/CASHAPP-READ-TRACE.md` for measured Cash App reads.
 
-Instruments a target app at runtime and records every device-identity read (sysctl, MobileGestalt,
-IORegistry, IDFV/IDFA, keychain, attestation) to a JSON artifact we reuse instead of re-coordinating
-each session. Captures on a **tester/throwaway container** — never a live account.
+## Layout
 
-### One-time setup (per phone)
-frida-server (rootless) from the RootHide repo:
+| Dir | What | Runs where |
+|---|---|---|
+| `core/` | Coherent Apple device **catalog + profile generator + validator** (Python) | PC |
+| `tweak/` | **SpecterTweak** — the ElleKit/Substrate dylib that does the spoofing | device |
+| `probe/` | **SpecterProbe** — an app that reads every spoofable signal → JSON (efficacy instrument) | device |
+| `trace/` | Frida device-read tracer + ID probe (research/measurement) | device (test only) |
+| `verify.py` | Diffs the probe readout against the applied profile → per-signal PASS/FAIL | PC |
+
+The **coherence engine is the differentiator** — every hardware field comes from one real device row, so a
+rotated identity can never be an impossible device. No surveyed iOS tool (Crane, WeaponX, LiveContainer)
+enforces this.
+
+## How it fits together
+
 ```
-ssh -p <port> root@127.0.0.1 'apt-get install -y --allow-unauthenticated re.frida.server'
+core/profile.py --emit-plist  ->  /var/mobile/Library/Specter/<bundleid>.plist   (the profile)
+                                            │
+SpecterTweak (scoped via Filter) reads it and returns those values on every read path:
+   UIDevice.identifierForVendor/name/systemVersion · sysctlbyname · sysctl(MIB) · uname · MGCopyAnswer_internal
+                                            │
+SpecterProbe reads all the same signals back  ->  probe_result.json
+                                            │
+verify.py  (profile vs probe_result)  ->  per-signal ✅/❌
 ```
-It auto-starts as a launchd daemon. PC client MUST match the server major version
-(device ships 16.1.4 → `uv pip install "frida==16.1.4"`; a 17.x client will NOT connect).
 
-### Run a capture
+Two safety gates on the tweak: the **Filter plist** (which bundles it injects into) *and* the **profile
+file** (no `<bundleid>.plist` ⇒ the tweak stays inert). So injection without a profile is harmless.
+
+## Build (Windows + WSL)
+
+Prereqs: WSL Ubuntu with theos at `~/theos` (toolchain `toolchain/linux/iphone`, an SDK in `sdks/`).
+Set up once with `../<scratchpad>/setup_theos.sh` (clones theos, fetches the swift toolchain + iPhoneOS SDK).
+
+```bash
+wsl -d Ubuntu -- bash /mnt/f/claude/specter/ios/build.sh all     # -> ios/dist/*.deb
 ```
-# forward the frida port from the device over USB
-iproxy 27042 27042 -u <UDID> &
-# spawn the app fresh (captures launch-time reads) and trace for N seconds
-python trace/run_trace.py com.squareup.cash out.json 40
-# or attach to an already-running instance (misses launch reads; may fail on arm64e)
-python trace/run_trace.py com.squareup.cash out.json 40 --attach
+Builds in the WSL home (native fs) and copies the `.deb`s back to `ios/dist/`. `THEOS_PACKAGE_SCHEME=rootless`,
+`ARCHS = arm64 arm64e`. Depends on `ellekit` on-device.
+
+## Efficacy test (prove it actually spoofs)
+
+On the **SE2 test device** (never a live-account device — Cash detects Frida/instrumentation; see the
+deep-dive), using a benign target app added to `tweak/SpecterTweak.plist`:
+
+```bash
+# 1. install probe + tweak
+scp ios/dist/*.deb root@device: && ssh root@device 'dpkg -i *.deb && killall -9 SpringBoard'
+
+# 2. BASELINE — no profile yet -> probe reads the REAL device
+ssh root@device 'rm -f /var/mobile/Library/Specter/com.specter.iosprobe.plist'
+#   launch SpecterProbe, then:
+ssh root@device 'cat /var/mobile/Library/Specter/probe_result.json' > baseline.json
+
+# 3. APPLY a coherent profile for the probe, relaunch, read back
+python ios/core/profile.py --model iPhone14,6 --seed 7 --emit-plist /tmp/p.plist
+scp /tmp/p.plist root@device:/var/mobile/Library/Specter/com.specter.iosprobe.plist
+#   relaunch SpecterProbe, then:
+ssh root@device 'cat /var/mobile/Library/Specter/probe_result.json' > spoofed.json
+
+# 4. VERDICT
+python ios/verify.py --profile /tmp/p.plist --probe spoofed.json --baseline baseline.json
 ```
-Output JSON has `distinct` (deduped kind/key/value + which modules/SDKs requested each) and `raw`.
+Green table + exit 0 = every read path flipped from the real value to the coherent spoof. Any ❌ names the
+exact leaking read path (e.g. a MobileGestalt key the internal-worker hook missed on this iOS build).
 
-### Notes / gotchas
-- **Spawn vs attach:** attach-to-running fails on arm64e with "probing dyld" for a process launched
-  before frida; **spawn** works and is what we want (earliest reads). Spawn may bypass Crane's
-  container redirect (runs in default container) — irrelevant for device reads, which are
-  container-independent.
-- The app idles at the pre-login splash after ~5s (launch reads fire once, then it waits for input).
-  Deeper checks (Persona KYC, MiSnap liveness, App Attest calls) only fire as the flow is driven.
-- frida-agent is detectable; only trace throwaway containers.
+## Tests (TDD)
 
-## `captures/` — saved read-traces
-- `cashapp_se2_prelogin_2026-08-03.json` — Cash App launch/pre-login on SE2 (iPhone12,8, iOS 16.3.1).
-  See `docs/ios/CASHAPP-READ-TRACE.md` for the analysis.
+```bash
+python -m pytest ios/core/test_profile.py -q     # generator determinism, coherence, validator, plist export
+python ios/core/profile.py --demo                # quick self-check + sample profile
+```
+
+## Status / ceilings
+
+Coverage today (each hook complete): UIDevice IDFV/name/systemVersion · sysctlbyname · sysctl(MIB) · uname
+· MobileGestalt (internal-worker hook). TODO (marked in `tweak/Tweak.xm`): IORegistry, GSSystemGetSerialNo,
+statfs storage tiers, boot-time cache, IDFA. **Not spoofable by any hook (account-management, not spoofing):**
+iCloud `ubiquityIdentityToken` + server-side DeviceCheck — need a distinct iCloud sign-in per identity.

@@ -18,6 +18,7 @@ Run `python profile.py --demo` for a self-check (determinism + coherence over th
 import argparse
 import json
 import os
+import plistlib
 import random
 import uuid
 
@@ -143,6 +144,27 @@ def validate(p, catalog=None):
     return errs
 
 
+def to_tweak_plist(p):
+    """Map a generated profile to the exact keys SpecterTweak.xm reads. Deploy to
+    /var/mobile/Library/Specter/<bundleid>.plist on-device. Note ProductType==hw.machine and
+    HWModelStr==hw.model by construction (coherent)."""
+    d = {
+        "ProductType": p["product_type"],       # MobileGestalt + hw.machine
+        "HWMachine": p["hw_machine"],            # sysctl hw.machine / uname.machine
+        "HWModel": p["hw_model"],                # sysctl hw.model
+        "HWModelStr": p["hw_model"],             # MobileGestalt HWModelStr
+        "MemSize": int(p["memsize_bytes"]),      # hw.memsize
+        "NCPU": int(p["ncpu"]),
+        "OSVersion": p["os_version"],            # UIDevice.systemVersion / MG ProductVersion
+        "OSBuild": p["os_build"],                # sysctl kern.osversion / MG BuildVersion
+        "RegionInfo": p["region"],
+        "IDFV": p["identifier_for_vendor"],
+        "SerialNumber": p["serial_number"],
+        "DeviceName": p.get("device_name", "iPhone"),  # iOS 16 UIDevice.name is generic anyway
+    }
+    return d
+
+
 def _demo():
     cat = load_catalog()
     print(f"catalog: {len(cat)} devices -> {', '.join(sorted(cat))}\n")
@@ -179,13 +201,21 @@ if __name__ == "__main__":
     ap.add_argument("--model", help="force a model, e.g. iPhone14,6")
     ap.add_argument("--os", dest="os_version", help="force an iOS version, e.g. 16.2")
     ap.add_argument("--seed", type=int, help="seed for reproducible output")
+    ap.add_argument("--emit-plist", metavar="PATH", help="write the tweak profile plist to PATH "
+                    "(deploy to /var/mobile/Library/Specter/<bundleid>.plist on-device)")
     args = ap.parse_args()
     if args.demo:
         _demo()
     else:
         prof = generate(model=args.model, os_version=args.os_version, seed=args.seed)
         errs = validate(prof)
-        print(json.dumps(prof, indent=2))
         if errs:
-            print("\nCOHERENCE ERRORS:", errs)
+            print("COHERENCE ERRORS:", errs)
             raise SystemExit(1)
+        if args.emit_plist:
+            with open(args.emit_plist, "wb") as f:
+                plistlib.dump(to_tweak_plist(prof), f)
+            print(f"wrote tweak plist -> {args.emit_plist}")
+            print(json.dumps(to_tweak_plist(prof), indent=2))
+        else:
+            print(json.dumps(prof, indent=2))

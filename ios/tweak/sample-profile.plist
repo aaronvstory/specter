@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>DeviceName</key>
+	<string>iPhone</string>
+	<key>HWMachine</key>
+	<string>iPhone12,8</string>
+	<key>HWModel</key>
+	<string>D79AP</string>
+	<key>HWModelStr</key>
+	<string>D79AP</string>
+	<key>IDFV</key>
+	<string>E859C9B3-DD38-4E29-A986-1868AB759E68</string>
+	<key>MemSize</key>
+	<integer>3103604736</integer>
+	<key>NCPU</key>
+	<integer>6</integer>
+	<key>OSBuild</key>
+	<string>20D67</string>
+	<key>OSVersion</key>
+	<string>16.3.1</string>
+	<key>ProductType</key>
+	<string>iPhone12,8</string>
+	<key>RegionInfo</key>
+	<string>LL/A</string>
+	<key>SerialNumber</key>
+	<string>C9DPQTESWJ</string>
+</dict>
+</plist>

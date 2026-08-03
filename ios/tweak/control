@@ -1,0 +1,9 @@
+Package: com.specter.tweak
+Name: SpecterTweak
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: Coherent device-signal spoofer (Specter for iOS) — reads a per-app profile plist and returns one coherent device across sysctl / MobileGestalt / uname / UIDevice.
+Author: Specter
+Maintainer: Specter
+Section: Tweaks
+Depends: ellekit
