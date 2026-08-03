@@ -21,6 +21,12 @@ Profile applied: **iPhone14,6 / D49AP / 3843000000 / iOS 16.2 (20C65) / IDFV 644
 | `sysctl kern.osversion` | 20D67 | **20C65** | ✅ spoofed |
 | `MGCopyAnswer ProductType` | iPhone12,8 | **iPhone14,6** | ✅ spoofed (MG hook fixed) |
 | `MGCopyAnswer HWModelStr` | D79AP | **D49AP** | ✅ spoofed (MG hook fixed) |
+| `sysctl kern.boottime` | 1785083121.96 | **1782977704.96** (−2105417s) | ✅ shifted coherently with systemUptime |
+
+Note on what's NOT worth hooking for a sandboxed fintech app: the probe proved `MGCopyAnswer` UDID/Serial
+and IOKit identity (`IOPlatformSerialNumber`) return **nil/denied** under the app sandbox (entitlement-gated
+since iOS 8), so spoofing those is moot against Cash-class apps — the readable, high-value linkers are the
+rows above (model/OS/RAM/IDFV/boot-time), all now covered.
 
 **All read paths flip** from the real device to the profile's coherent values — UIKit, the sysctl string
 and numeric-MIB paths, uname, IDFV, and MobileGestalt. The app launches and runs normally (no crash). This

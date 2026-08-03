@@ -66,6 +66,14 @@ def test_validator_catches_impossible_storage():
     assert P.validate(bad), "validator failed to catch a non-existent storage SKU"
 
 
+def test_boot_offset_in_range_and_deterministic():
+    a = P.generate(seed=321)
+    b = P.generate(seed=321)
+    assert a["boot_offset_sec"] == b["boot_offset_sec"], "boot offset must be deterministic per seed"
+    assert 0 <= a["boot_offset_sec"] < 2500000, "boot offset must be a sane 0..~29d window"
+    assert P.to_tweak_plist(a)["BootOffsetSec"] == a["boot_offset_sec"]
+
+
 def test_product_type_equals_hw_machine():
     p = P.generate(seed=3)
     assert p["product_type"] == p["hw_machine"], "MG ProductType and hw.machine must be identical"

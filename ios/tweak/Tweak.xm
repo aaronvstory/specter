@@ -22,6 +22,7 @@
 #import <UIKit/UIKit.h>
 #import <sys/sysctl.h>
 #import <sys/utsname.h>
+#import <sys/time.h>
 #import <dlfcn.h>
 #import <ptrauth.h>
 #import <substrate.h>
@@ -59,6 +60,16 @@ static void SpecterLog(NSString *fmt, ...) {
 }
 %end
 
+// systemUptime shifted by the same offset as kern.boottime above, so the two stay consistent.
+%hook NSProcessInfo
+- (NSTimeInterval)systemUptime {
+    NSTimeInterval up = %orig;
+    NSNumber *off = gProfile ? gProfile[@"BootOffsetSec"] : nil;
+    if (off) up += off.doubleValue;
+    return up;
+}
+%end
+
 // ---- sysctlbyname (hw.machine, hw.model, hw.memsize, hw.ncpu, kern.osversion, kern.boottime) ---
 static int writeStr(void *oldp, size_t *oldlenp, const char *s) {
     size_t need = strlen(s) + 1;
@@ -91,6 +102,14 @@ static int writeU64(void *oldp, size_t *oldlenp, uint64_t v) {
         if (name[1] == HW_MEMSIZE) { NSNumber *n = gProfile[@"MemSize"]; if (n) return writeU64(oldp, oldlenp, n.unsignedLongLongValue); }
     } else if (name[0] == CTL_KERN && name[1] == KERN_OSVERSION) {
         NSString *m = P(@"OSBuild"); if (m) return writeStr(oldp, oldlenp, m.UTF8String);
+    } else if (name[0] == CTL_KERN && name[1] == KERN_BOOTTIME) {
+        // Shift the boot instant earlier by the per-profile offset. systemUptime is shifted by the same
+        // amount below, so (now - boottime) stays consistent. kern.boottime is otherwise identical across
+        // containers on one device — a strong cross-account linker.
+        NSNumber *off = gProfile[@"BootOffsetSec"];
+        if (off && oldp && oldlenp && *oldlenp >= sizeof(struct timeval)) {
+            ((struct timeval *)oldp)->tv_sec -= (long)off.longLongValue;
+        }
     }
     return r;
 }

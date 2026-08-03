@@ -107,6 +107,10 @@ def generate(model=None, os_version=None, seed=None, catalog=None):
         # --- per-install unique (the values a rotation actually changes) ---
         "identifier_for_vendor": gen_idfv(r),
         "serial_number": gen_serial(r),
+        # boot-time offset (seconds): shifts kern.boottime so each identity looks like a device that
+        # booted at a different instant — kern.boottime is identical across containers otherwise (a
+        # strong cross-account linker). 0..~29 days. Applied coherently with systemUptime by the tweak.
+        "boot_offset_sec": r(2500000),
     }
 
 
@@ -162,6 +166,7 @@ def to_tweak_plist(p):
         "SerialNumber": p["serial_number"],
         "DeviceName": p.get("device_name", "iPhone"),  # iOS 16 UIDevice.name is generic anyway
         "EnableMGHook": True,  # spoof MobileGestalt too (the tweak's hook is validated on iOS 16.3.1)
+        "BootOffsetSec": int(p["boot_offset_sec"]),  # coherent kern.boottime + systemUptime shift
     }
     return d
 
