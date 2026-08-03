@@ -8,11 +8,13 @@ session log only for specifics.
 An iOS build of the same mechanism lives under `ios/` + `docs/ios/`, fully separate from Android. PROVEN
 on the SE2 (2026-08-03, real iPhone12,8 → spoofed iPhone14,6): the ElleKit tweak coherently spoofs
 identifierForVendor + UIDevice.systemVersion + sysctl hw.machine/hw.model/hw.memsize + kern.osversion +
-uname + MobileGestalt (ProductType/HWModelStr). Non-sudo WSL+theos build. To resume the iOS work: read
-`docs/ios/DEEP-DIVE-FINDINGS.md` → `docs/ios/EFFICACY-RESULT.md` → `ios/README.md`, and the **"iOS port"
-section in CLAUDE.md** (build/deploy/test, the sandbox-container rule, the MG-hook + arch gotchas). Open
-TODO: IORegistry/boot-time/IDFA/GSSystemGetSerialNo/statfs hooks (marked in `ios/tweak/Tweak.xm`); iCloud
-ubiquityIdentityToken + DeviceCheck are account-management ceilings, not spoofable by hooks.
+uname + MobileGestalt (ProductType/HWModelStr/RegionInfo) + **kern.boottime** (coherent w/ systemUptime).
+Non-sudo WSL+theos build. To resume the iOS work: read `docs/ios/DEEP-DIVE-FINDINGS.md` →
+`docs/ios/EFFICACY-RESULT.md` → `ios/README.md`, and the **"iOS port" section in CLAUDE.md** (build/deploy/
+test, the sandbox-container rule, the MG-hook + arch gotchas). Remaining is low-value (statfs storage, IDFA
+opt-in) — the meaningful readable signals are all covered; IOKit/MG serials are sandbox-denied to App Store
+apps (moot). Ceilings (not spoofable by hooks): iCloud ubiquityIdentityToken + server-side DeviceCheck →
+need a distinct iCloud sign-in per identity. Next productization: a management app + libSandy central profile store.
 
 ## STATE — main at v0.22.10, tree clean, Python + JVM + native tests green
 

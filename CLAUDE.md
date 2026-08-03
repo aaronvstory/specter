@@ -165,8 +165,11 @@ uname + **MobileGestalt** (ProductType/HWModelStr). Evidence: `ios/trace/capture
 - **Ceilings (no hook can fix):** iCloud ubiquityIdentityToken + server-side DeviceCheck → need a distinct
   iCloud sign-in per identity. Cash App detects Frida via a localhost:27042 probe → NEVER run frida-server
   on a real-account device (test on throwaways only).
-- **TODO in Tweak.xm:** IORegistry (IOPlatformSerialNumber/UUID/MAC) · boot-time · IDFA · GSSystemGetSerialNo
-  · statfs storage tiers.
+- **Coverage:** DONE (all readable by a sandboxed app, proven on SE2) — IDFV · UIDevice.systemVersion/name ·
+  sysctl hw.machine/hw.model/hw.memsize/kern.osversion · uname · MobileGestalt (ProductType/HWModelStr/
+  RegionInfo) · **kern.boottime + systemUptime** (coherent offset). TODO (low value): statfs storage tiers ·
+  IDFA (opt-in). SKIPPED as moot — the probe proved these are entitlement-DENIED to App Store apps: IOKit
+  IOPlatformSerialNumber/UUID, MobileGestalt UDID/SerialNumber, GSSystemGetSerialNo.
 
 ## EOL discipline (Windows)
 CRLF-committed files must STAY CRLF: `specter/generators.py`, `specter/profile.py`, `cli.py`,
