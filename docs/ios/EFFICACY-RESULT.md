@@ -62,6 +62,14 @@ re-align), strip PAC properly via `ptrauth_strip` on arm64e, and range-check the
 gated behind `EnableMGHook` (generated profiles set it on) so an unvalidated future iOS build can't crash
 an app silently — a loud log fires if the prologue doesn't resolve.
 
+**Obfuscated-key leak (found + fixed):** apps often query MobileGestalt by the obfuscated hash
+(`base64(md5("MGCopyAnswer"+key))[:22]`, e.g. `ProductType` → `h9jDsbgj7xIVeIQ8S3/X3Q`) rather than the
+plaintext name. The first MG hook matched only plaintext, so a fingerprinter using the hash would still get
+the **real** value — and the probe (reading plaintext) masked it. Fixed data-driven: the profile carries an
+`MGKeys` table with BOTH forms → value, and the tweak matches whichever the app sends. Verified on-device:
+`MG.obf.ProductType` = iPhone14,6, `MG.obf.HWModelStr` = D49AP. The probe now reads the obfuscated forms too
+so this leak class can't hide again.
+
 ## Reproduce
 See `ios/README.md` (build → deploy → baseline → apply profile → re-read → `ios/verify.py`). Sandbox
 notes: the profile goes in the target app's **container** at `<container>/Library/Specter/profile.plist`

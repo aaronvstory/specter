@@ -66,6 +66,20 @@ def test_validator_catches_impossible_storage():
     assert P.validate(bad), "validator failed to catch a non-existent storage SKU"
 
 
+def test_mg_obfuscate_matches_known_hash():
+    assert P.mg_obfuscate("DeviceClass") == "+3Uf0Pm5F8Xy7Onyvko0vA"
+    assert P.mg_obfuscate("HWModelStr") == "/YYygAofPDbhrwToVsXdeA"
+
+
+def test_tweak_plist_mgkeys_has_plaintext_and_obfuscated():
+    d = P.to_tweak_plist(P.generate(model="iPhone14,6", seed=1))
+    mg = d["MGKeys"]
+    # both the plaintext key and its hash must map to the same spoofed value
+    assert mg["ProductType"] == "iPhone14,6"
+    assert mg[P.mg_obfuscate("ProductType")] == "iPhone14,6"
+    assert mg["HWModelStr"] == mg[P.mg_obfuscate("HWModelStr")] == "D49AP"
+
+
 def test_boot_offset_in_range_and_deterministic():
     a = P.generate(seed=321)
     b = P.generate(seed=321)

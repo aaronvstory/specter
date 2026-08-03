@@ -129,16 +129,13 @@ static CFTypeRef (*orig_MGCopyAnswer_internal)(CFStringRef key, uint32_t *outTyp
 
 static CFTypeRef my_MGCopyAnswer_internal(CFStringRef key, uint32_t *outType) {
     if (key && gProfile) {
-        NSString *k = (__bridge NSString *)key;
-        // Map the MobileGestalt keys we own to profile values (coherent with sysctl/uname above).
-        NSString *v = nil;
-        if      ([k isEqualToString:@"ProductType"]) v = P(@"ProductType");
-        else if ([k isEqualToString:@"HWModelStr"])  v = P(@"HWModelStr");
-        else if ([k isEqualToString:@"ProductVersion"]) v = P(@"OSVersion");
-        else if ([k isEqualToString:@"BuildVersion"])   v = P(@"OSBuild");
-        else if ([k isEqualToString:@"RegionInfo"])     v = P(@"RegionInfo");
-        else if ([k isEqualToString:@"DeviceName"])     v = P(@"DeviceName");
-        if (v) { if (outType) *outType = 2 /* CFString */; return CFBridgingRetain(v); }
+        // MGKeys is keyed by BOTH plaintext and obfuscated-hash forms (built in profile.py), so this
+        // matches however the app queries — plaintext ("ProductType") or hash ("h9jDsbgj7xIVeIQ8S3/X3Q").
+        NSDictionary *mg = gProfile[@"MGKeys"];
+        if ([mg isKindOfClass:[NSDictionary class]]) {
+            NSString *v = mg[(__bridge NSString *)key];
+            if (v) { if (outType) *outType = 2 /* CFString */; return CFBridgingRetain(v); }
+        }
     }
     return orig_MGCopyAnswer_internal(key, outType);
 }

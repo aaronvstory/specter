@@ -65,6 +65,10 @@ static NSDictionary *collect(void) {
     for (NSString *k in @[@"ProductType", @"HWModelStr", @"ProductVersion", @"BuildVersion",
                           @"RegionInfo", @"SerialNumber", @"UniqueDeviceID"])
         m[[@"MG." stringByAppendingString:k]] = mgAnswer(k) ?: NSNull.null;
+    // obfuscated-hash form of the same keys — apps often query these instead of the plaintext names,
+    // so we read them too or the test would mask a leak (base64(md5("MGCopyAnswer"+key))[:22]).
+    m[@"MG.obf.ProductType"] = mgAnswer(@"h9jDsbgj7xIVeIQ8S3/X3Q") ?: NSNull.null;
+    m[@"MG.obf.HWModelStr"] = mgAnswer(@"/YYygAofPDbhrwToVsXdeA") ?: NSNull.null;
     return m;
 }
 

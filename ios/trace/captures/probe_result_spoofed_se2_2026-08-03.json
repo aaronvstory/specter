@@ -2,6 +2,8 @@
   "kern.boottime" : "1782977704.968740",
   "MG.BuildVersion" : "20C65",
   "MG.HWModelStr" : "D49AP",
+  "MG.obf.HWModelStr" : "D49AP",
+  "MG.obf.ProductType" : "iPhone14,6",
   "MG.ProductType" : "iPhone14,6",
   "MG.ProductVersion" : "16.2",
   "MG.RegionInfo" : "LL\/A",

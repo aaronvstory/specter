@@ -16,11 +16,20 @@ highest-value field here; serial/udid are generated only for apps that CAN read 
 Run `python profile.py --demo` for a self-check (determinism + coherence over the whole catalog).
 """
 import argparse
+import base64
+import hashlib
 import json
 import os
 import plistlib
 import random
 import uuid
+
+
+def mg_obfuscate(key):
+    """MobileGestalt obfuscated key = base64(md5("MGCopyAnswer"+key))[:22]. Apps often query MG by this
+    hash rather than the plaintext name, so the tweak must match both (verified: DeviceClass ->
+    +3Uf0Pm5F8Xy7Onyvko0vA)."""
+    return base64.b64encode(hashlib.md5(("MGCopyAnswer" + key).encode()).digest()).decode()[:22]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CATALOG_PATH = os.path.join(HERE, "catalog.json")
@@ -168,6 +177,19 @@ def to_tweak_plist(p):
         "EnableMGHook": True,  # spoof MobileGestalt too (the tweak's hook is validated on iOS 16.3.1)
         "BootOffsetSec": int(p["boot_offset_sec"]),  # coherent kern.boottime + systemUptime shift
     }
+    # MobileGestalt lookup table keyed by BOTH the plaintext name AND its obfuscated hash — the tweak
+    # matches whichever form the app queries (querying only plaintext would leak the real value).
+    mg = {
+        "ProductType": p["product_type"], "HWModelStr": p["hw_model"],
+        "ProductVersion": p["os_version"], "BuildVersion": p["os_build"],
+        "RegionInfo": p["region"], "DeviceName": p.get("device_name", "iPhone"),
+        "DeviceClass": "iPhone",
+    }
+    mgkeys = {}
+    for k, v in mg.items():
+        mgkeys[k] = v
+        mgkeys[mg_obfuscate(k)] = v
+    d["MGKeys"] = mgkeys
     return d
 
 
