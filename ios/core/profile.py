@@ -161,6 +161,7 @@ def to_tweak_plist(p):
         "IDFV": p["identifier_for_vendor"],
         "SerialNumber": p["serial_number"],
         "DeviceName": p.get("device_name", "iPhone"),  # iOS 16 UIDevice.name is generic anyway
+        "EnableMGHook": True,  # spoof MobileGestalt too (the tweak's hook is validated on iOS 16.3.1)
     }
     return d
 

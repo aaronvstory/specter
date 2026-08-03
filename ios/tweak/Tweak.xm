@@ -23,6 +23,7 @@
 #import <sys/sysctl.h>
 #import <sys/utsname.h>
 #import <dlfcn.h>
+#import <ptrauth.h>
 #import <substrate.h>
 
 // ---- profile ----------------------------------------------------------------------------------
@@ -123,22 +124,33 @@ static CFTypeRef my_MGCopyAnswer_internal(CFStringRef key, uint32_t *outType) {
     return orig_MGCopyAnswer_internal(key, outType);
 }
 
+// The exported MGCopyAnswer is a thunk (e.g. iOS 16.3.1/20D67: `mov x1,#0 ; b MGCopyAnswer_internal`).
+// Resolve the internal worker by finding the first unconditional B and following it, then hook THAT.
+// PROVEN on 20D67: entry+4 is `b` to the worker. Read instructions at the REAL entry (never re-align —
+// masking the low bits shifts the decode and resolves garbage → the original crash).
 static void installMGHook(void) {
     void *sym = dlsym(RTLD_DEFAULT, "MGCopyAnswer");
     if (!sym) { SpecterLog(@"MG: MGCopyAnswer not found — MobileGestalt path NOT spoofed"); return; }
-    uint32_t *code = (uint32_t *)((uintptr_t)sym & ~0xFULL);   // strip any PAC bits for reading
-    // scan up to 8 instructions for the first unconditional B (opcode 0b000101)
-    for (int i = 0; i < 8; i++) {
+#if __arm64e__
+    sym = ptrauth_strip(sym, ptrauth_key_function_pointer);   // PAC lives in the HIGH bits
+#endif
+    uint32_t *code = (uint32_t *)sym;
+    for (int i = 0; i < 8; i++) {                             // skip a leading mov/bti, find the B
         uint32_t insn = code[i];
-        if ((insn & 0xFC000000) == 0x14000000) {              // B <label>
-            int32_t imm = (int32_t)(insn << 6) >> 6;          // sign-extend imm26
+        if ((insn & 0xFC000000) == 0x14000000) {              // unconditional B
+            int32_t imm = (int32_t)(insn << 6) >> 6;          // sign-extend imm26, *4
             void *internal = (void *)((uintptr_t)&code[i] + (intptr_t)imm * 4);
+            intptr_t delta = (intptr_t)internal - (intptr_t)code;
+            if (delta > 0x800000 || delta < -0x800000) {      // must land in the same __TEXT
+                SpecterLog(@"MG: target %p out of range (delta %ld) — NOT hooking (FIX for this build)", internal, (long)delta);
+                return;
+            }
             MSHookFunction(internal, (void *)my_MGCopyAnswer_internal, (void **)&orig_MGCopyAnswer_internal);
-            SpecterLog(@"MG: hooked MGCopyAnswer_internal at %p (thunk+%d)", internal, i);
+            SpecterLog(@"MG: hooked MGCopyAnswer_internal at %p (export+%d instr)", internal, i);
             return;
         }
     }
-    SpecterLog(@"MG: no branch found in MGCopyAnswer prologue — build-specific, MobileGestalt path NOT spoofed (FIX BEFORE TRUSTING)");
+    SpecterLog(@"MG: no branch in MGCopyAnswer prologue — build-specific, MobileGestalt NOT spoofed (FIX BEFORE TRUSTING)");
 }
 
 // ---- load / guard -----------------------------------------------------------------------------

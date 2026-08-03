@@ -19,27 +19,25 @@ Profile applied: **iPhone14,6 / D49AP / 3843000000 / iOS 16.2 (20C65) / IDFV 644
 | `sysctlbyname hw.model` | D79AP | **D49AP** | ✅ spoofed |
 | `sysctlbyname hw.memsize` | 3103604736 | **3843000000** | ✅ spoofed |
 | `sysctl kern.osversion` | 20D67 | **20C65** | ✅ spoofed |
-| `MGCopyAnswer ProductType` | iPhone12,8 | iPhone12,8 | ⚠️ **not spoofed — MG hook opt-off** |
+| `MGCopyAnswer ProductType` | iPhone12,8 | **iPhone14,6** | ✅ spoofed (MG hook fixed) |
+| `MGCopyAnswer HWModelStr` | D79AP | **D49AP** | ✅ spoofed (MG hook fixed) |
 
-Six independent read paths flipped from the real device to the profile's coherent values. The app
-launched and ran normally (no crash). This proves: injection (ElleKit + Filter + container profile),
-profile read from the app's own container (sandbox-safe), and coherent spoofing across UIKit + the
-sysctl string and numeric-MIB paths + IDFV.
+**All read paths flip** from the real device to the profile's coherent values — UIKit, the sysctl string
+and numeric-MIB paths, uname, IDFV, and MobileGestalt. The app launches and runs normally (no crash). This
+proves injection (ElleKit + Filter + container profile), sandbox-safe profile read from the app's own
+container, and coherent multi-path spoofing.
 
-## The one known gap: MobileGestalt
+## MobileGestalt — FIXED (was the crash)
 
-`MGCopyAnswer` is **not** yet spoofed — the `MGCopyAnswer_internal` hook (the SIGILL-safe scan-for-first-
-`B` technique) **crashed the app on this iOS 16.3.1 build** (confirmed: with the hook on, the process
-died at launch; with it opt-off, everything above works). So the tweak ships it **opt-in** (`EnableMGHook`
-in the profile, default off) — never crash an app by default. This is exactly the version-fragility the
-deep-dive flagged (`docs/ios/DEEP-DIVE-FINDINGS.md`): the internal-worker prologue differs per build and
-the fixed scan mis-resolved on 20D67. Until it's fixed, a fingerprinter reading MobileGestalt `ProductType`
-/`HWModelStr` still sees the real device — a real leak to close.
-
-**Next for MG:** dump the first 16 bytes at `dlsym(MGCopyAnswer)` on 20D67, disassemble to find the true
-internal-worker entry (handle a BTI/PAC landing pad and the two prologue variants), and PAC-sign the
-resolved pointer before `MSHookFunction`. Then flip `EnableMGHook` on and re-run this test — the MG row
-must go ✅.
+The `MGCopyAnswer_internal` hook first crashed the app on iOS 16.3.1 (20D67). Root cause, found by dumping
+the real prologue on-device: the exported `MGCopyAnswer` is a 2-instr thunk (`mov x1,#0 ; b <worker>`), and
+the resolve was correct — but the code masked the read pointer with `& ~0xFULL` (mistaking it for a PAC
+strip; PAC is in the HIGH bits), which shifted the instruction decode by 4 bytes and resolved a garbage
+target → `MSHookFunction` patched random code → crash. Fix: read instructions at the true entry (no
+re-align), strip PAC properly via `ptrauth_strip` on arm64e, and range-check the resolved target is within
+`__TEXT`. With that, `MGCopyAnswer ProductType`/`HWModelStr` spoof cleanly (verified above). The hook stays
+gated behind `EnableMGHook` (generated profiles set it on) so an unvalidated future iOS build can't crash
+an app silently — a loud log fires if the prologue doesn't resolve.
 
 ## Reproduce
 See `ios/README.md` (build → deploy → baseline → apply profile → re-read → `ios/verify.py`). Sandbox

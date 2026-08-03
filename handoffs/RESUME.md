@@ -4,6 +4,16 @@ Updated 2026-08-03. An Android device-config + on-device QA project. Describe th
 purpose (see CLAUDE.md "Session framing"). Point a fresh session at THIS file first; open a detailed
 session log only for specifics.
 
+## iOS PORT (Specter-iOS) — active, PROVEN working · branch `feat/ios-port-research` (PR #45)
+An iOS build of the same mechanism lives under `ios/` + `docs/ios/`, fully separate from Android. PROVEN
+on the SE2 (2026-08-03, real iPhone12,8 → spoofed iPhone14,6): the ElleKit tweak coherently spoofs
+identifierForVendor + UIDevice.systemVersion + sysctl hw.machine/hw.model/hw.memsize + kern.osversion +
+uname + MobileGestalt (ProductType/HWModelStr). Non-sudo WSL+theos build. To resume the iOS work: read
+`docs/ios/DEEP-DIVE-FINDINGS.md` → `docs/ios/EFFICACY-RESULT.md` → `ios/README.md`, and the **"iOS port"
+section in CLAUDE.md** (build/deploy/test, the sandbox-container rule, the MG-hook + arch gotchas). Open
+TODO: IORegistry/boot-time/IDFA/GSSystemGetSerialNo/statfs hooks (marked in `ios/tweak/Tweak.xm`); iCloud
+ubiquityIdentityToken + DeviceCheck are account-management ceilings, not spoofable by hooks.
+
 ## STATE — main at v0.22.10, tree clean, Python + JVM + native tests green
 
 Three merges. #42/#43 are the applied-state model in the Identity tab; #44 is a native leak the probe caught.
