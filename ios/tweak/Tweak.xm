@@ -21,11 +21,16 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <sys/sysctl.h>
+#import <sys/syscall.h>
 #import <sys/utsname.h>
 #import <sys/time.h>
 #import <dlfcn.h>
 #import <ptrauth.h>
 #import <substrate.h>
+
+#ifndef SYS___sysctl
+#define SYS___sysctl 202   // Darwin __sysctl syscall — read the real host build past our own sysctl hook
+#endif
 
 // ---- profile ----------------------------------------------------------------------------------
 // Read from real rootfs (NOT under the randomized jbroot) so RootHide path randomization is a non-issue.
@@ -71,47 +76,58 @@ static void SpecterLog(NSString *fmt, ...) {
 %end
 
 // ---- sysctlbyname (hw.machine, hw.model, hw.memsize, hw.ncpu, kern.osversion, kern.boottime) ---
-static int writeStr(void *oldp, size_t *oldlenp, const char *s) {
-    size_t need = strlen(s) + 1;
-    if (!oldp) { if (oldlenp) *oldlenp = need; return 0; }
-    if (oldlenp && *oldlenp < need) { errno = ENOMEM; return -1; }
-    memcpy(oldp, s, need); if (oldlenp) *oldlenp = need; return 0;
+// Bound every write by the CALLER's buffer capacity, captured BEFORE %orig (which overwrites *oldlenp
+// with the real value's length — losing the caller's true capacity). For OWNED keys we synthesize the
+// value and DON'T call %orig; calling %orig then overwriting made a spoofed value LONGER than the real
+// one fail the standard two-call size idiom (the original CRITICAL bug).
+static int writeBytes(void *oldp, size_t *oldlenp, size_t cap, const void *v, size_t n) {
+    if (!oldp) { if (oldlenp) *oldlenp = n; return 0; }   // size-probe call
+    if (cap < n) { errno = ENOMEM; return -1; }
+    memcpy(oldp, v, n); if (oldlenp) *oldlenp = n; return 0;
 }
-static int writeU64(void *oldp, size_t *oldlenp, uint64_t v) {
-    if (!oldp) { if (oldlenp) *oldlenp = sizeof(v); return 0; }
-    memcpy(oldp, &v, sizeof(v)); if (oldlenp) *oldlenp = sizeof(v); return 0;
+static int writeStrCap(void *oldp, size_t *oldlenp, size_t cap, const char *s) {
+    return writeBytes(oldp, oldlenp, cap, s, strlen(s) + 1);
 }
 
 %hookf(int, sysctlbyname, const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-    int r = %orig;
-    if (r != 0 || !name || !gProfile) return r;
-    if (!strcmp(name, "hw.machine")) { NSString *m = P(@"HWMachine"); if (m) return writeStr(oldp, oldlenp, m.UTF8String); }
-    else if (!strcmp(name, "hw.model")) { NSString *m = P(@"HWModel"); if (m) return writeStr(oldp, oldlenp, m.UTF8String); }
-    else if (!strcmp(name, "hw.memsize")) { NSNumber *n = gProfile[@"MemSize"]; if (n) return writeU64(oldp, oldlenp, n.unsignedLongLongValue); }
-    else if (!strcmp(name, "kern.osversion")) { NSString *m = P(@"OSBuild"); if (m) return writeStr(oldp, oldlenp, m.UTF8String); }
-    return r;
+    if (name && gProfile && !newp) {                       // reads only; never intercept a set
+        size_t cap = oldlenp ? *oldlenp : 0;               // capacity BEFORE %orig can mutate *oldlenp
+        if (!strcmp(name, "hw.machine")) { NSString *m = P(@"HWMachine"); if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
+        if (!strcmp(name, "hw.model"))   { NSString *m = P(@"HWModel");   if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
+        if (!strcmp(name, "kern.osversion")) { NSString *m = P(@"OSBuild"); if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
+        if (!strcmp(name, "hw.memsize")) { NSNumber *n = gProfile[@"MemSize"]; if (n) { uint64_t v = n.unsignedLongLongValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
+        if (!strcmp(name, "hw.ncpu") || !strcmp(name, "hw.activecpu") ||
+            !strcmp(name, "hw.physicalcpu") || !strcmp(name, "hw.logicalcpu")) {
+            NSNumber *n = gProfile[@"NCPU"]; if (n) { int32_t v = (int32_t)n.intValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); }
+        }
+    }
+    return %orig;
 }
 
 // ---- sysctl(MIB) — the same fields via the numeric path (a fingerprinter reads BOTH) --------
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-    int r = %orig;
-    if (r != 0 || !name || namelen < 2 || !gProfile) return r;
-    if (name[0] == CTL_HW) {
-        if (name[1] == HW_MACHINE) { NSString *m = P(@"HWMachine"); if (m) return writeStr(oldp, oldlenp, m.UTF8String); }
-        if (name[1] == HW_MODEL)   { NSString *m = P(@"HWModel");   if (m) return writeStr(oldp, oldlenp, m.UTF8String); }
-        if (name[1] == HW_MEMSIZE) { NSNumber *n = gProfile[@"MemSize"]; if (n) return writeU64(oldp, oldlenp, n.unsignedLongLongValue); }
-    } else if (name[0] == CTL_KERN && name[1] == KERN_OSVERSION) {
-        NSString *m = P(@"OSBuild"); if (m) return writeStr(oldp, oldlenp, m.UTF8String);
-    } else if (name[0] == CTL_KERN && name[1] == KERN_BOOTTIME) {
-        // Shift the boot instant earlier by the per-profile offset. systemUptime is shifted by the same
-        // amount below, so (now - boottime) stays consistent. kern.boottime is otherwise identical across
-        // containers on one device — a strong cross-account linker.
-        NSNumber *off = gProfile[@"BootOffsetSec"];
-        if (off && oldp && oldlenp && *oldlenp >= sizeof(struct timeval)) {
-            ((struct timeval *)oldp)->tv_sec -= (long)off.longLongValue;
+    if (name && namelen >= 2 && gProfile && !newp) {
+        size_t cap = oldlenp ? *oldlenp : 0;
+        if (name[0] == CTL_HW) {
+            if (name[1] == HW_MACHINE) { NSString *m = P(@"HWMachine"); if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
+            if (name[1] == HW_MODEL)   { NSString *m = P(@"HWModel");   if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
+            if (name[1] == HW_MEMSIZE) { NSNumber *n = gProfile[@"MemSize"]; if (n) { uint64_t v = n.unsignedLongLongValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
+            if (name[1] == HW_NCPU)    { NSNumber *n = gProfile[@"NCPU"]; if (n) { int32_t v = (int32_t)n.intValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
+        } else if (name[0] == CTL_KERN) {
+            if (name[1] == KERN_OSVERSION) { NSString *m = P(@"OSBuild"); if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
+            if (name[1] == KERN_BOOTTIME) {
+                // Needs the REAL boot instant first, then shift earlier by the per-profile offset;
+                // systemUptime adds the same offset so (now - boottime) stays consistent. Boot time is
+                // otherwise identical across containers on one device — a strong cross-account linker.
+                int r = %orig;
+                NSNumber *off = gProfile[@"BootOffsetSec"];
+                if (r == 0 && off && oldp && oldlenp && *oldlenp >= sizeof(struct timeval))
+                    ((struct timeval *)oldp)->tv_sec -= (long)off.longLongValue;
+                return r;
+            }
         }
     }
-    return r;
+    return %orig;
 }
 
 // ---- uname ------------------------------------------------------------------------------------
@@ -144,6 +160,26 @@ static CFTypeRef my_MGCopyAnswer_internal(CFStringRef key, uint32_t *outType) {
 // Resolve the internal worker by finding the first unconditional B and following it, then hook THAT.
 // PROVEN on 20D67: entry+4 is `b` to the worker. Read instructions at the REAL entry (never re-align —
 // masking the low bits shifts the decode and resolves garbage → the original crash).
+// The MGCopyAnswer_internal prologue-resolve is validated per iOS BUILD. Gate the hook on the PHYSICAL
+// host's build (read via the raw syscall so our own sysctl hook can't spoof it) — the per-profile
+// EnableMGHook flag reflects the spoofed identity, not the device the dylib actually runs on. On an
+// un-validated build we SKIP (loudly) rather than risk MSHookFunction patching a wrong in-range target.
+static BOOL mgHostBuildValidated(void) {
+    char b[64] = {0};
+    int mib[2] = {CTL_KERN, KERN_OSVERSION};
+    size_t sz = sizeof(b);
+    int rc;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    rc = syscall(SYS___sysctl, mib, 2, b, &sz, NULL, 0);   // raw syscall bypasses our own sysctl hook
+#pragma clang diagnostic pop
+    if (rc != 0) { SpecterLog(@"MG: could not read host build — SKIP"); return NO; }
+    static const char *ok[] = { "20D67" };   // iOS 16.3.1 (SE2/iPhone8), on-device verified. Add as validated.
+    for (size_t i = 0; i < sizeof(ok) / sizeof(ok[0]); i++) if (!strcmp(b, ok[i])) return YES;
+    SpecterLog(@"MG: host build '%s' not in validated allowlist — MG hook SKIPPED (verify the prologue first)", b);
+    return NO;
+}
+
 static void installMGHook(void) {
     void *sym = dlsym(RTLD_DEFAULT, "MGCopyAnswer");
     if (!sym) { SpecterLog(@"MG: MGCopyAnswer not found — MobileGestalt path NOT spoofed"); return; }
@@ -191,7 +227,7 @@ static void installMGHook(void) {
             // The MobileGestalt internal-worker hook memory-patches a scanned address and is
             // version-fragile (can crash if the prologue differs on this iOS build). Opt-in only,
             // per profile, once validated for the target build — never crash an app by default.
-            if ([gProfile[@"EnableMGHook"] boolValue]) installMGHook();
+            if ([gProfile[@"EnableMGHook"] boolValue] && mgHostBuildValidated()) installMGHook();
         }
     }
 }

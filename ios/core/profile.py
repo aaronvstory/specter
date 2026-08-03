@@ -132,14 +132,13 @@ def validate(p, catalog=None):
     if not dev:
         errs.append(f"unknown model {p.get('hw_machine')!r}")
         return errs
-    for field, key in (
-        ("hw_model", "hw_model"), ("target_type", "target_type"),
-        ("hardware_platform", "hardware_platform"), ("chip_id", "chip_id"),
-        ("cpu_family", "cpu_family"), ("memsize_bytes", "memsize_bytes"),
-        ("ncpu", "ncpu"), ("marketing_name", "marketing_name"),
+    for field in (
+        "hw_model", "target_type", "hardware_platform", "chip_id", "cpu_family", "cpu_subtype",
+        "memsize_bytes", "ncpu", "native_bounds", "native_scale", "max_fps", "biometry",
+        "region", "marketing_name",
     ):
-        if p.get(field) != dev[key]:
-            errs.append(f"{field} {p.get(field)!r} != catalog {dev[key]!r} (hardware must match the one device)")
+        if p.get(field) != dev[field]:
+            errs.append(f"{field} {p.get(field)!r} != catalog {dev[field]!r} (hardware must match the one device)")
     if p.get("product_type") != p.get("hw_machine"):
         errs.append("product_type must equal hw_machine")
     if p.get("os_version") not in dev["os_builds"]:

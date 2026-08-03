@@ -80,6 +80,16 @@ def test_tweak_plist_mgkeys_has_plaintext_and_obfuscated():
     assert mg["HWModelStr"] == mg[P.mg_obfuscate("HWModelStr")] == "D49AP"
 
 
+def test_validator_catches_biometry_and_screen_mismatch():
+    # a hand-edited profile stapling FaceID / an iPhone-12 screen onto the TouchID SE2 must be rejected
+    p = P.generate(model="iPhone12,8", seed=5)
+    p["biometry"] = "faceID"
+    assert P.validate(p), "validator must catch a biometry that doesn't match the device"
+    p2 = P.generate(model="iPhone12,8", seed=5)
+    p2["native_bounds"] = [1170, 2532]
+    assert P.validate(p2), "validator must catch a screen that doesn't match the device"
+
+
 def test_boot_offset_in_range_and_deterministic():
     a = P.generate(seed=321)
     b = P.generate(seed=321)

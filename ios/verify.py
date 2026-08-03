@@ -18,11 +18,14 @@ import plistlib
 import sys
 
 # (label, profile-key, [probe read-paths that must ALL equal the profile value])
+# NB: the obfuscated-hash MG paths (MG.obf.*) are checked too — a fingerprinter querying MobileGestalt by
+# hash rather than plaintext leaked the real value once; without these rows verify.py would mask a regression.
 CHECKS = [
     ("model (ProductType/hw.machine/uname)", "ProductType",
-        ["MG.ProductType", "sysctl.hw.machine", "uname.machine"]),
-    ("board (hw.model/HWModelStr)", "HWModel", ["sysctl.hw.model", "MG.HWModelStr"]),
+        ["MG.ProductType", "MG.obf.ProductType", "sysctl.hw.machine", "uname.machine"]),
+    ("board (hw.model/HWModelStr)", "HWModel", ["sysctl.hw.model", "MG.HWModelStr", "MG.obf.HWModelStr"]),
     ("RAM (hw.memsize)", "MemSize", ["sysctl.hw.memsize"]),
+    ("CPU count (hw.ncpu)", "NCPU", ["sysctl.hw.ncpu"]),
     ("OS version", "OSVersion", ["UIDevice.systemVersion", "MG.ProductVersion"]),
     ("OS build", "OSBuild", ["sysctl.kern.osversion", "MG.BuildVersion"]),
     ("IDFV", "IDFV", ["UIDevice.identifierForVendor"]),
@@ -60,7 +63,7 @@ def main():
     if "product_type" in prof:  # raw generator json
         prof = {
             "ProductType": prof["product_type"], "HWModel": prof["hw_model"],
-            "MemSize": prof["memsize_bytes"], "OSVersion": prof["os_version"],
+            "MemSize": prof["memsize_bytes"], "NCPU": prof["ncpu"], "OSVersion": prof["os_version"],
             "OSBuild": prof["os_build"], "IDFV": prof["identifier_for_vendor"],
             "RegionInfo": prof["region"], "DeviceName": prof.get("device_name", "iPhone"),
         }
