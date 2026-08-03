@@ -1,0 +1,85 @@
+{
+  "label": "baseline",
+  "ids": [
+    {
+      "k": "HOME",
+      "v": "/private/var/mobile/Containers/Data/Application/21F30A30-ADA7-48D8-BEAE-989897B1F91C"
+    },
+    {
+      "k": "CFFIXED_USER_HOME",
+      "v": "/private/var/mobile/Containers/Data/Application/21F30A30-ADA7-48D8-BEAE-989897B1F91C"
+    },
+    {
+      "k": "identifierForVendor",
+      "v": "89840150-99A8-4E86-A26F-027E56C9C68B"
+    },
+    {
+      "k": "UIDevice.name",
+      "v": "iPhone"
+    },
+    {
+      "k": "UIDevice.model",
+      "v": "iPhone"
+    },
+    {
+      "k": "UIDevice.systemVersion",
+      "v": "16.3.1"
+    },
+    {
+      "k": "MG.UniqueDeviceID",
+      "v": null
+    },
+    {
+      "k": "MG.SerialNumber",
+      "v": null
+    },
+    {
+      "k": "MG.MLBSerialNumber",
+      "v": null
+    },
+    {
+      "k": "MG.ProductType",
+      "v": "iPhone12,8"
+    },
+    {
+      "k": "MG.HWModelStr",
+      "v": "D79AP"
+    },
+    {
+      "k": "MG.RegionInfo",
+      "v": "LL/A"
+    },
+    {
+      "k": "MG.DeviceColor",
+      "v": "1"
+    },
+    {
+      "k": "sysctl.hw.machine",
+      "v": "iPhone12,8"
+    },
+    {
+      "k": "sysctl.hw.model",
+      "v": "D79AP"
+    },
+    {
+      "k": "sysctl.hw.memsize",
+      "v": "3103604736"
+    },
+    {
+      "k": "sysctl.kern.osversion",
+      "v": "20D67"
+    },
+    {
+      "k": "kern.boottime",
+      "v": "1785083121.962591"
+    },
+    {
+      "k": "iCloud.ubiquityIdentityToken",
+      "v": "{length = 20, bytes = 0x04710483bc498ddfbee6a86df0c864c4ad30cb1e}"
+    },
+    {
+      "k": "__done__",
+      "v": "1"
+    }
+  ]
+}

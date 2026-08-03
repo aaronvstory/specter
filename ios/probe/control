@@ -1,7 +1,7 @@
 Package: com.specter.iosprobe
 Name: SpecterProbe
 Version: 0.1.0
-Architecture: iphoneos-arm64
+Architecture: iphoneos-arm64e
 Description: Specter iOS efficacy probe — reads every spoofable device signal to JSON for verification.
 Author: Specter
 Maintainer: Specter

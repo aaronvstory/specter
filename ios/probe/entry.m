@@ -71,13 +71,12 @@ static NSDictionary *collect(void) {
 static NSString *writeResult(NSDictionary *m) {
     NSError *e = nil;
     NSData *json = [NSJSONSerialization dataWithJSONObject:m options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:&e];
-    NSString *dir = @"/var/mobile/Library/Specter";
-    [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
-    NSString *path = [dir stringByAppendingPathComponent:@"probe_result.json"];
+    // Write inside our OWN container (sandbox-safe). Root/SSH reads it from the container path.
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *path = [docs stringByAppendingPathComponent:@"probe_result.json"];
     BOOL ok = [json writeToFile:path atomically:YES];
-    // world-readable so `adb`/ssh can pull it without root
     if (ok) [NSFileManager.defaultManager setAttributes:@{NSFilePosixPermissions:@0644} ofItemAtPath:path error:nil];
-    return ok ? path : [@"WRITE FAILED (fallback shown on screen) " stringByAppendingString:(e.localizedDescription ?: @"")];
+    return ok ? path : [@"WRITE FAILED " stringByAppendingString:(e.localizedDescription ?: @"")];
 }
 
 @interface AppDelegate : UIResponder <UIApplicationDelegate>

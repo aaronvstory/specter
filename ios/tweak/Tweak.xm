@@ -48,8 +48,14 @@ static void SpecterLog(NSString *fmt, ...) {
     if (idfv) { NSUUID *u = [[NSUUID alloc] initWithUUIDString:idfv]; if (u) return u; }
     return %orig;
 }
-- (NSString *)name        { return P(@"DeviceName") ?: %orig; }
-- (NSString *)systemVersion { return P(@"OSVersion") ?: %orig; }
+- (NSString *)name {
+    NSString *v = P(@"DeviceName");
+    return v ? v : %orig;
+}
+- (NSString *)systemVersion {
+    NSString *v = P(@"OSVersion");
+    return v ? v : %orig;
+}
 %end
 
 // ---- sysctlbyname (hw.machine, hw.model, hw.memsize, hw.ncpu, kern.osversion, kern.boottime) ---
@@ -142,15 +148,22 @@ static void installMGHook(void) {
         // so bailing early would skip installing them. Instead every hook self-gates on gProfile==nil
         // (returns %orig), so a process with no profile keeps the hooks installed but inert.
         NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
-        if (bid) {
-            // Profile lives on real rootfs so RootHide's randomized jbroot doesn't matter for the read.
-            NSString *path = [NSString stringWithFormat:@"/var/mobile/Library/Specter/%@.plist", bid];
-            gProfile = [NSDictionary dictionaryWithContentsOfFile:path];
+        // Sandbox-safe: read the profile from the app's OWN container (always readable by the injected
+        // dylib under the app sandbox). The Specter manager (root) drops it there per target app.
+        NSString *local = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Specter/profile.plist"];
+        gProfile = [NSDictionary dictionaryWithContentsOfFile:local];
+        if (!gProfile && bid) {
+            // Fallback: a central store — only works where the sandbox permits (e.g. via libSandy).
+            NSString *central = [NSString stringWithFormat:@"/var/mobile/Library/Specter/%@.plist", bid];
+            gProfile = [NSDictionary dictionaryWithContentsOfFile:central];
         }
         if (gProfile) {
             SpecterLog(@"loaded profile for %@ (%lu keys): %@ / %@",
                        bid, (unsigned long)gProfile.count, P(@"ProductType"), P(@"OSVersion"));
-            installMGHook();   // only patch libMobileGestalt when we actually have values to serve
+            // The MobileGestalt internal-worker hook memory-patches a scanned address and is
+            // version-fragile (can crash if the prologue differs on this iOS build). Opt-in only,
+            // per profile, once validated for the target build — never crash an app by default.
+            if ([gProfile[@"EnableMGHook"] boolValue]) installMGHook();
         }
     }
 }

@@ -2,7 +2,7 @@
 """Spawn app under frida, run the ID probe once, print the identifiers. arg: label for the container."""
 import sys, time, frida, json
 label = sys.argv[1] if len(sys.argv) > 1 else 'container'
-bundle = 'com.squareup.cash'
+bundle = sys.argv[2] if len(sys.argv) > 2 else 'com.squareup.cash'
 rows = []
 def on_msg(m, d):
     if m.get('type') == 'send':
