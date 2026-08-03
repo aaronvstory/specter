@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iOS identity-spoofing tweaks — evaluated for Specter-iOS</title>
+<style>
+  :root{
+    --ground:#f5f6f8; --surface:#ffffff; --surface-2:#eef0f4;
+    --ink:#171a21; --muted:#5c6472; --hair:#dfe3ea;
+    --accent:#6a5cf0; --accent-soft:#efedfe;
+    --good:#1f9266; --good-bg:#e7f4ee;
+    --warn:#b9791f; --warn-bg:#f8efdd;
+    --crit:#cf4636; --crit-bg:#fbe8e5;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#0d0f13; --surface:#151922; --surface-2:#1c212c;
+      --ink:#e8eaf0; --muted:#98a1b2; --hair:#28303c;
+      --accent:#9a8dff; --accent-soft:#1e1c33;
+      --good:#4fbf90; --good-bg:#12271f;
+      --warn:#e0a44a; --warn-bg:#2b2213;
+      --crit:#e8695a; --crit-bg:#2c1815;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0d0f13; --surface:#151922; --surface-2:#1c212c;
+    --ink:#e8eaf0; --muted:#98a1b2; --hair:#28303c;
+    --accent:#9a8dff; --accent-soft:#1e1c33;
+    --good:#4fbf90; --good-bg:#12271f; --warn:#e0a44a; --warn-bg:#2b2213;
+    --crit:#e8695a; --crit-bg:#2c1815;
+  }
+  :root[data-theme="light"]{
+    --ground:#f5f6f8; --surface:#ffffff; --surface-2:#eef0f4;
+    --ink:#171a21; --muted:#5c6472; --hair:#dfe3ea;
+    --accent:#6a5cf0; --accent-soft:#efedfe;
+    --good:#1f9266; --good-bg:#e7f4ee; --warn:#b9791f; --warn-bg:#f8efdd;
+    --crit:#cf4636; --crit-bg:#fbe8e5;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    line-height:1.6;font-size:16px;
+    background-image:radial-gradient(120% 80% at 100% -10%,var(--accent-soft) 0%,transparent 45%);
+    background-repeat:no-repeat;
+  }
+  .wrap{max-width:1000px;margin:0 auto;padding:56px 24px 96px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+  h1{font-size:clamp(28px,4.4vw,44px);line-height:1.1;letter-spacing:-.02em;text-wrap:balance;margin:0 0 16px;font-weight:700}
+  h2{font-size:22px;letter-spacing:-.01em;margin:52px 0 6px;font-weight:650}
+  h2 .num{font-family:var(--mono);color:var(--accent);font-size:15px;margin-right:10px;font-weight:500}
+  .lede{font-size:18px;color:var(--muted);max-width:68ch;margin:0}
+  .rule{height:1px;background:var(--hair);border:0;margin:28px 0}
+  a{color:var(--accent)}
+
+  /* answer callouts */
+  .answers{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:34px 0 8px}
+  @media(max-width:680px){.answers{grid-template-columns:1fr}}
+  .qa{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:20px 22px}
+  .qa .q{font-weight:650;margin:0 0 8px;font-size:15px}
+  .qa .verdict{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;display:inline-block;margin-bottom:10px}
+  .v-good{background:var(--good-bg);color:var(--good)}
+  .v-crit{background:var(--crit-bg);color:var(--crit)}
+  .qa p{margin:0;font-size:14.5px;color:var(--muted)}
+
+  /* matrix */
+  .scroll{overflow-x:auto;border:1px solid var(--hair);border-radius:14px;margin-top:18px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:720px;font-size:14px}
+  th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--hair);vertical-align:top}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--surface-2)}
+  tbody tr:last-child td{border-bottom:0}
+  td.name{font-family:var(--mono);font-weight:600;color:var(--ink);white-space:nowrap}
+  .tag{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
+  .t-good{background:var(--good-bg);color:var(--good)}
+  .t-warn{background:var(--warn-bg);color:var(--warn)}
+  .t-crit{background:var(--crit-bg);color:var(--crit)}
+  .t-neutral{background:var(--surface-2);color:var(--muted)}
+
+  /* cards */
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:24px 26px;margin-top:18px}
+  .card-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;margin-bottom:4px}
+  .card-head h3{font-family:var(--mono);font-size:18px;margin:0;font-weight:650}
+  .card-head .lic{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .card .role{color:var(--muted);font-size:14px;margin:2px 0 16px}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:8px 18px;font-size:14.5px}
+  .kv dt{font-family:var(--mono);font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);padding-top:2px}
+  .kv dd{margin:0}
+  .verline{margin-top:16px;padding-top:14px;border-top:1px solid var(--hair);font-size:14.5px}
+  .verline b{color:var(--ink)}
+  code{font-family:var(--mono);font-size:.88em;background:var(--surface-2);padding:1px 6px;border-radius:5px}
+
+  .note{background:var(--accent-soft);border:1px solid var(--hair);border-left:3px solid var(--accent);border-radius:12px;padding:16px 20px;margin-top:22px;font-size:14.5px;color:var(--ink)}
+  .foot{margin-top:56px;color:var(--muted);font-size:13px;font-family:var(--mono);text-align:center}
+  .prio{counter-reset:p;list-style:none;padding:0;margin:16px 0 0}
+  .prio li{position:relative;padding:12px 0 12px 46px;border-bottom:1px solid var(--hair);font-size:15px}
+  .prio li:last-child{border-bottom:0}
+  .prio li::before{counter-increment:p;content:counter(p);position:absolute;left:0;top:11px;font-family:var(--mono);font-size:13px;color:var(--accent);border:1px solid var(--accent);border-radius:8px;width:26px;height:26px;display:grid;place-items:center}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <p class="eyebrow">Specter-iOS · tool survey · 2026-08-03</p>
+  <h1>iOS identity-spoofing tweaks, judged against what actually links accounts</h1>
+  <p class="lede">Five existing tools that overlap with a Specter-iOS. Each is rated not on features but on the one question that matters — does it rotate the <em>stable unique identifiers</em> a fraud SDK uses to tie two accounts to one device — and whether it runs while Cash App stays under RootHide.</p>
+
+  <div class="answers">
+    <div class="qa">
+      <p class="q">Do you have to disable RootHide to use these?</p>
+      <span class="verdict v-good">No — 4 of 5</span>
+      <p>WeaponX, MGSpoof, MGKeys and A-Bypass are jailbreak tweaks — they load <em>on top of</em> RootHide (it stays on, hiding the JB). Only LiveContainer is a no-jailbreak path, and you'd use it <em>instead of</em> the JB, never by turning RootHide off.</p>
+    </div>
+    <div class="qa">
+      <p class="q">Will installing these make Cash App see the jailbreak?</p>
+      <span class="verdict v-crit">Not the real risk</span>
+      <p>RootHide hides the JB at the process level (randomized jbroot, no bind-mounts). A scoped tweak doesn't undo that. The real ceiling isn't file-based JB detection — it's <b>App Attest</b>, which is confirmed linked into Cash App and can't be spoofed from userland.</p>
+    </div>
+  </div>
+
+  <h2><span class="num">01</span>At a glance</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Tool</th><th>What it changes</th><th>Cost</th><th>Needs JB?</th><th>Runs w/ Cash in RootHide</th><th>Rotates unique IDs?</th><th>Coherence</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="name">WeaponX</td>
+          <td>IDFV, IDFA, UDID, serial, model, MAC, storage, boot-time, derived UUIDs</td>
+          <td><span class="tag t-good">Free · GPL-3</span></td>
+          <td>Yes</td>
+          <td><span class="tag t-good">Yes</span></td>
+          <td><span class="tag t-good">Yes — broad</span></td>
+          <td><span class="tag t-crit">None</span></td>
+        </tr>
+        <tr>
+          <td class="name">MGSpoof</td>
+          <td>MobileGestalt keys only (UDID, serial, ProductType…)</td>
+          <td><span class="tag t-good">Free · MIT</span></td>
+          <td>Yes</td>
+          <td><span class="tag t-good">Yes</span></td>
+          <td><span class="tag t-warn">Partial — MG layer</span></td>
+          <td><span class="tag t-crit">None</span></td>
+        </tr>
+        <tr>
+          <td class="name">MGKeys</td>
+          <td>Nothing — it's a key-name map (dev resource)</td>
+          <td><span class="tag t-good">Free · MIT</span></td>
+          <td>N/A</td>
+          <td><span class="tag t-neutral">N/A</span></td>
+          <td><span class="tag t-neutral">N/A</span></td>
+          <td><span class="tag t-neutral">—</span></td>
+        </tr>
+        <tr>
+          <td class="name">LiveContainer</td>
+          <td>Per-container IDFV + keychain group + data isolation</td>
+          <td><span class="tag t-good">Free · AGPL-3</span></td>
+          <td><span class="tag t-good">No</span></td>
+          <td><span class="tag t-warn">Different model</span></td>
+          <td><span class="tag t-warn">IDFV only</span></td>
+          <td><span class="tag t-crit">None</span></td>
+        </tr>
+        <tr>
+          <td class="name">A-Bypass</td>
+          <td>Nothing spoofed — hides the jailbreak from detection</td>
+          <td><span class="tag t-good">Free</span></td>
+          <td>Yes</td>
+          <td><span class="tag t-good">Yes</span></td>
+          <td><span class="tag t-neutral">No (not its job)</span></td>
+          <td><span class="tag t-neutral">—</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note"><b>Read the "Rotates unique IDs?" column first.</b> Model/OS spoofing is cosmetic — swapping an iPhone 8 for an iPhone 7 does nothing if the IDFV and keychain UUID stay constant, because the fingerprinter links you on those. Coherence "None" means the tool will happily produce an impossible device (spoofed model, real board-id), which reads as <em>more</em> suspicious, not less. That gap is exactly what Specter-iOS is for.</p>
+
+  <h2><span class="num">02</span>Where Crane and RootHide fit</h2>
+  <p class="lede" style="font-size:16px">These two do real work — but neither touches the device-hardware identity layer. That's the whole reason a Specter-iOS has a job.</p>
+  <div class="answers" style="margin-top:22px">
+    <div class="qa">
+      <p class="q">RootHide — the foundation</p>
+      <p><b>Hides the jailbreak</b> (randomized jbroot, process-level patches, no bind-mounts) so Cash App doesn't bail on JB detection, and provides the rootless base that ElleKit + Choicy + Crane all run on. It does <em>not</em> change any device identifier — it makes the JB invisible, nothing more.</p>
+    </div>
+    <div class="qa">
+      <p class="q">Crane — data &amp; account isolation</p>
+      <p>With your toggles on, each container gets its own <b>data</b> (logins, cookies, settings), <b>notification token</b>, and — via <em>Separate System Accounts</em> — its own <b>Apple ID association</b> at the account-API layer. <em>Prevent Sandbox Lookups</em> stops the app discovering its real path. All high-level app hooks; none reach hardware.</p>
+    </div>
+  </div>
+  <p class="note"><b>One gap in your current Crane setup:</b> the screenshots don't show <em>Separate Keychains</em> enabled. If it's off, the keychain is <b>shared across containers</b> — and the keychain is exactly where a fingerprint SDK persists its device UUID to survive reinstalls. Turn it on, or that anchor links every container.</p>
+
+  <h2><span class="num">03</span>What's actually unique per container — measured on your SE2</h2>
+  <p class="lede" style="font-size:16px">Read live from Cash App in the <code>tester-se2</code> container (frida, 2026-08-03). This is the ground truth for "what does Crane make unique."</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Signal</th><th>Value seen (tester-se2)</th><th>Per container?</th><th>Who controls it</th></tr></thead>
+      <tbody>
+        <tr><td class="name">data container / HOME</td><td>…/F62274A6-4D21-…</td><td><span class="tag t-good">Unique</span></td><td>Crane (data isolation)</td></tr>
+        <tr><td class="name">logins / cookies / APNs</td><td>(per-container)</td><td><span class="tag t-good">Unique</span></td><td>Crane + notification toggle</td></tr>
+        <tr><td class="name">Apple ID (account API)</td><td>redirected</td><td><span class="tag t-good">Unique*</span></td><td>Crane — Separate System Accounts</td></tr>
+        <tr><td class="name">keychain UUID anchor</td><td>—</td><td><span class="tag t-warn">Unique if Separate Keychains on</span></td><td>Crane — Separate Keychains</td></tr>
+        <tr><td class="name">identifierForVendor</td><td>7D388688-8F26-4A54-…</td><td><span class="tag t-good">Unique (Crane spoofs per container)</span></td><td>Crane (UIDevice level); Specter covers lower path</td></tr>
+        <tr><td class="name">iCloud ubiquityIdentityToken</td><td>0xbd0548d2aa84ffa1…</td><td><span class="tag t-crit">Shared — no tool touches it</span></td><td>neither — needs distinct iCloud sign-in</td></tr>
+        <tr><td class="name">device name</td><td>iPhoneSE2</td><td><span class="tag t-crit">Shared</span></td><td><b>nobody yet → Specter</b></td></tr>
+        <tr><td class="name">hw.machine / hw.model</td><td>iPhone12,8 / D79AP</td><td><span class="tag t-crit">Shared (hardware)</span></td><td><b>nobody yet → Specter</b></td></tr>
+        <tr><td class="name">hw.memsize</td><td>3103604736</td><td><span class="tag t-crit">Shared (hardware)</span></td><td><b>nobody yet → Specter</b></td></tr>
+        <tr><td class="name">kern.boottime</td><td>1785083121.926027</td><td><span class="tag t-crit">Shared (same boot)</span></td><td><b>nobody yet → Specter</b></td></tr>
+        <tr><td class="name">MG UniqueDeviceID / Serial</td><td>None — access denied</td><td><span class="tag t-neutral">Not readable by Cash</span></td><td>iOS sandbox (good — no leak)</td></tr>
+        <tr><td class="name">App Attest / DeviceCheck</td><td>linked in Cash</td><td><span class="tag t-crit">Shared (per device)</span></td><td>Secure Enclave — unspoofable</td></tr>
+        <tr><td class="name">network egress IP</td><td>—</td><td><span class="tag t-crit">Shared</span></td><td>needs per-app proxy (Potatso)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note"><b>The takeaway (updated from the primary-source deep-dive).</b> Crane + RootHide give a clean <em>software</em> identity per container — data, accounts, hidden JB, <b>and IDFV</b> (Crane spoofs identifierForVendor per container; that was confirmed from Crane's own source, correcting an earlier guess). But <b>device name, hardware (model/board/RAM/GPU), boot time, and the iCloud <code>ubiquityIdentityToken</code></b> still read identical in every container. To a fingerprinter, ten Crane containers are ten logins on <em>one device</em>. Closing that — coherently — is Specter-iOS. The <span style="color:var(--crit)">iCloud token</span> is the one nothing on-device can rotate: it needs a distinct iCloud sign-in per identity. See <code>docs/ios/DEEP-DIVE-FINDINGS.md</code>.</p>
+
+  <h2><span class="num">04</span>The tools in detail</h2>
+
+  <div class="card">
+    <div class="card-head"><h3>WeaponX / ProjectX</h3><span class="lic">waruhachi/ProjectX · GPL-3 · free</span></div>
+    <p class="role">The closest thing that already exists to Specter-iOS — ~80% of the hook set, written.</p>
+    <dl class="kv">
+      <dt>Spoofs</dt><dd>IDFA, IDFV, UDID, serial, IMEI/MEID, model (<code>uname</code>/<code>sysctl</code>/<code>MGCopyAnswer</code>/IORegistry), MAC, storage, battery, boot-time, device name, iOS version, plus derived UUIDs (boot, dyld-cache, keychain, app-install). Also location spoofing and per-domain blocking.</dd>
+      <dt>How</dt><dd>ElleKit tweak, scoped per-app through its own <code>IdentifierManager</code>; per-profile plists under the jbroot.</dd>
+      <dt>Watch out</dt><dd>Unaudited — test credentials committed in the README, hardcoded serials for Filza/AdManager, single developer. No cross-signal coherence enforcement.</dd>
+    </dl>
+    <p class="verline"><b>Verdict:</b> the best <em>reference</em> and the fastest way to watch real spoofing work. Try it on a tester container to see the effect — but don't trust it for a coherent identity, and never point an un-audited spoof at a real account.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>MGSpoof</h3><span class="lic">Tonyk7/MGSpoof · MIT · free</span></div>
+    <p class="role">The MobileGestalt piece, done cleanly and MIT-licensed.</p>
+    <dl class="kv">
+      <dt>Spoofs</dt><dd>MobileGestalt keys per-app: <code>UniqueDeviceID</code>, <code>SerialNumber</code>, <code>ProductType</code>, and friends.</dd>
+      <dt>How</dt><dd>Hooks the symbol-less <code>MGCopyAnswer_internal</code> (the exported symbol SIGILLs if hooked directly) — the reference implementation of a tricky-to-rediscover technique.</dd>
+      <dt>Gap</dt><dd>Only the MobileGestalt layer. Leaves <code>sysctl</code> (hw.machine, hw.memsize) and IORegistry reading the real device — which our Cash App trace shows are read directly.</dd>
+    </dl>
+    <p class="verline"><b>Verdict:</b> a component, not a solution. Borrow the code (MIT); it's one of several read paths Specter-iOS must cover, not all of them.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>MGKeys</h3><span class="lic">PoomSmart/MGKeys · MIT · free</span></div>
+    <p class="role">Not a tweak — a lookup table you can't spoof without.</p>
+    <dl class="kv">
+      <dt>Provides</dt><dd>The map from MobileGestalt's obfuscated key hashes to their real names (e.g. the hash for <code>UniqueDeviceID</code>), current to iOS 26.5.</dd>
+      <dt>Why it matters</dt><dd>Apps often ask MobileGestalt by the obfuscated hash. Without this map a spoofer can't tell which key is being requested, and silently misses it.</dd>
+    </dl>
+    <p class="verline"><b>Verdict:</b> nothing to install or try — we consume it as data inside Specter-iOS.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>LiveContainer</h3><span class="lic">LiveContainer/LiveContainer · AGPL-3 · free</span></div>
+    <p class="role">The no-jailbreak option — and the reason it doesn't solve this.</p>
+    <dl class="kv">
+      <dt>Does</dt><dd>Runs sideloaded apps inside itself with isolated data containers, a per-container random IDFV, and separate keychain access groups.</dd>
+      <dt>Doesn't</dt><dd>Spoof model, UDID, serial, <code>sysctl</code>, or MobileGestalt — the device underneath is unchanged. It's Crane-without-a-jailbreak, not a device spoofer.</dd>
+      <dt>Cash App reality</dt><dd>App Store fintech apps frequently break inside it (JIT/entitlement limits), and the abnormal container/sandbox is itself detectable. There's no JB to hide because there's no JB — but that's not the same as looking like a clean device.</dd>
+    </dl>
+    <p class="verline"><b>Verdict:</b> useful only if you specifically want no-jailbreak containers. For Cash App identity work it changes too little and risks too much.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>A-Bypass / Shadow</h3><span class="lic">ABypassTeam · jjolano/shadow · free</span></div>
+    <p class="role">Jailbreak-hiding, included because it's what your RootHide fear is really about.</p>
+    <dl class="kv">
+      <dt>Does</dt><dd>Intercepts file-existence / URL-scheme / dyld-image jailbreak checks so an app can't spot the JB artifacts.</dd>
+      <dt>Relevance</dt><dd>RootHide already does this at a deeper level (randomized jbroot, process-based patches). These are a belt-and-suspenders layer for a specific app that still sniffs something out.</dd>
+      <dt>Ceiling</dt><dd>None of them touch <b>App Attest / DeviceCheck</b> — hardware-backed, Apple-server-validated. That's the real wall, and it's confirmed linked into Cash App.</dd>
+    </dl>
+    <p class="verline"><b>Verdict:</b> a supplement to RootHide's hiding, not a spoofer. If Cash ever flags the JB specifically, add it; it won't help with attestation.</p>
+  </div>
+
+  <h2><span class="num">05</span>What this means for the plan</h2>
+  <p class="lede" style="font-size:16px">None of these is a drop-in answer, and the measured table sets the priority — it's not "spoof the model":</p>
+  <ol class="prio">
+    <li><b>Rotate the stable unique IDs</b> — IDFV, and the keychain-persisted UUID that survives reinstall. This is what links accounts. WeaponX shows the hooks; do it with coherence.</li>
+    <li><b>Handle the iCloud / Apple-ID linker</b> — <code>ubiquityIdentityToken</code> + CloudKit user-record are stable per Apple ID and untouched by every tool above. Now hooked in the tracer.</li>
+    <li><b>Wipe keychain persistence on rotation</b> — otherwise the old identity re-seeds itself on next launch.</li>
+    <li><b>Keep the device coherent</b> — model↔board↔SoC↔RAM↔GPU↔OS must agree, so a rotated ID isn't sitting on an impossible device. The one thing no tool here does.</li>
+    <li><b>Accept the App Attest ceiling</b> — measure whether Cash App actually enforces it before assuming many-identities-per-phone is viable.</li>
+  </ol>
+
+  <p class="foot">docs/ios/alternatives-report.html · companion to IOS-PORT-FEASIBILITY.md &amp; CASHAPP-READ-TRACE.md</p>
+</main>
+</body>
+</html>

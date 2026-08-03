@@ -1,0 +1,609 @@
+{
+  "bundle": "com.squareup.cash",
+  "device": "SE2 iPhone12,8 iOS16.3.1",
+  "seconds": 40,
+  "total_events": 28,
+  "distinct": [
+    {
+      "kind": "sysctl",
+      "key": "mib[1.14.1.13841]",
+      "value": "(buf)",
+      "count": 3,
+      "modules": [
+        "0x474253011230400c",
+        "0xc30fd811230400c",
+        "0xe74a06011230400c",
+        "Cash",
+        "CoreFoundation",
+        "dyld",
+        "libdispatch.dylib",
+        "libobjc.A.dylib",
+        "libsystem_trace.dylib"
+      ]
+    },
+    {
+      "kind": "MGCopyAnswer",
+      "key": "DeviceClassNumber",
+      "value": "1",
+      "count": 2,
+      "modules": [
+        "0x3a0e8302a000400c",
+        "0xf96a6302a000400c",
+        "CoreFoundation",
+        "UIKitCore",
+        "libdispatch.dylib"
+      ]
+    },
+    {
+      "kind": "MGGetBoolAnswer",
+      "key": "InternalBuild",
+      "value": "null",
+      "count": 2,
+      "modules": [
+        "0x5c1b98011235400c",
+        "0x8010cf011235400c",
+        "AGXMetalA13",
+        "Foundation",
+        "dyld",
+        "libdispatch.dylib",
+        "libobjc.A.dylib"
+      ]
+    },
+    {
+      "kind": "MGGetBoolAnswer",
+      "key": "2OK50OGmkXM1ospsh766WQ",
+      "value": "null",
+      "count": 2,
+      "modules": [
+        "0x946c0f811235400c",
+        "0xb6512811235400c",
+        "BackBoardServices",
+        "Foundation",
+        "UIKitCore",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib"
+      ]
+    },
+    {
+      "kind": "IORegistry",
+      "key": "nil",
+      "value": "AGXMetalA13",
+      "count": 1,
+      "modules": [
+        "0x6c3fc701123a400c",
+        "Foundation",
+        "ThreeDS_SDK",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib"
+      ]
+    },
+    {
+      "kind": "IORegistry",
+      "key": "MetalPluginName",
+      "value": "AGXMetalA13",
+      "count": 1,
+      "modules": [
+        "0x6c3fc701123a400c",
+        "Foundation",
+        "ThreeDS_SDK",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib"
+      ]
+    },
+    {
+      "kind": "IORegistry",
+      "key": "nil",
+      "value": "AGXA13Device",
+      "count": 1,
+      "modules": [
+        "0x6c3fc701123a400c",
+        "Foundation",
+        "ThreeDS_SDK",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib"
+      ]
+    },
+    {
+      "kind": "IORegistry",
+      "key": "MetalPluginClassName",
+      "value": "AGXA13Device",
+      "count": 1,
+      "modules": [
+        "0x6c3fc701123a400c",
+        "Foundation",
+        "ThreeDS_SDK",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib"
+      ]
+    },
+    {
+      "kind": "IORegistry",
+      "key": "nil",
+      "value": "{length = 20, bytes = 0xc459fdb0eef455588dbc6f587c20a5372792bbf8}",
+      "count": 1,
+      "modules": [
+        "0x332a0801123a400c",
+        "libMobileGestalt.dylib",
+        "libdispatch.dylib"
+      ]
+    },
+    {
+      "kind": "IORegistry",
+      "key": "product-id",
+      "value": "{length = 20, bytes = 0xc459fdb0eef455588dbc6f587c20a5372792bbf8}",
+      "count": 1,
+      "modules": [
+        "0x332a0801123a400c",
+        "libMobileGestalt.dylib",
+        "libdispatch.dylib"
+      ]
+    },
+    {
+      "kind": "MGCopyAnswer",
+      "key": "ProductType",
+      "value": "iPhone12,8",
+      "count": 1,
+      "modules": [
+        "0x546a4f82a000400c",
+        "UIKitCore",
+        "libdispatch.dylib"
+      ]
+    },
+    {
+      "kind": "MGCopyAnswer",
+      "key": "ReleaseType",
+      "value": "null",
+      "count": 1,
+      "modules": [
+        "0xcf38fb02a000400c",
+        "BaseBoard",
+        "UIKitCore",
+        "libdispatch.dylib"
+      ]
+    },
+    {
+      "kind": "MGGetBoolAnswer",
+      "key": "eQd5mlz0BN0amTp/2ccMoA",
+      "value": "null",
+      "count": 1,
+      "modules": [
+        "0x48126b011235400c",
+        "UIKitCore",
+        "libdispatch.dylib"
+      ]
+    },
+    {
+      "kind": "attestation-class-present",
+      "key": "DCDevice",
+      "value": "YES",
+      "count": 1,
+      "modules": []
+    },
+    {
+      "kind": "attestation-class-present",
+      "key": "DCAppAttestService",
+      "value": "YES",
+      "count": 1,
+      "modules": []
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "kern.secure_kernel",
+      "value": "1",
+      "count": 1,
+      "modules": [
+        "0xd93a7081122e400c",
+        "CoreFoundation",
+        "libsystem_c.dylib"
+      ]
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.machine",
+      "value": "iPhone12,8",
+      "count": 1,
+      "modules": [
+        "0xa662da01122e400c",
+        "CoreFoundation",
+        "libdispatch.dylib"
+      ]
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.memsize",
+      "value": "3103604736",
+      "count": 1,
+      "modules": [
+        "0x397d4581122e400c",
+        "AGXMetalA13",
+        "Foundation",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib"
+      ]
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.activecpu",
+      "value": "6",
+      "count": 1,
+      "modules": [
+        "0xf5408901122e400c",
+        "CoreData",
+        "libobjc.A.dylib"
+      ]
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.ncpu",
+      "value": "6",
+      "count": 1,
+      "modules": [
+        "0xee19cb81122e400c",
+        "Cash",
+        "dyld"
+      ]
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.optional.arm.FEAT_SHA512",
+      "value": "1",
+      "count": 1,
+      "modules": [
+        "0xc4b2d81122e400c",
+        "dyld"
+      ]
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "kern.osproductversion",
+      "value": "16.3.1",
+      "count": 1,
+      "modules": [
+        "0x205b0c01122e400c",
+        "libswiftCore.dylib",
+        "libsystem_platform.dylib",
+        "libxpc.dylib"
+      ]
+    }
+  ],
+  "raw": [
+    {
+      "kind": "attestation-class-present",
+      "key": "DCDevice",
+      "value": "YES",
+      "t": 1785752629909
+    },
+    {
+      "kind": "attestation-class-present",
+      "key": "DCAppAttestService",
+      "value": "YES",
+      "t": 1785752629914
+    },
+    {
+      "kind": "tracer-ready",
+      "key": "hooks",
+      "value": "installed",
+      "t": 1785752629914
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "kern.secure_kernel",
+      "value": "1",
+      "n": 1,
+      "modules": [
+        "0xd93a7081122e400c",
+        "CoreFoundation",
+        "libsystem_c.dylib"
+      ],
+      "t": 1785752629970
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.machine",
+      "value": "iPhone12,8",
+      "n": 1,
+      "modules": [
+        "0xa662da01122e400c",
+        "CoreFoundation",
+        "libdispatch.dylib"
+      ],
+      "t": 1785752629972
+    },
+    {
+      "kind": "sysctl",
+      "key": "mib[1.14.1.13841]",
+      "value": "(buf)",
+      "n": 1,
+      "modules": [
+        "0x474253011230400c",
+        "libdispatch.dylib",
+        "libsystem_trace.dylib",
+        "CoreFoundation"
+      ],
+      "t": 1785752629975
+    },
+    {
+      "kind": "IORegistry",
+      "key": "nil",
+      "value": "AGXMetalA13",
+      "n": 1,
+      "modules": [
+        "0x6c3fc701123a400c",
+        "Foundation",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib",
+        "ThreeDS_SDK"
+      ],
+      "t": 1785752629991
+    },
+    {
+      "kind": "IORegistry",
+      "key": "MetalPluginName",
+      "value": "AGXMetalA13",
+      "n": 1,
+      "modules": [
+        "0x6c3fc701123a400c",
+        "Foundation",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib",
+        "ThreeDS_SDK"
+      ],
+      "t": 1785752629992
+    },
+    {
+      "kind": "IORegistry",
+      "key": "nil",
+      "value": "AGXA13Device",
+      "n": 1,
+      "modules": [
+        "0x6c3fc701123a400c",
+        "Foundation",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib",
+        "ThreeDS_SDK"
+      ],
+      "t": 1785752629994
+    },
+    {
+      "kind": "IORegistry",
+      "key": "MetalPluginClassName",
+      "value": "AGXA13Device",
+      "n": 1,
+      "modules": [
+        "0x6c3fc701123a400c",
+        "Foundation",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib",
+        "ThreeDS_SDK"
+      ],
+      "t": 1785752629996
+    },
+    {
+      "kind": "MGGetBoolAnswer",
+      "key": "InternalBuild",
+      "value": "null",
+      "n": 1,
+      "modules": [
+        "0x8010cf011235400c",
+        "dyld",
+        "libobjc.A.dylib",
+        "AGXMetalA13"
+      ],
+      "t": 1785752630003
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.memsize",
+      "value": "3103604736",
+      "n": 1,
+      "modules": [
+        "0x397d4581122e400c",
+        "AGXMetalA13",
+        "Foundation",
+        "libdispatch.dylib",
+        "libsystem_pthread.dylib"
+      ],
+      "t": 1785752630006
+    },
+    {
+      "kind": "MGGetBoolAnswer",
+      "key": "InternalBuild",
+      "value": "null",
+      "n": 2,
+      "modules": [
+        "0x5c1b98011235400c",
+        "libobjc.A.dylib",
+        "AGXMetalA13",
+        "Foundation",
+        "libdispatch.dylib"
+      ],
+      "t": 1785752630010
+    },
+    {
+      "kind": "sysctl",
+      "key": "mib[1.14.1.13841]",
+      "value": "(buf)",
+      "n": 2,
+      "modules": [
+        "0xe74a06011230400c",
+        "Cash",
+        "libobjc.A.dylib",
+        "dyld"
+      ],
+      "t": 1785752630020
+    },
+    {
+      "kind": "sysctl",
+      "key": "mib[1.14.1.13841]",
+      "value": "(buf)",
+      "n": 3,
+      "modules": [
+        "0xc30fd811230400c",
+        "Cash",
+        "libobjc.A.dylib",
+        "dyld"
+      ],
+      "t": 1785752630024
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.activecpu",
+      "value": "6",
+      "n": 1,
+      "modules": [
+        "0xf5408901122e400c",
+        "CoreData",
+        "libobjc.A.dylib"
+      ],
+      "t": 1785752630027
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.ncpu",
+      "value": "6",
+      "n": 1,
+      "modules": [
+        "0xee19cb81122e400c",
+        "Cash",
+        "dyld"
+      ],
+      "t": 1785752630033
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "hw.optional.arm.FEAT_SHA512",
+      "value": "1",
+      "n": 1,
+      "modules": [
+        "0xc4b2d81122e400c",
+        "dyld"
+      ],
+      "t": 1785752630040
+    },
+    {
+      "kind": "IORegistry",
+      "key": "nil",
+      "value": "{length = 20, bytes = 0xc459fdb0eef455588dbc6f587c20a5372792bbf8}",
+      "n": 1,
+      "modules": [
+        "0x332a0801123a400c",
+        "libMobileGestalt.dylib",
+        "libdispatch.dylib"
+      ],
+      "t": 1785752630053
+    },
+    {
+      "kind": "IORegistry",
+      "key": "product-id",
+      "value": "{length = 20, bytes = 0xc459fdb0eef455588dbc6f587c20a5372792bbf8}",
+      "n": 1,
+      "modules": [
+        "0x332a0801123a400c",
+        "libMobileGestalt.dylib",
+        "libdispatch.dylib"
+      ],
+      "t": 1785752630055
+    },
+    {
+      "kind": "MGGetBoolAnswer",
+      "key": "2OK50OGmkXM1ospsh766WQ",
+      "value": "null",
+      "n": 1,
+      "modules": [
+        "0xb6512811235400c",
+        "libdispatch.dylib",
+        "UIKitCore",
+        "Foundation",
+        "libsystem_pthread.dylib"
+      ],
+      "t": 1785752630058
+    },
+    {
+      "kind": "MGGetBoolAnswer",
+      "key": "2OK50OGmkXM1ospsh766WQ",
+      "value": "null",
+      "n": 2,
+      "modules": [
+        "0x946c0f811235400c",
+        "libdispatch.dylib",
+        "BackBoardServices",
+        "UIKitCore"
+      ],
+      "t": 1785752630060
+    },
+    {
+      "kind": "MGCopyAnswer",
+      "key": "DeviceClassNumber",
+      "value": "1",
+      "n": 1,
+      "modules": [
+        "0x3a0e8302a000400c",
+        "UIKitCore",
+        "CoreFoundation"
+      ],
+      "t": 1785752630062
+    },
+    {
+      "kind": "MGCopyAnswer",
+      "key": "DeviceClassNumber",
+      "value": "1",
+      "n": 2,
+      "modules": [
+        "0xf96a6302a000400c",
+        "libdispatch.dylib",
+        "UIKitCore"
+      ],
+      "t": 1785752630066
+    },
+    {
+      "kind": "MGCopyAnswer",
+      "key": "ProductType",
+      "value": "iPhone12,8",
+      "n": 1,
+      "modules": [
+        "0x546a4f82a000400c",
+        "libdispatch.dylib",
+        "UIKitCore"
+      ],
+      "t": 1785752630068
+    },
+    {
+      "kind": "MGCopyAnswer",
+      "key": "ReleaseType",
+      "value": "null",
+      "n": 1,
+      "modules": [
+        "0xcf38fb02a000400c",
+        "libdispatch.dylib",
+        "BaseBoard",
+        "UIKitCore"
+      ],
+      "t": 1785752630071
+    },
+    {
+      "kind": "MGGetBoolAnswer",
+      "key": "eQd5mlz0BN0amTp/2ccMoA",
+      "value": "null",
+      "n": 1,
+      "modules": [
+        "0x48126b011235400c",
+        "libdispatch.dylib",
+        "UIKitCore"
+      ],
+      "t": 1785752630073
+    },
+    {
+      "kind": "sysctlbyname",
+      "key": "kern.osproductversion",
+      "value": "16.3.1",
+      "n": 1,
+      "modules": [
+        "0x205b0c01122e400c",
+        "libsystem_platform.dylib",
+        "libxpc.dylib",
+        "libswiftCore.dylib"
+      ],
+      "t": 1785752630083
+    }
+  ]
+}

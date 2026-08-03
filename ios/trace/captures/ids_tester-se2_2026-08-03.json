@@ -1,0 +1,89 @@
+{
+  "label": "tester-se2",
+  "ids": [
+    {
+      "k": "HOME",
+      "v": "/private/var/mobile/Containers/Data/Application/F62274A6-4D21-4230-BD17-0201486F0BD8"
+    },
+    {
+      "k": "CFFIXED_USER_HOME",
+      "v": "/private/var/mobile/Containers/Data/Application/F62274A6-4D21-4230-BD17-0201486F0BD8"
+    },
+    {
+      "k": "identifierForVendor",
+      "v": "7D388688-8F26-4A54-921E-D6137B2A40F4"
+    },
+    {
+      "k": "advertisingIdentifier",
+      "v": "00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "k": "UIDevice.name",
+      "v": "iPhoneSE2"
+    },
+    {
+      "k": "UIDevice.model",
+      "v": "iPhone"
+    },
+    {
+      "k": "UIDevice.systemVersion",
+      "v": "16.3.1"
+    },
+    {
+      "k": "MG.UniqueDeviceID",
+      "v": null
+    },
+    {
+      "k": "MG.SerialNumber",
+      "v": null
+    },
+    {
+      "k": "MG.MLBSerialNumber",
+      "v": null
+    },
+    {
+      "k": "MG.ProductType",
+      "v": "iPhone12,8"
+    },
+    {
+      "k": "MG.HWModelStr",
+      "v": "D79AP"
+    },
+    {
+      "k": "MG.RegionInfo",
+      "v": "LL/A"
+    },
+    {
+      "k": "MG.DeviceColor",
+      "v": "1"
+    },
+    {
+      "k": "sysctl.hw.machine",
+      "v": "iPhone12,8"
+    },
+    {
+      "k": "sysctl.hw.model",
+      "v": "D79AP"
+    },
+    {
+      "k": "sysctl.hw.memsize",
+      "v": "3103604736"
+    },
+    {
+      "k": "sysctl.kern.osversion",
+      "v": "20D67"
+    },
+    {
+      "k": "kern.boottime",
+      "v": "1785083121.926027"
+    },
+    {
+      "k": "iCloud.ubiquityIdentityToken",
+      "v": "{length = 20, bytes = 0xbd0548d2aa84ffa113ec129d6e1944df4af0f003}"
+    },
+    {
+      "k": "__done__",
+      "v": "1"
+    }
+  ]
+}
