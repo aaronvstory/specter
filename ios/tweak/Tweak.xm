@@ -7,12 +7,13 @@
 // Scope: injected only into the bundles listed in SpecterTweak.plist (Choicy/Substrate Filter). A
 // %ctor bundle-guard + a per-bundle profile file is the second gate — no profile => the tweak is inert.
 //
-// Coverage (v0.1): the reliably-portable read paths, each implemented fully —
-//   - ObjC:  -[UIDevice identifierForVendor] / name / systemVersion
-//   - C:     sysctlbyname, sysctl(MIB), uname
-//   - MG:    MGCopyAnswer_internal (the SIGILL-safe internal-worker hook)
-// TODO (v0.2, marked, not stubbed-silently): IORegistry (IOPlatformSerialNumber/UUID/MAC),
-//   GSSystemGetSerialNo, statfs storage tiers, boot-time cache, IDFA. See docs/ios/DEEP-DIVE-FINDINGS.md.
+// Coverage: every read path a sandboxed app can actually observe (verified on-device) —
+//   - ObjC:  -[UIDevice identifierForVendor] / name / systemVersion ; NSProcessInfo.systemUptime
+//   - C:     sysctlbyname + sysctl(MIB): hw.machine/model/memsize/ncpu, kern.osversion, kern.boottime
+//   - uname: utsname.machine
+//   - MG:    MGCopyAnswer_internal (SIGILL-safe internal-worker hook), keys matched by plaintext AND hash
+// TODO (low value; see docs/ios/NEXT.md): statfs storage tiers, IDFA (opt-in). SKIPPED as sandbox-moot:
+//   IOKit IOPlatformSerialNumber/UUID, MG UDID/SerialNumber, GSSystemGetSerialNo (entitlement-denied).
 //
 // Design discipline (from the Android build): NEVER silently no-op. If a hook can't install
 // (e.g. the MGCopyAnswer prologue doesn't match on this iOS build), log loudly so a leak self-reports
@@ -39,6 +40,10 @@ static NSDictionary *gProfile = nil;
 static NSString *P(NSString *key) {           // profile string accessor
     id v = gProfile[key];
     return [v isKindOfClass:[NSString class]] ? v : nil;
+}
+static NSNumber *N(NSString *key) {            // profile number accessor — guards a malformed plist
+    id v = gProfile[key];                       // (a wrong-typed value would crash a numeric accessor)
+    return [v isKindOfClass:[NSNumber class]] ? v : nil;
 }
 
 static void SpecterLog(NSString *fmt, ...) {
@@ -69,7 +74,7 @@ static void SpecterLog(NSString *fmt, ...) {
 %hook NSProcessInfo
 - (NSTimeInterval)systemUptime {
     NSTimeInterval up = %orig;
-    NSNumber *off = gProfile ? gProfile[@"BootOffsetSec"] : nil;
+    NSNumber *off = gProfile ? N(@"BootOffsetSec") : nil;
     if (off) up += off.doubleValue;
     return up;
 }
@@ -95,10 +100,10 @@ static int writeStrCap(void *oldp, size_t *oldlenp, size_t cap, const char *s) {
         if (!strcmp(name, "hw.machine")) { NSString *m = P(@"HWMachine"); if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
         if (!strcmp(name, "hw.model"))   { NSString *m = P(@"HWModel");   if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
         if (!strcmp(name, "kern.osversion")) { NSString *m = P(@"OSBuild"); if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
-        if (!strcmp(name, "hw.memsize")) { NSNumber *n = gProfile[@"MemSize"]; if (n) { uint64_t v = n.unsignedLongLongValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
+        if (!strcmp(name, "hw.memsize")) { NSNumber *n = N(@"MemSize"); if (n) { uint64_t v = n.unsignedLongLongValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
         if (!strcmp(name, "hw.ncpu") || !strcmp(name, "hw.activecpu") ||
             !strcmp(name, "hw.physicalcpu") || !strcmp(name, "hw.logicalcpu")) {
-            NSNumber *n = gProfile[@"NCPU"]; if (n) { int32_t v = (int32_t)n.intValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); }
+            NSNumber *n = N(@"NCPU"); if (n) { int32_t v = (int32_t)n.intValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); }
         }
     }
     return %orig;
@@ -111,8 +116,8 @@ static int writeStrCap(void *oldp, size_t *oldlenp, size_t cap, const char *s) {
         if (name[0] == CTL_HW) {
             if (name[1] == HW_MACHINE) { NSString *m = P(@"HWMachine"); if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
             if (name[1] == HW_MODEL)   { NSString *m = P(@"HWModel");   if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
-            if (name[1] == HW_MEMSIZE) { NSNumber *n = gProfile[@"MemSize"]; if (n) { uint64_t v = n.unsignedLongLongValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
-            if (name[1] == HW_NCPU)    { NSNumber *n = gProfile[@"NCPU"]; if (n) { int32_t v = (int32_t)n.intValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
+            if (name[1] == HW_MEMSIZE) { NSNumber *n = N(@"MemSize"); if (n) { uint64_t v = n.unsignedLongLongValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
+            if (name[1] == HW_NCPU)    { NSNumber *n = N(@"NCPU"); if (n) { int32_t v = (int32_t)n.intValue; return writeBytes(oldp, oldlenp, cap, &v, sizeof(v)); } }
         } else if (name[0] == CTL_KERN) {
             if (name[1] == KERN_OSVERSION) { NSString *m = P(@"OSBuild"); if (m) return writeStrCap(oldp, oldlenp, cap, m.UTF8String); }
             if (name[1] == KERN_BOOTTIME) {
@@ -120,7 +125,7 @@ static int writeStrCap(void *oldp, size_t *oldlenp, size_t cap, const char *s) {
                 // systemUptime adds the same offset so (now - boottime) stays consistent. Boot time is
                 // otherwise identical across containers on one device — a strong cross-account linker.
                 int r = %orig;
-                NSNumber *off = gProfile[@"BootOffsetSec"];
+                NSNumber *off = N(@"BootOffsetSec");
                 if (r == 0 && off && oldp && oldlenp && *oldlenp >= sizeof(struct timeval))
                     ((struct timeval *)oldp)->tv_sec -= (long)off.longLongValue;
                 return r;
