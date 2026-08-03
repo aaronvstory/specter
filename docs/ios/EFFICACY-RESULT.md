@@ -33,6 +33,23 @@ and numeric-MIB paths, uname, IDFV, and MobileGestalt. The app launches and runs
 proves injection (ElleKit + Filter + container profile), sandbox-safe profile read from the app's own
 container, and coherent multi-path spoofing.
 
+## Formal, frida-free verdict (the intended instrument)
+
+Beyond the frida read above, the **SpecterProbe app** (no frida) reads all signals itself, writes
+`probe_result.json` to its container, and `ios/verify.py` diffs it against the applied profile:
+
+```
+model (ProductType/hw.machine/uname)     iPhone14,6   3/3  ✅
+board (hw.model/HWModelStr)              D49AP        2/2  ✅
+RAM (hw.memsize)                         3843000000   1/1  ✅
+OS version (UIDevice + MG.ProductVersion) 16.2        2/2  ✅
+OS build   (kern.osversion + MG.BuildVersion) 20C65   2/2  ✅
+IDFV / region / device name                          ✅ ✅ ✅
+ALL SPOOFED ✅
+```
+Evidence: `ios/trace/captures/probe_result_spoofed_se2_2026-08-03.json`. The probe also confirms
+`MG.SerialNumber`/`UniqueDeviceID` come back `null` (sandbox-denied — not leaks to close).
+
 ## MobileGestalt — FIXED (was the crash)
 
 The `MGCopyAnswer_internal` hook first crashed the app on iOS 16.3.1 (20D67). Root cause, found by dumping
