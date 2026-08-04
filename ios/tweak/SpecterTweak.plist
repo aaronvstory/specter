@@ -1,0 +1,10 @@
+{
+  Filter = {
+    /* Which apps the dylib injects into (the Substrate/Choicy scope). SAFE DEFAULT: a benign
+       test app only — NOT a fintech app, and NOT Cash (LSPosed/injection into Cash is itself a
+       tamper signal, per docs/PIXEL-4A-CASHAPP-INTEGRITY.md). Add real targets deliberately.
+       Second gate: even a listed app stays inert unless /var/mobile/Library/Specter/<bundleid>.plist
+       exists — so injection here is harmless without a profile. */
+    Bundles = ( "com.specter.iostest" );
+  };
+}

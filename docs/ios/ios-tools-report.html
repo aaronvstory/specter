@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Specter-iOS — tools, internals & what to try</title>
+<style>
+  :root{
+    --ground:#f5f6f8; --surface:#fff; --surface2:#eef0f4; --ink:#171a21; --muted:#5c6472; --hair:#dfe3ea;
+    --accent:#6a5cf0; --accent-soft:#efedfe;
+    --good:#1f9266; --good-bg:#e7f4ee; --warn:#b9791f; --warn-bg:#f8efdd; --crit:#cf4636; --crit-bg:#fbe8e5;
+    --new:#0f8ea8; --new-bg:#e2f3f7;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#0d0f13;--surface:#151922;--surface2:#1c212c;--ink:#e8eaf0;--muted:#98a1b2;--hair:#28303c;
+    --accent:#9a8dff;--accent-soft:#1e1c33;--good:#4fbf90;--good-bg:#12271f;--warn:#e0a44a;--warn-bg:#2b2213;
+    --crit:#e8695a;--crit-bg:#2c1815;--new:#4fc4dc;--new-bg:#0e2a30;}}
+  :root[data-theme="dark"]{--ground:#0d0f13;--surface:#151922;--surface2:#1c212c;--ink:#e8eaf0;--muted:#98a1b2;--hair:#28303c;--accent:#9a8dff;--accent-soft:#1e1c33;--good:#4fbf90;--good-bg:#12271f;--warn:#e0a44a;--warn-bg:#2b2213;--crit:#e8695a;--crit-bg:#2c1815;--new:#4fc4dc;--new-bg:#0e2a30;}
+  :root[data-theme="light"]{--ground:#f5f6f8;--surface:#fff;--surface2:#eef0f4;--ink:#171a21;--muted:#5c6472;--hair:#dfe3ea;--accent:#6a5cf0;--accent-soft:#efedfe;--good:#1f9266;--good-bg:#e7f4ee;--warn:#b9791f;--warn-bg:#f8efdd;--crit:#cf4636;--crit-bg:#fbe8e5;--new:#0f8ea8;--new-bg:#e2f3f7;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.6;font-size:16px;
+    background-image:radial-gradient(120% 80% at 100% -10%,var(--accent-soft) 0%,transparent 45%);background-repeat:no-repeat}
+  .wrap{max-width:1040px;margin:0 auto;padding:52px 24px 96px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+  h1{font-size:clamp(28px,4.4vw,42px);line-height:1.1;letter-spacing:-.02em;text-wrap:balance;margin:0 0 14px;font-weight:700}
+  h2{font-size:22px;letter-spacing:-.01em;margin:52px 0 8px;font-weight:650}
+  h2 .num{font-family:var(--mono);color:var(--accent);font-size:15px;margin-right:10px;font-weight:500}
+  .lede{font-size:18px;color:var(--muted);max-width:70ch;margin:0}
+  a{color:var(--accent)} code{font-family:var(--mono);font-size:.87em;background:var(--surface2);padding:1px 6px;border-radius:5px}
+  .scroll{overflow-x:auto;border:1px solid var(--hair);border-radius:14px;margin-top:18px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:760px;font-size:13.5px}
+  th,td{text-align:left;padding:12px 15px;border-bottom:1px solid var(--hair);vertical-align:top}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--surface2)}
+  tbody tr:last-child td{border-bottom:0}
+  td.name{font-family:var(--mono);font-weight:600;white-space:nowrap}
+  .tag{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
+  .t-try{background:var(--good-bg);color:var(--good)} .t-skip{background:var(--crit-bg);color:var(--crit)}
+  .t-ref{background:var(--accent-soft);color:var(--accent)} .t-new{background:var(--new-bg);color:var(--new)}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:22px 24px;margin-top:16px}
+  .card h3{font-family:var(--mono);font-size:16px;margin:0 0 8px;font-weight:650}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:720px){.cols{grid-template-columns:1fr}}
+  .note{background:var(--accent-soft);border:1px solid var(--hair);border-left:3px solid var(--accent);border-radius:12px;padding:15px 19px;margin-top:20px;font-size:14.5px}
+  .note.crit{background:var(--crit-bg);border-left-color:var(--crit)} .note.new{background:var(--new-bg);border-left-color:var(--new)}
+  .stack{font-family:var(--mono);font-size:13px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:18px;margin-top:16px;line-height:1.8;overflow-x:auto}
+  .stack b{color:var(--accent)}
+  ol.rank{counter-reset:r;list-style:none;padding:0;margin:14px 0 0}
+  ol.rank li{position:relative;padding:11px 0 11px 44px;border-bottom:1px solid var(--hair);font-size:14.5px}
+  ol.rank li:last-child{border-bottom:0}
+  ol.rank li::before{counter-increment:r;content:counter(r);position:absolute;left:0;top:10px;font-family:var(--mono);font-size:13px;color:var(--accent);border:1px solid var(--accent);border-radius:8px;width:26px;height:26px;display:grid;place-items:center}
+  .foot{margin-top:54px;color:var(--muted);font-size:12px;font-family:var(--mono);text-align:center}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <p class="eyebrow">Specter-iOS · tools, internals & recommendation · 2026-08-04</p>
+  <h1>What actually spoofs a device on iOS — and which of it is worth your time</h1>
+  <p class="lede">Mechanism-level internals of the stack you run (RootHide + Crane + SpecterTweak), a blunt try/skip on the other tweaks, and a discovery pass on everything else out there — graded against one target: an app (Cash) that actively inspects itself and likely uses hardware attestation.</p>
+
+  <div class="note crit"><b>The one thing to internalize.</b> On hardened US fintech (Cash / Venmo / PayPal), there is <b>no reliable software spoof</b> — the community's working method is <b>hardware multiplication</b> (one real, un-jailbroken iPhone per account + an OS-level proxy + its own eSIM), the inverse of Specter-on-Android. Two walls cause this: <b>App Attest / DeviceCheck</b> (a Secure-Enclave key that never leaves the chip, verified server-side — unforgeable in software on any device), and a newer one — hardened apps now use a <b>sandbox-escape 0-day (CVE-2025-31207) to enumerate installed app IDs and spot the jailbreak/TrollStore even when hidden</b> (Verichains-confirmed). So the jailbreak itself is a detection risk. Everything below makes the device <em>coherent to passive fingerprinting</em> and buys good multi-account isolation — it does not beat attestation. <b>Decide empirically whether Cash hard-gates on App Attest before investing build time.</b></div>
+
+  <h2><span class="num">01</span>The stack you run — how the three layers fit</h2>
+  <p class="lede" style="font-size:16px">Bottom to top, and <b>load order is the whole game</b> (Choicy enforces it):</p>
+  <div class="stack">
+<b>RootHide</b>  — injection substrate + JB-hiding. launchdhook stamps DYLD_INSERT_LIBRARIES → systemhook → PatchLoader → TweakLoader
+            load your dylibs into Cash. Randomizes the jbroot path (no fixed /var/jb) so fixed-path JB probes come up clean.
+   │        Per-app "blacklist" = run an app with ZERO injection (selective absence). Userspace-only: does NOT hide kernel state or App Attest.
+   ▼
+<b>Crane</b>     — identity + storage layer (the iOS analogue of Specter's set-the-IDs layer). Picks the active container FIRST,
+   │        rebinds container paths, swizzles identifierForVendor, per-container keychain (kSecAttrAccessGroup) + Apple-ID + push token.
+   ▼        Does NOT touch the ~30 hardware/OS composite signals.
+<b>SpecterTweak</b> — the coherence layer. Hooks what Crane doesn't: sysctl / MobileGestalt / UIDevice / uname / boot-time,
+            keyed to Crane's active container so the composite hash moves WITH the identity instead of pinning to the real SE2/8.
+  </div>
+  <div class="note crit"><b>Hard boundary:</b> Crane and SpecterTweak are <em>both</em> in-process hooks in Cash's address space — Cash can see injection is present. You <b>cannot</b> RootHide-blacklist Cash to hide the JB <em>and</em> still spoof it (blacklist = zero injection = Crane + SpecterTweak don't load either). Spoofing <em>requires</em> injection, so JB-hiding inside Cash must be in-process (Shadow), never selective-absence.</div>
+
+  <h2><span class="num">02</span>How Crane & RootHide actually work</h2>
+  <div class="cols">
+    <div class="card"><h3>Crane (opa334, paid)</h3>
+      <p style="font-size:14px;margin:0"><code>Crane.dylib</code> is globally injected (early, via ChoicyLoader) and self-gates on per-app prefs; in the target it rebinds app/group/plugin container paths to a container subtree and swizzles <code>identifierForVendor</code>. Privileged work (container CRUD, keychain, push) is brokered <b>out-of-process</b> by the <code>cranehelperd</code> root daemon over XPC, reached via <b>libSandy</b> sandbox extensions. <code>CraneSupport.dylib</code> injects <code>apsd</code>+<code>pkd</code> (per-container push/extensions); the SpringBoard picker is out-of-process. A default-container IDFV change is written to the <b>lsd</b> identifiers cache so it persists unloaded. Uses <b>libundirect</b> to hook <code>objc_direct</code> getters. In-process hooks = detectable; daemons = invisible.</p></div>
+    <div class="card"><h3>RootHide Dopamine</h3>
+      <p style="font-size:14px;margin:0">Rootless iOS 15–16.5 JB whose trait is a <b>randomized jbroot path</b> and <b>per-process injection</b> (no fixed <code>/var/jb</code>, no system-wide dyld patch). <code>launchdhook</code> adds <code>DYLD_INSERT_LIBRARIES</code>→a randomized, unsandboxed <code>systemhook.dylib</code>→<code>PatchLoader</code>(dlopens <code>&lt;binary&gt;.roothidepatch</code> at image-load)+<code>TweakLoader</code>. The per-app <b>blacklist</b> runs a chosen app with <b>no injection at all</b> (stored in a plain editable plist, no GUI needed). Explicitly <b>userspace-only</b>: does not hide kernel state (<code>task_for_pid</code>, sandbox escapes observable) or App Attest.</p></div>
+  </div>
+
+  <h2><span class="num">03</span>The other tweaks — try / skip</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Tool</th><th>Verdict</th><th>What it is / how it differs from Specter</th><th>With Cash in RootHide?</th></tr></thead>
+    <tbody>
+      <tr><td class="name">Choicy</td><td><span class="tag t-try">TRY — #1</span></td><td>opa334's per-app injection manager (hooks <code>dlopen</code>). Not a spoofer — it <b>gates which dylibs load per app</b>.</td><td><b>Essential.</b> Deny-mode Cash to allow only Crane + SpecterTweak (+ Shadow); stops SpecterTweak & a WeaponX trial from both hooking <code>MGCopyAnswer</code> → crash, and shrinks Cash's detectable dylib set.</td></tr>
+      <tr><td class="name">MGKeys</td><td><span class="tag t-ref">REFERENCE</span></td><td>PC-side data: the obfuscated↔plaintext MobileGestalt key map. Complements Specter (make its MG set coherent).</td><td>N/A (PC). Use it to confirm SpecterTweak sets a coherent MG group (chip-id/HWModelStr/ProductType/DeviceClass/serial), not just UDID.</td></tr>
+      <tr><td class="name">WeaponX / ProjectX</td><td><span class="tag t-ref">READ ONLY</span></td><td>The open-source WeaponX — the direct iOS analog of Specter (per-app hooks: IDFV/IDFA/model/name/boot-time + IORegistry). <b>Peer, not leapfrog</b> — it lacks the coherence enforcement, which is Specter's edge.</td><td><b>Don't run it alongside SpecterTweak</b> — both hook <code>MGCopyAnswer</code>/IORegistry → last-writer-wins/crash. Read it as the coverage checklist (esp. its IORegistry hooks — see gap below).</td></tr>
+      <tr><td class="name">Shadow</td><td><span class="tag t-try">TRY — optional</span></td><td>Generic JB-detection hider (hooks <code>stat</code>/<code>dyld</code> image list/<code>canOpenURL</code>). Complements, doesn't spoof identity.</td><td>Works in-process (you can't blacklist Cash). Backstop for generic JB checks after RootHide's own hiding. A deep self-inspecting app may still beat it. Use fishhook/ElleKit backend, not Substitute (buggy 16.2+).</td></tr>
+      <tr><td class="name">A-Bypass</td><td><span class="tag t-skip">SKIP</span></td><td>Dead repo, iOS-14-era JB-hider. Superseded by RootHide's built-in hiding + Shadow.</td><td>Adds attack surface, buys nothing on 16.3.1.</td></tr>
+      <tr><td class="name">MGSpoof</td><td><span class="tag t-skip">SKIP</span></td><td>iOS 9–13, rootful, MobileGestalt-only — a strict <b>subset</b> of what SpecterTweak already does.</td><td>Won't cleanly install on rootless RootHide without a rebuild. No reason over your own tweak.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><b>Real gap this surfaced in SpecterTweak:</b> <code>IORegistry</code> (<code>IOPlatformSerialNumber</code>/UUID, MAC) is an <em>independent</em> read path from MobileGestalt. If SpecterTweak doesn't hook it, the <b>real serial leaks straight through</b> the MG spoof — same lesson as Android's "spoof the field AND its <code>ro.*</code> alias." Also: SpecterTweak's model/serial must match Crane's IDFV-era identity, not a third random device. (Note: our on-device probe showed IOKit serial is entitlement-<em>denied</em> to a sandboxed App-Store app, so this matters only for apps/paths that can read it — verify per target.)</div>
+
+  <h2><span class="num">04</span>What else is out there — the discovery pass</h2>
+  <p class="lede" style="font-size:16px">Everything collapses into three known classes — <b>injection</b> (WeaponX/Specter/Titanox), <b>containers</b> (Crane/LiveContainer), <b>real-device</b> (farms/eSIM) — <b>except one genuinely different architecture:</b></p>
+
+  <div class="note new"><b>MobileGestalt on-disk patch family — the standout (Nugget · misaka26 · iEscaper · Picasso).</b> <b>No injection, no jailbreak reliance:</b> it exploits a backup/restore sandbox-escape (SparseRestore/TrollRestore/bookrestore) to rewrite the device's own <code>com.apple.MobileGestalt.plist</code> cache, so <b>every process reads a coherent, changed hardware identity at the OS source</b> — the inverse of per-app injection, and inherently coherent. Crucially for your case: <b>nothing is injected into Cash → nothing in Cash's image list to detect</b>. Limits: it's <b>device-wide</b> (one identity for the whole phone, no per-app rotation), covers <b>MG hardware keys only</b> (not IDFV/IDFA/serial — those live in keychain/IOKit), and the delivery exploit is <b>patched on iOS 26.2+</b> (works on your 16.3.1; family spans iOS 15–26.1). <b>Best use: the device-wide hardware-coherence layer *under* Specter's per-app injection</b> — the closest thing to Specter-Android's BOARD/HARDWARE/composite alignment. Repos: <code>leminlimez/Nugget</code>, <code>GeoSn0w/iEscaper</code> (widest range), <code>straight-tamago/misaka26</code>, <code>Rust505/autoPatcher-mobilegestalt</code> (the raw patch engine).</div>
+
+  <div class="cols">
+    <div class="card"><h3>Titanox <span class="tag t-new">watch</span></h3><p style="font-size:14px;margin:0">No-JB in-app hooking framework (fishhook + MemX) that ships inside a TrollStore/sideloaded app. Same hooking <em>class</em> as Specter, but a <b>non-jailbreak distribution path</b>. Not needed on RootHide now; the future-proofing lever when the JB ceiling drops. <code>Ragekill3377/Titanox</code>, MIT.</p></div>
+    <div class="card"><h3>fingerprintjs-ios + trustdevice-ios <span class="tag t-ref">read first</span></h3><p style="font-size:14px;margin:0">The two leading open-source iOS <b>fingerprinting</b> libraries — i.e. the exact spec of which signals a spoofer must cover and where the coherence traps are (IDFV must survive reinstall, IORegistry must match the claimed model). <b>Highest-leverage zero-cost item</b> — read before writing another hook.</p></div>
+  </div>
+  <div class="note"><b>Dead ends (don't chase):</b> LiveContainer for anti-linking — its container/keychain isolation <b>regressed in 2026</b> (issues #1443/#1154) and all guests share one signing cert (a stable cross-account signal); anti-detect "browsers" (web fingerprints, irrelevant to native attestation); emulator/Simulator (no Secure Enclave → instant attest fail); farmed/replayed attest tokens (dead vs any nonce+timing backend).</div>
+
+  <h2><span class="num">05</span>The ranked shortlist — what to actually do</h2>
+  <ol class="rank">
+    <li><b>Read <code>fingerprintjs-ios</code> + <code>trustdevice-ios</code> source</b> — zero cost, defines the exact signal set + coherence traps. Before any more hooks.</li>
+    <li><b>Read <code>ProjectX</code> (WeaponX) source</b> — the reference iOS Specter; lift its per-app scoping + IORegistry hooks, close SpecterTweak's IORegistry gap. Don't run it alongside.</li>
+    <li><b>Install Choicy</b> (opa334's repo) — Deny-mode Cash to Crane + SpecterTweak (+ Shadow). Enforces load order + one-engine-per-app. Non-negotiable.</li>
+    <li><b>Keep Crane</b> — per-app container + separate keychain is the real multi-account isolation. Do <em>not</em> switch to LiveContainer (isolation broken in 2026).</li>
+    <li><b>Try Nugget / iEscaper on 16.3.1</b> — apply a coherent device-wide MG hardware change as the layer <em>beneath</em> per-app injection. Device-wide MG truth + injection for per-app IDFV/IDFA. The nearest thing to Specter-Android's composite alignment, and it's <em>invisible to Cash's image scan</em>.</li>
+    <li><b>Shadow</b> — optional in-process JB-hider for Cash; backstop only.</li>
+    <li><b>Titanox</b> — later, only if you want a no-JB sideload distribution path.</li>
+  </ol>
+  <div class="note crit"><b>Reality check on the target.</b> If Cash enforces App Attest server-side, none of 1–7 wins — the JB itself is flaggable and the Secure Enclave can't be faked. Items 1–5 make the device coherent to <em>passive</em> fingerprinting and give good multi-account isolation; the only thing that holds against attestation is a real un-modified iPhone per account. <b>The decisive next experiment is empirical:</b> does injecting into Cash (even an inert dylib) change its behavior, and does Cash actually gate on attestation? See <code>docs/ios/DETECTION-EXPERIMENT.md</code>.</div>
+
+  <p class="foot">docs/ios/ios-tools-report.html · sources: 2 primary-source research fan-outs + codex review · companion to DEEP-DIVE-FINDINGS.md · NEXT.md · DETECTION-EXPERIMENT.md</p>
+</main>
+</body>
+</html>

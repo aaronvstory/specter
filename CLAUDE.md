@@ -133,6 +133,44 @@ signals (what FPJS actually saw), which is how the UA-leak root cause was found.
 - Java↔Python **byte-parity** is required: generators must consume the seeded RNG in the IDENTICAL
   order so the same seed yields identical output. Verify by compiling a tiny Java main + comparing.
 
+## iOS port (Specter-iOS) — separate tree under `ios/`, PROVEN working
+An iOS build of the same mechanism (coherent per-device config + on-device verification), kept fully
+separate from Android under `ios/` + `docs/ios/`. Branch `feat/ios-port-research` (PR #45). **PROVEN
+on-device 2026-08-03** (SE2, real iPhone12,8 → spoofed iPhone14,6): the tweak coherently spoofs
+identifierForVendor + UIDevice.systemVersion + sysctl hw.machine/hw.model/hw.memsize + kern.osversion +
+uname + **MobileGestalt** (ProductType/HWModelStr). Evidence: `ios/trace/captures/efficacy_*.json`.
+
+- **Fresh session, read first:** `docs/ios/DEEP-DIVE-FINDINGS.md` (primary-source: what Crane/RootHide
+  actually do; the real ceilings — Crane spoofs ONLY IDFV; App Attest is NOT the ceiling), then
+  `docs/ios/EFFICACY-RESULT.md` and `ios/README.md`. Also `docs/PIXEL-4A-CASHAPP-INTEGRITY.md`.
+- **Layout:** `ios/core` (catalog.json + profile.py generator/validator; `python -m pytest ios/core -q`,
+  12 green) · `ios/tweak` (SpecterTweak.xm — ElleKit/Logos hooks) · `ios/probe` (SpecterProbe efficacy app)
+  · `ios/trace` (frida tracer/probe.py) · `ios/verify.py` (probe-vs-profile ✅/❌) · `ios/build.sh`.
+- **Build (WSL Ubuntu, NO sudo):** theos at `/home/d0nbxx/theos` (swift-toolchain-linux clang13 +
+  iPhoneOS16.5 SDK; one-time `scratchpad/setup_theos.sh`). `wsl -d Ubuntu -- bash /mnt/f/claude/specter/ios/build.sh all`
+  → `ios/dist/*.deb`. make/fakeroot via `apt-get download`+`dpkg-deb -x` into `~/local`; static ldid from
+  ProcursusTeam. **Run WSL via SCRIPT FILES** (`wsl bash /mnt/.../x.sh`) — inline `bash -lc '...'` mangles
+  quotes and $HOME comes through empty intermittently.
+- **Deploy/test (SE2 = `iproxy 2222 22 -u 00008030-001229C01146402E`, then `ssh -p 2222 root@127.0.0.1`):**
+  `dpkg -i` the arm64e debs (build.sh repacks arm64→arm64e; theos rootless mistags arm64). Two gates: the
+  tweak Filter (`SpecterTweak.plist` Bundles) AND a per-app profile. **SANDBOX RULE (critical):** the
+  injected dylib runs under the app's sandbox and CANNOT read `/var/mobile/Library/Specter` — it reads the
+  profile from the app's OWN container `<container>/Library/Specter/profile.plist` (root writes it, chown
+  mobile:mobile 644; use the container the LIVE process reports as HOME, not a stale duplicate). Generate:
+  `python ios/core/profile.py --model iPhone14,6 --seed N --emit-plist p.plist`. Launch a test app headless
+  via frida-spawn (works while screen-locked; frida READS, the tweak SPOOFS — no ambiguity).
+- **MGCopyAnswer hook** is gated behind profile key `EnableMGHook` (memory-patches a scanned address; a
+  loud log fires if the prologue doesn't resolve — never crash an app silently). FIXED on 20D67 (the crash
+  was a `& ~0xFULL` mask misaligning the instruction decode; read at the true entry + `ptrauth_strip`).
+- **Ceilings (no hook can fix):** iCloud ubiquityIdentityToken + server-side DeviceCheck → need a distinct
+  iCloud sign-in per identity. Cash App detects Frida via a localhost:27042 probe → NEVER run frida-server
+  on a real-account device (test on throwaways only).
+- **Coverage:** DONE (all readable by a sandboxed app, proven on SE2) — IDFV · UIDevice.systemVersion/name ·
+  sysctl hw.machine/hw.model/hw.memsize/kern.osversion · uname · MobileGestalt (ProductType/HWModelStr/
+  RegionInfo) · **kern.boottime + systemUptime** (coherent offset). TODO (low value): statfs storage tiers ·
+  IDFA (opt-in). SKIPPED as moot — the probe proved these are entitlement-DENIED to App Store apps: IOKit
+  IOPlatformSerialNumber/UUID, MobileGestalt UDID/SerialNumber, GSSystemGetSerialNo.
+
 ## EOL discipline (Windows)
 CRLF-committed files must STAY CRLF: `specter/generators.py`, `specter/profile.py`, `cli.py`,
 `verify.py`, `CHANGELOG.md`, `HookEntry.java`. Edit them via a Python byte-level script (normalize

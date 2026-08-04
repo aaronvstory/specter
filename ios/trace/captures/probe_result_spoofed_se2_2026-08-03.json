@@ -1,0 +1,22 @@
+{
+  "kern.boottime" : "1784781622.857061",
+  "MG.BuildVersion" : "20F75",
+  "MG.HWModelStr" : "D53gAP",
+  "MG.obf.HWModelStr" : "D53gAP",
+  "MG.obf.ProductType" : "iPhone13,2",
+  "MG.ProductType" : "iPhone13,2",
+  "MG.ProductVersion" : "16.5.1",
+  "MG.RegionInfo" : "LL\/A",
+  "MG.SerialNumber" : null,
+  "MG.UniqueDeviceID" : null,
+  "sysctl.hw.machine" : "iPhone13,2",
+  "sysctl.hw.memsize" : 3883876352,
+  "sysctl.hw.model" : "D53gAP",
+  "sysctl.hw.ncpu" : 6,
+  "sysctl.kern.osversion" : "20F75",
+  "UIDevice.identifierForVendor" : "A6657B62-3A95-4379-8A01-8F0EFE5861C6",
+  "UIDevice.model" : "iPhone",
+  "UIDevice.name" : "iPhone",
+  "UIDevice.systemVersion" : "16.5.1",
+  "uname.machine" : "iPhone13,2"
+}

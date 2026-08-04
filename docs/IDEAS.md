@@ -940,3 +940,15 @@ honesty pass on the status page. codex "trustworthy go/no-go" items still OPEN (
   and tapping Apply from there wipes+reapplies EVERY selected target — destroying a login that was just
   restored to one of them. Status: SHIPPED v0.22.9 — appliedByPkg replaces the global pair, and apply()
   skips any app already carrying exactly those bytes, so it can no longer wipe a just-restored login.
+- IDEA 2026-08-03 (BIG, researching): **Specter for iOS.** Feasibility deep-dive done →
+  `docs/IOS-PORT-FEASIBILITY.md`. Verdict: feasible, architecture maps ~1:1 (ElleKit=Xposed,
+  Choicy=LSPosed-scope, theos+.deb=module, libroothide=paths; hook sysctl/uname/MGCopyAnswer_internal/
+  IDFV/IORegistry/boot-time). Prior art WeaponX(GPL-3)+MGSpoof(MIT)+MGKeys(MIT)+LiveContainer(AGPL-3)
+  ≈80% written — our edge is COHERENCE (nobody enforces model↔board↔SoC↔RAM↔screen↔storage) + the
+  ported Python generator core + a dual-read probe. Crane only isolates DATA containers (IDFV in lsd
+  plist, MG/sysctl process-local → same device across containers) = exactly the gap Specter fills; the
+  two compose. Hard ceiling: App Attest/DeviceCheck (SEP-signed, Apple-server-validated) — must trace
+  live Cash App to see if it GATES on it. Cash App iOS SDKs (from bundle): AppsFlyer+Persona+Mitek MiSnap+
+  EMVCo 3DS+Bugsnag (NO FingerprintJS). Recommended: instruments first — rootless frida-server + dual-read
+  probe, Crane A/B diff to prove the leak, Frida-trace Cash App reads (NOT Dasher — same phone), THEN
+  minimal tweak. Status: idea/researched, not building yet.

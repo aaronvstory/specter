@@ -1,0 +1,125 @@
+"""TDD for the iOS coherent-profile generator. Kept under ios/ so it's separate from the Android
+suite. Run: `python -m pytest ios/core/test_profile.py -q` (or `cd ios/core && python -m pytest`)."""
+import plistlib
+import uuid
+
+import profile as P
+
+
+def test_catalog_every_device_is_self_coherent():
+    """Each catalog row must generate a profile that passes its own coherence validator —
+    guards against a bad hand-entry (wrong board/memsize/build for a model)."""
+    cat = P.load_catalog()
+    assert cat, "catalog is empty"
+    for model in cat:
+        prof = P.generate(model=model, catalog=cat)
+        errs = P.validate(prof, cat)
+        assert not errs, f"{model} generated an incoherent profile: {errs}"
+
+
+def test_determinism_same_seed_same_profile():
+    a = P.generate(seed=12345)
+    b = P.generate(seed=12345)
+    assert a == b, "same seed must yield identical profiles (needed for reproducibility)"
+
+
+def test_seed_selects_stable_model_and_os():
+    # model/os selection is part of the seeded stream, so it must also be deterministic
+    a = P.generate(seed=999)
+    b = P.generate(seed=999)
+    assert (a["model"], a["os_version"]) == (b["model"], b["os_version"])
+
+
+def test_idfv_rotates_across_seeds():
+    idfvs = {P.generate(seed=s, model="iPhone12,8")["identifier_for_vendor"] for s in range(64)}
+    assert len(idfvs) == 64, "IDFV collided across seeds — the rotating field must actually rotate"
+
+
+def test_idfv_is_valid_uppercase_uuid():
+    idfv = P.generate(seed=1)["identifier_for_vendor"]
+    assert idfv == idfv.upper(), "IDFV must be uppercase (as UIDevice returns)"
+    assert uuid.UUID(idfv).version == 4
+
+
+def test_serial_is_modern_10char_no_ambiguous_letters():
+    s = P.generate(seed=2)["serial_number"]
+    assert len(s) == 10
+    assert not (set("IOBS") & set(s)), "modern Apple serial alphabet omits ambiguous letters"
+
+
+def test_validator_catches_board_model_mismatch():
+    """An iPhone 12 board on an SE2 is an impossible device — the validator must reject it."""
+    bad = P.generate(model="iPhone12,8", seed=7)
+    bad["hw_model"] = "D53gAP"  # iPhone 13,2 board
+    assert P.validate(bad), "validator failed to catch a board/model mismatch"
+
+
+def test_validator_catches_bad_os_build_pairing():
+    bad = P.generate(model="iPhone12,8", seed=8)
+    bad["os_build"] = "99Z99"  # not the real build for this os_version
+    assert P.validate(bad), "validator failed to catch an os_version/os_build mismatch"
+
+
+def test_validator_catches_impossible_storage():
+    bad = P.generate(model="iPhone12,8", seed=9)
+    bad["storage_gb"] = 999  # not a real SKU
+    assert P.validate(bad), "validator failed to catch a non-existent storage SKU"
+
+
+def test_mg_obfuscate_matches_known_hash():
+    assert P.mg_obfuscate("DeviceClass") == "+3Uf0Pm5F8Xy7Onyvko0vA"
+    assert P.mg_obfuscate("HWModelStr") == "/YYygAofPDbhrwToVsXdeA"
+
+
+def test_tweak_plist_mgkeys_has_plaintext_and_obfuscated():
+    d = P.to_tweak_plist(P.generate(model="iPhone14,6", seed=1))
+    mg = d["MGKeys"]
+    # both the plaintext key and its hash must map to the same spoofed value
+    assert mg["ProductType"] == "iPhone14,6"
+    assert mg[P.mg_obfuscate("ProductType")] == "iPhone14,6"
+    assert mg["HWModelStr"] == mg[P.mg_obfuscate("HWModelStr")] == "D49AP"
+
+
+def test_validator_catches_biometry_and_screen_mismatch():
+    # a hand-edited profile stapling FaceID / an iPhone-12 screen onto the TouchID SE2 must be rejected
+    p = P.generate(model="iPhone12,8", seed=5)
+    p["biometry"] = "faceID"
+    assert P.validate(p), "validator must catch a biometry that doesn't match the device"
+    p2 = P.generate(model="iPhone12,8", seed=5)
+    p2["native_bounds"] = [1170, 2532]
+    assert P.validate(p2), "validator must catch a screen that doesn't match the device"
+
+
+def test_boot_offset_in_range_and_deterministic():
+    a = P.generate(seed=321)
+    b = P.generate(seed=321)
+    assert a["boot_offset_sec"] == b["boot_offset_sec"], "boot offset must be deterministic per seed"
+    assert 0 <= a["boot_offset_sec"] < 2500000, "boot offset must be a sane 0..~29d window"
+    assert P.to_tweak_plist(a)["BootOffsetSec"] == a["boot_offset_sec"]
+
+
+def test_product_type_equals_hw_machine():
+    p = P.generate(seed=3)
+    assert p["product_type"] == p["hw_machine"], "MG ProductType and hw.machine must be identical"
+
+
+def test_forced_os_version_must_exist_for_model():
+    import pytest
+    with pytest.raises(ValueError):
+        P.generate(model="iPhone12,8", os_version="17.0")  # SE2 has no 17.0 build in catalog
+
+
+def test_tweak_plist_roundtrips_and_has_coherent_keys(tmp_path):
+    """The exported plist is what the tweak reads on-device — it must be valid and carry the
+    coherent pair (ProductType==HWMachine, HWModelStr==HWModel)."""
+    p = P.generate(model="iPhone14,6", seed=2026)
+    d = P.to_tweak_plist(p)
+    out = tmp_path / "com.specter.iostest.plist"
+    with open(out, "wb") as f:
+        plistlib.dump(d, f)
+    with open(out, "rb") as f:
+        loaded = plistlib.load(f)
+    assert loaded["ProductType"] == loaded["HWMachine"]
+    assert loaded["HWModelStr"] == loaded["HWModel"]
+    assert isinstance(loaded["MemSize"], int) and loaded["MemSize"] > 0
+    assert loaded["OSVersion"] == p["os_version"] and loaded["OSBuild"] == p["os_build"]
