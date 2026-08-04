@@ -1487,7 +1487,10 @@ public class MainActivity extends Activity {
                 status.setText(msg);
                 render();
                 startActivity(new Intent(this, DiagnosticsActivity.class)
-                        .putExtra(DiagnosticsActivity.EXTRA_PKG, pkg));   // reads diag.log -> spoofed/real report
+                        .putExtra(DiagnosticsActivity.EXTRA_PKG, pkg)
+                        // Signal a stop-initiated open so the trace tab auto-saves the coverage report when
+                        // the autosave_trace pref is on — no manual Export tap to forget.
+                        .putExtra(DiagnosticsActivity.EXTRA_FROM_STOP, true));   // reads diag.log -> report
             });
         }, "specter-mon-stop").start();
     }
