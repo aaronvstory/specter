@@ -5,10 +5,14 @@ IPQualityScore fraud score, AbuseIPDB abuse history, and the keyless DNSBL black
 Useful for vetting a proxy *before* assigning it, without touching a phone.
 
     python -m specter.ipcheck                                   # this machine's exit IP
-    python -m specter.ipcheck --proxy http://user:pass@host:port
+    python -m specter.ipcheck --proxy host:port:user:pass       # or user:pass@host:port, or a URL
+    python -m specter.ipcheck --proxy 10.0.0.1:1080 --proxy-type socks5
     python -m specter.ipcheck --ip 172.59.84.16                 # an IP directly, no proxy needed
     python -m specter.ipcheck --serve                           # local web UI, opens a browser
     python -m specter.ipcheck --json                            # machine-readable
+
+Proxies are parsed leniently — `host:port`, `host:port:user:pass`, `user:pass@host:port`, or a
+`http://`/`socks5://`/`socks4://` URL — and SOCKS5/4a are tunnelled with stdlib only (no PySocks).
 
 API keys are optional (the blacklist count is keyless). They are read from --ipqs-key /
 --abuse-key, then the env (IPQS_KEY / ABUSEIPDB_KEY), then ~/.specter-ipcheck.json. Never
@@ -24,12 +28,14 @@ import argparse
 import json
 import os
 import socket
+import struct
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import NamedTuple
 
 CONFIG = Path.home() / ".specter-ipcheck.json"
 TIMEOUT = 8
@@ -263,20 +269,204 @@ def format_report(rep: dict) -> str:
     return "\n".join(f"{k.ljust(width)}   {v}" for k, v in rows)
 
 
+# ---- proxy input (tolerant parser; unit-tested) --------------------------------------------
+
+# The schemes we understand. `https`/`socks5h`/`socks4a` normalise onto their base handler — the
+# `h`/`a` variants only mean "resolve the destination at the proxy", which is what we already do.
+_PROXY_SCHEMES = {"http": "http", "https": "http",
+                  "socks5": "socks5", "socks5h": "socks5",
+                  "socks4": "socks4", "socks4a": "socks4"}
+
+
+class Proxy(NamedTuple):
+    scheme: str          # http | socks5 | socks4  (already normalised)
+    host: str
+    port: int
+    user: str
+    password: str
+
+    def http_url(self) -> str:
+        """The `http://[user:pass@]host:port` form urllib's ProxyHandler wants."""
+        auth = ""
+        if self.user:
+            auth = (urllib.parse.quote(self.user, safe="") + ":"
+                    + urllib.parse.quote(self.password, safe="") + "@")
+        return f"http://{auth}{self.host}:{self.port}"
+
+
+def _host_port(text: str) -> tuple[str, int]:
+    host, sep, port = text.rpartition(":")
+    if not sep or not host:
+        raise ValueError(f"proxy needs host:port — got {text!r}")
+    if not port.isdigit() or not (0 < int(port) <= 65535):
+        raise ValueError(f"proxy port must be 1–65535 — got {port!r}")
+    return host, int(port)
+
+
+def parse_proxy(text: str, default_scheme: str = "http") -> Proxy | None:
+    """Parse the many shapes people actually paste into one Proxy, or None if blank. Accepts, in any
+    combination: a `scheme://` prefix (http/https/socks5[h]/socks4[a]); credentials as either
+    `user:pass@host:port` or the trailing-colon `host:port:user:pass` a lot of resi providers hand
+    out; or a bare `host:port`. `default_scheme` (from the UI's selector) fills in when there's no
+    `://`. Raises ValueError with a readable reason on anything it can't make sense of.
+
+    Limitation, stated rather than papered over: the `host:port:user:pass` form splits on colons, so a
+    password that itself contains a colon can't be expressed that way — use the `user:pass@host:port`
+    or `scheme://` form for those (percent-encoding not required)."""
+    text = (text or "").strip()
+    if not text:
+        return None
+
+    scheme = default_scheme.lower()
+    if "://" in text:
+        scheme, _, text = text.partition("://")
+        scheme = scheme.lower()
+    if scheme not in _PROXY_SCHEMES:
+        raise ValueError(f"unknown proxy scheme {scheme!r} — use http, socks5, or socks4")
+
+    user = password = ""
+    if "@" in text:
+        # user:pass@host:port — split on the LAST '@' so a '@' inside the password is tolerated.
+        creds, _, hostport = text.rpartition("@")
+        user, _, password = creds.partition(":")
+        host, port = _host_port(hostport)
+    else:
+        parts = text.split(":")
+        if len(parts) == 2:
+            host, port = _host_port(text)
+        elif len(parts) == 4:
+            host, port_s, user, password = parts
+            _, port = _host_port(f"{host}:{port_s}")
+        else:
+            raise ValueError("proxy must be host:port, host:port:user:pass, "
+                             "user:pass@host:port, or a scheme:// URL")
+    return Proxy(_PROXY_SCHEMES[scheme], host, port, user, password)
+
+
+# ---- SOCKS (stdlib only — no PySocks) -------------------------------------------------------
+# A minimal SOCKS4a/5 CONNECT tunnel so the "no dependencies" promise holds. The byte-building is
+# factored into pure helpers so the wire format is unit-tested without a live proxy.
+
+
+def _socks5_greeting(has_auth: bool) -> bytes:
+    """Client hello: version 5, offering user/pass auth when we have credentials, else no-auth."""
+    return b"\x05\x01\x02" if has_auth else b"\x05\x01\x00"
+
+
+def _socks5_userpass(user: str, password: str) -> bytes:
+    """RFC 1929 username/password auth message."""
+    u, p = user.encode(), password.encode()
+    if len(u) > 255 or len(p) > 255:
+        raise ValueError("SOCKS5 username/password max 255 bytes each")
+    return b"\x01" + bytes([len(u)]) + u + bytes([len(p)]) + p
+
+
+def _socks5_connect(host: str, port: int) -> bytes:
+    """CONNECT request with the domain-name address type, so the PROXY resolves the host (socks5h
+    semantics) — the desktop resolves DNSBL locally anyway, but API hosts should resolve proxy-side."""
+    h = host.encode()
+    if len(h) > 255:
+        raise ValueError("hostname too long for SOCKS5")
+    return b"\x05\x01\x00\x03" + bytes([len(h)]) + h + struct.pack(">H", port)
+
+
+def _socks4_connect(host: str, port: int, user: str) -> bytes:
+    """SOCKS4a CONNECT (0.0.0.x sentinel + trailing hostname = resolve proxy-side)."""
+    return (b"\x04\x01" + struct.pack(">H", port) + b"\x00\x00\x00\x01"
+            + user.encode() + b"\x00" + host.encode() + b"\x00")
+
+
+def _recvn(sock, n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise OSError("SOCKS proxy closed the connection early")
+        buf += chunk
+    return buf
+
+
+def _socks_tunnel(proxy: Proxy, dest_host: str, dest_port: int, timeout: float | None):
+    """Open a socket to `proxy`, negotiate a CONNECT tunnel to (dest_host, dest_port), return it."""
+    s = socket.create_connection((proxy.host, proxy.port), timeout)
+    try:
+        if proxy.scheme == "socks5":
+            s.sendall(_socks5_greeting(bool(proxy.user)))
+            method = _recvn(s, 2)[1]
+            if method == 0x02:
+                s.sendall(_socks5_userpass(proxy.user, proxy.password))
+                if _recvn(s, 2)[1] != 0:
+                    raise OSError("SOCKS5 proxy rejected the username/password")
+            elif method != 0x00:
+                raise OSError("SOCKS5 proxy wants an auth method we don't offer "
+                              "(credentials required?)")
+            s.sendall(_socks5_connect(dest_host, dest_port))
+            rep = _recvn(s, 4)
+            if rep[1] != 0:
+                raise OSError(f"SOCKS5 CONNECT failed (reply code {rep[1]})")
+            # Consume the bound address + port so the socket is left at the start of the tunnelled
+            # stream. Address length depends on the type byte: 4 for IPv4, 16 for IPv6, or a
+            # length-prefixed domain name.
+            atyp = rep[3]
+            if atyp == 1:
+                _recvn(s, 4)
+            elif atyp == 4:
+                _recvn(s, 16)
+            elif atyp == 3:
+                _recvn(s, _recvn(s, 1)[0])
+            else:
+                raise OSError(f"SOCKS5 sent an unknown address type ({atyp})")
+            _recvn(s, 2)   # bound port
+        else:   # socks4a
+            s.sendall(_socks4_connect(dest_host, dest_port, proxy.user))
+            rep = _recvn(s, 8)
+            if rep[1] != 0x5a:
+                raise OSError(f"SOCKS4 CONNECT failed (reply code {rep[1]})")
+        return s
+    except Exception:
+        s.close()
+        raise
+
+
+def _socks_opener(proxy: Proxy):
+    """A urllib opener whose HTTP(S) connections tunnel through a SOCKS proxy. Only what this tool
+    needs — HTTPS GETs — so it overrides the connection's socket and lets http.client do the rest."""
+    import http.client
+    import ssl
+
+    ctx = ssl.create_default_context()
+
+    class _HTTPSConn(http.client.HTTPSConnection):
+        def connect(self):
+            sock = _socks_tunnel(proxy, self.host, self.port, self.timeout)
+            self.sock = ctx.wrap_socket(sock, server_hostname=self.host)
+
+    class _HTTPConn(http.client.HTTPConnection):
+        def connect(self):
+            self.sock = _socks_tunnel(proxy, self.host, self.port, self.timeout)
+
+    class _HTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            return self.do_open(_HTTPSConn, req)
+
+    class _HTTPHandler(urllib.request.HTTPHandler):
+        def http_open(self, req):
+            return self.do_open(_HTTPConn, req)
+
+    return urllib.request.build_opener(_HTTPSHandler, _HTTPHandler)
+
+
 # ---- network -------------------------------------------------------------------------------
 
 
-def _opener(proxy: str | None):
-    if not proxy:
+def _opener(proxy: str | None, default_scheme: str = "http"):
+    p = parse_proxy(proxy, default_scheme) if isinstance(proxy, str) else proxy
+    if not p:
         return urllib.request.build_opener()
-    if proxy.startswith("socks"):
-        # ponytail: urllib speaks HTTP proxies only. Upgrade path if SOCKS is ever needed:
-        # `pip install PySocks` + socks.set_default_proxy, or run it behind a local http bridge.
-        raise ValueError("SOCKS proxies are not supported — use an http:// proxy URL")
-    if "://" not in proxy:
-        proxy = "http://" + proxy
+    if p.scheme in ("socks5", "socks4"):
+        return _socks_opener(p)
     return urllib.request.build_opener(
-        urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+        urllib.request.ProxyHandler({"http": p.http_url(), "https": p.http_url()}))
 
 
 def _get_json(url: str, opener, headers: dict | None = None) -> dict | None:
@@ -419,9 +609,11 @@ def dnsbl_check(ip: str) -> dict:
 
 
 def check(proxy: str | None = None, ip: str | None = None,
-          ipqs_key: str = "", abuse_key: str = "") -> dict:
-    """Run every available source and return one flat report dict. Blocking (network)."""
-    opener = _opener(proxy)
+          ipqs_key: str = "", abuse_key: str = "", proxy_scheme: str = "http") -> dict:
+    """Run every available source and return one flat report dict. Blocking (network). ``proxy`` is
+    parsed leniently (see ``parse_proxy``); ``proxy_scheme`` fills in the transport when ``proxy``
+    carries no ``scheme://`` of its own."""
+    opener = _opener(proxy, proxy_scheme)
     rep: dict = {"notes": []}
 
     def merge(part: dict) -> None:
@@ -529,7 +721,13 @@ button:disabled{background:var(--card2);color:var(--dim);cursor:default}
 <h1>Specter · exit-IP check</h1>
 <div class=card>
   <div class=grid>
-    <div><label for=proxy>Proxy URL</label><input id=proxy placeholder="http://user:pass@host:port"></div>
+    <div><label for=proxy>Proxy</label>
+      <div style="display:flex;gap:8px">
+        <select id=ptype style="width:104px;flex:none;background:var(--card2);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:10px 8px;font:inherit">
+          <option value=http>HTTP</option><option value=socks5>SOCKS5</option><option value=socks4>SOCKS4</option>
+        </select>
+        <input id=proxy placeholder="host:port  ·  host:port:user:pass  ·  user:pass@host:port">
+      </div></div>
     <div><label for=ip>IP (optional)</label><input id=ip placeholder="check directly"></div>
   </div>
   <details><summary>API keys</summary>
@@ -548,6 +746,7 @@ const $=s=>document.querySelector(s), out=$('#out');
 const q=new URLSearchParams(location.search);
 fetch('/config').then(r=>r.json()).then(c=>{
   $('#proxy').value=q.get('proxy')||c.proxy||'';
+  $('#ptype').value=q.get('ptype')||c.proxy_scheme||'http';
   $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||'';
   $('#ip').value=q.get('ip')||'';
   // ?ip=… or ?proxy=… runs on load, so a bookmark is a one-click check.
@@ -602,7 +801,7 @@ $('#go').onclick=async()=>{
   out.innerHTML='<div class="card"><span class=sub>Running lookups…</span></div>';
   try{
     const r=await fetch('/check',{method:'POST',body:JSON.stringify({
-      proxy:$('#proxy').value.trim(), ip:$('#ip').value.trim(),
+      proxy:$('#proxy').value.trim(), proxy_scheme:$('#ptype').value, ip:$('#ip').value.trim(),
       ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()})});
     render(await r.json());
   }catch(e){render({error:String(e)})}
@@ -658,7 +857,7 @@ def serve(port: int, open_browser: bool = True) -> None:
             if path == "/config":
                 cfg = load_config()
                 self._send(json.dumps({k: cfg.get(k, "") for k in
-                                       ("proxy", "ipqs_key", "abuse_key")}).encode(),
+                                       ("proxy", "proxy_scheme", "ipqs_key", "abuse_key")}).encode(),
                            "application/json")
             elif path in ("/", "/index.html"):
                 self._send(PAGE.encode("utf-8"), "text/html; charset=utf-8")
@@ -681,11 +880,13 @@ def serve(port: int, open_browser: bool = True) -> None:
             # Only fields the request actually carried. Defaulting a missing one to "" would let any
             # partial request erase a saved key — the page always sends all three, but nothing else
             # has to. Sending "" explicitly still clears, which is how the UI clears a key.
-            cfg.update({k: req[k] for k in ("proxy", "ipqs_key", "abuse_key") if k in req})
+            cfg.update({k: req[k] for k in ("proxy", "proxy_scheme", "ipqs_key", "abuse_key")
+                        if k in req})
             save_config(cfg)
             try:
                 rep = check(req.get("proxy") or None, req.get("ip") or None,
-                            req.get("ipqs_key", ""), req.get("abuse_key", ""))
+                            req.get("ipqs_key", ""), req.get("abuse_key", ""),
+                            req.get("proxy_scheme") or "http")
             except Exception as exc:
                 rep = {"error": str(exc)}
             self._send(json.dumps(rep).encode(), "application/json")
@@ -706,7 +907,10 @@ def serve(port: int, open_browser: bool = True) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument("--proxy", default="", help="http://[user:pass@]host:port to check through")
+    ap.add_argument("--proxy", default="", help="proxy to check through; accepts host:port, "
+                    "host:port:user:pass, user:pass@host:port, or a scheme:// URL")
+    ap.add_argument("--proxy-type", default="http", choices=["http", "socks5", "socks4"],
+                    help="transport when --proxy has no scheme:// of its own (default http)")
     ap.add_argument("--ip", default="", help="check this IP directly (skips the exit-IP lookup)")
     ap.add_argument("--ipqs-key", default="", help="IPQualityScore API key")
     ap.add_argument("--abuse-key", default="", help="AbuseIPDB API key")
@@ -730,7 +934,7 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        rep = check(args.proxy or None, args.ip or None, ipqs, abuse)
+        rep = check(args.proxy or None, args.ip or None, ipqs, abuse, args.proxy_type)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
