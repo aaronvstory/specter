@@ -63,23 +63,44 @@ back up but on a limited free plan, so pre-merge/important decisions only (`-m g
 retry later if it throttles). gemini + PR bots still down.
 TDD + exa research proactively + defer nothing but the on-device press-tests the boundary blocks. New PR per concern.
 
-- **P0.C — ipcheck polish (do first: desktop, no boundary, fully verifiable).** `todo`
-  - C6 add CHANGELOG `Fixed` bullet for the partial-request key-erasure fix; merge `feat/next-ip-reputation-followups` after self-review.
-  - C1 copy-detected-IP button. `todo`
-  - C2 flexible proxy input: http/socks5/socks4 selector + tolerant parser (`host:port:user:pass`, `ip:port:user:pass`, `user:pass@host:port`, bare `host:port`, `socks5://`). urllib is HTTP-only → research SOCKS path w/ exa. `todo`
-  - C4 blacklist coverage gap — 23.159.216.252 = 0 on ours vs **2 on iper.one**; trace which lists + why our 12 missed; reconcile fraud 100 vs 88 (strictness). exa. `todo`
-  - C3 double-click / static-webapp (GitHub Pages) — research CORS for IPQS/DoH/AbuseIPDB client-side; ship the best real option (not hand-wave). exa. `todo`
-  - C5 restyle — kill the "AI slop" look; distinctive polished design (frontend-design skill), light+dark. `todo`
-- **P0.A — Cash coherence + login portability (investigation: read-only + exa; write-ups + guards).** `todo`
-  - A1 device-model incoherence = profile drift after registration → bind app↔login↔fingerprint; warn on applying a new profile over an app with a saved login under a different fp; make "registered as <model>" visible. `todo`
-  - A2 login-restore fails (enter-email) = hardware-Keystore `mri_worker` attestation key not portable / killed by `pm clear`; dig into Cash/mri (user asked), determine viable workflow + a user-run test protocol; document PROVEN vs HYPOTHESIS. `todo`
-  - A3 **remove restore auto-launch of the target app** (startling); ensure Apply doesn't auto-launch either. `todo`
-  - A4 wipe must clear storage AND cache; prove zero fingerprint/IP cross-contamination on identity switch; document the clean-switch ↔ keep-login tension. `todo`
-- **P0.B — Vault / monitor / identity UX (module code; build+JVM-test+self-review; on-device press-test = note for user).** `todo`
-  - B1 "Monitor reads" → apply-time checkbox like "Save to vault on apply". `todo`
-  - B2 auto-save the trace on Stop monitoring (setting); keep manual export. `todo`
-  - B3 unify Restore-AppData vs Vault-selection into one clear flow. `todo`
-  - B4 after restore/vault-apply, Identity tab shows the live identity by its **saved NAME** (not a bare fingerprint) + "(<model>)". `todo`
+**DONE — all of Phase 0 shipped + merged 2026-08-05 (v0.23.0→v0.24.3, PRs #47–#58). Each PR got an
+adversarial `code-reviewer` branch-diff pass; real findings fixed before merge. Module on-device
+press-tests deferred per the hard boundary (noted per-PR — verify at the bench).**
+
+- **P0.C — ipcheck polish (desktop, fully verified).** `done`
+  - C6 CHANGELOG bullets + merged the in-flight fixes (#47). `done`
+  - C1 copy-detected-IP button (folded into C5's redesign, #53). `done`
+  - C2 lenient proxy parser (host:port / host:port:user:pass / user:pass@host:port / scheme URLs) + a
+    zero-dependency stdlib SOCKS5/4a CONNECT tunnel, proven e2e against a live proxy (#52). `done`
+  - C4 blacklist "gap" TRACED: no gap — the missed IP is on Spamhaus PBL (a policy listing we filed but
+    hid from the headline); fixed the presentation, named the PBL code, printed IPQS strictness (#48). `done`
+  - C3 static-webapp — MEASURED impossible: IPQS + AbuseIPDB block browser CORS (DoH is open, but the
+    fraud sources aren't), so a client-side-only page can't score. Kept the double-click local runner
+    (`ipcheck.bat` → `--serve`), which already meets the "double-click, no server setup" bar. `dropped (CORS)`
+  - C5 redesigned the web UI into a "signal desk" (fraud meter, verdict strip, mono data, light+dark),
+    screenshotted headless in 3 states (#53). `done`
+- **P0.A — Cash coherence + login portability (read-only + exa; write-ups + guards).** `done`
+  - A1 apply-time drift warning: confirm before applying a device that won't match a saved login (#51);
+    the compared device is what apply actually writes (skips when the build bundle is toggled off). `done`
+  - A2 Cash device-binding PROVEN: the `mri_worker` key is a hardware keymaster-4-0 TEE key (legacy blob
+    type=4), non-portable, killed by `pm clear`; contrast with Dasher's un-attested token; the one viable
+    same-device-no-wipe workflow + a user-run test protocol (#49). `done`
+  - A3 removed the restore auto-launch (both paths); Apply never launched anything (#50). `done`
+  - A4 clean-switch audit + guard: `pm clear` (first-install reset, incl. external cache) + atomic profile
+    overwrite = no cross-identity residue, PROVEN on-device (Cash profile = 1 coherent identity); the
+    clean-switch↔keep-login tension documented (#54). `done`
+- **P0.B — Vault / monitor / identity UX (module code; build+JVM-test+self-review; press-test deferred).** `done`
+  - B1 "Monitor reads on apply" checkbox — auto-arms the read capture on Apply (#55). `done`
+  - B2 auto-save the coverage report on Stop monitoring (toggle, default on); manual Export kept (#57). `done`
+  - B3 unified the per-app "Restore AppData" button onto the coherent vault restore (pick which login,
+    re-applies its fingerprint); the vault restore is canonical (#58). `done`
+  - B4 the Identity card now leads with the live identity's saved NAME (not the bare model), so "which
+    identity is live" reads at a glance (#56). `done`
+
+**Follow-up steers captured 2026-08-05 (user, for when there's time — NOT yet built): off-tunnel status
+scoring + geo/VPN detection; click-to-fix timezone with no tunnel; auto-refresh the Status page on reopen;
+verify hooks per-target WITHOUT launching the app; a broad app-polish pass. Also: a keyless Tor-exit-list
+check for ipcheck. See `docs/IDEAS.md`.**
 
 ### Phase 1 — Beat the fingerprinters (the thing that makes it a product)
 
@@ -228,6 +249,16 @@ TDD + exa research proactively + defer nothing but the on-device press-tests the
 
 ## Log
 
+- **2026-08-05 (overnight)** — **Phase 0 cleared end-to-end: 12 PRs (#47–#58), v0.23.0 → v0.24.3.**
+  P0.C ipcheck (lenient proxy + stdlib SOCKS, blacklist-accuracy trace, "signal desk" redesign, copy-IP;
+  C3 static-webapp measured impossible via CORS). P0.A Cash coherence (apply drift-warning; `mri_worker`
+  TEE-key binding PROVEN; no restore auto-launch; clean-switch audit + guard). P0.B UX (monitor-on-apply,
+  trace auto-save, unified restore, Identity shows saved name). Every PR got an adversarial `code-reviewer`
+  branch-diff pass — real findings (Python↔Java parity ordering, a SOCKS handshake deadline, the drift
+  signal using the raw vs applied profile) fixed before merge. Both suites green throughout (pytest 171;
+  JVM incl. DnsblTest 43 / AppDataVault 54 / SessionMigrator 53). codex left down this session — not run.
+  Module on-device press-tests deferred per the hard boundary (Pixel 4/4a Cash) — noted per-PR. Recorded
+  the exa-over-WebFetch rule (memory + both CLAUDE.md). User follow-up steers captured in IDEAS.md.
 - **2026-07-25** — Queue created. Phase 1 chosen as the entry point because Test B proved a live,
   reproducible detection failure with an identified root cause; everything else is quality work that
   doesn't matter if the product is detected.
