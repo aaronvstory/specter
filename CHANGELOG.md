@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.0] - 2026-08-05
+
+### Added
+- **"Monitor reads on apply" checkbox**, next to "Save to vault on apply" on the Identity tab. When
+  on, a successful Apply auto-starts the per-app read monitor on the first applied target, so the
+  read-capture is already armed for the relaunch you're about to do — no separate "Monitor reads"
+  tap to forget. Off by default (the capture runs a logcat, heavier than a vault save). The per-app
+  Monitor/Stop button still works exactly as before, and the same trace bookkeeping and 30-minute
+  auto-stop apply to both paths.
+
 ## [0.23.6] - 2026-08-05
 
 ### Changed
