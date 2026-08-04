@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.1] - 2026-08-05
+
+### Changed
+- **The Identity card leads with the live identity's saved NAME.** After a restore or a vault apply,
+  the current-identity card showed only the device model, so it wasn't clear *which* saved identity
+  was live. It now leads with the saved name ("Petra G FL") and drops the model + carrier to a
+  secondary line — so "which identity is live" is answerable at a glance, and the device-vs-name
+  drift the apply warning guards against is legible right on the card. A freshly generated,
+  unsaved identity (or a date-only label) still shows the model, as before.
+
 ## [0.24.0] - 2026-08-05
 
 ### Added
