@@ -13,6 +13,11 @@ cd xposed-module && JAVA_HOME=~/scoop/apps/temurin17-jdk/current GRADLE_BIN=… 
 # -> dist/specter-module-v0.24.4.apk   (do NOT `adb install -r` on a phone whose module is registered —
 #    it de-registers in LSPosed; use the UI toggle/reboot path, per never-reinstall-lsposed-module-to-fix)
 ```
+**Build already confirmed clean (2026-08-05):** `:app:assembleDebug` succeeds, the APK is
+`com.specter` versionName **0.24.4** / versionCode **2404**, and all of tonight's new symbols are present
+in the multidex (`restoreForPkg`, `startMonitor`, `applyDeviceString`, `conflictingDevices`,
+`autoCheckedIps`, `autosave_trace`, `monitor_on_apply`, `EXTRA_FROM_STOP`) — so the bench build + install
+should be turnkey; no stale-`.class` surprise.
 
 ## On-device press-tests to run at the bench (per PR)
 
