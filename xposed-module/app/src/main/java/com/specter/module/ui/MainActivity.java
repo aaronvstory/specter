@@ -75,6 +75,10 @@ public class MainActivity extends Activity {
     private boolean healthScreen = false;  // showing the Protection Status sub-screen (a Settings sub-view)
     private java.util.List<HealthCheck.Group> healthResults;   // last-computed checks (null = still running)
     private boolean repBusy = false;       // an exit-IP reputation lookup is in flight (guards the button)
+    // Exit IPs we've already auto-checked this session, so the Network card runs the reputation lookup
+    // ONCE per distinct IP on open (no manual "Check" tap) without re-firing on every render — the
+    // process-lifetime cache in HealthCheck holds the result, and the IPQS free tier is only 35/day.
+    private final java.util.Set<String> autoCheckedIps = new java.util.HashSet<>();
     private boolean setupScreen = false;   // showing the guided "Set up everything" sub-screen (Settings sub-view)
     private boolean setupBusy = false;     // a setup run is in flight (guards the button + drives the spinner)
     private java.util.List<com.specter.module.gen.SetupFlow.StepResult> setupResults;  // last run's per-step outcomes (null = not run yet)
@@ -2616,6 +2620,16 @@ public class MainActivity extends Activity {
         clp.setMargins(0, dp(Theme.S2), 0, 0);
         check.setLayoutParams(clp);
         box.addView(check);
+        // Auto-check on open: the first time we render this card for an exit IP with the tunnel up and no
+        // cached result, run the lookup automatically so the user doesn't tap "Check" every visit. The set
+        // add() is true only once per IP; posted so it runs AFTER this render (checkIpReputation calls
+        // render()); guarded again inside in case a manual tap won the race. A rotated IP auto-checks afresh.
+        if (rep == null && !repBusy && ip != null && !ip.isEmpty() && autoCheckedIps.add(ip)) {
+            final String autoIp = ip;
+            runOnUiThread(() -> {
+                if (alive() && !repBusy && HealthCheck.cachedReputation(autoIp) == null) checkIpReputation(autoIp);
+            });
+        }
         return box;
     }
 
