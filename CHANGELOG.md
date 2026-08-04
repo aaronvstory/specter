@@ -32,6 +32,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   (some zones' "alive, not listed" reply) are no longer counted as listings either.
 - **SORBS removed from the zone list.** It shut down in 2024 and now answers "not listed" for every
   IP, which silently inflated the clean count.
+- **A partial request to the local web UI no longer erases a saved API key.** The `/check` handler
+  defaulted every absent field to `""` and wrote all three back, so any request that carried only
+  some of them silently blanked the rest — which is how a stored IPQualityScore key went missing and
+  took the fraud score with it. Only fields the request actually carries are written now; sending
+  `""` explicitly still clears a key, which is how the page clears one.
+- **`--ip` gets ISP, location, and time zone like any other check.** Naming an IP directly skipped
+  the geo lookup, so the readout was a bare address with a dash under it. Where an IP sits is half of
+  judging it, so an explicit IP now takes the same lookup as a discovered exit IP; if that lookup
+  fails, the address given is still checked.
 - **Blocklist lookups resolve over DNS-over-HTTPS.** The proxy apps this feature exists for hijack
   DNS — SuperProxy answers every hostname from its own fake-IP pool (measured on-device: every DNSBL
   zone returned `10.207.x.x`), so a plain resolve could never see a listing code through the tunnel.
