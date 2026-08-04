@@ -914,3 +914,50 @@ only reliable de-contamination step is `pm clear`, and `pm clear` is exactly wha
 attestation key. So a Cash identity switch is a choice: wipe-and-relogin (clean, new device story) OR
 restore-without-wipe (keeps the login, but the prior session's on-disk state is what you're carrying, not a
 fresh slate). Specter should present these as two distinct actions and never imply one does both.
+
+## 2026-08-05 — Clean switch: no cross-identity residue (audit + on-device proof)
+
+Audit of the wipe/apply path for the user's requirement that switching identities leaves **no residue**
+of the prior fingerprint or IP. PROVEN by code + test + a read-only on-device read.
+
+### The mechanism (PROVEN clean by construction)
+
+`apply()` → `applyConfirmed()` runs, per target, in this order (`MainActivity.java`):
+
+1. **Wipe** — `SessionMigrator.clearData(pkg)` = `pm clear <pkg>`. `pm clear` resets the app to
+   **first-install state**: it removes the whole `/data/data/<pkg>` (databases, shared_prefs, files,
+   no_backup, app_webview cookies, datastore, device-id, phenotype, …), the **internal cache and
+   code_cache**, AND the **external cache** at `/sdcard/Android/data/<pkg>`. A partial `rm -rf` would miss
+   the external cache — so the wipe must be `pm clear`, now guarded by a test
+   (`SessionMigratorTest`: "clear uses pm clear …, never a partial rm that misses external cache").
+2. **Guard** — if the clear FAILS, the target is **skipped** (`if (!clean) continue;`): a new identity is
+   never written onto un-cleared, linkable data. This clear-before-write ordering is the core invariant.
+3. **Write** — `svc.apply(pkg, toApply)` → `RootWriter` writes the per-pkg profile to
+   `/data/local/tmp/specter/<pkg>.json` as an **atomic same-dir overwrite** (`cat > tmp; [ -s tmp ]; mv -f
+   tmp path`) — the whole file is replaced, so **no field from identity A can survive into identity B's
+   profile** (RootWriterTest covers the atomic non-empty overwrite; there is no append/merge path).
+4. **Timezone** — `autoAlignTimezone` rewrites the `timezone` field of the just-written profile; on the
+   next switch the profile is fully overwritten, so the old TZ can't bleed either. It only aligns through a
+   VPN/proxy tunnel, never to the phone's home IP (see the TZ section).
+
+### Read-only on-device proof (4a, 2026-08-05)
+
+The applied Cash profile at `/data/local/tmp/specter/com.squareup.cash.json` is a **single coherent
+identity** — `Samsung / SM-G996U / t2q`, fingerprint `samsung/t2qsqw/t2q:11/…`, `timezone
+America/Chicago`, 72 fields, **zero Pixel-4a / petra residue**. The atomic overwrite left no trace of any
+prior applied identity in the profile the hooks read.
+
+### The clean-switch ↔ keep-login tension (documented so the UX never promises both)
+
+`pm clear` is what makes the switch clean — and it is exactly what **destroys the Cash `mri_worker`
+attestation key** (see the 2026-08-05 Cash device-binding section). So "start clean, zero residue" and
+"keep me logged in" are **mutually exclusive on Cash**: wiping to de-contaminate also logs the app out.
+Specter treats them as two distinct actions and never implies one does both.
+
+### What a wipe deliberately does NOT touch (not residue — by design)
+
+- The **vault** (`/data/data/com.specter/files/vault`) and saved AppData — the user's persistent saved
+  identities/logins, not contamination.
+- A **DESELECTED** target's profile JSON — an app removed from the target set keeps its last identity until
+  its `<pkg>.json` is removed (memory `zygisk-gates-on-profile-file`), because the Zygisk layer gates on the
+  file's presence. Switching identities on the *selected* set never touches a deselected app.
