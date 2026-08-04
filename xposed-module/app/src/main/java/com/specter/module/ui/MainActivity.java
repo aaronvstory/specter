@@ -1600,9 +1600,13 @@ public class MainActivity extends Activity {
         if (!com.specter.module.gen.RootWriter.validPkg(pkg)) return "invalid package";
         String path = com.specter.module.gen.RootWriter.PROFILE_DIR + "/" + pkg + ".json";
         // on: insert "trace":"1", after the opening brace IF not already present. off: strip it. Idempotent seds.
+        // The off path also strips a LEGACY unquoted `{trace:1,` — an older armTrace wrote the flag unquoted,
+        // which the quoted-form strip can't touch, so it would otherwise stay as invalid-JSON cruft forever
+        // (found on-device 2026-08-05). It's harmless to spoofing — parseFlatJson skips to the first quote —
+        // but disarm should leave a clean, valid-JSON profile.
         String cmd = on
                 ? "grep -q '\"trace\"' " + path + " || sed -i 's/^{/{\"trace\":\"1\",/' " + path
-                : "sed -i 's/\"trace\":\"1\",//; s/,\"trace\":\"1\"//' " + path;
+                : "sed -i 's/\"trace\":\"1\",//; s/,\"trace\":\"1\"//; s/^{trace:1,/{/' " + path;
         try {
             int code = new com.specter.module.gen.RootWriter.SuShell().run(cmd, "");
             return code == 0 ? null : "su exited " + code + " (is there an applied profile for this app? APPLY first)";

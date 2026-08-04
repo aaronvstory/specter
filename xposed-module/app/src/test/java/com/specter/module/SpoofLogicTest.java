@@ -185,6 +185,16 @@ public class SpoofLogicTest {
         java.util.Map<String, String> sm = new java.util.HashMap<>();
         SpoofLogic.parseFlatJson("{\"serial\":\"S\"}", sm);
         check(sm.get(SpoofLogic.TRUE_ANDROID_ID_KEY) == null && sm.size() == 1, "no shadow key when android_id absent");
+        // A legacy UNQUOTED prefix (an old armTrace wrote `{trace:1,` before the flag was quoted, and the
+        // disarm sed — which strips only the quoted form — can't remove it) is invalid JSON, but must NOT
+        // break spoofing: the scanner starts at the first quote, so it skips the junk and reads every real
+        // field. Found on-device 2026-08-05 (a 4a Dasher profile carried `{trace:1,`). This pins that
+        // the malformed prefix is harmless — the real values still land.
+        java.util.Map<String, String> lm = new java.util.HashMap<>();
+        SpoofLogic.parseFlatJson("{trace:1,\"android_id\":\"aa11bb22\",\"serial\":\"RVF5X2FEM32\"}", lm);
+        check("aa11bb22".equals(lm.get("android_id")), "parseFlatJson skips a legacy unquoted prefix, reads android_id");
+        check("RVF5X2FEM32".equals(lm.get("serial")), "parseFlatJson reads every field past the unquoted junk");
+        check(lm.get("trace") == null, "the unquoted trace:1 is skipped, not read as a key");
         // escapes: quote, backslash, slash, newline, and 4-hex unicode are decoded
         java.util.Map<String, String> em = new java.util.HashMap<>();
         SpoofLogic.parseFlatJson("{\"a\":\"x\\ny\",\"b\":\"c\\/d\",\"q\":\"he said \\\"hi\\\"\",\"u\":\"\\u0041\"}", em);

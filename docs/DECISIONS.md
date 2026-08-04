@@ -2,6 +2,16 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-05 (v0.24.5): `armTrace` disarm also strips a LEGACY unquoted `{trace:1,` — found by a read-only
+  fleet audit.** WHY: a read-only coherence audit of the applied profiles on both phones found one (the 4a
+  Dasher profile) starting `{trace:1,…` — an unquoted key an OLDER armTrace wrote before the flag was
+  quoted. It's invalid JSON, and the disarm sed (which strips only the quoted `"trace":"1",`) couldn't
+  remove it, so it sat as permanent cruft. PROVEN harmless to spoofing — `parseFlatJson` starts at the first
+  quote, so it skips the junk and reads every real field (pinned by a new SpoofLogic test) — but disarm
+  should leave a clean, valid-JSON profile, so the off path now also seds `^{trace:1,` → `{`. New profiles
+  never get the unquoted form (current armTrace writes quoted); this self-heals the legacy ones on the next
+  monitor→stop. The rest of the fleet audit found every applied profile internally coherent.
+
 - **2026-08-05 (v0.24.3): the vault restore (`restoreAppData`) is the CANONICAL restore; the per-app button
   routes to it.** WHY: two "Restore" affordances did different things — the per-app "Restore AppData" button
   did a bare staged-tarball restore that did NOT re-apply the login's linked fingerprint (so the app could
