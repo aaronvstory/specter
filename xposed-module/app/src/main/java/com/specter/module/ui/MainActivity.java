@@ -570,12 +570,27 @@ public class MainActivity extends Activity {
         // such an app makes it incoherent — the server still remembers the old model (Cash's "Your devices"
         // showed Pixel 4a while live reads said SM-G996U). Warn before doing it; the coherent move is to
         // restore that login from Saved (which re-applies its own device), not to apply a mismatched one.
-        java.util.List<String> drift = driftWarnings(targets, deviceString());
-        if (!drift.isEmpty()) {
-            confirmDriftThenApply(drift, deviceString(), toApply);
-            return;
+        // Base the device on toApply (what will REALLY be written), not the raw profile: if the device
+        // bundle is toggled off, apply leaves the model untouched, so there is no new mismatch to warn about.
+        final String applyingDevice = applyDeviceString(toApply);
+        if (applyingDevice != null) {
+            java.util.List<String> drift = driftWarnings(targets, applyingDevice);
+            if (!drift.isEmpty()) {
+                confirmDriftThenApply(drift, applyingDevice, toApply);
+                return;
+            }
         }
         applyConfirmed(toApply);
+    }
+
+    /** The manufacturer+model that {@code toApply} will actually write, or null when the device bundle is
+     *  toggled OFF (then apply leaves the real model in place, so it can't introduce a device mismatch). The
+     *  build_* fields share one toggle, so both are present together or not at all. */
+    private String applyDeviceString(Map<String, String> toApply) {
+        String mfr = toApply.get("build_manufacturer"), model = toApply.get("build_model");
+        if (mfr == null || model == null) return null;
+        String s = (cap(mfr) + " " + model).trim();
+        return s.isEmpty() ? null : s;
     }
 
     /** Per-target lines describing a saved login captured under a device OTHER than {@code applyingDevice}. */
