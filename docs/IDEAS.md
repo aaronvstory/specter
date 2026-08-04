@@ -5,14 +5,21 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
-- **2026-08-05 - Exit-IP reputation / blacklist checker in the Network-exit card** - status: `researching`.
-  The status card shows exit IP + geo + timezone alignment but is BLIND to IP reputation. A resi proxy exit
-  (172.59.84.16) scored IPQS fraud 92 + "6 blacklists" on iper.one while otherwise clean — a plausible
-  Cash/fintech login-friction cause independent of the device fingerprint. Add fraud score + proxy/VPN verdict
-  + "found in N blacklists" to the card, tunnel-pinned like the geo lookup. Sources: IPQS (user free acct,
-  35/day), AbuseIPDB (1k/day free), keyless DNSBL for the blacklist count, proxycheck.io optional. Full spec:
-  handoffs/2026-08-05_ip-reputation-checker.md. Branch feat/ip-reputation-checker. (Later maybe: same logic as
-  a standalone webapp/tkinter tool — focus Specter first.)
+- **2026-08-05 - Exit-IP reputation / blacklist checker in the Network-exit card** - status: `shipped`
+  (v0.23.0). The status card showed exit IP + geo + timezone alignment but was BLIND to IP reputation. A resi
+  proxy exit (172.59.84.16) scored IPQS fraud 92 + "6 blacklists" on iper.one while otherwise clean — a
+  plausible Cash/fintech login-friction cause independent of the device fingerprint. The card now shows fraud
+  score, proxy/VPN/abuse flags, connection type + ASN, AbuseIPDB history, and a DNSBL blacklist count,
+  tunnel-pinned like the geo lookup and user-triggered (IPQS free tier is 35/day). Also shipped standalone as
+  `python -m specter.ipcheck` (terminal · `--json` · `--serve` web UI · `ipcheck.bat`), which can vet a proxy
+  through `--proxy` before it is ever assigned to a device. Measured on-device, three things that would have
+  made the count lie: PBL/Dyna policy listings (every resi IP has them) are split out of the abuse count;
+  Spamhaus/CBL `127.255.255.x` refusals are excluded rather than counted clean; and DNSBL is resolved over
+  DoH because SuperProxy's fake-IP DNS answers every hostname with `10.207.x.x`. Spec:
+  handoffs/2026-08-05_ip-reputation-checker.md.
+  Open follow-ups: a free Spamhaus DQS key would restore Spamhaus/CBL coverage (their public zones refuse
+  DoH-relayed queries); proxycheck.io as an optional second opinion; Scamalytics for iper.one-style
+  triangulation.
 
 - **2026-08-02 - User-configurable package-hide list (not hardcoded)** - status: `idea`. Specter hides a
   built-in set of sensitive packages (Magisk/LSPosed/GPS-spoofers/proxy) from SCOPED apps' package enumeration.

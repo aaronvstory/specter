@@ -3,6 +3,40 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.23.0] - 2026-08-05
+
+### Added
+- **Exit-IP reputation in the Network-exit card.** The card showed the exit IP, ISP, location, and
+  timezone alignment but was blind to how that IP itself scores. It now reports an IPQualityScore
+  fraud score, what the IP is flagged as (proxy / VPN / Tor / abuse), its connection type and ASN, an
+  AbuseIPDB report history, and a blacklist count from twelve DNSBL zones. A coherent device on a
+  burned proxy still draws login friction, and no amount of fingerprint work fixes that.
+  The lookup is user-triggered (IPQualityScore's free tier is 35/day), cached per IP for the process
+  lifetime, and — like the timezone alignment — runs only through the VPN/proxy tunnel, so it can
+  never check or expose the phone's home IP.
+- **API key fields in Settings → IP reputation** for IPQualityScore and AbuseIPDB. Optional: with no
+  key set the keyless blacklist count still works. Keys are never hardcoded or shipped.
+- **`python -m specter.ipcheck` — the same checker as a standalone tool.** A terminal readout, a
+  `--json` mode, and `--serve` for a local web UI (`ipcheck.bat` double-click opens it). It can check
+  through an HTTP proxy (`--proxy`) or an IP directly (`--ip`), so a proxy can be vetted before it is
+  ever assigned to a device. Stdlib only, no dependencies.
+
+### Fixed
+- **Blacklist results distinguish abuse from policy listings.** Spamhaus PBL and SpamRATS Dyna/NoPtr
+  list *every* dynamic consumer address by design, so a residential or mobile exit is always on them.
+  Folding those into the count would mark every good resi proxy dirty. Policy listings are now shown
+  separately and kept out of the verdict.
+- **A blocklist that refuses the query no longer reads as clean.** Spamhaus and CBL answer
+  `127.255.255.x` to queries relayed by large public resolvers; that is a refusal, not an all-clear,
+  and those zones are now excluded from the count instead of counted as clear. `127.0.0.1` answers
+  (some zones' "alive, not listed" reply) are no longer counted as listings either.
+- **SORBS removed from the zone list.** It shut down in 2024 and now answers "not listed" for every
+  IP, which silently inflated the clean count.
+- **Blocklist lookups resolve over DNS-over-HTTPS.** The proxy apps this feature exists for hijack
+  DNS — SuperProxy answers every hostname from its own fake-IP pool (measured on-device: every DNSBL
+  zone returned `10.207.x.x`), so a plain resolve could never see a listing code through the tunnel.
+  DoH rides the proxy like any HTTPS request and returns the real answer.
+
 ## [0.22.10] - 2026-08-03
 
 ### Fixed

@@ -334,36 +334,206 @@ final class HealthCheck {
     /** Blocking IP-geo lookup, optionally pinned to a specific {@code net} (the VPN tunnel) so the exit IP is
      *  provably the tunnel's, not a home IP if the VPN flaps mid-lookup. Null on any failure. */
     static Geo lookupGeo(android.net.Network net) {
+        org.json.JSONObject o = getJson(net, "https://ipwho.is/", null);
+        if (o == null || !o.optBoolean("success", false)) return null;
+        Geo g = new Geo();
+        g.ip = emptyToNull(o.optString("ip"));
+        g.city = emptyToNull(o.optString("city"));
+        g.region = emptyToNull(o.optString("region"));
+        g.country = emptyToNull(o.optString("country"));
+        org.json.JSONObject tz = o.optJSONObject("timezone");
+        if (tz != null) g.tz = emptyToNull(tz.optString("id"));
+        org.json.JSONObject conn = o.optJSONObject("connection");
+        if (conn != null) g.isp = emptyToNull(conn.optString("isp"));
+        return g.ip == null ? null : g;
+    }
+
+    /** GET a JSON document, optionally PINNED to {@code net} (the tunnel), with optional extra request headers
+     *  as flat name/value pairs. Null on any failure (offline, non-200, timeout, parse) — every caller degrades
+     *  gracefully rather than surfacing an error. Blocking; call off the UI thread. */
+    private static org.json.JSONObject getJson(android.net.Network net, String url, String[] headers) {
         java.net.HttpURLConnection c = null;
         try {
-            java.net.URL u = new java.net.URL("https://ipwho.is/");
+            java.net.URL u = new java.net.URL(url);
             c = (java.net.HttpURLConnection) (net != null ? net.openConnection(u) : u.openConnection());
             c.setConnectTimeout(5000);
             c.setReadTimeout(5000);
+            if (headers != null) {
+                for (int i = 0; i + 1 < headers.length; i += 2) c.setRequestProperty(headers[i], headers[i + 1]);
+            }
             java.io.BufferedReader r = new java.io.BufferedReader(
                     new java.io.InputStreamReader(c.getInputStream(), "UTF-8"));
             StringBuilder sb = new StringBuilder();
             String line;
             while ((line = r.readLine()) != null) sb.append(line);
             r.close();
-            org.json.JSONObject o = new org.json.JSONObject(sb.toString());
-            if (!o.optBoolean("success", false)) return null;
-            Geo g = new Geo();
-            g.ip = emptyToNull(o.optString("ip"));
-            g.city = emptyToNull(o.optString("city"));
-            g.region = emptyToNull(o.optString("region"));
-            g.country = emptyToNull(o.optString("country"));
-            org.json.JSONObject tz = o.optJSONObject("timezone");
-            if (tz != null) g.tz = emptyToNull(tz.optString("id"));
-            org.json.JSONObject conn = o.optJSONObject("connection");
-            if (conn != null) g.isp = emptyToNull(conn.optString("isp"));
-            if (g.ip == null) return null;
-            return g;
+            return new org.json.JSONObject(sb.toString());
         } catch (Throwable t) {
             return null;
         } finally {
             if (c != null) try { c.disconnect(); } catch (Throwable ignored) {}
         }
+    }
+
+    // ---- Exit-IP reputation ------------------------------------------------------------------------------
+    // A perfectly coherent device on a burned proxy exit IP still draws login friction, and that has nothing to
+    // do with the fingerprint. Specter showed IP + geo + timezone but was blind to how the IP itself scores, so
+    // a dirty proxy looked identical to a clean one. These lookups are ON DEMAND (never auto-polled — the IPQS
+    // free tier is 35/day) and always run THROUGH the tunnel, same gate the geo/timezone path uses.
+
+    /** How the exit IP looks to fraud/abuse data sources. Every field is optional — with no API keys set this
+     *  still carries the keyless DNSBL blacklist count. */
+    static final class Reputation {
+        String ip;
+        Integer fraudScore;                     // IPQualityScore 0-100 (null = no key / lookup failed)
+        Boolean proxy, vpn, tor, recentAbuse;   // IPQualityScore verdicts
+        Integer abuseConfidence, abuseReports;  // AbuseIPDB (null = no key / lookup failed)
+        String connectionType, organization, asn, abuseVelocity;   // IPQualityScore context
+        int dnsblChecked;                       // DNSBL zones that actually answered
+        boolean dnsblUsable;                    // the sentinel resolved -> a zero-hit result is trustworthy
+        final List<String> blacklists = new ArrayList<>();    // zones listing this IP for ABUSE
+        final List<String> policyLists = new ArrayList<>();   // dynamic/consumer-range listings (not abuse)
+        String note;                            // why a source had nothing to say (bad key, quota spent)
+    }
+
+    private static volatile Reputation repCache;
+
+    /** The last reputation result IFF it's for {@code ip} — so re-opening the Status screen renders the result
+     *  instead of spending another lookup. Process-lifetime only; deliberately not persisted. */
+    static Reputation cachedReputation(String ip) {
+        Reputation r = repCache;
+        return (r != null && ip != null && ip.equals(r.ip)) ? r : null;
+    }
+
+    /** Blocking exit-IP reputation lookup, PINNED to {@code net} (the VPN tunnel) — the same safety gate the geo
+     *  lookup uses: every HTTP request and every DNS query leaves through the tunnel, so the home IP can neither
+     *  be checked by mistake nor exposed to these APIs. Both keys are optional; with neither set this still
+     *  returns the keyless DNSBL count. Never throws. Call off the UI thread. */
+    static Reputation lookupReputation(android.net.Network net, String ip, String ipqsKey, String abuseKey) {
+        Reputation r = new Reputation();
+        r.ip = ip;
+        if (ip == null) return r;
+
+        if (ipqsKey != null && !ipqsKey.isEmpty()) {
+            org.json.JSONObject o = getJson(net, "https://ipqualityscore.com/api/json/ip/"
+                    + enc(ipqsKey) + "/" + enc(ip) + "?strictness=1", null);
+            if (o == null) {
+                r.note = "IPQualityScore unreachable";
+            } else if (!o.optBoolean("success", false)) {
+                // Their error body says WHY (bad key vs. daily quota spent) — surface it instead of a
+                // generic failure the user can't act on.
+                r.note = "IPQualityScore: " + emptyOr(o.optString("message"), "lookup rejected");
+            } else {
+                if (o.has("fraud_score")) r.fraudScore = o.optInt("fraud_score");
+                r.proxy = o.optBoolean("proxy", false) || o.optBoolean("active_vpn", false);
+                r.vpn = o.optBoolean("vpn", false);
+                r.tor = o.optBoolean("tor", false) || o.optBoolean("active_tor", false);
+                r.recentAbuse = o.optBoolean("recent_abuse", false)
+                        || o.optBoolean("frequent_abuser", false)
+                        || o.optBoolean("high_risk_attacks", false)
+                        || o.optBoolean("bot_status", false);
+                r.connectionType = paidField(o.optString("connection_type"));
+                r.abuseVelocity = paidField(o.optString("abuse_velocity"));
+                r.organization = paidField(o.optString("organization"));
+                if (o.optInt("ASN", 0) > 0) r.asn = "AS" + o.optInt("ASN");
+            }
+        }
+
+        if (abuseKey != null && !abuseKey.isEmpty()) {
+            org.json.JSONObject o = getJson(net,
+                    "https://api.abuseipdb.com/api/v2/check?maxAgeInDays=90&ipAddress=" + enc(ip),
+                    new String[]{"Key", abuseKey, "Accept", "application/json"});
+            org.json.JSONObject d = o != null ? o.optJSONObject("data") : null;
+            if (d != null) {
+                r.abuseConfidence = d.optInt("abuseConfidenceScore");
+                r.abuseReports = d.optInt("totalReports");
+            } else if (r.note == null) {
+                r.note = "AbuseIPDB: lookup rejected · check the key or the daily quota";
+            }
+        }
+
+        checkDnsbl(net, ip, r);
+        repCache = r;
+        return r;
+    }
+
+    /** "Found in N blacklists", the keyless way: resolve {@code <reversed-ip>.<zone>} and read the answer (see
+     *  {@link Dnsbl} for the query form, what counts as a listing, and the abuse-vs-policy split). Zones run in
+     *  parallel behind a hard 10s cap so one dead zone can't stall the check. Only zones that gave a USABLE
+     *  answer are counted, so "none of N" can never be a refusal or a timeout wearing a clean face. */
+    private static void checkDnsbl(final android.net.Network net, String ip, Reputation out) {
+        final String rev = Dnsbl.reverseV4(ip);
+        if (rev == null) return;
+        java.util.concurrent.ExecutorService ex =
+                java.util.concurrent.Executors.newFixedThreadPool(Dnsbl.ZONES.length);
+        try {
+            List<java.util.concurrent.Callable<String>> tasks = new ArrayList<>();
+            // "" = the zone answered but this IP isn't listed; null = it gave no usable answer.
+            for (final String[] z : Dnsbl.ZONES) tasks.add(() -> {
+                List<String> a = resolve(net, rev + "." + z[1]);
+                if (a == null) return null;
+                String kind = Dnsbl.classify(z[1], a);
+                return kind == null ? "" : kind + ":" + z[0];
+            });
+
+            List<java.util.concurrent.Future<String>> fs =
+                    ex.invokeAll(tasks, 10, java.util.concurrent.TimeUnit.SECONDS);
+            for (java.util.concurrent.Future<String> f : fs) {
+                String v;
+                try { v = f.get(); } catch (Throwable t) { continue; }   // timed out / cancelled
+                if (v == null) continue;                                  // no usable answer
+                // A BLOCKED zone told us nothing — counting it would turn a refusal into a clean result.
+                if (v.startsWith(Dnsbl.BLOCKED)) continue;
+                out.dnsblChecked++;
+                if (v.startsWith(Dnsbl.ABUSE + ":")) out.blacklists.add(v.substring(6));
+                else if (v.startsWith(Dnsbl.POLICY + ":")) out.policyLists.add(v.substring(7));
+            }
+            // DoH returns an explicit status, so a zone that answered NXDOMAIN is a definitive "not listed" —
+            // no sentinel probe needed to tell a real all-clear from a dead resolver.
+            out.dnsblUsable = out.dnsblChecked > 0;
+        } catch (Throwable t) { /* best-effort */ }
+        finally { try { ex.shutdownNow(); } catch (Throwable ignored) {} }
+    }
+
+    /** Every address {@code host} resolves to, or null if the lookup gave no usable answer.
+     *
+     *  <p>Resolved over DNS-over-HTTPS, NOT {@code InetAddress}, because the proxy apps this feature exists for
+     *  hijack DNS: SuperProxy answers every hostname with a synthetic address from its own fake-IP pool
+     *  (measured on-device: every DNSBL zone returned {@code 10.207.x.x}), so a plain resolve can never see a
+     *  127.0.0.x listing code through the tunnel. DoH is an ordinary HTTPS request, so it rides the proxy and
+     *  comes back with the real answer. It also removes the NXDOMAIN-vs-SERVFAIL ambiguity that
+     *  {@code UnknownHostException} collapses: {@code Status 3} is a definitive "not listed", anything else is
+     *  "no answer". Still pinned to {@code net} — the request must leave through the tunnel like every other. */
+    private static List<String> resolve(android.net.Network net, String host) {
+        org.json.JSONObject o = getJson(net,
+                "https://cloudflare-dns.com/dns-query?type=A&name=" + enc(host),
+                new String[]{"Accept", "application/dns-json"});
+        if (o == null) return null;
+        int status = o.optInt("Status", -1);
+        if (status == 3) return new ArrayList<>();     // NXDOMAIN — answered, this IP isn't listed
+        if (status != 0) return null;                  // SERVFAIL / refused — no usable answer
+        List<String> out = new ArrayList<>();
+        org.json.JSONArray ans = o.optJSONArray("Answer");
+        if (ans != null) {
+            for (int i = 0; i < ans.length(); i++) {
+                org.json.JSONObject a = ans.optJSONObject(i);
+                if (a != null && a.optInt("type") == 1) out.add(a.optString("data"));
+            }
+        }
+        return out;
+    }
+
+    private static String enc(String s) {
+        try { return java.net.URLEncoder.encode(s, "UTF-8"); } catch (Throwable t) { return ""; }
+    }
+
+    /** IPQualityScore's free tier answers "Premium required." for the paid fields — that's not a value. */
+    private static String paidField(String s) {
+        return (s == null || s.isEmpty() || s.toLowerCase().startsWith("premium")) ? null : s;
+    }
+
+    private static String emptyOr(String s, String fallback) {
+        return (s == null || s.isEmpty()) ? fallback : s;
     }
 
     private static String emptyToNull(String s) { return s == null || s.isEmpty() ? null : s; }

@@ -782,3 +782,28 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   "Ready" right after a restore — and a user tapping Apply from there re-wipes the login just restored. The
   residual delta is bookkeeping (`spoof_accounts`), not identity, so signing the gated map is the truthful
   reading of "this identity is live on that app".
+- **Exit-IP reputation uses IPQualityScore for the score and direct DNSBL for the blacklist count — not
+  iper.one.** WHY: iper.one is what surfaced the problem (fraud 92 + "6 blacklists" on an otherwise clean-
+  looking resi exit) but it has no API and charges per check, so it can't be automated. It combines Maxmind,
+  Scamalytics, and blocklist lookups; IPQS supplies the same fraud/proxy verdict via API on a free tier
+  (35/day), and the blacklist line is just DNSBL, which is keyless and free. AbuseIPDB adds report history.
+- **Blacklist hits are split into ABUSE and POLICY, and only abuse is scored.** WHY: Spamhaus PBL
+  (127.0.0.10/11) and SpamRATS Dyna/NoPtr (127.0.0.36/37) list every dynamic consumer address by design, so a
+  residential or mobile proxy exit is ALWAYS on them. Reporting a raw count would mark every good resi proxy
+  dirty and make the number useless. Policy listings are shown, labelled as normal, and kept out of the
+  verdict.
+- **A blocklist that refuses the query is excluded, never counted as clear.** WHY: Spamhaus and CBL answer
+  127.255.255.x to queries relayed by large public resolvers. Reading that as "not listed" silently converts
+  "we don't know" into "it's fine" — the exact failure mode this feature exists to prevent. Same reason
+  127.0.0.1 (some zones' "alive, not listed" reply) is not a listing, and SORBS was dropped: it shut down in
+  2024 and answers clean for everything.
+- **On-device blocklist lookups go over DNS-over-HTTPS, not InetAddress.** WHY: measured on the 4a — the proxy
+  apps this feature exists for hijack DNS. SuperProxy answers every hostname from its own fake-IP pool
+  (every DNSBL zone resolved to 10.207.x.x), so a plain resolve can never see a 127.0.0.x listing code through
+  the tunnel; the check reported "unavailable" for every IP. DoH is an ordinary HTTPS request, so it rides the
+  proxy and returns the real answer — and its explicit Status code removes the NXDOMAIN-vs-SERVFAIL ambiguity
+  that UnknownHostException collapses, which is why the old sentinel probe could be deleted. Cost: Spamhaus and
+  CBL refuse DoH-relayed queries, so on-device they report BLOCKED; a free Spamhaus DQS key would restore them.
+- **The reputation lookup is user-triggered, not part of the automatic health run.** WHY: IPQS's free tier is
+  35 lookups a day, and the Status screen re-runs its checks on every open. Auto-polling would burn the quota
+  in a morning. Result is cached per IP for the process lifetime so re-opening the screen is free.

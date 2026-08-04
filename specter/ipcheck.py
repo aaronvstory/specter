@@ -1,0 +1,635 @@
+"""Exit-IP reputation checker — the same lookups Specter runs on-device, standalone.
+
+Point it at a proxy and it reports how that exit IP looks to fraud/abuse data sources: an
+IPQualityScore fraud score, AbuseIPDB abuse history, and the keyless DNSBL blacklist count.
+Useful for vetting a proxy *before* assigning it, without touching a phone.
+
+    python -m specter.ipcheck                                   # this machine's exit IP
+    python -m specter.ipcheck --proxy http://user:pass@host:port
+    python -m specter.ipcheck --ip 172.59.84.16                 # an IP directly, no proxy needed
+    python -m specter.ipcheck --serve                           # local web UI, opens a browser
+    python -m specter.ipcheck --json                            # machine-readable
+
+API keys are optional (the blacklist count is keyless). They are read from --ipqs-key /
+--abuse-key, then the env (IPQS_KEY / ABUSEIPDB_KEY), then ~/.specter-ipcheck.json. Never
+committed, never hardcoded.
+
+Stdlib only — no dependencies. Mirrors the Android side (HealthCheck.java + Dnsbl.java) so a
+finding here means the same thing as a finding on the phone.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import socket
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+CONFIG = Path.home() / ".specter-ipcheck.json"
+TIMEOUT = 8
+
+# The blocklists behind the "found in N blacklists" count — keyless, no quota, no account. Every
+# zone here was verified live (its sentinel answers); SORBS is deliberately absent, it shut down in
+# 2024 and now answers "not listed" for everything, which reads as a silent all-clear.
+# Same table as xposed-module/.../ui/Dnsbl.java; keep the two in sync.
+DNSBL_ZONES = [
+    ("Spamhaus", "zen.spamhaus.org"),
+    ("CBL", "cbl.abuseat.org"),
+    ("Barracuda", "b.barracudacentral.org"),
+    ("SpamCop", "bl.spamcop.net"),
+    ("UCEPROTECT", "dnsbl-1.uceprotect.net"),
+    ("blocklist.de", "bl.blocklist.de"),
+    ("PSBL", "psbl.surriel.com"),
+    ("DroneBL", "dnsbl.dronebl.org"),
+    ("SpamRATS", "all.spamrats.com"),
+    ("GBUdb", "truncate.gbudb.net"),
+    ("InterServer", "rbl.interserver.net"),
+    ("s5h", "all.s5h.net"),
+]
+
+# A DNSBL answers in 127.0.0.0/8 and the LAST OCTET says why. Most of them mean abuse, but a few
+# are pure POLICY listings — "this is a dynamic consumer IP" — which every residential and mobile
+# address carries by design. Counting those as abuse would mark every resi proxy dirty, so they're
+# tracked separately and kept out of the verdict.
+POLICY_CODES = {
+    "zen.spamhaus.org": {10, 11},        # PBL: dynamic/consumer range, not an abuse listing
+    "all.spamrats.com": {36, 37},        # Dyna (dynamic rDNS) and NoPtr (no reverse DNS)
+}
+
+# Every DNSBL lists 127.0.0.2 by convention, so this query MUST resolve. Without it, a resolver
+# that filters blocklist zones reads as a clean "0 of N" — a false all-clear.
+SENTINEL = "2.0.0.127." + DNSBL_ZONES[0][1]
+
+# IPQS boolean verdicts worth showing, in the order they matter. active_* means the anonymising
+# service is live on that IP right now, not merely that it was one historically.
+IPQS_FLAGS = [
+    ("tor", "Tor"),
+    ("active_tor", "Tor (active)"),
+    ("vpn", "VPN"),
+    ("active_vpn", "VPN (active)"),
+    ("proxy", "Proxy"),
+    ("recent_abuse", "Recent abuse"),
+    ("frequent_abuser", "Frequent abuser"),
+    ("high_risk_attacks", "High-risk attacks"),
+    ("bot_status", "Bot"),
+    ("is_crawler", "Crawler"),
+    ("security_scanner", "Security scanner"),
+    ("shared_connection", "Shared connection"),
+    ("mobile", "Mobile"),
+]
+
+
+# ---- pure logic (unit-tested; no network) --------------------------------------------------
+
+
+def reverse_v4(ip: str | None) -> str | None:
+    """``1.2.3.4`` -> ``4.3.2.1``, the DNSBL query form. None unless it's a dotted-quad IPv4
+    address — IPv6 DNSBL needs nibble-format queries and few of these zones serve them."""
+    if not ip:
+        return None
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return None
+    for p in parts:
+        if not p.isdigit() or len(p) > 3 or int(p) > 255:
+            return None
+    return ".".join(reversed(parts))
+
+
+def listed(addr: str | None) -> bool:
+    """True iff a resolved answer is a real listing. Answers live in 127.0.0.0/8 with the last octet
+    >= 2 — 127.0.0.1 is the "zone is alive, this IP isn't on it" reply some zones give, and
+    127.255.255.x is Spamhaus's ERROR range (query via a public/open resolver, or a blocked
+    account). Counting either would report clean IPs as blacklisted."""
+    if not addr or not addr.startswith("127.") or addr.startswith("127.255.255."):
+        return False
+    parts = addr.split(".")
+    return len(parts) == 4 and parts[3].isdigit() and int(parts[3]) >= 2
+
+
+def classify(zone: str, addrs: list[str]) -> str | None:
+    """What a zone's answers mean for this IP: "abuse", "policy" (a dynamic/consumer-range listing
+    every residential IP carries), "blocked" (the zone refused the query), or None when it answered
+    and this IP simply isn't listed. Abuse wins when both are present — a mobile IP is always on
+    PBL, so only the SBL/XBL codes alongside it are news."""
+    if any(a.startswith("127.255.255.") for a in addrs):
+        # Spamhaus and CBL answer this to queries relayed by large public resolvers. It is a
+        # refusal, not a clean result — counting it would turn "we don't know" into "it's fine".
+        return "blocked"
+    hits = [a for a in addrs if listed(a)]
+    if not hits:
+        return None
+    policy = POLICY_CODES.get(zone, set())
+    return "policy" if all(int(a.split(".")[3]) in policy for a in hits) else "abuse"
+
+
+def flags(rep: dict) -> list[str]:
+    """The IPQS verdicts that are true, as display labels."""
+    return [label for key, label in IPQS_FLAGS if rep.get(key)]
+
+
+def verdict(rep: dict) -> tuple[str, str]:
+    """(level, one-line reason) from the collected signals. level is clean / suspect / dirty /
+    unknown. Thresholds follow IPQualityScore's own bands (75+ suspicious, 85+ high risk)."""
+    fraud = rep.get("fraud_score")
+    abuse = rep.get("abuse_confidence")
+    hits = rep.get("blacklists") or []
+    why = []
+    if fraud is not None and fraud >= 85:
+        why.append(f"fraud score {fraud}")
+    if len(hits) >= 3:
+        why.append(f"{len(hits)} blacklists")
+    if abuse is not None and abuse >= 50:
+        why.append(f"{abuse}% abuse confidence")
+    if rep.get("frequent_abuser") or rep.get("high_risk_attacks") or rep.get("bot_status"):
+        why.append("flagged for abuse by IPQS")
+    if why:
+        return "dirty", "Expect login friction — " + ", ".join(why)
+
+    if fraud is not None and fraud >= 60:
+        why.append(f"fraud score {fraud}")
+    if hits:
+        why.append(f"{len(hits)} blacklist" + ("s" if len(hits) > 1 else ""))
+    if abuse is not None and abuse >= 10:
+        why.append(f"{abuse}% abuse confidence")
+    if rep.get("recent_abuse"):
+        why.append("recent abuse reported")
+    if rep.get("abuse_velocity") in ("medium", "high"):
+        why.append(f"{rep['abuse_velocity']} abuse velocity")
+    if why:
+        return "suspect", "Usable but marked — " + ", ".join(why)
+
+    if fraud is None and abuse is None and not rep.get("dnsbl_usable"):
+        return "unknown", "No source answered — add an API key, or check the network"
+    return "clean", "No fraud, abuse, or blacklist signal on this IP"
+
+
+def fraud_band(score: int) -> str:
+    return "high risk" if score >= 85 else "suspicious" if score >= 60 else "clean"
+
+
+def format_report(rep: dict) -> str:
+    """The terminal readout. Every line is omitted when its source had nothing to say, so the
+    output never implies a check ran that didn't."""
+    rows = [("Exit IP", rep.get("ip") or "unknown")]
+    for key, label in (("isp", "ISP"), ("organization", "Organization"), ("asn", "ASN"),
+                       ("connection_type", "Connection"), ("location", "Location"),
+                       ("timezone", "Time zone")):
+        if rep.get(key):
+            rows.append((label, str(rep[key])))
+
+    fraud = rep.get("fraud_score")
+    if fraud is not None:
+        rows.append(("Fraud risk", f"{fraud} · {fraud_band(fraud)}"))
+        on = flags(rep)
+        rows.append(("Flagged as", " · ".join(on) if on else "not flagged as proxy or VPN"))
+    if rep.get("abuse_velocity"):
+        rows.append(("Abuse velocity", rep["abuse_velocity"]))
+
+    hits = rep.get("blacklists") or []
+    checked = rep.get("dnsbl_checked", 0)
+    if hits:
+        rows.append(("Blacklists", f"{len(hits)} of {checked} · " + ", ".join(hits)))
+    elif rep.get("dnsbl_usable") and checked:
+        rows.append(("Blacklists", f"none of {checked} lists"))
+    else:
+        rows.append(("Blacklists", "unavailable · blocklist DNS unreachable"))
+    if rep.get("policy_lists"):
+        rows.append(("Policy lists", ", ".join(rep["policy_lists"])
+                     + " — normal for residential and mobile IPs, not abuse"))
+
+    if rep.get("abuse_confidence") is not None:
+        n = rep.get("abuse_reports") or 0
+        rows.append(("Abuse reports", f"{n} in 90 days · {rep['abuse_confidence']}% confidence"))
+
+    level, why = verdict(rep)
+    rows.append(("Verdict", f"{level.upper()} — {why}"))
+    rows.extend(("Note", n) for n in rep.get("notes", []))
+
+    width = max(len(k) for k, _ in rows)
+    return "\n".join(f"{k.ljust(width)}   {v}" for k, v in rows)
+
+
+# ---- network -------------------------------------------------------------------------------
+
+
+def _opener(proxy: str | None):
+    if not proxy:
+        return urllib.request.build_opener()
+    if proxy.startswith("socks"):
+        # ponytail: urllib speaks HTTP proxies only. Upgrade path if SOCKS is ever needed:
+        # `pip install PySocks` + socks.set_default_proxy, or run it behind a local http bridge.
+        raise ValueError("SOCKS proxies are not supported — use an http:// proxy URL")
+    if "://" not in proxy:
+        proxy = "http://" + proxy
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+
+
+def _get_json(url: str, opener, headers: dict | None = None) -> dict | None:
+    """GET a JSON document. None on a transport failure; an API's own error body is returned as-is
+    so the caller can surface *why* (bad key, quota spent) instead of a generic failure."""
+    try:
+        req = urllib.request.Request(url, headers=headers or {})
+        with opener.open(req, timeout=TIMEOUT) as r:
+            return json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode("utf-8", "replace"))
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
+def lookup_geo(opener) -> dict:
+    """Public exit IP + ISP/location/timezone, as seen through ``opener``'s proxy (if any)."""
+    o = _get_json("https://ipwho.is/", opener)
+    if not o or not o.get("success"):
+        return {}
+    where = ", ".join(x for x in (o.get("city"), o.get("region"), o.get("country")) if x)
+    return {
+        "ip": o.get("ip"),
+        "isp": (o.get("connection") or {}).get("isp"),
+        "location": where or None,
+        "timezone": (o.get("timezone") or {}).get("id"),
+    }
+
+
+def lookup_ipqs(ip: str, key: str, opener) -> dict:
+    """IPQualityScore proxy/VPN detection. Returns the fields worth showing, or a note explaining
+    why there's no score (their error body says whether it's the key or the quota)."""
+    url = ("https://ipqualityscore.com/api/json/ip/"
+           f"{urllib.parse.quote(key, safe='')}/{urllib.parse.quote(ip, safe='')}?strictness=1")
+    o = _get_json(url, opener)
+    if not o:
+        return {"notes": ["IPQualityScore unreachable — check the network or proxy"]}
+    if not o.get("success"):
+        return {"notes": ["IPQualityScore: " + (o.get("message") or "lookup rejected")]}
+
+    out: dict = {"fraud_score": o.get("fraud_score")}
+    for key_name, _ in IPQS_FLAGS:
+        out[key_name] = bool(o.get(key_name))
+    for src, dst in (("connection_type", "connection_type"), ("abuse_velocity", "abuse_velocity"),
+                     ("organization", "organization"), ("ISP", "isp"), ("host", "host")):
+        v = o.get(src)
+        # The free tier answers "Premium required." for the paid fields — that's not a value.
+        if v and not (isinstance(v, str) and v.lower().startswith("premium")):
+            out[dst] = v
+    if o.get("ASN"):
+        out["asn"] = f"AS{o['ASN']}"
+    if not out.get("connection_type") and o.get("mobile"):
+        out["connection_type"] = "Mobile"
+    return out
+
+
+def lookup_abuseipdb(ip: str, key: str, opener) -> dict:
+    o = _get_json(f"https://api.abuseipdb.com/api/v2/check?maxAgeInDays=90&ipAddress="
+                  f"{urllib.parse.quote(ip, safe='')}", opener,
+                  {"Key": key, "Accept": "application/json"})
+    data = (o or {}).get("data")
+    if not data:
+        errs = (o or {}).get("errors") or []
+        why = errs[0].get("detail") if errs and isinstance(errs[0], dict) else "lookup failed"
+        return {"notes": ["AbuseIPDB: " + str(why)]}
+    return {
+        "abuse_confidence": data.get("abuseConfidenceScore"),
+        "abuse_reports": data.get("totalReports"),
+        "usage_type": data.get("usageType"),
+    }
+
+
+def dnsbl_check(ip: str) -> dict:
+    """Query every zone in parallel. Returns hits, how many zones answered, and whether the
+    sentinel resolved (without which a zero-hit result proves nothing)."""
+    rev = reverse_v4(ip)
+    if not rev:
+        return {"blacklists": [], "dnsbl_checked": 0, "dnsbl_usable": False}
+
+    def probe(host):
+        try:
+            return [str(i[4][0]) for i in socket.getaddrinfo(host, None, socket.AF_INET)]
+        except socket.gaierror:
+            return []           # NXDOMAIN: the zone answered, this IP just isn't on it
+
+    abuse, policy, checked, usable = [], [], 0, False
+    jobs = [("__sentinel__", "", SENTINEL)]
+    jobs += [(name, zone, f"{rev}.{zone}") for name, zone in DNSBL_ZONES]
+    with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
+        futs = {ex.submit(probe, host): (name, zone) for name, zone, host in jobs}
+        try:
+            done = list(as_completed(futs, timeout=TIMEOUT + 2))
+        except TimeoutError:
+            done = [f for f in futs if f.done()]
+        for f in done:
+            name, zone = futs[f]
+            try:
+                addrs = f.result()
+            except Exception:
+                continue        # this zone did not answer
+            if name == "__sentinel__":
+                usable = any(listed(a) for a in addrs)
+                continue
+            kind = classify(zone, addrs)
+            if kind == "blocked":
+                continue        # the zone refused — it told us nothing, so don't count it as clear
+            checked += 1
+            if kind == "abuse":
+                abuse.append(name)
+            elif kind == "policy":
+                policy.append(name)
+    order = [z[0] for z in DNSBL_ZONES]
+    abuse.sort(key=order.index)
+    policy.sort(key=order.index)
+    return {"blacklists": abuse, "policy_lists": policy,
+            "dnsbl_checked": checked, "dnsbl_usable": usable}
+
+
+def check(proxy: str | None = None, ip: str | None = None,
+          ipqs_key: str = "", abuse_key: str = "") -> dict:
+    """Run every available source and return one flat report dict. Blocking (network)."""
+    opener = _opener(proxy)
+    rep: dict = {"notes": []}
+
+    def merge(part: dict) -> None:
+        rep["notes"].extend(part.pop("notes", []))
+        rep.update({k: v for k, v in part.items() if v is not None})
+
+    if ip:
+        rep["ip"] = ip
+    else:
+        merge(lookup_geo(opener))
+        if not rep.get("ip"):
+            rep["notes"].append("Exit-IP lookup failed — proxy down, or no route out?")
+            return rep
+
+    if ipqs_key:
+        merge(lookup_ipqs(rep["ip"], ipqs_key, opener))
+    else:
+        rep["notes"].append("No IPQualityScore key — no fraud score (set it in the Keys row)")
+    if abuse_key:
+        merge(lookup_abuseipdb(rep["ip"], abuse_key, opener))
+
+    # ponytail: DNSBL queries go out the LOCAL resolver, not the proxy — an HTTP proxy can't carry
+    # DNS. That's fine here: the query names the exit IP explicitly, so the answer is about that IP
+    # either way. (On-device it must be pinned, because there the lookup is how we learn the IP.)
+    rep.update(dnsbl_check(rep["ip"]))
+    rep["verdict"], rep["verdict_reason"] = verdict(rep)
+    rep["flags"] = flags(rep)
+    return rep
+
+
+# ---- config --------------------------------------------------------------------------------
+
+
+def load_config() -> dict:
+    try:
+        return json.loads(CONFIG.read_text("utf-8"))
+    except Exception:
+        return {}
+
+
+def save_config(cfg: dict) -> None:
+    try:
+        CONFIG.write_text(json.dumps(cfg, indent=2), "utf-8")
+        os.chmod(CONFIG, 0o600)     # it holds API keys
+    except Exception:
+        pass
+
+
+def resolve_keys(args, cfg: dict) -> tuple[str, str]:
+    ipqs = args.ipqs_key or os.environ.get("IPQS_KEY") or cfg.get("ipqs_key") or ""
+    abuse = args.abuse_key or os.environ.get("ABUSEIPDB_KEY") or cfg.get("abuse_key") or ""
+    return ipqs.strip(), abuse.strip()
+
+
+# ---- local web UI --------------------------------------------------------------------------
+
+PAGE = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Specter · exit-IP check</title>
+<style>
+:root{--bg:#16161a;--card:#212129;--card2:#262630;--line:#34343f;--ink:#f1f1f4;--soft:#b9b9c4;
+--dim:#7d7d8a;--gold:#ffd54a;--sage:#7fb58c;--red:#ef8a8a;--amber:#f0b562;--blue:#6cc4e8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:780px;margin:0 auto;padding:28px 20px 64px}
+h1{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600;margin:0 0 18px}
+.card{background:var(--card);border-radius:10px;padding:18px;margin-bottom:14px}
+label{display:block;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+input{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:6px;
+color:var(--ink);padding:10px 12px;font:inherit}
+input:focus{outline:none;border-color:var(--gold)}
+.grid{display:grid;grid-template-columns:1fr 200px;gap:12px}
+@media(max-width:620px){.grid{grid-template-columns:1fr}}
+details{margin-top:12px}summary{cursor:pointer;color:var(--dim);font-size:13px}
+button{width:100%;margin-top:14px;background:var(--gold);color:#211b02;border:0;border-radius:6px;
+padding:13px;font:600 15px/1 system-ui;cursor:pointer}
+button:disabled{background:var(--card2);color:var(--dim);cursor:default}
+.verdict{border-left:4px solid var(--dim);padding:14px 16px;border-radius:8px;background:var(--card)}
+.verdict b{display:block;font-size:19px;letter-spacing:.04em}
+.verdict span{color:var(--soft);font-size:13px}
+.dirty{border-color:var(--red)}.dirty b{color:var(--red)}
+.suspect{border-color:var(--amber)}.suspect b{color:var(--amber)}
+.clean{border-color:var(--sage)}.clean b{color:var(--sage)}
+.unknown{border-color:var(--dim)}.unknown b{color:var(--dim)}
+.ip{font:600 27px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:-.01em}
+.sub{color:var(--soft);font-size:13px;margin-top:4px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px}
+.tile{background:var(--card);border-radius:10px;padding:16px}
+.tile em{font-style:normal;display:block;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim)}
+.tile strong{display:block;font-size:26px;font-weight:600;margin:6px 0 2px}
+.tile small{color:var(--soft);font-size:12px}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.chip{font-size:12px;padding:4px 10px;border-radius:99px;background:#f0b56222;color:var(--amber)}
+.chip.ok{background:#7fb58c22;color:var(--sage)}
+.rows{margin-top:6px}
+.row{display:flex;gap:14px;padding:9px 0;border-top:1px solid var(--line);font-size:13px}
+.row:first-child{border-top:0}
+.row i{font-style:normal;color:var(--dim);width:120px;flex:none;text-transform:uppercase;font-size:11px;letter-spacing:.07em;padding-top:2px}
+.note{color:var(--dim);font-size:12px;margin-top:4px}
+.hide{display:none}
+</style>
+<div class=wrap>
+<h1>Specter · exit-IP check</h1>
+<div class=card>
+  <div class=grid>
+    <div><label for=proxy>Proxy URL</label><input id=proxy placeholder="http://user:pass@host:port"></div>
+    <div><label for=ip>IP (optional)</label><input id=ip placeholder="check directly"></div>
+  </div>
+  <details><summary>API keys</summary>
+    <div class=grid style="margin-top:10px">
+      <div><label for=ipqs>IPQualityScore key</label><input id=ipqs type=password></div>
+      <div><label for=abuse>AbuseIPDB key</label><input id=abuse type=password></div>
+    </div>
+    <p class=note>Stored locally in ~/.specter-ipcheck.json. The blacklist count needs no key.</p>
+  </details>
+  <button id=go>Check</button>
+</div>
+<div id=out></div>
+</div>
+<script>
+const $=s=>document.querySelector(s), out=$('#out');
+const q=new URLSearchParams(location.search);
+fetch('/config').then(r=>r.json()).then(c=>{
+  $('#proxy').value=q.get('proxy')||c.proxy||'';
+  $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||'';
+  $('#ip').value=q.get('ip')||'';
+  // ?ip=… or ?proxy=… runs on load, so a bookmark is a one-click check.
+  if(q.get('ip')||q.get('proxy'))$('#go').click();
+});
+const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+function row(k,v){return `<div class=row><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
+function render(r){
+  if(r.error){out.innerHTML=`<div class="card verdict dirty"><b>FAILED</b><span>${esc(r.error)}</span></div>`;return}
+  const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
+  let t='';
+  t+=`<div class="card verdict ${r.verdict}"><b>${r.verdict.toUpperCase()}</b><span>${esc(r.verdict_reason)}</span></div>`;
+  t+=`<div class=card><div class=ip>${esc(r.ip||'unknown')}</div><div class=sub>${
+      esc([r.isp,r.connection_type,r.location].filter(Boolean).join(' · ')||'—')}</div>`;
+  if(r.timezone)t+=`<div class=sub>${esc(r.timezone)}</div>`;
+  t+=`</div>`;
+  t+='<div class=tiles>';
+  if(r.fraud_score!=null)t+=`<div class=tile><em>Fraud risk</em><strong class="${band(r.fraud_score)
+      }" style="color:var(--${band(r.fraud_score)==='dirty'?'red':band(r.fraud_score)==='suspect'?'amber':'sage'})">${
+      r.fraud_score}</strong><small>IPQualityScore · ${esc(r.fraud_score>=85?'high risk':r.fraud_score>=60?'suspicious':'clean')}</small></div>`;
+  const hits=(r.blacklists||[]).length, col=hits>=3?'red':hits?'amber':(r.dnsbl_usable?'sage':'dim');
+  t+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${col})">${
+      r.dnsbl_usable||hits?hits:'—'}</strong><small>${
+      hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${r.dnsbl_checked} lists`:'blocklist DNS unreachable'}</small></div>`;
+  if((r.policy_lists||[]).length)t+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--blue)">${
+      r.policy_lists.length}</strong><small>${esc(r.policy_lists.join(', '))} · normal for residential IPs, not abuse</small></div>`;
+  if(r.abuse_confidence!=null){const ac=r.abuse_confidence>=50?'red':r.abuse_confidence>=10?'amber':'sage';
+    t+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${r.abuse_confidence}%</strong><small>${
+      r.abuse_reports||0} reports in 90 days</small></div>`}
+  if(r.abuse_velocity)t+=`<div class=tile><em>Abuse velocity</em><strong style="font-size:20px">${
+      esc(r.abuse_velocity)}</strong><small>IPQualityScore</small></div>`;
+  t+='</div>';
+  if(r.fraud_score!=null){
+    t+='<div class=card><em style="font-style:normal;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim)">Flagged as</em><div class=chips>';
+    t+=(r.flags||[]).length?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
+        :'<span class="chip ok">Not flagged as proxy or VPN</span>';
+    t+='</div></div>';
+  }
+  let d='';
+  [['ISP','isp'],['Organization','organization'],['ASN','asn'],['Host','host'],
+   ['Connection','connection_type'],['Usage','usage_type'],['Location','location'],
+   ['Time zone','timezone']].forEach(([k,v])=>{if(r[v])d+=row(k,r[v])});
+  if(d)t+=`<div class=card><div class=rows>${d}</div></div>`;
+  if((r.notes||[]).length)t+=`<div class=card>${r.notes.map(n=>`<div class=note>${esc(n)}</div>`).join('')}</div>`;
+  out.innerHTML=t;
+}
+$('#go').onclick=async()=>{
+  const b=$('#go'); b.disabled=true; b.textContent='Checking…';
+  out.innerHTML='<div class="card"><span class=sub>Running lookups…</span></div>';
+  try{
+    const r=await fetch('/check',{method:'POST',body:JSON.stringify({
+      proxy:$('#proxy').value.trim(), ip:$('#ip').value.trim(),
+      ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()})});
+    render(await r.json());
+  }catch(e){render({error:String(e)})}
+  b.disabled=false; b.textContent='Check';
+};
+</script>
+"""
+
+
+def serve(port: int, open_browser: bool = True) -> None:
+    """A tiny localhost-only web UI over the same check(). Bound to 127.0.0.1 because the POST body
+    carries API keys — this is a desktop tool, not a service."""
+    import http.server
+    import webbrowser
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _send(self, body: bytes, ctype: str) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            path = urllib.parse.urlparse(self.path).path      # "/?ip=..." must still serve the page
+            if path == "/config":
+                cfg = load_config()
+                self._send(json.dumps({k: cfg.get(k, "") for k in
+                                       ("proxy", "ipqs_key", "abuse_key")}).encode(),
+                           "application/json")
+            elif path in ("/", "/index.html"):
+                self._send(PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            else:
+                self.send_error(404)
+
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                req = json.loads(self.rfile.read(n) or b"{}")
+            except Exception:
+                req = {}
+            cfg = load_config()
+            cfg.update({k: req.get(k, "") for k in ("proxy", "ipqs_key", "abuse_key")})
+            save_config(cfg)
+            try:
+                rep = check(req.get("proxy") or None, req.get("ip") or None,
+                            req.get("ipqs_key", ""), req.get("abuse_key", ""))
+            except Exception as exc:
+                rep = {"error": str(exc)}
+            self._send(json.dumps(rep).encode(), "application/json")
+
+        def log_message(self, format, *args):     # keep the console to our own output
+            pass
+
+    url = f"http://127.0.0.1:{port}/"
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    print(f"exit-IP check: {url}  (ctrl-c to stop)")
+    if open_browser:
+        webbrowser.open(url)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print()
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    ap.add_argument("--proxy", default="", help="http://[user:pass@]host:port to check through")
+    ap.add_argument("--ip", default="", help="check this IP directly (skips the exit-IP lookup)")
+    ap.add_argument("--ipqs-key", default="", help="IPQualityScore API key")
+    ap.add_argument("--abuse-key", default="", help="AbuseIPDB API key")
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--serve", nargs="?", const=8787, type=int, metavar="PORT",
+                    help="open the local web UI (default port 8787)")
+    ap.add_argument("--no-browser", action="store_true", help="with --serve, don't open a browser")
+    ap.add_argument("--save-keys", action="store_true",
+                    help=f"write the given keys to {CONFIG} for next time")
+    args = ap.parse_args(argv)
+
+    cfg = load_config()
+    ipqs, abuse = resolve_keys(args, cfg)
+    if args.save_keys:
+        cfg.update({"ipqs_key": ipqs, "abuse_key": abuse})
+        save_config(cfg)
+        print(f"keys saved to {CONFIG}")
+
+    if args.serve:
+        serve(args.serve, not args.no_browser)
+        return 0
+
+    try:
+        rep = check(args.proxy or None, args.ip or None, ipqs, abuse)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(json.dumps(rep, indent=2) if args.json else format_report(rep))
+    return {"dirty": 1, "unknown": 3}.get(rep.get("verdict", "unknown"), 0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
