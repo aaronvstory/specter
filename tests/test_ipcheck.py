@@ -481,3 +481,74 @@ def test_format_report_says_unavailable_when_blocklist_dns_is_dead():
 def test_flags_lists_only_true_verdicts_in_priority_order():
     assert ipcheck.flags({"proxy": True, "vpn": True, "tor": False}) == ["VPN", "Proxy"]
     assert ipcheck.flags({}) == []
+
+
+# ---- check() orchestration + main() exit code (no network — the sources are monkeypatched) ------
+
+
+def test_check_merges_every_source_and_assembles_verdict_and_flags(monkeypatch):
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "1.2.3.4", "isp": "ACME"})
+    monkeypatch.setattr(ipcheck, "lookup_ipqs",
+                        lambda ip, key, opener: {"fraud_score": 90, "proxy": True})
+    monkeypatch.setattr(ipcheck, "lookup_abuseipdb",
+                        lambda ip, key, opener: {"abuse_confidence": 70, "abuse_reports": 4})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {
+        "blacklists": ["Spamhaus"], "policy_lists": [], "dnsbl_checked": 12, "dnsbl_usable": True})
+    rep = ipcheck.check(ipqs_key="k", abuse_key="a")
+    assert rep["ip"] == "1.2.3.4" and rep["isp"] == "ACME"
+    assert rep["fraud_score"] == 90 and rep["abuse_confidence"] == 70
+    assert rep["verdict"] == "dirty"                 # 90 fraud -> dirty
+    assert "Proxy" in rep["flags"]                   # flags derived from the merged verdicts
+
+
+def test_check_notes_when_no_key_is_set(monkeypatch):
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "1.2.3.4"})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {
+        "blacklists": [], "policy_lists": [], "dnsbl_checked": 12, "dnsbl_usable": True})
+    rep = ipcheck.check()                             # no ipqs_key
+    assert rep.get("fraud_score") is None
+    assert any("No IPQualityScore key" in n for n in rep["notes"])
+
+
+def test_check_carries_an_explicit_ip_even_when_geo_fails(monkeypatch):
+    # --ip 5.6.7.8 with a geo lookup that returns nothing: the address we were told to check must still
+    # be checked (blacklists), not dropped — the fix that made an explicit --ip survive a geo failure.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    seen = {}
+
+    def fake_dnsbl(ip):
+        seen["ip"] = ip
+        return {"blacklists": [], "policy_lists": [], "dnsbl_checked": 0, "dnsbl_usable": False}
+
+    monkeypatch.setattr(ipcheck, "dnsbl_check", fake_dnsbl)
+    rep = ipcheck.check(ip="5.6.7.8")
+    assert rep["ip"] == "5.6.7.8"
+    assert seen["ip"] == "5.6.7.8"                    # the blacklist check ran on the given IP
+
+
+def test_check_gives_up_with_a_note_when_the_exit_ip_cant_be_found(monkeypatch):
+    # No --ip and geo failed -> there's nothing to check; say so, don't press on against a null IP.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    called = {"dnsbl": False}
+
+    def fake_dnsbl(ip):
+        called["dnsbl"] = True
+        return {}
+
+    monkeypatch.setattr(ipcheck, "dnsbl_check", fake_dnsbl)
+    rep = ipcheck.check()
+    assert not rep.get("ip")
+    assert any("Exit-IP lookup failed" in n for n in rep["notes"])
+    assert called["dnsbl"] is False                  # bailed before spending a blacklist lookup
+
+
+def test_main_exit_code_matches_the_verdict(monkeypatch):
+    # The CLI's exit code is a scripting contract: 0 clean, 1 dirty, 3 unknown.
+    for verdict_word, code in (("clean", 0), ("dirty", 1), ("unknown", 3)):
+        monkeypatch.setattr(ipcheck, "check",
+                            lambda *a, _v=verdict_word, **k: {"verdict": _v, "notes": []})
+        assert ipcheck.main(["--ip", "1.2.3.4", "--json"]) == code
