@@ -249,9 +249,10 @@ def _get_json(url: str, opener, headers: dict | None = None) -> dict | None:
         return None
 
 
-def lookup_geo(opener) -> dict:
-    """Public exit IP + ISP/location/timezone, as seen through ``opener``'s proxy (if any)."""
-    o = _get_json("https://ipwho.is/", opener)
+def lookup_geo(opener, ip: str | None = None) -> dict:
+    """ISP/location/timezone for ``ip``, or for this connection's own exit IP when ``ip`` is None
+    (in which case it also discovers what that exit IP is, as seen through ``opener``'s proxy)."""
+    o = _get_json(f"https://ipwho.is/{urllib.parse.quote(ip, safe='') if ip else ''}", opener)
     if not o or not o.get("success"):
         return {}
     where = ", ".join(x for x in (o.get("city"), o.get("region"), o.get("country")) if x)
@@ -375,13 +376,14 @@ def check(proxy: str | None = None, ip: str | None = None,
         rep["notes"].extend(part.pop("notes", []))
         rep.update({k: v for k, v in part.items() if v is not None})
 
-    if ip:
-        rep["ip"] = ip
-    else:
-        merge(lookup_geo(opener))
-        if not rep.get("ip"):
+    # An explicit --ip still gets ISP/location/timezone — the readout would otherwise show a bare
+    # address with a dash under it, and where an IP sits is half of judging it.
+    merge(lookup_geo(opener, ip))
+    if not rep.get("ip"):
+        if not ip:
             rep["notes"].append("Exit-IP lookup failed — proxy down, or no route out?")
             return rep
+        rep["ip"] = ip      # geo failed, but we were told which IP to check — carry on without it
 
     if ipqs_key:
         merge(lookup_ipqs(rep["ip"], ipqs_key, opener))
@@ -621,7 +623,10 @@ def serve(port: int, open_browser: bool = True) -> None:
                 self.send_error(400, "Expected a JSON object")
                 return
             cfg = load_config()
-            cfg.update({k: req.get(k, "") for k in ("proxy", "ipqs_key", "abuse_key")})
+            # Only fields the request actually carried. Defaulting a missing one to "" would let any
+            # partial request erase a saved key — the page always sends all three, but nothing else
+            # has to. Sending "" explicitly still clears, which is how the UI clears a key.
+            cfg.update({k: req[k] for k in ("proxy", "ipqs_key", "abuse_key") if k in req})
             save_config(cfg)
             try:
                 rep = check(req.get("proxy") or None, req.get("ip") or None,
