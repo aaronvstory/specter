@@ -694,138 +694,227 @@ def resolve_keys(args, cfg: dict) -> tuple[str, str]:
 
 PAGE = r"""<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Specter · exit-IP check</title>
+<title>Specter · exit-IP signal desk</title>
 <style>
-:root{--bg:#16161a;--card:#212129;--card2:#262630;--line:#34343f;--ink:#f1f1f4;--soft:#b9b9c4;
---dim:#7d7d8a;--gold:#ffd54a;--sage:#7fb58c;--red:#ef8a8a;--amber:#f0b562;--blue:#6cc4e8}
+/* "Signal desk": a monospace network instrument. One accent, semantic bands, works light + dark. */
+:root{
+  --bg:#0b0c0f; --grid:#12141a; --panel:#131519; --panel2:#181b21; --line:#242832;
+  --ink:#e9ebef; --soft:#a3a8b2; --dim:#666c78;
+  --accent:#57e3bf; --accent-ink:#04110d;
+  --clean:#5fd39a; --suspect:#f2c04b; --dirty:#f07070; --info:#63b8ea;
+  --glow:0 0 0 1px rgba(87,227,191,.14), 0 8px 30px -12px rgba(0,0,0,.7);
+  --mono:"Cascadia Code","JetBrains Mono","SFMono-Regular",ui-monospace,"Menlo",Consolas,monospace;
+  --sans:-apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;
+}
+:root[data-theme=light]{
+  --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
+  --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
+  --accent:#0e9c81; --accent-ink:#ffffff;
+  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
+}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]){
+  --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
+  --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
+  --accent:#0e9c81; --accent-ink:#ffffff;
+  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
+}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:780px;margin:0 auto;padding:28px 20px 64px}
-h1{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600;margin:0 0 18px}
-.card{background:var(--card);border-radius:10px;padding:18px;margin-bottom:14px}
-label{display:block;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
-input{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:6px;
-color:var(--ink);padding:10px 12px;font:inherit}
-input:focus{outline:none;border-color:var(--gold)}
-.grid{display:grid;grid-template-columns:1fr 200px;gap:12px}
-@media(max-width:620px){.grid{grid-template-columns:1fr}}
-details{margin-top:12px}summary{cursor:pointer;color:var(--dim);font-size:13px}
-button{width:100%;margin-top:14px;background:var(--gold);color:#211b02;border:0;border-radius:6px;
-padding:13px;font:600 15px/1 system-ui;cursor:pointer}
-button:disabled{background:var(--card2);color:var(--dim);cursor:default}
-.verdict{border-left:4px solid var(--dim);padding:14px 16px;border-radius:8px;background:var(--card)}
-.verdict b{display:block;font-size:19px;letter-spacing:.04em}
-.verdict span{color:var(--soft);font-size:13px}
-.dirty{border-color:var(--red)}.dirty b{color:var(--red)}
-.suspect{border-color:var(--amber)}.suspect b{color:var(--amber)}
-.clean{border-color:var(--sage)}.clean b{color:var(--sage)}
-.unknown{border-color:var(--dim)}.unknown b{color:var(--dim)}
-.ip{font:600 27px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:-.01em}
-.sub{color:var(--soft);font-size:13px;margin-top:4px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px}
-.tile{background:var(--card);border-radius:10px;padding:16px}
-.tile em{font-style:normal;display:block;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim)}
-.tile strong{display:block;font-size:26px;font-weight:600;margin:6px 0 2px}
-.tile small{color:var(--soft);font-size:12px}
-.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
-.chip{font-size:12px;padding:4px 10px;border-radius:99px;background:#f0b56222;color:var(--amber)}
-.chip.ok{background:#7fb58c22;color:var(--sage)}
-.rows{margin-top:6px}
-.row{display:flex;gap:14px;padding:9px 0;border-top:1px solid var(--line);font-size:13px}
-.row:first-child{border-top:0}
-.row i{font-style:normal;color:var(--dim);width:120px;flex:none;text-transform:uppercase;font-size:11px;letter-spacing:.07em;padding-top:2px}
-.note{color:var(--dim);font-size:12px;margin-top:4px}
-.hide{display:none}
+body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
+  background:
+    linear-gradient(var(--grid) 1px,transparent 1px) 0 0/100% 46px,
+    radial-gradient(1200px 500px at 78% -8%, color-mix(in srgb,var(--accent) 8%,transparent), transparent 70%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased;}
+.wrap{max-width:760px;margin:0 auto;padding:30px 20px 72px}
+.top{display:flex;align-items:center;justify-content:space-between;margin:0 0 20px}
+.brand{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--soft)}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.theme{background:none;border:1px solid var(--line);color:var(--soft);border-radius:8px;width:34px;height:30px;cursor:pointer;font-size:14px;padding:0}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.field label{display:block;font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
+input,select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  color:var(--ink);padding:11px 12px;font:14px/1.2 var(--mono)}
+input::placeholder{color:var(--dim)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.grid{display:grid;grid-template-columns:1fr 210px;gap:12px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.proxyrow{display:flex;gap:8px}.proxyrow select{width:108px;flex:none;cursor:pointer}
+details{margin-top:13px}summary{cursor:pointer;color:var(--soft);font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;list-style:none}
+summary::-webkit-details-marker{display:none}summary::before{content:"+ ";color:var(--accent)}
+details[open] summary::before{content:"− "}
+.go{width:100%;margin-top:16px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:9px;
+  padding:14px;font:600 13px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:transform .08s,filter .15s}
+.go:hover{filter:brightness(1.06)}.go:active{transform:translateY(1px)}
+.go:disabled{background:var(--panel2);color:var(--dim);cursor:default;filter:none}
+#out{margin-top:16px;display:flex;flex-direction:column;gap:13px}
+.blk{animation:rise .42s cubic-bezier(.2,.7,.2,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.verdict{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px 18px 17px 22px;box-shadow:var(--glow)}
+.verdict::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--vc,var(--dim))}
+.verdict .v{display:flex;align-items:baseline;gap:11px}
+.verdict b{font:700 20px/1 var(--mono);letter-spacing:.06em;color:var(--vc,var(--ink))}
+.verdict .dot{width:9px;height:9px;border-radius:50%;background:var(--vc);align-self:center}
+.verdict span{display:block;color:var(--soft);font-size:13px;margin-top:6px}
+.v-dirty{--vc:var(--dirty)}.v-suspect{--vc:var(--suspect)}.v-clean{--vc:var(--clean)}.v-unknown{--vc:var(--dim)}
+.iprow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ip{font:600 30px/1.1 var(--mono);letter-spacing:-.02em;word-break:break-all}
+.copy{background:var(--panel2);border:1px solid var(--line);color:var(--soft);border-radius:7px;padding:6px 10px;
+  font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:.15s}
+.copy:hover{border-color:var(--accent);color:var(--accent)}
+.copy.done{border-color:var(--clean);color:var(--clean)}
+.sub{color:var(--soft);font:13px/1.5 var(--mono);margin-top:8px}
+.meter{margin-top:16px}
+.meter .head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px}
+.meter .score{font:700 34px/1 var(--mono);color:var(--mc)}
+.meter .cap{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:right}
+.track{position:relative;height:9px;border-radius:6px;background:
+  linear-gradient(90deg,color-mix(in srgb,var(--clean) 30%,transparent) 0 60%,
+  color-mix(in srgb,var(--suspect) 32%,transparent) 60% 85%,
+  color-mix(in srgb,var(--dirty) 34%,transparent) 85% 100%)}
+.track .mk{position:absolute;top:-4px;width:3px;height:17px;border-radius:2px;background:var(--mc);
+  box-shadow:0 0 8px var(--mc);transform:translateX(-50%);transition:left .5s cubic-bezier(.2,.7,.2,1)}
+.scale{display:flex;justify-content:space-between;margin-top:6px;font:10px/1 var(--mono);color:var(--dim)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+.tile em{font-style:normal;display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.tile strong{display:block;font:700 27px/1 var(--mono);margin:9px 0 5px}
+.tile small{color:var(--soft);font-size:12px;line-height:1.45}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{font:600 11px/1 var(--mono);letter-spacing:.04em;padding:6px 11px;border-radius:7px;
+  background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect);border:1px solid color-mix(in srgb,var(--suspect) 30%,transparent)}
+.chip.ok{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean);border-color:color-mix(in srgb,var(--clean) 28%,transparent)}
+.lbl{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:11px}
+.rows{display:flex;flex-direction:column}
+.rw{display:flex;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+.rw:first-child{border-top:0}
+.rw i{font-style:normal;color:var(--dim);width:118px;flex:none;font:600 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
+.rw div{font-family:var(--mono);word-break:break-all}
+.note{color:var(--soft);font-size:12.5px;padding:4px 0}.note+.note{border-top:1px solid var(--line);margin-top:2px;padding-top:8px}
+.loading{color:var(--soft);font:13px/1 var(--mono);letter-spacing:.06em}
+.loading::after{content:"";animation:dots 1.4s steps(4,end) infinite}
+@keyframes dots{0%{content:""}25%{content:"·"}50%{content:"··"}75%{content:"···"}}
 </style>
 <div class=wrap>
-<h1>Specter · exit-IP check</h1>
-<div class=card>
-  <div class=grid>
-    <div><label for=proxy>Proxy</label>
-      <div style="display:flex;gap:8px">
-        <select id=ptype style="width:104px;flex:none;background:var(--card2);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:10px 8px;font:inherit">
-          <option value=http>HTTP</option><option value=socks5>SOCKS5</option><option value=socks4>SOCKS4</option>
-        </select>
-        <input id=proxy placeholder="host:port  ·  host:port:user:pass  ·  user:pass@host:port">
-      </div></div>
-    <div><label for=ip>IP (optional)</label><input id=ip placeholder="check directly"></div>
+  <div class=top>
+    <div class=brand><span class=pulse></span>Specter · exit-IP signal desk</div>
+    <button class=theme id=theme title="Toggle theme">◐</button>
   </div>
-  <details><summary>API keys</summary>
-    <div class=grid style="margin-top:10px">
-      <div><label for=ipqs>IPQualityScore key</label><input id=ipqs type=password></div>
-      <div><label for=abuse>AbuseIPDB key</label><input id=abuse type=password></div>
+  <div class=panel>
+    <div class=grid>
+      <div class=field><label for=proxy>Proxy</label>
+        <div class=proxyrow>
+          <select id=ptype><option value=http>HTTP</option><option value=socks5>SOCKS5</option><option value=socks4>SOCKS4</option></select>
+          <input id=proxy placeholder="host:port · host:port:user:pass · user:pass@host:port">
+        </div></div>
+      <div class=field><label for=ip>IP · optional</label><input id=ip placeholder="check directly"></div>
     </div>
-    <p class=note>Stored locally in ~/.specter-ipcheck.json. The blacklist count needs no key.</p>
-  </details>
-  <button id=go>Check</button>
-</div>
-<div id=out></div>
+    <details><summary>API keys</summary>
+      <div class=grid style="margin-top:12px">
+        <div class=field><label for=ipqs>IPQualityScore</label><input id=ipqs type=password placeholder="fraud score · optional"></div>
+        <div class=field><label for=abuse>AbuseIPDB</label><input id=abuse type=password placeholder="abuse history · optional"></div>
+      </div>
+      <p class=note>Stored locally in ~/.specter-ipcheck.json. The blacklist count needs no key.</p>
+    </details>
+    <button class=go id=go>Run check</button>
+  </div>
+  <div id=out></div>
 </div>
 <script>
 const $=s=>document.querySelector(s), out=$('#out');
 const q=new URLSearchParams(location.search);
+
+// Theme: follow the OS, remember an explicit toggle.
+const root=document.documentElement;
+try{const sv=localStorage.getItem('specter-theme'); if(sv)root.dataset.theme=sv;}catch(e){}
+$('#theme').onclick=()=>{
+  const dark=root.dataset.theme?root.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+  root.dataset.theme=dark?'light':'dark';
+  try{localStorage.setItem('specter-theme',root.dataset.theme);}catch(e){}
+};
+
 fetch('/config').then(r=>r.json()).then(c=>{
   $('#proxy').value=q.get('proxy')||c.proxy||'';
   $('#ptype').value=q.get('ptype')||c.proxy_scheme||'http';
   $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||'';
   $('#ip').value=q.get('ip')||'';
-  // ?ip=… or ?proxy=… runs on load, so a bookmark is a one-click check.
-  if(q.get('ip')||q.get('proxy'))$('#go').click();
+  if(q.get('ip')||q.get('proxy'))$('#go').click();   // ?ip=/?proxy= => one-click check from a bookmark
 });
 const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
-function row(k,v){return `<div class=row><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
+const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
+const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
+function row(k,v){return `<div class=rw><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
+
 function render(r){
-  if(r.error){out.innerHTML=`<div class="card verdict dirty"><b>FAILED</b><span>${esc(r.error)}</span></div>`;return}
-  const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
-  let t='';
-  t+=`<div class="card verdict ${r.verdict}"><b>${r.verdict.toUpperCase()}</b><span>${esc(r.verdict_reason)}</span></div>`;
-  t+=`<div class=card><div class=ip>${esc(r.ip||'unknown')}</div><div class=sub>${
-      esc([r.isp,r.connection_type,r.location].filter(Boolean).join(' · ')||'—')}</div>`;
-  if(r.timezone)t+=`<div class=sub>${esc(r.timezone)}</div>`;
-  t+=`</div>`;
-  t+='<div class=tiles>';
-  const pol=(r.policy_lists||[]).length;
-  if(r.fraud_score!=null)t+=`<div class=tile><em>Fraud risk</em><strong class="${band(r.fraud_score)
-      }" style="color:var(--${band(r.fraud_score)==='dirty'?'red':band(r.fraud_score)==='suspect'?'amber':'sage'})">${
-      esc(r.fraud_score)}</strong><small>IPQualityScore${r.ipqs_strictness!=null?` · strictness ${esc(r.ipqs_strictness)}`:''} · ${esc(r.fraud_score>=85?'high risk':r.fraud_score>=60?'suspicious':'clean')}</small></div>`;
-  const hits=(r.blacklists||[]).length, col=hits>=3?'red':hits?'amber':(r.dnsbl_usable?'sage':'dim');
-  // A policy listing is still a listing: say so here, or this tile reads "0" beside a checker that counts it.
-  t+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${col})">${
-      r.dnsbl_usable||hits?hits:'—'}</strong><small>${
-      hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}${
-      pol?` · plus ${pol} policy listing${pol>1?'s':''}`:''}</small></div>`;
-  if(pol)t+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--blue)">${
-      pol}</strong><small>${esc(r.policy_lists.join(', '))} · a mail-sending policy listing, not an abuse report</small></div>`;
-  if(r.abuse_confidence!=null){const ac=r.abuse_confidence>=50?'red':r.abuse_confidence>=10?'amber':'sage';
-    t+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${esc(r.abuse_confidence)}%</strong><small>${
-      esc(r.abuse_reports||0)} reports in 90 days</small></div>`}
-  if(r.abuse_velocity)t+=`<div class=tile><em>Abuse velocity</em><strong style="font-size:20px">${
-      esc(r.abuse_velocity)}</strong><small>IPQualityScore</small></div>`;
-  t+='</div>';
+  if(r.error){out.innerHTML=`<div class="blk verdict v-dirty"><div class=v><span class=dot></span><b>FAILED</b></div><span>${esc(r.error)}</span></div>`;return}
+  let t='', i=0;
+  const blk=(h)=>`<div class=blk style="animation-delay:${(i++)*55}ms">${h}</div>`;
+
+  t+=blk(`<div class="verdict v-${r.verdict}"><div class=v><span class=dot></span><b>${esc(r.verdict.toUpperCase())}</b></div><span>${esc(r.verdict_reason)}</span></div>`);
+
+  // Exit-IP hero + copy.
+  let hero=`<div class=panel><div class=iprow><span class=ip>${esc(r.ip||'unknown')}</span>`;
+  if(r.ip)hero+=`<button class=copy data-ip="${esc(r.ip)}">Copy</button>`;
+  hero+=`</div><div class=sub>${esc([r.isp,r.connection_type,r.location].filter(Boolean).join('  ·  ')||'—')}</div>`;
+  if(r.timezone)hero+=`<div class=sub>${esc(r.timezone)}</div>`;
+  // Fraud-score meter.
+  if(r.fraud_score!=null){const b=band(r.fraud_score),mc=`var(--${b})`;
+    hero+=`<div class=meter style="--mc:${mc}"><div class=head><span class=score>${esc(r.fraud_score)}</span>`+
+      `<span class=cap>IPQualityScore${r.ipqs_strictness!=null?` · strictness ${esc(r.ipqs_strictness)}`:''}<br>${esc(bandWord(r.fraud_score))}</span></div>`+
+      `<div class=track><span class=mk style="left:${Math.max(0,Math.min(100,r.fraud_score))}%"></span></div>`+
+      `<div class=scale><span>0</span><span>60</span><span>85</span><span>100</span></div></div>`;}
+  hero+=`</div>`;
+  t+=blk(hero);
+
+  // Signal tiles.
+  const pol=(r.policy_lists||[]).length, hits=(r.blacklists||[]).length;
+  let tiles='';
+  const bl=hits>=3?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
+  tiles+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${bl})">${r.dnsbl_usable||hits?hits:'—'}</strong>`+
+    `<small>${hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}${pol?` · plus ${pol} policy listing${pol>1?'s':''}`:''}</small></div>`;
+  if(pol)tiles+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--info)">${pol}</strong><small>${esc(r.policy_lists.join(', '))} · a mail-sending policy listing, not an abuse report</small></div>`;
+  if(r.abuse_confidence!=null){const ac=r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean';
+    tiles+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${esc(r.abuse_confidence)}%</strong><small>${esc(r.abuse_reports||0)} reports in 90 days</small></div>`;}
+  if(r.abuse_velocity)tiles+=`<div class=tile><em>Abuse velocity</em><strong style="font-size:20px">${esc(r.abuse_velocity)}</strong><small>IPQualityScore</small></div>`;
+  t+=blk(`<div class=tiles>${tiles}</div>`);
+
   if(r.fraud_score!=null){
-    t+='<div class=card><em style="font-style:normal;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim)">Flagged as</em><div class=chips>';
-    t+=(r.flags||[]).length?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
-        :'<span class="chip ok">Not flagged as proxy or VPN</span>';
-    t+='</div></div>';
+    const chips=(r.flags||[]).length?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
+      :'<span class="chip ok">Not flagged as proxy or VPN</span>';
+    t+=blk(`<div class=panel><div class=lbl>Flagged as</div><div class=chips>${chips}</div></div>`);
   }
+
   let d='';
   [['ISP','isp'],['Organization','organization'],['ASN','asn'],['Host','host'],
    ['Connection','connection_type'],['Usage','usage_type'],['Location','location'],
    ['Time zone','timezone']].forEach(([k,v])=>{if(r[v])d+=row(k,r[v])});
-  if(d)t+=`<div class=card><div class=rows>${d}</div></div>`;
-  if((r.notes||[]).length)t+=`<div class=card>${r.notes.map(n=>`<div class=note>${esc(n)}</div>`).join('')}</div>`;
+  if(d)t+=blk(`<div class=panel><div class=rows>${d}</div></div>`);
+  if((r.notes||[]).length)t+=blk(`<div class=panel>${r.notes.map(n=>`<div class=note>${esc(n)}</div>`).join('')}</div>`);
   out.innerHTML=t;
 }
+
+// Copy the exit IP (delegated — render() rebuilds the button each time).
+out.addEventListener('click',async e=>{
+  const b=e.target.closest('.copy'); if(!b)return;
+  try{await navigator.clipboard.writeText(b.dataset.ip);}
+  catch(err){const ta=document.createElement('textarea');ta.value=b.dataset.ip;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
+  b.textContent='Copied ✓'; b.classList.add('done');
+  setTimeout(()=>{b.textContent='Copy'; b.classList.remove('done');},1400);
+});
+
 $('#go').onclick=async()=>{
   const b=$('#go'); b.disabled=true; b.textContent='Checking…';
-  out.innerHTML='<div class="card"><span class=sub>Running lookups…</span></div>';
+  out.innerHTML='<div class="blk panel"><span class=loading>Running lookups</span></div>';
   try{
     const r=await fetch('/check',{method:'POST',body:JSON.stringify({
       proxy:$('#proxy').value.trim(), proxy_scheme:$('#ptype').value, ip:$('#ip').value.trim(),
       ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()})});
     render(await r.json());
   }catch(e){render({error:String(e)})}
-  b.disabled=false; b.textContent='Check';
+  b.disabled=false; b.textContent='Run check';
 };
 </script>
 """
