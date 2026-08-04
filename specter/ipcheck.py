@@ -347,7 +347,7 @@ def dnsbl_check(ip: str) -> dict:
                 addrs = f.result()
             except Exception:
                 continue        # this zone did not answer
-            if name is None:
+            if name is None or zone is None:
                 alive = alive or any(listed(a) for a in addrs)
                 continue
             kind = classify(zone, addrs)
@@ -513,16 +513,16 @@ function render(r){
   t+='<div class=tiles>';
   if(r.fraud_score!=null)t+=`<div class=tile><em>Fraud risk</em><strong class="${band(r.fraud_score)
       }" style="color:var(--${band(r.fraud_score)==='dirty'?'red':band(r.fraud_score)==='suspect'?'amber':'sage'})">${
-      r.fraud_score}</strong><small>IPQualityScore · ${esc(r.fraud_score>=85?'high risk':r.fraud_score>=60?'suspicious':'clean')}</small></div>`;
+      esc(r.fraud_score)}</strong><small>IPQualityScore · ${esc(r.fraud_score>=85?'high risk':r.fraud_score>=60?'suspicious':'clean')}</small></div>`;
   const hits=(r.blacklists||[]).length, col=hits>=3?'red':hits?'amber':(r.dnsbl_usable?'sage':'dim');
   t+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${col})">${
       r.dnsbl_usable||hits?hits:'—'}</strong><small>${
-      hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${r.dnsbl_checked} lists`:'blocklist DNS unreachable'}</small></div>`;
+      hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}</small></div>`;
   if((r.policy_lists||[]).length)t+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--blue)">${
       r.policy_lists.length}</strong><small>${esc(r.policy_lists.join(', '))} · normal for residential IPs, not abuse</small></div>`;
   if(r.abuse_confidence!=null){const ac=r.abuse_confidence>=50?'red':r.abuse_confidence>=10?'amber':'sage';
-    t+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${r.abuse_confidence}%</strong><small>${
-      r.abuse_reports||0} reports in 90 days</small></div>`}
+    t+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${esc(r.abuse_confidence)}%</strong><small>${
+      esc(r.abuse_reports||0)} reports in 90 days</small></div>`}
   if(r.abuse_velocity)t+=`<div class=tile><em>Abuse velocity</em><strong style="font-size:20px">${
       esc(r.abuse_velocity)}</strong><small>IPQualityScore</small></div>`;
   t+='</div>';
@@ -561,7 +561,19 @@ def serve(port: int, open_browser: bool = True) -> None:
     import http.server
     import webbrowser
 
+    allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+
     class Handler(http.server.BaseHTTPRequestHandler):
+        def local_only(self) -> bool:
+            """Reject a request whose Host isn't one we serve. Binding to 127.0.0.1 stops remote
+            connections but not DNS rebinding, where a page the user is browsing resolves its own
+            domain to 127.0.0.1 and then talks to this server. /config hands out API keys, so the
+            Host check is worth the three lines."""
+            if self.headers.get("Host") in allowed_hosts:
+                return True
+            self.send_error(403, "Host not allowed")
+            return False
+
         def _send(self, body: bytes, ctype: str) -> None:
             self.send_response(200)
             self.send_header("Content-Type", ctype)
@@ -570,6 +582,8 @@ def serve(port: int, open_browser: bool = True) -> None:
             self.wfile.write(body)
 
         def do_GET(self):
+            if not self.local_only():
+                return
             path = urllib.parse.urlparse(self.path).path      # "/?ip=..." must still serve the page
             if path == "/config":
                 cfg = load_config()
@@ -582,6 +596,8 @@ def serve(port: int, open_browser: bool = True) -> None:
                 self.send_error(404)
 
         def do_POST(self):
+            if not self.local_only():
+                return
             n = int(self.headers.get("Content-Length") or 0)
             try:
                 req = json.loads(self.rfile.read(n) or b"{}")
