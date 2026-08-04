@@ -3,6 +3,20 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.23.6] - 2026-08-05
+
+### Changed
+- **The checker's web UI was redesigned into a "signal desk."** The old dark-card layout read like a
+  bootstrap default. It's now a monospace network instrument: a colour-banded fraud-score meter with
+  the score marked against the 0/60/85/100 thresholds, a verdict strip with a semantic left edge,
+  compact signal tiles, and a clean data table — with a light and a dark theme (follows the OS,
+  toggle to override) and staggered reveals. Self-contained as ever: no web fonts, no CDN, still a
+  double-click that works offline.
+
+### Added
+- **A Copy button on the detected exit IP** in the web UI — one tap to grab the IP (the CLI already
+  prints it).
+
 ## [0.23.4] - 2026-08-05
 
 ### Added
