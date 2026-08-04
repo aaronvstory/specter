@@ -566,6 +566,64 @@ public class MainActivity extends Activity {
             toast("Every identifier is toggled off — nothing to spoof. Enable some first.");
             return;
         }
+        // A saved login binds an app to the device it was captured under. Applying a DIFFERENT device over
+        // such an app makes it incoherent — the server still remembers the old model (Cash's "Your devices"
+        // showed Pixel 4a while live reads said SM-G996U). Warn before doing it; the coherent move is to
+        // restore that login from Saved (which re-applies its own device), not to apply a mismatched one.
+        // Base the device on toApply (what will REALLY be written), not the raw profile: if the device
+        // bundle is toggled off, apply leaves the model untouched, so there is no new mismatch to warn about.
+        final String applyingDevice = applyDeviceString(toApply);
+        if (applyingDevice != null) {
+            java.util.List<String> drift = driftWarnings(targets, applyingDevice);
+            if (!drift.isEmpty()) {
+                confirmDriftThenApply(drift, applyingDevice, toApply);
+                return;
+            }
+        }
+        applyConfirmed(toApply);
+    }
+
+    /** The manufacturer+model that {@code toApply} will actually write, or null when the device bundle is
+     *  toggled OFF (then apply leaves the real model in place, so it can't introduce a device mismatch). The
+     *  build_* fields share one toggle, so both are present together or not at all. */
+    private String applyDeviceString(Map<String, String> toApply) {
+        String mfr = toApply.get("build_manufacturer"), model = toApply.get("build_model");
+        if (mfr == null || model == null) return null;
+        String s = (cap(mfr) + " " + model).trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    /** Per-target lines describing a saved login captured under a device OTHER than {@code applyingDevice}. */
+    private java.util.List<String> driftWarnings(Set<String> targets, String applyingDevice) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String pkg : targets) {
+            for (String dev : com.specter.module.gen.AppDataVault.conflictingDevices(
+                    appDataVault.list(pkg), applyingDevice)) {
+                out.add(Targets.label(this, pkg) + " has a saved login as " + dev);
+            }
+        }
+        return out;
+    }
+
+    /** Confirm before applying an identity that won't match a saved login's device. Restoring that login
+     *  (from Saved) is the coherent alternative — this dialog just makes the mismatch a deliberate choice. */
+    private void confirmDriftThenApply(java.util.List<String> drift, String applyingDevice,
+                                       final Map<String, String> toApply) {
+        String body = android.text.TextUtils.join("\n", drift)
+                + "\n\nApplying " + applyingDevice + " won't match that login — the app would look like a "
+                + "different phone than the account is registered on. To reuse a saved login, restore it "
+                + "from Saved instead (it re-applies its own device).";
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Identity won't match a saved login")
+                .setMessage(body)
+                .setPositiveButton("Apply " + applyingDevice + " anyway", (d, w) -> applyConfirmed(toApply))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** The destructive apply itself (wipe + write per target), assumed already confirmed. */
+    private void applyConfirmed(final Map<String, String> toApply) {
+        Set<String> targets = Targets.get(prefs);
         final String sig = applySignature(toApply);
         final List<String> pkgs = new ArrayList<>(targets);
         // Snapshot for the worker: appliedByPkg is UI-thread-confined, and the skip decision below needs su.
