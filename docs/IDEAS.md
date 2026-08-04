@@ -999,3 +999,22 @@ honesty pass on the status page. codex "trustworthy go/no-go" items still OPEN (
   EMVCo 3DS+Bugsnag (NO FingerprintJS). Recommended: instruments first — rootless frida-server + dual-read
   probe, Crane A/B diff to prove the leak, Frida-trace Cash App reads (NOT Dasher — same phone), THEN
   minimal tweak. Status: idea/researched, not building yet.
+
+## User steers 2026-08-05 (captured for later — NOT yet built)
+
+- **Off-tunnel status scoring + geo/VPN detection (phone)** - status: `idea`. Show IP reputation/fraud
+  scoring, geo, and VPN-or-not on the Status page EVEN WHEN no proxy tunnel is routing. Desktop `ipcheck`
+  already does `--ip`; port the equivalent to the phone. Safety: off-tunnel it reads the phone's real/home
+  IP — make that explicit in the UI, never silently expose the home IP as if it were a proxy exit.
+- **Click-to-fix timezone with no tunnel** - status: `idea`. Let the user align TZ to the exit IP even
+  when a proxy tunnel is off (today gated on TRANSPORT_VPN + lookup-through-tunnel). Add a deliberate
+  off-tunnel path, reconcile with the home-IP safety gate.
+- **Auto-refresh the Status page on reopen** - status: `idea`. Re-run the checks when the user reopens the
+  Status/checking page instead of forcing a manual "Re-check". Respect the IPQS 35/day budget (cache per IP;
+  only re-fetch reputation when the IP changed or the cache is stale). Keep a manual refresh too.
+- **Verify hooks per-target WITHOUT launching the app** - status: `idea` (hard). Stop the "run target app
+  to see if it's hooked" back-and-forth. Extend the boot-stamped runtime-attestation (status-page-runtime-
+  attestation) per-target, or a headless spawn/probe, so GREEN reflects real per-target hook readiness with
+  no manual launch.
+- **Broad app-polish pass** - status: `idea`. Whole-app UX sweep (consistent copy, no dead controls, clear
+  states, fast), building on the B1–B4 work.
