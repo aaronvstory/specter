@@ -2,6 +2,15 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-05 (v0.24.3): the vault restore (`restoreAppData`) is the CANONICAL restore; the per-app button
+  routes to it.** WHY: two "Restore" affordances did different things — the per-app "Restore AppData" button
+  did a bare staged-tarball restore that did NOT re-apply the login's linked fingerprint (so the app could
+  come back on a mismatched device), while the Saved-tab picker re-applied the fingerprint for coherence. The
+  coherent one wins: the per-app button now lists that app's vaulted logins and calls `restoreAppData` (one →
+  direct, several → pick which, since fp↔login is 1-to-many). The bare staged restore survives only as a
+  fallback when nothing is vaulted for the app (e.g. a capture whose Save-name dialog was cancelled), so no
+  path is lost — but the default is always the coherent one.
+
 - **2026-08-05: the identity-switch wipe stays `pm clear`, never a partial `rm` — and it's guarded by a
   test.** WHY: a clean switch must leave zero prior-identity residue. `pm clear` resets the app to
   first-install, which uniquely clears the EXTERNAL cache (`/sdcard/Android/data/<pkg>`) alongside internal
