@@ -58,7 +58,9 @@ Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 ### Phase 0 — Overnight 2026-08-05 (WORK THIS FIRST, top-down)
 Full context + ground truth + code locations: **`handoffs/2026-08-05_overnight-cash-coherence-vault-ipcheck.md`**.
 Hard boundary: **no test/reboot/reinstall/launch on Pixel 4 or 4a (Cash logged in); read-only adb only.**
-Gauntlet = `code-reviewer` subagent only (codex/gemini/bots down) → adversarial branch-diff self-review each PR.
+Gauntlet: `code-reviewer` subagent every PR (adversarial branch-diff self-review) + **codex SPARINGLY** —
+back up but on a limited free plan, so pre-merge/important decisions only (`-m gpt-5.6-terra`, pipe the prompt,
+retry later if it throttles). gemini + PR bots still down.
 TDD + exa research proactively + defer nothing but the on-device press-tests the boundary blocks. New PR per concern.
 
 - **P0.C — ipcheck polish (do first: desktop, no boundary, fully verifiable).** `todo`

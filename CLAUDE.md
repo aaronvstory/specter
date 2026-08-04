@@ -196,13 +196,15 @@ work). Never ship cosmetic/non-functional UI — build it or clearly mark it non
 ### Review gauntlet (NON-NEGOTIABLE before every merge)
 Run **`/gauntlet` before merging any PR to main.**
 
-> **STATUS 2026-08-05 (user-confirmed): the gauntlet is the `code-reviewer` SUBAGENT ONLY — codex is
-> DOWN.** `codex exec` fails with `refresh_token_invalidated` ("Your access token could not be refreshed
-> because your refresh token was revoked"), and the fallback second model is dead too — `gemini` returns
-> `IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals`. Both
-> need an INTERACTIVE re-login, which only the user can do. Until then: run the `code-reviewer` subagent,
-> fix everything it finds, and **do not block a merge waiting on codex**. Don't burn a cycle re-running
-> either CLI to "check" — a run that returns only auth errors produced NO review; treat it as absent.
+> **STATUS 2026-08-05 (user-confirmed, updated ~04:20): codex is BACK — use it SPARINGLY.** codex is
+> logged back in but on a **limited FREE plan**, so it's the everyday gauntlet no longer — reserve `/codex`
+> for **important decisions and pre-merge review of a substantial/risky PR**, not the old back-to-back
+> cadence. The **`code-reviewer` subagent is the everyday reviewer** (adversarial branch-diff, every PR).
+> codex gotchas: with a ChatGPT account model **`gpt-5.6-sol` is rejected** → use **`gpt-5.6-terra`**
+> (`echo "$P" | codex exec -m gpt-5.6-terra -`, pipe never arg). If it **throttles/times out, retry later**
+> (space it out) — don't abandon it; a run returning only auth/quota errors produced NO review, treat as
+> absent that round. **gemini** CLI is still dead (`IneligibleTierError`) and the **PR bots** are off — not
+> part of the gauntlet. Never block a merge waiting on codex if it's throttled; the subagent suffices.
 
 The gauntlet's AUTHORITATIVE review sources are (1) a **`code-reviewer` subagent** and (2) **`/codex`**
 (GPT-5.x, a strong different-model second opinion) — *while codex is down, (1) alone is the gauntlet*.

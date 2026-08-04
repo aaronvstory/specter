@@ -20,14 +20,25 @@ Created: 2026-08-05 (late) · Author: prior session · For: the overnight autono
   adversarial self-review, build the APK, and leave a crisp "verify on-device when you're back" note per
   such PR. **The desktop ipcheck work has NO such constraint — fully build, test, and verify it.**
 
-## Review method (the gauntlet is degraded)
-- **codex is logged out** (`refresh_token_invalidated`) and **gemini CLI is dead** (tier ineligible), and
-  the **PR review bots are off/unreliable**. So the gauntlet = **your `code-reviewer` subagent ALONE.**
-- Compensate: **give yourself an adversarial branch-diff review every PR** — spawn the `code-reviewer`
-  subagent on `git diff main...HEAD` with an *enumerated risk list* (the invariant that must hold, the
-  exact failure mode to hunt), fix everything real, re-review. A finding you **proved by measurement**
-  (a test, a read-only device probe, an exa-sourced fact) outranks any single opinion. See
-  `handoffs/` note + `CLAUDE.md` "Review gauntlet" (updated 2026-08-05).
+## Review method (code-reviewer always; codex sparingly, pre-merge)
+- **codex is BACK UP (2026-08-05 ~04:20)** — but on a **limited FREE plan, so use it SPARINGLY.** It WILL
+  work. Reserve it for **important decisions and PRE-MERGE review of a substantial/risky PR** — NOT the old
+  back-to-back cadence. The `code-reviewer` subagent stays your everyday reviewer; codex is the occasional
+  heavy second opinion.
+- **codex gotchas (verified this session):** with a ChatGPT account, model **`gpt-5.6-sol` is REJECTED**
+  ("not supported when using Codex with a ChatGPT account") — it falls back to **`gpt-5.6-terra`**; use
+  `-m gpt-5.6-terra` (or let it fall back). Always **pipe** the prompt, never pass it as an arg:
+  `echo "$P" | codex exec -m gpt-5.6-terra -`, `tee` the output, run in background (~3-6 min), read the
+  verdict from the END. If it **times out / rate-limits, DON'T abandon it — retry later** (space it out,
+  keep track of time; the free plan throttles). A run returning only auth/quota errors produced NO review —
+  treat as absent that round, retry next.
+- **gemini CLI is still dead** (tier ineligible) and the **PR review bots are off/unreliable** — not part
+  of the gauntlet.
+- **Everyday method:** give yourself an **adversarial branch-diff review** every PR — spawn the
+  `code-reviewer` subagent on `git diff main...HEAD` with an *enumerated risk list* (the invariant that must
+  hold, the exact failure mode to hunt), fix everything real, re-review. **Add a codex pass before merging a
+  substantial/risky PR** (per the sparing rule). A finding you **proved by measurement** (a test, a read-only
+  device probe, an exa-sourced fact) outranks any single opinion. See `CLAUDE.md` "Review gauntlet".
 
 ## Wireless adb (both phones reachable even off-USB)
 - Toolkit: **`C:\platform-tools\adb-toolkit.ps1`** (`-Action connect`). **Always try wireless if a phone
