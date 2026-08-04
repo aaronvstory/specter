@@ -1335,7 +1335,7 @@ public class MainActivity extends Activity {
             row2.setPadding(0, dp(Theme.S2), 0, 0);
             Button save = halfButton("Save AppData", v -> runSession(pkg, true, sessStatus));
             View gap = new View(this); gap.setLayoutParams(new LinearLayout.LayoutParams(dp(Theme.S2), 1));
-            Button rest = halfButton("Restore AppData", v -> runSession(pkg, false, sessStatus));
+            Button rest = halfButton("Restore AppData", v -> restoreForPkg(pkg, sessStatus));
             row2.addView(save); row2.addView(gap); row2.addView(rest);
             actions.addView(row2);
             actions.addView(sessStatus);
@@ -1607,6 +1607,31 @@ public class MainActivity extends Activity {
 
     /** Capture (or restore) a target app's login session off the UI thread, updating {@code statusView}.
      *  Root-only: a denied/absent su surfaces as a readable message, never a silent no-op or a crash. */
+    /** The per-app "Restore AppData" button: route to the SAME coherent vault restore the Saved tab uses
+     *  (re-applies the login's linked fingerprint, so the device matches), instead of a bare staged restore
+     *  that could leave the app incoherent. One saved login → restore it; several → let the user pick which
+     *  (fp↔login is 1-to-many); none vaulted → fall back to restoring the last STAGED capture (the only case
+     *  the old bare path still serves — e.g. a capture whose Save-name dialog was cancelled). Unifies the two
+     *  restore entry points onto one flow. */
+    private void restoreForPkg(final String pkg, final TextView statusView) {
+        java.util.List<com.specter.module.gen.AppDataVault.Entry> logins = appDataVault.list(pkg);
+        if (logins.isEmpty()) { runSession(pkg, false, statusView); return; }   // no vaulted login → staged
+        if (logins.size() == 1) { restoreAppData(logins.get(0)); return; }
+        // Several saved logins for this app — pick which one to bring back (newest first; list() is sorted).
+        final CharSequence[] items = new CharSequence[logins.size()];
+        for (int i = 0; i < logins.size(); i++) {
+            com.specter.module.gen.AppDataVault.Entry e = logins.get(i);
+            String name = labelName(e.label);
+            items[i] = (name.isEmpty() ? e.label : name)
+                    + (e.device == null || e.device.isEmpty() ? "" : "  ·  " + e.device);
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Restore which " + Targets.label(this, pkg) + " login?")
+                .setItems(items, (d, w) -> restoreAppData(logins.get(w)))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void runSession(final String pkg, final boolean capture, final TextView statusView) {
         final String verb = capture ? "Capturing" : "Restoring";
         statusView.setTextColor(Theme.DIM);

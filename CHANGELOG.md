@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.3] - 2026-08-05
+
+### Changed
+- **The per-app "Restore AppData" button now uses the same coherent restore as the Saved tab.** It used
+  to do a bare restore of the last staged capture without re-applying the login's fingerprint — which
+  could leave the app on a mismatched device. It now restores from the vault: one saved login for the
+  app restores straight away, several let you pick which (fingerprint↔login is one-to-many), and the
+  restore re-applies that login's own device — exactly what the Saved-tab picker does. If nothing is
+  vaulted for the app it still falls back to the last staged capture, so no path is lost. The two
+  restore entry points are one flow now.
+
 ## [0.24.2] - 2026-08-05
 
 ### Added
