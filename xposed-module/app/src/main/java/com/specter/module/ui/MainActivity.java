@@ -2443,12 +2443,15 @@ public class MainActivity extends Activity {
                 box.addView(networkMetaRow("ABUSE REPORTS",
                         reports + " in 90 days · " + rep.abuseConfidence + "% confidence", c));
             }
-            String hintText = rep.note != null ? rep.note
-                    : rep.fraudScore == null && prefs.getString("ipqs_key", "").isEmpty()
-                            ? "Add an IPQualityScore key in Settings for a fraud score" : null;
-            if (hintText != null) {
+            // Every source that failed says so, in its own line — one shared line would let whichever
+            // failed first hide the others, and "no abuse row" with no reason is the confusing case.
+            java.util.List<String> hints = new java.util.ArrayList<>(rep.notes);
+            if (rep.fraudScore == null && prefs.getString("ipqs_key", "").isEmpty()) {
+                hints.add("Add an IPQualityScore key in Settings for a fraud score");
+            }
+            for (String h : hints) {
                 TextView hint = new TextView(this);
-                hint.setText(hintText);
+                hint.setText(h);
                 hint.setTextColor(Theme.DIM); hint.setTextSize(Theme.T_CAPTION);
                 hint.setPadding(0, dp(Theme.S2), 0, 0);
                 box.addView(hint);

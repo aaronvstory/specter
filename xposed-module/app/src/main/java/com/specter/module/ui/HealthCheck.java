@@ -349,8 +349,9 @@ final class HealthCheck {
     }
 
     /** GET a JSON document, optionally PINNED to {@code net} (the tunnel), with optional extra request headers
-     *  as flat name/value pairs. Null on any failure (offline, non-200, timeout, parse) — every caller degrades
-     *  gracefully rather than surfacing an error. Blocking; call off the UI thread. */
+     *  as flat name/value pairs. Null on a transport failure; an API's OWN error body (401 bad key, 429 quota
+     *  spent) is returned parsed, so a caller can repeat the real reason instead of guessing. Blocking; call
+     *  off the UI thread. */
     private static org.json.JSONObject getJson(android.net.Network net, String url, String[] headers) {
         java.net.HttpURLConnection c = null;
         try {
@@ -361,8 +362,15 @@ final class HealthCheck {
             if (headers != null) {
                 for (int i = 0; i + 1 < headers.length; i += 2) c.setRequestProperty(headers[i], headers[i + 1]);
             }
-            java.io.BufferedReader r = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(c.getInputStream(), "UTF-8"));
+            java.io.InputStream in;
+            try {
+                in = c.getInputStream();
+            } catch (java.io.IOException e) {
+                // Non-2xx: getInputStream throws and the explanatory body is only on the error stream.
+                in = c.getErrorStream();
+                if (in == null) return null;
+            }
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(in, "UTF-8"));
             StringBuilder sb = new StringBuilder();
             String line;
             while ((line = r.readLine()) != null) sb.append(line);
@@ -373,6 +381,17 @@ final class HealthCheck {
         } finally {
             if (c != null) try { c.disconnect(); } catch (Throwable ignored) {}
         }
+    }
+
+    /** AbuseIPDB's failure reason from its error body ({@code errors[0].detail}), else a generic hint. */
+    private static String abuseError(org.json.JSONObject o) {
+        if (o != null) {
+            org.json.JSONArray errs = o.optJSONArray("errors");
+            org.json.JSONObject first = errs != null ? errs.optJSONObject(0) : null;
+            String detail = first != null ? first.optString("detail") : null;
+            if (detail != null && !detail.isEmpty()) return detail;
+        }
+        return "lookup rejected · check the key or the daily quota";
     }
 
     // ---- Exit-IP reputation ------------------------------------------------------------------------------
@@ -393,7 +412,9 @@ final class HealthCheck {
         boolean dnsblUsable;                    // the sentinel resolved -> a zero-hit result is trustworthy
         final List<String> blacklists = new ArrayList<>();    // zones listing this IP for ABUSE
         final List<String> policyLists = new ArrayList<>();   // dynamic/consumer-range listings (not abuse)
-        String note;                            // why a source had nothing to say (bad key, quota spent)
+        /** Why a source had nothing to say (bad key, quota spent). One per source — a single field
+         *  would let whichever failed first hide the other's reason entirely. */
+        final List<String> notes = new ArrayList<>();
     }
 
     private static volatile Reputation repCache;
@@ -418,11 +439,11 @@ final class HealthCheck {
             org.json.JSONObject o = getJson(net, "https://ipqualityscore.com/api/json/ip/"
                     + enc(ipqsKey) + "/" + enc(ip) + "?strictness=1", null);
             if (o == null) {
-                r.note = "IPQualityScore unreachable";
+                r.notes.add("IPQualityScore unreachable");
             } else if (!o.optBoolean("success", false)) {
                 // Their error body says WHY (bad key vs. daily quota spent) — surface it instead of a
                 // generic failure the user can't act on.
-                r.note = "IPQualityScore: " + emptyOr(o.optString("message"), "lookup rejected");
+                r.notes.add("IPQualityScore: " + emptyOr(o.optString("message"), "lookup rejected"));
             } else {
                 if (o.has("fraud_score")) r.fraudScore = o.optInt("fraud_score");
                 r.proxy = o.optBoolean("proxy", false) || o.optBoolean("active_vpn", false);
@@ -447,8 +468,10 @@ final class HealthCheck {
             if (d != null) {
                 r.abuseConfidence = d.optInt("abuseConfidenceScore");
                 r.abuseReports = d.optInt("totalReports");
-            } else if (r.note == null) {
-                r.note = "AbuseIPDB: lookup rejected · check the key or the daily quota";
+            } else {
+                // Their 401/402/429 bodies carry the actual reason; getJson reads the error stream
+                // so we can repeat it instead of guessing between "bad key" and "quota spent".
+                r.notes.add("AbuseIPDB: " + abuseError(o));
             }
         }
 

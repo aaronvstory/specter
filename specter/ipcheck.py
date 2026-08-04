@@ -562,17 +562,30 @@ def serve(port: int, open_browser: bool = True) -> None:
     import webbrowser
 
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+    allowed_origins = {f"http://{h}" for h in allowed_hosts}
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def local_only(self) -> bool:
-            """Reject a request whose Host isn't one we serve. Binding to 127.0.0.1 stops remote
-            connections but not DNS rebinding, where a page the user is browsing resolves its own
-            domain to 127.0.0.1 and then talks to this server. /config hands out API keys, so the
-            Host check is worth the three lines."""
-            if self.headers.get("Host") in allowed_hosts:
-                return True
-            self.send_error(403, "Host not allowed")
-            return False
+            """Reject requests that aren't from our own page.
+
+            Binding to 127.0.0.1 stops remote connections but not a browser the user already has
+            open. Two separate holes, both of which matter because this server stores API keys:
+
+            * DNS rebinding — a page resolves its own domain to 127.0.0.1 and talks to us. The Host
+              check closes that (a rebound request carries the attacker's hostname).
+            * CSRF — any site can make the browser POST here cross-origin. Host does NOT help: a
+              cross-origin form posts the real `127.0.0.1:<port>` Host. Origin does, and browsers
+              always send it on cross-origin requests. Absent means a non-browser client (curl, a
+              script), which was never the attack.
+            """
+            if self.headers.get("Host") not in allowed_hosts:
+                self.send_error(403, "Host not allowed")
+                return False
+            origin = self.headers.get("Origin")
+            if origin and origin not in allowed_origins:
+                self.send_error(403, "Cross-origin request refused")
+                return False
+            return True
 
         def _send(self, body: bytes, ctype: str) -> None:
             self.send_response(200)
@@ -601,8 +614,12 @@ def serve(port: int, open_browser: bool = True) -> None:
             n = int(self.headers.get("Content-Length") or 0)
             try:
                 req = json.loads(self.rfile.read(n) or b"{}")
+                assert isinstance(req, dict)
             except Exception:
-                req = {}
+                # Never fall back to an empty request: that path would persist "" over the saved
+                # keys, so a malformed body would silently erase them.
+                self.send_error(400, "Expected a JSON object")
+                return
             cfg = load_config()
             cfg.update({k: req.get(k, "") for k in ("proxy", "ipqs_key", "abuse_key")})
             save_config(cfg)
