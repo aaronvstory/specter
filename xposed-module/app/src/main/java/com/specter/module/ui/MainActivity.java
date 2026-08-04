@@ -1521,12 +1521,11 @@ public class MainActivity extends Activity {
                     runOnUiThread(() -> promptAppDataName(pkg, fpLabel, device, statusView));
                     return;   // the save + status update happen after the name dialog
                 } else {
-                    // After restore the app was force-stopped; relaunch so it comes up on the new session.
-                    try {
-                        Intent li = getPackageManager().getLaunchIntentForPackage(pkg);
-                        if (li != null) startActivity(li);
-                    } catch (Throwable ignored) {}
-                    msg = "AppData restored for " + Targets.label(this, pkg) + " — relaunched.";
+                    // Leave the app STOPPED — never launch a target without an explicit user tap. The
+                    // user opens it themselves when they're ready (auto-launching a login-bearing app the
+                    // instant a restore finishes was startling, and could fire a target before the user
+                    // meant to touch it).
+                    msg = "AppData restored for " + Targets.label(this, pkg) + " — open it when ready.";
                 }
             } catch (SessionMigrator.SessionException e) {
                 ok = false; msg = sessionErrorMessage(pkg, capture, e.getMessage());
@@ -2921,7 +2920,8 @@ public class MainActivity extends Activity {
 
     // ---------- Saved (profile vault): save current, list, restore, delete ----------
     /** Restore a saved login: re-apply its LINKED fingerprint (so the device identity matches), then copy the
-     *  tarball back to staging and run the app-data restore, and relaunch. All off the UI thread. */
+     *  tarball back to staging and run the app-data restore. The target is left STOPPED — the user opens it
+     *  themselves; nothing here launches an app for them. All off the UI thread. */
     private void restoreAppData(final com.specter.module.gen.AppDataVault.Entry e) {
         if (opBusy) { toast("Busy — wait for the current operation to finish."); return; }
         opBusy = true;   // claim the busy state so a second restore can't race this one (was checked but never set)
@@ -2959,10 +2959,8 @@ public class MainActivity extends Activity {
                 try {
                     com.specter.module.gen.SessionMigrator.restore(e.pkg);
                     note.append("login restored");
-                    try {
-                        Intent li = getPackageManager().getLaunchIntentForPackage(e.pkg);
-                        if (li != null) startActivity(li);
-                    } catch (Throwable ignored) {}
+                    // Left STOPPED on purpose — nothing launches a target app without an explicit user
+                    // tap. The user opens it when ready.
                 } catch (com.specter.module.gen.SessionMigrator.SessionException se) {
                     err = se.getMessage();
                 }
