@@ -2,6 +2,18 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-05: a Cash login is device-bound by a TEE Keystore attestation key, so cross-device restore can
+  NEVER keep it logged in — and same-device restore must never `pm clear` first.** WHY: read-only 4a
+  inspection PROVED `/data/misc/keystore/user_0/10263_USRPKEY_cashapp+^ak+^mri_worker` is a hardware
+  (keymaster-4-0 TEE) key blob (legacy blob `type=4`, not software-fallback), created at Cash's registration
+  moment. It signs a server device-challenge and cannot be tar'd with the app data dir. So restoring the db to
+  a *different* device carries the token but not the attestation (→ "enter email"), unlike Dasher whose token
+  is an un-attested plaintext SQLite column that DOES migrate. `pm clear` drops a uid's keystore keys, so
+  "start clean" and "keep the login" are mutually exclusive on Cash. Specter's restore is a whole-dir swap
+  that never `pm clear`s, so the same-device-no-wipe path is the only one that can keep a Cash login — a
+  HYPOTHESIS pending a user-run test (can't be tested here; boundary forbids logging into Cash). Full write-up
+  + test protocol in `docs/ANTI-FINGERPRINT-STRATEGY.md` (2026-08-05 section).
+
 - **2026-08-01 (v0.21.0): the US device pool only grows with REAL dumped build.prop values — 4 devices, not 12.**
   WHY: the pool was 7 with ZERO Samsung (every Samsung row in devices.json is an EU/KR F/N/B variant, which
   `_is_us_model` correctly rejects — a US carrier + an international model is itself a coherence tell). Research

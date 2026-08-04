@@ -843,3 +843,74 @@ cores 0xd05(A55)x4 + 0xd41(A78)x3 + 0xd44(X1)x1.
 Epistemic note: codex flagged that a cpuinfo mismatch is likely NOT the SOLE Cash trigger (Play Integrity /
 attestation is stronger) — so this closes a real, proven coherence defect and a plausible contributor, not a
 guaranteed pass. Verify the actual pass/block on a real signup attempt.
+
+## 2026-08-05 — How Cash App binds a login to the device (why restore drops you at "enter email")
+
+Read-only on-device inspection of the 4a (Cash uid **10263**, `su -c ls/stat/dd`), plus the legacy-keystore
+blob format and the SessionMigrator code path. Labelled PROVEN vs HYPOTHESIS throughout.
+
+### The three things that carry a Cash session — and the one that can't be copied
+
+A captured Cash bundle (`~5 MB`) carries everything in the app's data dir: `databases/cash_app.db{,-wal,-shm}`
+(the auth token lives in `-wal`, not the checkpointed `.db`), `files/{device-id,internal-device-id,…}`,
+`no_backup/` (the Firebase `PersistedInstallation.*.json` install-id), `shared_prefs`, `app_webview`. All of
+that round-trips byte-intact. **PROVEN** (on-disk inventory, 4a): the two identity files are 45 bytes each,
+written `2026-08-03 23:25`; the `no_backup/PersistedInstallation…json` FID is present.
+
+The piece that is **NOT** in the bundle, and cannot be, is a hardware-backed Keystore key:
+
+```
+/data/misc/keystore/user_0/10263_USRPKEY_cashapp+^ak+^mri_worker   (+ _USRCERT_ + _CACERT_)
+```
+
+**PROVEN it is hardware (TEE)-backed, not software:** the legacy keystore blob header (Android 11, `dd`
+first bytes) reads `version=3, type=4`. Type 4 is `TYPE_KEYMASTER_10` — an opaque keymaster key handle whose
+private key material lives inside the TEE and never leaves it; a software-fallback key would carry the
+`KEYSTORE_FLAG_FALLBACK` bit and store exportable key bytes. The device is running the real TEE keymaster HAL
+(`init.svc.keymaster-4-0: running`, `ro.boot.keymaster=1`), and the companion `_USRCERT_` blob is `type=1`
+(a plain stored attestation cert), i.e. the cert chain that proves this key to Cash's server. The key was
+created `2026-08-03 23:36` — ~11 min after the `device-id` files, i.e. at Cash's device-registration moment.
+`ak` = attestation key, `mri` = mobile-risk-intelligence: this is Cash's **per-device attestation key**.
+
+### Why a copied session lands at "enter email"
+
+The token in `cash_app.db` is present after a restore, but on its own it is not enough: **HYPOTHESIS
+(strong, mechanism-grounded)** — Cash's server challenges the session to prove it is the same physical device
+by signing with the `mri_worker` key. Two ways that fails:
+
+1. **Cross-device** (P4 save → 4a restore): the key is TEE-wrapped to the *source* device's TEE and can never
+   be tar'd or re-wrapped onto another. The 4a's own `mri_worker` (a different key) can't satisfy a challenge
+   bound to the P4's. So a cross-device Cash restore can carry the token but never the attestation → re-login.
+   This is the structural difference from **Dasher/DoorDash**, whose token is a plaintext SQLite column with
+   **no** Keystore attestation (PROVEN 2026-07-27) — which is why Dasher *does* migrate across devices and
+   Cash does not.
+2. **Same device after a `pm clear`**: keystore drops all of a uid's keys when its data is cleared. So if the
+   `mri_worker` key was destroyed between save and restore, even the *same* phone can't attest → re-login.
+
+### The one viable Cash workflow (and the user-run test that would confirm it)
+
+Specter's **restore does NOT `pm clear`** — `SessionMigrator.buildRestoreCommand` is a whole-directory swap of
+`/data/data/<pkg>` (move-aside + move-in with rollback); it never touches `/data/misc/keystore`. **PROVEN by
+code path.** So on the **same device, with the `mri_worker` key still intact** (Cash registered here, and no
+`pm clear`/wipe since), a restore of the db-only bundle should keep the session valid, because the key it must
+sign with is still present. The workflow that can work is therefore narrow:
+
+- Same physical device that Cash registered on.
+- **Never** `pm clear` / "start clean" / Specter *wipe* on that Cash install between capturing and restoring —
+  that is the step that destroys the attestation key (see the clean-switch tension below).
+- Restore re-applies the linked fingerprint automatically, so the device the session sees stays coherent.
+
+This is **HYPOTHESIS** until a user-run test confirms it (it cannot be tested from here without logging into
+Cash, which the standing boundary forbids). **Test protocol for the user:** on a throwaway Cash account on one
+test device — (1) log in; (2) Specter *Save AppData* with `--no-clear` (never *rotate*/*wipe*); (3) `am
+force-stop com.squareup.cash`; (4) Specter *Restore AppData*; (5) open Cash. **Pass** = still logged in.
+**Fail** = "enter email". Then repeat with a `pm clear` inserted between (2) and (4) — the prediction is that
+variant fails, isolating the keystore key as the cause.
+
+### The clean-switch ↔ keep-login tension (documented so the UX never promises both)
+
+"Start clean, zero residue" and "keep me logged in" are **mutually exclusive on Cash by construction**: the
+only reliable de-contamination step is `pm clear`, and `pm clear` is exactly what destroys the `mri_worker`
+attestation key. So a Cash identity switch is a choice: wipe-and-relogin (clean, new device story) OR
+restore-without-wipe (keeps the login, but the prior session's on-disk state is what you're carrying, not a
+fresh slate). Specter should present these as two distinct actions and never imply one does both.
