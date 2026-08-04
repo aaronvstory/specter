@@ -75,6 +75,34 @@ def test_policy_zones_are_a_subset_of_the_zone_table():
     assert "dnsbl.sorbs.net" not in zones      # shut down in 2024; answers clean for everything
 
 
+# ---- naming the policy code ------------------------------------------------------------------
+
+
+def test_policy_reasons_names_the_code_not_just_the_zone():
+    # Spamhaus splits PBL: 127.0.0.10 is the network owner declaring its own range end-user (every
+    # consumer line has one), 127.0.0.11 is Spamhaus listing a range the owner never declared. On a
+    # hosting network only the second happens, and it is a statement about that netblock — so a
+    # readout that prints a bare "Spamhaus" throws away the half that matters.
+    assert ipcheck.policy_reasons("zen.spamhaus.org", ["127.0.0.10"]) == \
+        ["PBL, network owner declared it end-user"]
+    assert ipcheck.policy_reasons("zen.spamhaus.org", ["127.0.0.11"]) == \
+        ["PBL, Spamhaus listed the range"]
+    assert ipcheck.policy_reasons("all.spamrats.com", ["127.0.0.37", "127.0.0.36"]) == \
+        ["dynamic reverse DNS", "no reverse DNS"]
+
+
+def test_policy_reasons_ignores_codes_that_are_not_policy():
+    assert ipcheck.policy_reasons("zen.spamhaus.org", ["127.0.0.2"]) == []
+    assert ipcheck.policy_reasons("zen.spamhaus.org", ["127.0.0.1"]) == []
+    assert ipcheck.policy_reasons("cbl.abuseat.org", ["127.0.0.2"]) == []
+
+
+def test_policy_label_falls_back_to_the_bare_zone_name():
+    assert ipcheck.policy_label("Spamhaus", "zen.spamhaus.org", ["127.0.0.11"]) == \
+        "Spamhaus (PBL, Spamhaus listed the range)"
+    assert ipcheck.policy_label("DroneBL", "dnsbl.dronebl.org", ["127.0.0.3"]) == "DroneBL"
+
+
 def test_zone_table_matches_the_android_side():
     # The two implementations must classify identically, so their tables have to agree. A zone
     # present on one side only would make the same IP score differently on phone and desktop.
@@ -86,7 +114,7 @@ def test_zone_table_matches_the_android_side():
     for zone, codes in ipcheck.POLICY_CODES.items():
         m = re.search(r'"' + re.escape(zone) + r'"\.equals\(zone\)\) return ([^;]+);', java)
         assert m, f"{zone} has no policy-code branch in Dnsbl.java"
-        assert {int(c) for c in re.findall(r"code == (\d+)", m.group(1))} == codes
+        assert {int(c) for c in re.findall(r"code == (\d+)", m.group(1))} == set(codes)
 
 
 # ---- verdict -------------------------------------------------------------------------------
@@ -141,10 +169,43 @@ def test_format_report_covers_the_signals_and_never_invents_one():
     assert "172.59.84.16" in text
     assert "92 · high risk" in text
     assert "2 of 12 · Spamhaus, CBL" in text
-    assert "SpamRATS" in text and "not abuse" in text
+    assert "SpamRATS" in text and "not an abuse report" in text
     assert "DIRTY" in text
     assert "Abuse reports" not in text          # AbuseIPDB never ran — don't imply it did
     assert "Time zone" not in text
+
+
+def test_report_never_says_only_none_of_n_while_a_policy_listing_stands():
+    # The bug this closes, measured 2026-08-05 on the Mullvad exit 23.159.216.252: it IS on Spamhaus
+    # (PBL, 127.0.0.11) and the readout said "none of 12 lists", so cross-checking it against a tool
+    # that counts every listing looked like we had missed one. The split is the point; hiding the
+    # policy hit from the headline is not.
+    rep = {"ip": "23.159.216.252", "blacklists": [],
+           "policy_lists": ["Spamhaus (PBL, Spamhaus listed the range)"],
+           "dnsbl_checked": 12, "dnsbl_usable": True}
+    text = ipcheck.format_report(rep)
+    assert "plus 1 policy listing" in text
+    assert "Spamhaus listed the range" in text
+    # ...and it must not call that listing normal for this IP. 23.159.216.252 is a hosting address;
+    # "normal for residential and mobile IPs" was reassurance pointed the wrong way.
+    assert "residential" not in text
+
+
+def test_report_keeps_the_plain_none_line_when_nothing_is_listed_at_all():
+    text = ipcheck.format_report({"ip": "1.2.3.4", "blacklists": [], "policy_lists": [],
+                                  "dnsbl_checked": 12, "dnsbl_usable": True})
+    assert "none of 12 lists" in text
+    assert "policy" not in text.lower()
+
+
+def test_fraud_line_names_the_strictness_it_was_scored_at():
+    # Measured on 23.159.216.252: strictness 0 -> fraud 20, proxy false; strictness 1 -> fraud 100,
+    # proxy true. The number means nothing without the setting, and a reader comparing this against
+    # another checker has no way to reconcile the two otherwise.
+    text = ipcheck.format_report({"ip": "1.2.3.4", "fraud_score": 100, "ipqs_strictness": 1})
+    assert "strictness 1" in text
+    # No strictness recorded (an older cached report) must not invent one.
+    assert "strictness" not in ipcheck.format_report({"ip": "1.2.3.4", "fraud_score": 100})
 
 
 def test_format_report_says_unavailable_when_blocklist_dns_is_dead():

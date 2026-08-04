@@ -58,3 +58,6 @@ backups/
 
 # Serena MCP project cache
 .serena/
+
+# Local APK working area (jadx/apktool output; contains Windows-reserved names like aux.java)
+APKs/

@@ -82,11 +82,35 @@ final class Dnsbl {
         return !any ? null : allPolicy ? POLICY : ABUSE;
     }
 
-    /** Codes that mean "dynamic/consumer range", not abuse: Spamhaus PBL, and SpamRATS Dyna/NoPtr. */
+    /** What a policy code actually says, or null when that code isn't a policy code on this zone.
+     *
+     *  <p>Spamhaus splits PBL: 127.0.0.10 is an entry the network owner declared themselves, 127.0.0.11 is one
+     *  Spamhaus added because the owner never did (docs.spamhaus.com, Available Zones). Every consumer line
+     *  carries the first; a hosting range carries the second only when Spamhaus decided that range shouldn't be
+     *  emitting mail — a statement about the netblock, not the routine consumer case. Printing a bare zone name
+     *  throws away the half that matters. Mirrors POLICY_CODES in {@code specter/ipcheck.py}. */
+    static String policyReason(String zone, int code) {
+        if ("zen.spamhaus.org".equals(zone)) return code == 10 ? "PBL, network owner declared it end-user"
+                : code == 11 ? "PBL, Spamhaus listed the range" : null;
+        if ("all.spamrats.com".equals(zone)) return code == 36 ? "dynamic reverse DNS"
+                : code == 37 ? "no reverse DNS" : null;
+        return null;
+    }
+
+    /** A policy listing as one display string: the zone, and why it lists this IP. */
+    static String policyLabel(String name, String zone, List<String> addrs) {
+        StringBuilder why = new StringBuilder();
+        if (addrs != null) for (String a : addrs) {
+            String r = policyReason(zone, lastOctet(a));
+            if (r == null || why.indexOf(r) >= 0) continue;
+            why.append(why.length() == 0 ? "" : "; ").append(r);
+        }
+        return why.length() == 0 ? name : name + " (" + why + ")";
+    }
+
+    /** Codes that mean "should not be sending mail directly", not abuse: Spamhaus PBL, SpamRATS Dyna/NoPtr. */
     private static boolean isPolicyCode(String zone, int code) {
-        if ("zen.spamhaus.org".equals(zone)) return code == 10 || code == 11;
-        if ("all.spamrats.com".equals(zone)) return code == 36 || code == 37;
-        return false;
+        return policyReason(zone, code) != null;
     }
 
     /** The last octet of a 127.0.0.0/8 answer, or -1 if this isn't one (or is the error range). */

@@ -5,6 +5,21 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-08-05 - Blacklist "coverage gap" traced: there was no gap, there was a hidden policy listing** -
+  status: `shipped` (v0.23.1). Reported symptom: our checker said **0 blacklists / none of 12** for the Mullvad
+  exit `23.159.216.252` while iper.one showed **2**. Traced rather than patched: a sweep of ~120 DNSBL zones
+  found exactly **one** list carrying that IP — Spamhaus PBL, code `127.0.0.11` — which we were already
+  querying and had correctly classified as `policy`, then dropped from the headline. So the number wasn't
+  wrong, the presentation was: "none of 12 lists" beside a real listing reads as a clean IP. Fixed by carrying
+  the policy count into the headline and naming the PBL code. Two side findings worth keeping: (a) three zones
+  (`cblplus`/`cdl`/`cml.anti-spam.org.cn`) answer with `208.98.43.x`, i.e. wildcard DNS on a defunct zone —
+  they'd be three phantom hits if the 127/8 guard weren't there, and they're a good argument against adding
+  zones without checking their answers; (b) the IPQS fraud delta (100 vs 88) is the **strictness** parameter,
+  measured: strictness 0 scores that IP **20 with `proxy: false`**, which means a checker showing a low score
+  for a VPN exit may simply be asking at strictness 0. OPEN: iper.one's second listing is still unaccounted
+  for by any queryable DNSBL — most likely a commercial/non-DNS feed (Abusix, Talos, Validity are in that
+  class and need keys). Worth revisiting only if a keyless source turns up.
+
 - **2026-08-05 - Exit-IP reputation / blacklist checker in the Network-exit card** - status: `shipped`
   (v0.23.0). The status card showed exit IP + geo + timezone alignment but was BLIND to IP reputation. A resi
   proxy exit (172.59.84.16) scored IPQS fraud 92 + "6 blacklists" on iper.one while otherwise clean — a

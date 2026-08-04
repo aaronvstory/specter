@@ -400,6 +400,14 @@ final class HealthCheck {
     // a dirty proxy looked identical to a clean one. These lookups are ON DEMAND (never auto-polled — the IPQS
     // free tier is 35/day) and always run THROUGH the tunnel, same gate the geo/timezone path uses.
 
+    /** IPQualityScore's scoring strictness, sent on every lookup. MEASURED on 23.159.216.252 (a Mullvad exit,
+     *  AS17243) on 2026-08-05: strictness 0 returns fraud_score 20 with proxy=false — blind to a commercial VPN
+     *  exit — while strictness 1 returns 100 with proxy, recent_abuse and bot_status all true. Strictness 2
+     *  matches 1. IPQS documents 0 as the recommended starting point, but 0 cannot answer the only question
+     *  this check asks. The readout names the setting, because the same IP scores differently on other
+     *  checkers and a reader needs to be able to reconcile that. */
+    static final int IPQS_STRICTNESS = 1;
+
     /** How the exit IP looks to fraud/abuse data sources. Every field is optional — with no API keys set this
      *  still carries the keyless DNSBL blacklist count. */
     static final class Reputation {
@@ -437,7 +445,7 @@ final class HealthCheck {
 
         if (ipqsKey != null && !ipqsKey.isEmpty()) {
             org.json.JSONObject o = getJson(net, "https://ipqualityscore.com/api/json/ip/"
-                    + enc(ipqsKey) + "/" + enc(ip) + "?strictness=1", null);
+                    + enc(ipqsKey) + "/" + enc(ip) + "?strictness=" + IPQS_STRICTNESS, null);
             if (o == null) {
                 r.notes.add("IPQualityScore unreachable");
             } else if (!o.optBoolean("success", false)) {
@@ -496,7 +504,10 @@ final class HealthCheck {
                 List<String> a = resolve(net, rev + "." + z[1]);
                 if (a == null) return null;
                 String kind = Dnsbl.classify(z[1], a);
-                return kind == null ? "" : kind + ":" + z[0];
+                // Policy listings carry WHY (the PBL code spelled out); the label holds no ':' so the
+                // kind/name split below still works.
+                return kind == null ? "" : kind + ":"
+                        + (Dnsbl.POLICY.equals(kind) ? Dnsbl.policyLabel(z[0], z[1], a) : z[0]);
             });
 
             List<java.util.concurrent.Future<String>> fs =

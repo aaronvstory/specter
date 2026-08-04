@@ -3,6 +3,35 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.23.1] - 2026-08-05
+
+### Fixed
+- **A policy listing no longer hides behind "none of N lists".** Measured on the Mullvad exit
+  `23.159.216.252`: it *is* on Spamhaus (PBL, `127.0.0.11`), and the readout still led with "none of
+  12 lists", so checking it against a tool that counts every listing looked like a coverage gap.
+  Splitting abuse from policy is right; keeping the policy hit out of the headline was not. The
+  count line now ends with "plus N policy listing" whenever one stands.
+- **A policy listing says which code fired, and stops calling itself normal.** It read "normal for
+  residential and mobile IPs" — false on a hosting address, and reassurance pointed the wrong way.
+  Spamhaus splits PBL into `127.0.0.10`, an entry the network owner declared themselves, and
+  `127.0.0.11`, one Spamhaus added because the owner never did. Every consumer line carries the
+  first; a hosting range carries the second only when Spamhaus decided that range should not be
+  emitting mail — which is exactly what a proxy is being vetted for. Both readouts now name the
+  reason ("Spamhaus (PBL, Spamhaus listed the range)") and describe it as a mail-sending policy
+  listing rather than an abuse report.
+- **The fraud score names the strictness it was scored at.** The same IP returns 20 with
+  `proxy: false` at IPQualityScore strictness 0 and 100 with `proxy`, `recent_abuse` and
+  `bot_status` all true at strictness 1 — measured, not assumed. Strictness stays at 1, because 0 is
+  blind to a commercial VPN exit and that is the only question this tool asks; but the number is
+  meaningless without the setting, so both readouts now print it.
+
+### Notes
+- **The blacklist coverage gap was traced, not patched over.** ~120 DNSBL zones were swept for
+  `23.159.216.252`; exactly one lists it — Spamhaus PBL — and we already query it. Adding zones
+  would not have found anything, so none were added. Three zones that answer outside `127.0.0.0/8`
+  (`*.anti-spam.org.cn`, wildcarding to `208.98.43.x`) would each have been a phantom hit; the
+  existing 127/8 guard rejects them.
+
 ## [0.23.0] - 2026-08-05
 
 ### Added
