@@ -240,6 +240,13 @@ Keep these current as work happens — they are the project's memory:
 Cadence: at the end of any non-trivial unit, before the final commit, ask "did CHANGELOG / IDEAS /
 DECISIONS need a line?" and add it. A finding is a hypothesis until proven — say so; don't overclaim.
 
+## Research: exa, not WebFetch (NON-NEGOTIABLE)
+For any web research — finding tools/projects, docs, "what's current", comparing approaches, error-string
+lookups — use the **exa MCP tools** (`mcp__exa__web_search_exa`, `mcp__exa__get_code_context_exa`,
+`mcp__exa__company_research_exa`), NOT `WebFetch`. The user has said so repeatedly and emphatically; exa is
+materially better (ranked, current, finds the GitHub issues/repos/merged fixes WebFetch misses). Only use
+WebFetch for a single known URL exa can't reach. Reach for exa on the FIRST research step.
+
 ## Epistemic discipline
 Distinguish PROVEN (verified on-device or by test) from HYPOTHESIS (plausible, code-grounded, unconfirmed)
 from ASSUMPTION. Label them as such in docs and reports. A strong hypothesis is still a hypothesis until

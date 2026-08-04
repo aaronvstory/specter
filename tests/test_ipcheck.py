@@ -134,6 +134,229 @@ def test_zone_table_matches_the_android_side():
         assert java_map == dict(codes), f"{zone}: Java {java_map} != Python {dict(codes)}"
 
 
+# ---- proxy parsing -------------------------------------------------------------------------
+
+
+def _scheme(text, default="http"):
+    """parse_proxy(...).scheme with a non-None assert, so the type checker (and the reader) knows a
+    known-good input parsed."""
+    p = ipcheck.parse_proxy(text, default)
+    assert p is not None
+    return p.scheme
+
+
+def test_parse_proxy_accepts_every_shape_people_paste():
+    P = ipcheck.parse_proxy
+    # bare host:port
+    assert P("1.2.3.4:8080") == ipcheck.Proxy("http", "1.2.3.4", 8080, "", "")
+    # the trailing-colon form resi providers hand out
+    assert P("1.2.3.4:8080:bob:secret") == ipcheck.Proxy("http", "1.2.3.4", 8080, "bob", "secret")
+    # user:pass@host:port
+    assert P("bob:secret@host.example:3128") == \
+        ipcheck.Proxy("http", "host.example", 3128, "bob", "secret")
+    # scheme:// URLs, incl. socks
+    assert P("socks5://u:p@10.0.0.1:1080") == ipcheck.Proxy("socks5", "10.0.0.1", 1080, "u", "p")
+    # the h/a variants normalise onto the base transport
+    assert _scheme("http://host:80") == "http"
+    assert _scheme("socks5h://h:1") == "socks5"
+    assert _scheme("socks4a://h:1") == "socks4"
+
+
+def test_parse_proxy_default_scheme_fills_in_only_without_a_prefix():
+    assert _scheme("h:1", "socks5") == "socks5"
+    # an explicit scheme in the text wins over the selector's default.
+    assert _scheme("http://h:1", "socks5") == "http"
+
+
+def test_parse_proxy_blank_is_none_and_junk_is_a_readable_error():
+    assert ipcheck.parse_proxy("") is None
+    assert ipcheck.parse_proxy("   ") is None
+    import pytest
+    for bad, why in [("nohost", "host:port"), ("h:0", "1–65535"), ("h:99999", "1–65535"),
+                     ("h:notaport", "1–65535"), ("ftp://h:1", "scheme"),
+                     ("a:b:c", "host:port")]:
+        with pytest.raises(ValueError) as e:
+            ipcheck.parse_proxy(bad)
+        assert why in str(e.value)
+
+
+def test_parse_proxy_tolerates_an_at_sign_in_the_password():
+    # split on the LAST '@', so a password containing '@' still parses.
+    p = ipcheck.parse_proxy("bob:se@cret@host:3128")
+    assert p == ipcheck.Proxy("http", "host", 3128, "bob", "se@cret")
+
+
+def test_proxy_http_url_encodes_credentials():
+    p = ipcheck.Proxy("http", "h", 8080, "us er", "p@ss")
+    assert p.http_url() == "http://us%20er:p%40ss@h:8080"
+    assert ipcheck.Proxy("http", "h", 80, "", "").http_url() == "http://h:80"
+
+
+# ---- SOCKS wire format (pure byte-building) ------------------------------------------------
+
+
+def test_socks5_greeting_offers_auth_only_with_credentials():
+    assert ipcheck._socks5_greeting(False) == b"\x05\x01\x00"
+    assert ipcheck._socks5_greeting(True) == b"\x05\x01\x02"
+
+
+def test_socks5_connect_request_is_a_domain_name_connect():
+    req = ipcheck._socks5_connect("example.com", 443)
+    assert req[:4] == b"\x05\x01\x00\x03"           # ver, CONNECT, rsv, domain-name atyp
+    assert req[4] == len("example.com")
+    assert req.endswith(b"\x01\xbb")                # port 443, big-endian
+    assert b"example.com" in req
+
+
+def test_socks5_userpass_is_rfc1929():
+    msg = ipcheck._socks5_userpass("bob", "secret")
+    assert msg == b"\x01\x03bob\x06secret"
+
+
+def test_socks4_connect_is_socks4a_remote_resolve():
+    req = ipcheck._socks4_connect("example.com", 80, "")
+    assert req[:2] == b"\x04\x01"                   # ver, CONNECT
+    assert req[2:4] == b"\x00\x50"                  # port 80
+    assert req[4:8] == b"\x00\x00\x00\x01"          # 0.0.0.1 = resolve at proxy (4a)
+    assert req.endswith(b"example.com\x00")
+
+
+# ---- SOCKS handshake state machine (socketpair fake server; no network) --------------------
+
+import socket as _sock       # noqa: E402
+import threading             # noqa: E402
+
+
+def _run_socks_tunnel(proxy, server_script):
+    """Drive ipcheck._socks_tunnel against a scripted in-memory server over a socketpair. `server_script`
+    is a callable given the server-side socket; it reads the client's bytes and writes replies. Returns
+    (result_or_exception, bytes_the_server_received). No real network — both ends are a socketpair."""
+    cli, srv = _sock.socketpair()
+    seen = {}
+
+    def serve():
+        try:
+            seen["bytes"] = server_script(srv)
+        except Exception as e:      # surface a server-side bug as a test failure, not a hang
+            seen["err"] = e
+        finally:
+            srv.close()
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    # Patch create_connection so _socks_tunnel talks to our client end instead of dialing out.
+    orig = ipcheck.socket.create_connection
+    ipcheck.socket.create_connection = lambda addr, timeout=None: cli
+    try:
+        try:
+            out = ipcheck._socks_tunnel(proxy, "example.com", 443, 5)
+        except Exception as e:
+            out = e
+    finally:
+        ipcheck.socket.create_connection = orig
+        cli.close()
+    t.join(2)
+    return out, seen
+
+
+def test_socks5_tunnel_no_auth_success():
+    proxy = ipcheck.Proxy("socks5", "p", 1080, "", "")
+
+    def server(s):
+        greeting = s.recv(3)                        # ver, nmethods, methods
+        s.sendall(b"\x05\x00")                      # choose no-auth
+        req = s.recv(4 + 1 + len("example.com") + 2)
+        s.sendall(b"\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00")   # success + IPv4 bound addr
+        return greeting
+
+    out, seen = _run_socks_tunnel(proxy, server)
+    assert not isinstance(out, Exception), out
+    assert seen["bytes"] == b"\x05\x01\x00"         # we offered exactly one method: no-auth
+
+
+def test_socks5_tunnel_userpass_success():
+    proxy = ipcheck.Proxy("socks5", "p", 1080, "bob", "secret")
+
+    def server(s):
+        s.recv(3)
+        s.sendall(b"\x05\x02")                      # demand user/pass
+        auth = s.recv(3 + 3 + 6)                    # ver,ulen,user,plen,pass
+        s.sendall(b"\x01\x00")                      # auth OK
+        s.recv(64)                                  # CONNECT
+        s.sendall(b"\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00")
+        return auth
+
+    out, seen = _run_socks_tunnel(proxy, server)
+    assert not isinstance(out, Exception), out
+    assert seen["bytes"] == b"\x01\x03bob\x06secret"
+
+
+def test_socks5_tunnel_fails_closed_when_asked_for_auth_it_didnt_offer():
+    # No credentials -> we greet with no-auth only. A proxy that then selects 0x02 is protocol-violating;
+    # we must refuse, NOT send empty credentials.
+    proxy = ipcheck.Proxy("socks5", "p", 1080, "", "")
+
+    def server(s):
+        s.recv(3)
+        s.sendall(b"\x05\x02")                      # demand user/pass we never offered
+        return b""
+
+    out, _ = _run_socks_tunnel(proxy, server)
+    assert isinstance(out, OSError)
+    assert "didn't offer" in str(out)
+
+
+def test_socks5_tunnel_raises_on_connect_failure():
+    proxy = ipcheck.Proxy("socks5", "p", 1080, "", "")
+
+    def server(s):
+        s.recv(3)
+        s.sendall(b"\x05\x00")
+        s.recv(64)
+        s.sendall(b"\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00")   # reply code 5 = connection refused
+        return b""
+
+    out, _ = _run_socks_tunnel(proxy, server)
+    assert isinstance(out, OSError)
+    assert "CONNECT failed" in str(out)
+
+
+def test_socks5_tunnel_handles_a_domain_bound_address():
+    # atyp 3 (domain) in the reply must be consumed by its length prefix, or the stream desyncs.
+    proxy = ipcheck.Proxy("socks5", "p", 1080, "", "")
+
+    def server(s):
+        s.recv(3)
+        s.sendall(b"\x05\x00")
+        s.recv(64)
+        s.sendall(b"\x05\x00\x00\x03\x03abc\x01\xbb")            # domain "abc" + port
+        return b""
+
+    out, _ = _run_socks_tunnel(proxy, server)
+    assert not isinstance(out, Exception), out
+
+
+def test_socks4_tunnel_success_and_failure():
+    ok = ipcheck.Proxy("socks4", "p", 1080, "", "")
+
+    def good(s):
+        req = s.recv(64)
+        s.sendall(b"\x00\x5a\x00\x00\x00\x00\x00\x00")           # request granted
+        return req
+
+    out, seen = _run_socks_tunnel(ok, good)
+    assert not isinstance(out, Exception), out
+    assert seen["bytes"].startswith(b"\x04\x01")
+
+    def bad(s):
+        s.recv(64)
+        s.sendall(b"\x00\x5b\x00\x00\x00\x00\x00\x00")           # request rejected
+        return b""
+
+    out2, _ = _run_socks_tunnel(ok, bad)
+    assert isinstance(out2, OSError) and "SOCKS4 CONNECT failed" in str(out2)
+
+
 # ---- verdict -------------------------------------------------------------------------------
 
 
