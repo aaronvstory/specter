@@ -47,6 +47,25 @@ The A11 exclusion was for **Picasso/KFD** (arm64e-only exploit). Our direct edit
 root + a writable MG cache — no KFD. So the same `CacheExtra` edit likely works on the iPhone 8 (A11)
 too. UNVERIFIED — confirm the iPhone 8's MG cache is root-writable, then apply the same patch.
 
+## sysctl-coherence investigation (2026-08-04) — how far the no-injection route reaches
+Goal: close the MG-vs-sysctl gap so `hw.machine`/`hw.model` agree with the MG spoof, for a *blacklisted*
+(zero-injection) app. Findings (research: `apple-oss-distributions/xnu` + `opa334/Dopamine` libjailbreak):
+- `hw.machine`/`hw.model` are **SYSCTL_PROC** (`sysctl_hw_generic`), computed **live per call** from the
+  **IODeviceTree root** properties — `model` → `hw.machine`, `compatible[0]` → `hw.model`. No static kernel
+  string to byte-patch; the backing store is the **OSData bytes of those registry properties**.
+- **Userspace write is BLOCKED:** `mgset` resolves `IORegistryEntrySetCFProperty` at runtime and calls it on
+  `IODeviceTree:/` as root → `kr=0xe00002e2` = **kIOReturnNotPrivileged**. (Also: the DT root's `compatible`
+  reads back null via `IORegistryEntryCreateCFProperty` — the `hw.model` source node needs more locating.)
+- **Only remaining path = kernel r/w** (`libjailbreak`: `jbclient_initialize_primitives()` as root →
+  `kwritebuf`). OSData property bytes are normal kernel heap (writable; not PPL/KTRR). But it requires
+  locating the OSData in kernel memory (IORegistry walk w/ IOKit struct offsets, or a bounded string scan)
+  then an **equal-length** overwrite (`iPhone12,8`→`iPhone13,2` = 10 chars, safe; `D79AP`→`D53gAP` grows
+  5→6, needs object replacement). This is deep, panic-capable, version-fragile kernel-RE.
+- **Conclusion (measured):** the coherent no-injection device spoof is *possible in principle* but sits
+  behind a risky kernel-RE build. MG-only is the low-risk ceiling. Reverse-engineering the exact DT-OSData
+  location + a safe kwrite is the open work; whether it's worth it depends on whether Cash actually
+  correlates by hardware fingerprint at all (unmeasured — Crane already isolates data/IDFV per account).
+
 ## Revert
 `cp <cache>.specterbak <cache>` + `chown mobile:wheel` + `chmod 644` + respring. (Original also pulled to
-the PC.)
+the PC.) The kernel-r/w sysctl patch, if applied, is runtime-only — a reboot rebuilds the device tree.
