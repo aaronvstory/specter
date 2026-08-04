@@ -1114,13 +1114,27 @@ public class MainActivity extends Activity {
 
         String device = deviceString();
         String carrier = profile.getOrDefault("sim_operator_name", "");
+        String deviceLine = device + (carrier.isEmpty() ? "" : "  ·  " + carrier);
+        // After a restore or a vault apply, the live identity has a saved NAME (activeVaultLabel). Lead with
+        // that human name ("Petra G FL"), not the bare model — the model then reads as the secondary line, so
+        // "which identity is live" is answerable at a glance and the A1 device-vs-name drift is legible.
+        String savedName = activeVaultLabel.isEmpty() ? "" : labelName(activeVaultLabel);
+
         TextView dev = new TextView(this);
-        dev.setText(device + (carrier.isEmpty() ? "" : "  ·  " + carrier));
+        dev.setText(savedName.isEmpty() ? deviceLine : savedName);
         dev.setTextColor(Theme.INK);
         dev.setTextSize(Theme.T_HEADING);
         dev.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         dev.setPadding(0, dp(Theme.S1), 0, 0);
         c.addView(dev);
+        if (!savedName.isEmpty()) {
+            TextView sub = new TextView(this);
+            sub.setText(deviceLine);
+            sub.setTextColor(Theme.SOFT);
+            sub.setTextSize(Theme.T_CAPTION);
+            sub.setPadding(0, dp(2), 0, 0);
+            c.addView(sub);
+        }
 
         Set<String> tgts = Targets.get(prefs);
         int appliedN = appliedCount(tgts);
