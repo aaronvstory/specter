@@ -5,6 +5,22 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-08-05 - Flexible proxy input + stdlib SOCKS for the ipcheck tool** - status: `shipped` (v0.23.2).
+  The proxy field forced `http://user:pass@host:port`; now it takes `host:port`, `host:port:user:pass`,
+  `user:pass@host:port`, and `http`/`socks5`/`socks4` URLs, with a scheme selector (web) / `--proxy-type`
+  (CLI). SOCKS5/4a tunnel is a ~60-line stdlib CONNECT connector (no PySocks — keeps the zero-dep promise),
+  proven end-to-end against a local SOCKS5 server. See DECISIONS 2026-08-05.
+- **2026-08-05 - IP-reputation tooling survey (exa)** - status: `researched`. Surveyed the active open-source
+  field (AbuseBox — 60+ blacklists + AbuseIPDB, most-starred at ~44; BlackRoute — vpn/tor/proxy/asn/bogon
+  feed aggregation; ipquery, ipxa, geoiphub). Finding: they aggregate the SAME sources we do (DNSBLs +
+  AbuseIPDB + downloadable feeds); there is no keyless per-IP source we're missing. The one genuinely useful
+  KEYLESS signal add for us:
+- **2026-08-05 - Keyless Tor-exit detection via the public bulk exit list** - status: `idea`. IPQS already
+  flags Tor, but only with a key. The Tor Project publishes a keyless bulk exit list
+  (`check.torproject.org/torbulkexitlist`, also `dan.me.uk`); fetch+cache it and flag an exit-IP match, so
+  "is this a Tor exit" works with zero keys. Cheap, real signal. Low priority (Tor exits are rare for our
+  proxy use), but a clean keyless win when polishing the checker.
+
 - **2026-08-05 - Blacklist "coverage gap" traced: there was no gap, there was a hidden policy listing** -
   status: `shipped` (v0.23.1). Reported symptom: our checker said **0 blacklists / none of 12** for the Mullvad
   exit `23.159.216.252` while iper.one showed **2**. Traced rather than patched: a sweep of ~120 DNSBL zones

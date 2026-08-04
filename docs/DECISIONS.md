@@ -2,7 +2,7 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
-- **2026-08-05 (v0.23.4): the apply-time drift warning triggers on a saved login's DEVICE, not its fingerprint
+- **2026-08-05 (v0.23.5): the apply-time drift warning triggers on a saved login's DEVICE, not its fingerprint
   label, and only WARNS (never blocks).** WHY: the incoherence the user hit (Cash "Your devices" = Pixel 4a
   while live reads = SM-G996U) is a device-MODEL mismatch, and the buildable signal for it is the saved
   login's captured `device` string vs the model being applied — the fingerprint vault-label isn't reliable
@@ -11,6 +11,19 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   saved login is legitimate; the coherent alternative (restore the saved login, which re-applies its own
   device) is named in the dialog. The check is a pure static `AppDataVault.conflictingDevices` so it's
   JVM-tested without a device.
+- **2026-08-05 (v0.23.4): SOCKS support is a ~60-line stdlib CONNECT tunnel, NOT a PySocks dependency.**
+  WHY: the checker's headline promise is "stdlib only, no dependencies", and SOCKS is a real need (many
+  proxies are SOCKS5). Adding PySocks would break the promise for the whole tool over one transport. urllib
+  speaks only HTTP proxies, so instead a small self-contained SOCKS5/SOCKS4a CONNECT connector wraps the
+  socket and hands it to `http.client`. The wire-format byte-building is factored into pure helpers
+  (`_socks5_greeting`/`_connect`/`_userpass`, `_socks4_connect`) so it's unit-tested without a live proxy,
+  and the whole path is proven end-to-end against a local SOCKS5 server (HTTPS lookup succeeds through it).
+  The elegant answer beat "document the limitation and require an http:// proxy."
+- **2026-08-05 (v0.23.4): the proxy parser splits `host:port:user:pass` on colons, so a colon in the
+  PASSWORD isn't expressible that way — by design, stated not hidden.** WHY: that trailing-colon form has no
+  delimiter to escape a literal colon, so it's genuinely ambiguous; rather than guess, the parser documents
+  that a password with a `:` must use the `user:pass@host:port` or `scheme://` form (which have an
+  unambiguous `@` boundary). Chose a clear limitation over a heuristic that would mis-split some passwords.
 
 - **2026-08-05 (v0.23.1): the exit-IP check stays on IPQualityScore strictness 1, and prints the setting.**
   WHY: a third-party checker scored the Mullvad exit `23.159.216.252` at 88 where we said 100, which looked

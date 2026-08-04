@@ -3,7 +3,7 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
-## [0.23.4] - 2026-08-05
+## [0.23.5] - 2026-08-05
 
 ### Added
 - **Apply warns before it makes a saved login incoherent.** A saved login binds an app to the device
@@ -13,6 +13,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   and, if it finds one, asks first: "<app> has a saved login as <device> — applying <new device>
   won't match it." The coherent move it points you to is restoring that login from Saved (which
   re-applies its own device); applying a mismatched identity is now a deliberate, confirmed choice.
+
+## [0.23.4] - 2026-08-05
+
+### Added
+- **The proxy field takes whatever shape you paste.** The checker (CLI and web UI) now parses
+  `host:port`, the trailing-colon `host:port:user:pass` a lot of residential providers hand out,
+  `user:pass@host:port`, and full `http://` / `socks5://` / `socks4://` URLs — no more forcing one
+  exact form. A scheme selector (HTTP / SOCKS5 / SOCKS4) sits next to the field and `--proxy-type`
+  does the same on the CLI; an explicit `scheme://` in the text still wins.
+- **SOCKS5 and SOCKS4a proxies, with zero dependencies.** urllib speaks only HTTP proxies, so the
+  tool now carries a small stdlib SOCKS CONNECT tunnel (no PySocks) — the "no dependencies" promise
+  holds. Proven end-to-end: an HTTPS lookup completes through a live SOCKS5 proxy.
+
+### Fixed
+- A blank or malformed proxy now fails with a readable reason (`proxy needs host:port`, `port must
+  be 1–65535`, `unknown proxy scheme`) instead of a stack trace or a silent wrong transport.
 
 ## [0.23.3] - 2026-08-05
 
