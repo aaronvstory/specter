@@ -194,12 +194,26 @@ Version-bump everywhere (VERSION drives it). Commit + push each unit as it compl
 work). Never ship cosmetic/non-functional UI — build it or clearly mark it non-functional.
 
 ### Review gauntlet (NON-NEGOTIABLE before every merge)
-Run **`/gauntlet` before merging any PR to main.** As of 2026-07-26 the gauntlet's two AUTHORITATIVE
-review sources are (1) a **`code-reviewer` subagent** and (2) **`/codex`** (GPT-5.x, a strong
-different-model second opinion) — run in parallel on `git diff main...HEAD`, reconcile, fix everything
-both agree on plus any reproducible single-source CRITICAL/HIGH, add tests, re-verify. **The PR review
+Run **`/gauntlet` before merging any PR to main.**
+
+> **STATUS 2026-08-05 (user-confirmed): the gauntlet is the `code-reviewer` SUBAGENT ONLY — codex is
+> DOWN.** `codex exec` fails with `refresh_token_invalidated` ("Your access token could not be refreshed
+> because your refresh token was revoked"), and the fallback second model is dead too — `gemini` returns
+> `IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals`. Both
+> need an INTERACTIVE re-login, which only the user can do. Until then: run the `code-reviewer` subagent,
+> fix everything it finds, and **do not block a merge waiting on codex**. Don't burn a cycle re-running
+> either CLI to "check" — a run that returns only auth errors produced NO review; treat it as absent.
+
+The gauntlet's AUTHORITATIVE review sources are (1) a **`code-reviewer` subagent** and (2) **`/codex`**
+(GPT-5.x, a strong different-model second opinion) — *while codex is down, (1) alone is the gauntlet*.
+Run them in parallel on `git diff main...HEAD`, reconcile, fix everything both agree on plus any
+reproducible single-source CRITICAL/HIGH, add tests, re-verify. **The PR review
 bots (CodeRabbit/Kilo/gemini/Codoki) are BROKEN/unreliable and are NOT part of the gauntlet** — a bot
 comment is a non-blocking bonus if it happens to appear; never wait on or gate a merge on the bots.
+- **With codex down, compensate on the one source you have**: give the subagent a specific, enumerated
+  risk list (the invariant that must hold, the exact failure mode to hunt), and do your own adversarial
+  pass on the parts it can't easily reach — live behaviour, on-device verification, real API responses.
+  A finding you PROVED by measurement outranks a second model's opinion anyway.
 - **Also run `/codex` (or the full `/gauntlet`) whenever you're UNSURE about anything** — a tricky bug,
   an unfamiliar API/behavior, a non-obvious design call, or when a fresh very-high-quality model take
   would help. Don't reserve the second set of eyes for merge time; use it proactively when it adds value.
