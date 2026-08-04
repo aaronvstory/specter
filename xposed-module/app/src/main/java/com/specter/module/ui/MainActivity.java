@@ -74,6 +74,7 @@ public class MainActivity extends Activity {
     private boolean vaultImport = false;   // showing the dedicated Import browse screen (a Vault sub-view)
     private boolean healthScreen = false;  // showing the Protection Status sub-screen (a Settings sub-view)
     private java.util.List<HealthCheck.Group> healthResults;   // last-computed checks (null = still running)
+    private boolean repBusy = false;       // an exit-IP reputation lookup is in flight (guards the button)
     private boolean setupScreen = false;   // showing the guided "Set up everything" sub-screen (Settings sub-view)
     private boolean setupBusy = false;     // a setup run is in flight (guards the button + drives the spinner)
     private java.util.List<com.specter.module.gen.SetupFlow.StepResult> setupResults;  // last run's per-step outcomes (null = not run yet)
@@ -1960,6 +1961,17 @@ public class MainActivity extends Activity {
         content.addView(sectionLabel("Diagnostics"));
         content.addView(diagnosticsCard());
 
+        // Exit-IP reputation keys. Optional — the blacklist count is keyless — but the fraud score is the
+        // signal that actually catches a burned proxy, and that needs a key. Never hardcoded, never shipped.
+        content.addView(sectionLabel("IP reputation"));
+        LinearLayout repKeys = card();
+        repKeys.addView(apiKeyRow("IPQualityScore key", "ipqs_key",
+                "Fraud score and proxy verdict · 35 lookups a day free"));
+        repKeys.addView(hairlineInset());
+        repKeys.addView(apiKeyRow("AbuseIPDB key", "abuseipdb_key",
+                "Abuse-report history · 1,000 lookups a day free"));
+        content.addView(repKeys);
+
         // Advanced (root) — device-wide, persistent Magisk-module actions, NOT per-profile hook gates.
         // Kept in their own section + explicitly opt-in because they modify the system (a /vendor bind-mount),
         // can break unrelated apps (DRM HD playback), and persist across reboot until turned off.
@@ -1968,6 +1980,35 @@ public class MainActivity extends Activity {
         content.addView(gsfResetRow());
         // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
         // as a dead toggle until it actually works.
+    }
+
+    /** A settings row holding one optional API key in prefs. The subtitle says whether a key is saved, so it
+     *  isn't a black box, and the key itself is never rendered back into the list. */
+    private View apiKeyRow(final String title, final String key, final String desc) {
+        boolean set = !prefs.getString(key, "").isEmpty();
+        return row(title, (set ? "Saved · " : "Not set · ") + desc, null, v -> {
+            final EditText in = new EditText(this);
+            in.setText(prefs.getString(key, ""));
+            in.setHint("Paste key (leave empty to clear)");
+            in.setSingleLine(true);
+            in.setTextColor(Theme.INK);
+            in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+            LinearLayout box = new LinearLayout(this);
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setPadding(dp(20), dp(8), dp(20), 0);
+            box.addView(in);
+            new AlertDialog.Builder(this)
+                    .setTitle(title)
+                    .setView(box)
+                    .setPositiveButton("Save", (d, w) -> {
+                        String nv = in.getText().toString().trim();
+                        prefs.edit().putString(key, nv).apply();
+                        status.setText(title + (nv.isEmpty() ? " cleared" : " saved"));
+                        render();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        });
     }
 
     /** The guided "Set up everything" sub-screen: one tap installs every layer (native + scope + OTA block +
@@ -2327,6 +2368,13 @@ public class MainActivity extends Activity {
         card.addView(networkMetaRow("LOCATION", g.location()));
         if (g.tz != null) card.addView(networkMetaRow("TIME ZONE", g.tz));
 
+        // Exit-IP reputation: how this IP scores with fraud/abuse data sources. A coherent device on a burned
+        // proxy IP still draws friction, and no amount of fingerprint work fixes that — so it belongs on the
+        // same card as the IP. Read from the process cache; a lookup only happens when the button is tapped
+        // (IPQualityScore's free tier is 35/day).
+        card.addView(hairlineInset());
+        card.addView(reputationRows(g.ip, HealthCheck.cachedReputation(g.ip), vpnRouting));
+
         card.addView(hairlineInset());
         TextView support = new TextView(this);
         support.setText("Public IP shows the network exit");
@@ -2342,9 +2390,129 @@ public class MainActivity extends Activity {
         return card;
     }
 
+    /** The reputation block of the network card: the fraud/blacklist/abuse rows once a check has run, plus the
+     *  button that runs one. Kept out of the automatic check list on purpose — the lookups cost API quota, so
+     *  they are user-triggered and the result is cached per IP for the process lifetime. */
+    private View reputationRows(final String ip, HealthCheck.Reputation rep, boolean vpnRouting) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+
+        if (rep != null) {
+            if (rep.fraudScore != null) {
+                // IPQualityScore's own bands: 75+ suspicious, 85+ high risk. Below 60 is unremarkable.
+                int c = rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE;
+                String word = rep.fraudScore >= 85 ? "high risk" : rep.fraudScore >= 60 ? "suspicious" : "clean";
+                box.addView(networkMetaRow("FRAUD RISK", rep.fraudScore + " · " + word, c));
+            }
+            if (rep.fraudScore != null) {
+                java.util.List<String> flags = new java.util.ArrayList<>();
+                if (Boolean.TRUE.equals(rep.tor)) flags.add("Tor");
+                if (Boolean.TRUE.equals(rep.vpn)) flags.add("VPN");
+                if (Boolean.TRUE.equals(rep.proxy)) flags.add("Proxy");
+                if (Boolean.TRUE.equals(rep.recentAbuse)) flags.add("Abuse");
+                box.addView(flags.isEmpty()
+                        ? networkMetaRow("FLAGGED AS", "Not flagged as proxy or VPN", Theme.SAGE)
+                        : networkMetaRow("FLAGGED AS", android.text.TextUtils.join(" · ", flags), Theme.AMBER));
+            }
+            if (rep.connectionType != null || rep.asn != null) {
+                String conn = rep.connectionType != null ? rep.connectionType : "";
+                if (rep.asn != null) conn = conn.isEmpty() ? rep.asn : conn + " · " + rep.asn;
+                box.addView(networkMetaRow("CONNECTION", conn, Theme.INK));
+            }
+            int n = rep.blacklists.size();
+            if (n > 0) {
+                box.addView(networkMetaRow("BLACKLISTS", n + " of " + rep.dnsblChecked + " · "
+                        + android.text.TextUtils.join(", ", rep.blacklists), n >= 3 ? Theme.RED : Theme.AMBER));
+            } else if (rep.dnsblUsable && rep.dnsblChecked > 0) {
+                box.addView(networkMetaRow("BLACKLISTS", "None of " + rep.dnsblChecked + " lists", Theme.SAGE));
+            } else {
+                // Honest: DNS didn't answer for the known-listed sentinel, so "no hits" proves nothing here.
+                box.addView(networkMetaRow("BLACKLISTS", "Unavailable · blocklist DNS unreachable", Theme.DIM));
+            }
+            // Policy listings are shown but never scored: Spamhaus PBL and SpamRATS Dyna/NoPtr list EVERY
+            // dynamic consumer address, so a residential or mobile exit is always on them. Folding these into
+            // the blacklist count would mark every good resi proxy dirty.
+            if (!rep.policyLists.isEmpty()) {
+                box.addView(networkMetaRow("POLICY LISTS",
+                        android.text.TextUtils.join(", ", rep.policyLists) + " · normal for residential IPs",
+                        Theme.BLUE));
+            }
+            if (rep.abuseConfidence != null) {
+                int c = rep.abuseConfidence >= 50 ? Theme.RED : rep.abuseConfidence >= 10 ? Theme.AMBER : Theme.SAGE;
+                int reports = rep.abuseReports == null ? 0 : rep.abuseReports;
+                box.addView(networkMetaRow("ABUSE REPORTS",
+                        reports + " in 90 days · " + rep.abuseConfidence + "% confidence", c));
+            }
+            // Every source that failed says so, in its own line — one shared line would let whichever
+            // failed first hide the others, and "no abuse row" with no reason is the confusing case.
+            java.util.List<String> hints = new java.util.ArrayList<>(rep.notes);
+            if (rep.fraudScore == null && prefs.getString("ipqs_key", "").isEmpty()) {
+                hints.add("Add an IPQualityScore key in Settings for a fraud score");
+            }
+            for (String h : hints) {
+                TextView hint = new TextView(this);
+                hint.setText(h);
+                hint.setTextColor(Theme.DIM); hint.setTextSize(Theme.T_CAPTION);
+                hint.setPadding(0, dp(Theme.S2), 0, 0);
+                box.addView(hint);
+            }
+        }
+
+        // The lookup MUST leave through the tunnel (it would otherwise check — and hand these APIs — the phone's
+        // home IP). Same gate the timezone alignment uses: no tunnel, no lookup.
+        if (!vpnRouting) {
+            TextView gate = new TextView(this);
+            gate.setText("Connect the VPN/proxy to check this IP's reputation");
+            gate.setTextColor(Theme.DIM); gate.setTextSize(Theme.T_CAPTION);
+            gate.setPadding(0, dp(Theme.S3), 0, 0);
+            box.addView(gate);
+            return box;
+        }
+        View check = textButton(repBusy ? "Checking…" : rep == null ? "Check IP reputation" : "Re-check reputation",
+                repBusy ? Theme.DIM : Theme.GOLD, v -> checkIpReputation(ip));
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(0, dp(Theme.S2), 0, 0);
+        check.setLayoutParams(clp);
+        box.addView(check);
+        return box;
+    }
+
+    /** Look up the current exit IP's reputation, PINNED to the VPN tunnel so the lookup can never check or leak
+     *  the home IP. Off-thread (network); the result is cached in {@link HealthCheck} and picked up on re-render. */
+    private void checkIpReputation(final String ip) {
+        if (repBusy) return;
+        final android.net.Network vpn = HealthCheck.activeVpnNetwork(getApplicationContext());
+        if (vpn == null) { toast("No VPN/proxy tunnel — reputation is only checked through the tunnel."); return; }
+        final String ipqs = prefs.getString("ipqs_key", "").trim();
+        final String abuse = prefs.getString("abuseipdb_key", "").trim();
+        repBusy = true;
+        status.setText("Checking exit-IP reputation…");
+        render();   // repaint the button as "Checking…"
+        new Thread(() -> {
+            final HealthCheck.Reputation r = HealthCheck.lookupReputation(vpn, ip, ipqs, abuse);
+            runOnUiThread(() -> {
+                repBusy = false;
+                if (!alive()) return;
+                int n = r.blacklists.size();
+                status.setText(r.fraudScore != null
+                        ? "Exit IP " + ip + " · fraud " + r.fraudScore + " · " + n + " blacklist" + (n == 1 ? "" : "s")
+                        : "Exit IP " + ip + " · " + n + " blacklist" + (n == 1 ? "" : "s")
+                                + (ipqs.isEmpty() ? " · add an IPQualityScore key for a fraud score" : ""));
+                render();
+            });
+        }, "specter-reputation").start();
+    }
+
     /** One "LABEL   value" row inside the network card — a fixed-width caption column so LOCATION/TIME ZONE
      *  align without relying on emoji for spacing. */
     private View networkMetaRow(String labelText, String valueText) {
+        return networkMetaRow(labelText, valueText, Theme.INK);
+    }
+
+    /** {@link #networkMetaRow} with an explicit value colour — the reputation rows carry a verdict, so they read
+     *  green/amber/red like the timezone check instead of neutral ink. */
+    private View networkMetaRow(String labelText, String valueText, int valueColor) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.TOP);
@@ -2361,7 +2529,7 @@ public class MainActivity extends Activity {
 
         TextView value = new TextView(this);
         value.setText(valueText);
-        value.setTextColor(Theme.INK);
+        value.setTextColor(valueColor);
         value.setTextSize(Theme.T_LABEL);
         row.addView(value, new LinearLayout.LayoutParams(
                 0,

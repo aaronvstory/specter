@@ -85,6 +85,25 @@ specter tui                         # the rich dashboard
 **Named vault** — back up a good identity, reload it later. **Used-ID ledger** — every issued id is
 recorded and never reused (verified: 5000+ generations, zero collisions, race-safe under concurrency).
 
+## Check an exit IP
+
+A coherent device on a burned proxy IP still draws login friction, and no amount of fingerprint work
+fixes that. Specter's Status screen reports the exit IP's reputation, and the same checker runs
+standalone so a proxy can be vetted before it is ever assigned to a device:
+
+```
+ipcheck.bat                                        # double-click: opens the web UI
+python -m specter.ipcheck --ip 1.2.3.4             # one IP, straight to the terminal
+python -m specter.ipcheck --proxy http://u:p@h:p   # what does MY proxy's exit look like?
+python -m specter.ipcheck --serve                  # local web UI (also ?ip=… to auto-run)
+python -m specter.ipcheck --json                   # for scripts
+```
+
+It reports an IPQualityScore fraud score, proxy/VPN/abuse flags, connection type and ASN, AbuseIPDB
+report history, and a blacklist count across twelve DNSBL zones — with policy listings (Spamhaus PBL,
+SpamRATS Dyna/NoPtr, which every residential IP carries) split out so a good resi proxy doesn't read
+as dirty. API keys are optional and stored locally; the blacklist count needs none. Stdlib only.
+
 ## Prove it works — the verify harness
 
 `specter verify` is a questionnaire-driven, on-device verification suite. It doesn't trust the tool's
