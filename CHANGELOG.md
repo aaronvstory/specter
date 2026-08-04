@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.4] - 2026-08-05
+
+### Changed
+- **The Network card checks the exit IP's reputation automatically.** You no longer have to tap "Check
+  IP reputation" every time you open the Status view — the first time the card shows a given exit IP
+  with the tunnel up, it runs the lookup on its own. It runs exactly once per distinct IP (the result
+  is cached for the session, and IPQualityScore's free tier is only 35/day), so a stable IP never
+  re-spends a lookup; a rotated IP checks itself afresh. The manual "Re-check reputation" button
+  stays for a forced refresh, and the tunnel gate is unchanged — off-tunnel it still never touches the
+  home IP.
+
 ## [0.24.3] - 2026-08-05
 
 ### Changed
