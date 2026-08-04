@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.2] - 2026-08-05
+
+### Added
+- **Auto-save the read-capture report when monitoring stops.** Stopping a monitor opens the live-trace
+  tab, which previously needed a manual Export to keep the readable coverage report — easy to forget.
+  A new "Auto-save report when monitoring stops" toggle (in the trace tab, default on) writes the
+  report to Download/Specter automatically on stop, reusing the same Export path. Manual Export still
+  works, and the raw capture was already archived on stop regardless.
+
 ## [0.24.1] - 2026-08-05
 
 ### Changed

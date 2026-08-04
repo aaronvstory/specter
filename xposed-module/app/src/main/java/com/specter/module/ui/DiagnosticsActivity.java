@@ -31,6 +31,13 @@ public final class DiagnosticsActivity extends Activity {
     /** Optional intent extra: the package the caller just monitored, shown as "watching <app>". Absent when
      *  opened from Settings' global "View live trace" (then we show the scoped-target set instead). */
     public static final String EXTRA_PKG = "specter.diag.pkg";
+    /** Set true when opened by "Stop monitoring": if the {@code autosave_trace} pref is on, the coverage
+     *  report is written to Download/Specter automatically once the capture is parsed — so a forgotten
+     *  Export never loses the trace. */
+    public static final String EXTRA_FROM_STOP = "specter.diag.from_stop";
+
+    private boolean autoSaveOnStop = false;      // this open should auto-export once (from a stop, pref on)
+    private boolean autoSaved = false;           // one-shot latch so the 2s poll can't re-export every tick
 
     private static final int MAX_ROWS = 400;         // cap distinct signals rendered (parser drops excess)
     private static final long REFRESH_MS = 2000;
@@ -147,6 +154,22 @@ public final class DiagnosticsActivity extends Activity {
         btns.addView(clearBtn);
         root.addView(btns);
 
+        // Auto-save toggle: when on, stopping a monitor writes the coverage report to Download/Specter without
+        // a manual Export tap. Reads/writes the same pref the stop flow checks. Default on — losing a capture
+        // you just took is the worse failure; the raw log is archived on stop regardless.
+        final android.content.SharedPreferences prefs = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
+        autoSaveOnStop = getIntent() != null && getIntent().getBooleanExtra(EXTRA_FROM_STOP, false)
+                && prefs.getBoolean("autosave_trace", true);
+        final android.widget.CheckBox autosave = new android.widget.CheckBox(this);
+        autosave.setText("Auto-save report when monitoring stops");
+        autosave.setChecked(prefs.getBoolean("autosave_trace", true));
+        autosave.setTextColor(Theme.SOFT);
+        autosave.setTextSize(Theme.T_CAPTION);
+        autosave.setButtonTintList(android.content.res.ColorStateList.valueOf(Theme.GOLD));
+        autosave.setPadding(dp(4), 0, 0, dp(4));
+        autosave.setOnCheckedChangeListener((v, on) -> prefs.edit().putBoolean("autosave_trace", on).apply());
+        root.addView(autosave);
+
         list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         root.addView(list);
@@ -209,6 +232,13 @@ public final class DiagnosticsActivity extends Activity {
 
     private void render(String raw, List<TraceParser.Row> rows) {
         lastRows = rows;   // snapshot for Export (a readable coverage report, not the raw log)
+        // Auto-save the coverage report exactly once, when opened from a stop with the pref on and there's
+        // something to save. The latch stops the 2s poll re-exporting every tick; exportLog() reuses the
+        // same write path as the manual button.
+        if (autoSaveOnStop && !autoSaved && rows != null && !rows.isEmpty()) {
+            autoSaved = true;
+            exportLog();
+        }
         list.removeAllViews();
         statRow.removeAllViews();
         if (raw == null) {
