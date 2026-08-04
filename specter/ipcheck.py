@@ -149,11 +149,12 @@ def classify(zone: str, addrs: list[str]) -> str | None:
 
 
 def policy_reasons(zone: str, addrs: list[str]) -> list[str]:
-    """What a zone's policy listing actually says, in words — in the order the codes are defined, so
-    the readout names the reason instead of leaving a bare zone name the reader has to look up."""
+    """What a zone's policy listing actually says, in words, in ASCENDING CODE order — not the order
+    the addresses arrived (DNS makes no ordering guarantee). The Java twin sorts a TreeSet of the hit
+    codes for exactly this reason; the two must render the same multi-code answer identically."""
     known = POLICY_CODES.get(zone, {})
-    hit = {int(a.split(".")[3]) for a in addrs if listed(a)}
-    return [why for code, why in known.items() if code in hit]
+    hit = sorted({int(a.split(".")[3]) for a in addrs if listed(a)})   # set() dedups, like the TreeSet
+    return [known[c] for c in hit if c in known]
 
 
 def policy_label(name: str, zone: str, addrs: list[str]) -> str:
@@ -231,6 +232,7 @@ def format_report(rep: dict) -> str:
     hits = rep.get("blacklists") or []
     pol = rep.get("policy_lists") or []
     checked = rep.get("dnsbl_checked", 0)
+    available = bool(hits) or (rep.get("dnsbl_usable") and checked)
     if hits:
         line = f"{len(hits)} of {checked} · " + ", ".join(hits)
     elif rep.get("dnsbl_usable") and checked:
@@ -239,10 +241,13 @@ def format_report(rep: dict) -> str:
         line = "unavailable · blocklist DNS unreachable"
     # A policy listing is still a listing. Reporting a bare "none of 12" beside one is how this read
     # as a clean IP next to a checker that counts every hit — the split is the point, hiding it isn't.
-    if pol:
+    # But only when the lookup actually worked: "unavailable … plus 1 policy listing" would claim DNS
+    # was both unreachable and answered. (dnsbl_check already makes a real hit force usable=True, so
+    # live data never lands here; this keeps format_report honest if handed the combination anyway.)
+    if pol and available:
         line += f" · plus {len(pol)} policy listing" + ("s" if len(pol) > 1 else "")
     rows.append(("Blacklists", line))
-    if pol:
+    if pol and available:
         rows.append(("Policy lists", ", ".join(pol)
                      + " — a mail-sending policy listing, not an abuse report"))
 
@@ -404,8 +409,13 @@ def dnsbl_check(ip: str) -> dict:
     order = [z[0] for z in DNSBL_ZONES]
     abuse.sort(key=order.index)
     policy = [label for _, label in sorted(policy, key=lambda p: order.index(p[0]))]
+    # A real listing — abuse OR policy — is itself proof the resolver works, independent of the
+    # sentinel probe. Without this, a run where the 4 probe zones all fail but another zone returns a
+    # listing would report the result as "unavailable" AND carry that listing, a contradiction. (This
+    # also aligns the desktop with the Android side, whose usable flag is "any zone answered".)
+    usable = alive or bool(abuse) or bool(policy)
     return {"blacklists": abuse, "policy_lists": policy,
-            "dnsbl_checked": checked if alive else 0, "dnsbl_usable": alive}
+            "dnsbl_checked": checked if usable else 0, "dnsbl_usable": usable}
 
 
 def check(proxy: str | None = None, ip: str | None = None,

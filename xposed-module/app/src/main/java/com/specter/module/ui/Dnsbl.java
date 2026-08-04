@@ -97,14 +97,21 @@ final class Dnsbl {
         return null;
     }
 
-    /** A policy listing as one display string: the zone, and why it lists this IP. */
+    /** A policy listing as one display string: the zone, and why it lists this IP.
+     *
+     *  <p>Reasons are emitted in ASCENDING CODE order, NOT the order the addresses arrived — DNS makes no
+     *  ordering guarantee, and the Python twin ({@code ipcheck.policy_reasons}) iterates its code table, so
+     *  ordering off {@code addrs} would render the same multi-code answer differently on phone vs desktop. We
+     *  collect the hit codes into a sorted set first, exactly as {@code dnsbl_check} sorts zones by a fixed
+     *  order before joining. */
     static String policyLabel(String name, String zone, List<String> addrs) {
-        StringBuilder why = new StringBuilder();
+        java.util.TreeSet<Integer> codes = new java.util.TreeSet<>();
         if (addrs != null) for (String a : addrs) {
-            String r = policyReason(zone, lastOctet(a));
-            if (r == null || why.indexOf(r) >= 0) continue;
-            why.append(why.length() == 0 ? "" : "; ").append(r);
+            int c = lastOctet(a);
+            if (policyReason(zone, c) != null) codes.add(c);
         }
+        StringBuilder why = new StringBuilder();
+        for (int c : codes) why.append(why.length() == 0 ? "" : "; ").append(policyReason(zone, c));
         return why.length() == 0 ? name : name + " (" + why + ")";
     }
 

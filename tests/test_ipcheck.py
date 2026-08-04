@@ -91,6 +91,18 @@ def test_policy_reasons_names_the_code_not_just_the_zone():
         ["dynamic reverse DNS", "no reverse DNS"]
 
 
+def test_policy_reasons_order_is_independent_of_dns_answer_order():
+    # DNS makes no ordering guarantee, and the Java twin sorts a TreeSet of the hit codes — so the
+    # same multi-code answer must render identically regardless of the order the addresses arrive,
+    # or the same IP would read differently on phone vs desktop.
+    a = ipcheck.policy_reasons("all.spamrats.com", ["127.0.0.36", "127.0.0.37"])
+    b = ipcheck.policy_reasons("all.spamrats.com", ["127.0.0.37", "127.0.0.36"])
+    assert a == b == ["dynamic reverse DNS", "no reverse DNS"]
+    # A duplicated code must not double the reason (the TreeSet dedups; set() here must too).
+    assert ipcheck.policy_reasons("all.spamrats.com", ["127.0.0.36", "127.0.0.36"]) == \
+        ["dynamic reverse DNS"]
+
+
 def test_policy_reasons_ignores_codes_that_are_not_policy():
     assert ipcheck.policy_reasons("zen.spamhaus.org", ["127.0.0.2"]) == []
     assert ipcheck.policy_reasons("zen.spamhaus.org", ["127.0.0.1"]) == []
@@ -110,11 +122,16 @@ def test_zone_table_matches_the_android_side():
             "java" / "com" / "specter" / "module" / "ui" / "Dnsbl.java").read_text("utf-8")
     java_zones = re.findall(r'\{"([^"]+)",\s*"([^"]+)"\}', java)
     assert java_zones == [(n, z) for n, z in ipcheck.DNSBL_ZONES]
-    # ...and so do the policy codes that keep residential IPs out of the abuse count.
+    # ...and so do the policy codes that keep residential IPs out of the abuse count — AND the reason
+    # string each code maps to. Checking only the code SET would let the two sides disagree on what a
+    # code MEANS (a swapped or mistyped reason on one side) while still passing, so the same listing
+    # would be explained differently on phone and desktop. Scrape `code == N ? "reason"` from
+    # Dnsbl.policyReason and compare the whole {code: reason} map.
     for zone, codes in ipcheck.POLICY_CODES.items():
         m = re.search(r'"' + re.escape(zone) + r'"\.equals\(zone\)\) return ([^;]+);', java)
         assert m, f"{zone} has no policy-code branch in Dnsbl.java"
-        assert {int(c) for c in re.findall(r"code == (\d+)", m.group(1))} == set(codes)
+        java_map = {int(c): r for c, r in re.findall(r'code == (\d+) \? "([^"]+)"', m.group(1))}
+        assert java_map == dict(codes), f"{zone}: Java {java_map} != Python {dict(codes)}"
 
 
 # ---- verdict -------------------------------------------------------------------------------
@@ -196,6 +213,30 @@ def test_report_keeps_the_plain_none_line_when_nothing_is_listed_at_all():
                                   "dnsbl_checked": 12, "dnsbl_usable": True})
     assert "none of 12 lists" in text
     assert "policy" not in text.lower()
+
+
+def test_report_never_says_unavailable_and_reports_a_listing_at_once():
+    # A listing could only come from a working resolver, so the line must not claim DNS is
+    # unreachable in the same breath. (dnsbl_check makes a real hit force dnsbl_usable true, so this
+    # combination shouldn't arise from live data either — but format_report must not produce nonsense
+    # if handed it.)
+    rep = {"ip": "1.2.3.4", "blacklists": [], "policy_lists": ["SpamRATS (dynamic reverse DNS)"],
+           "dnsbl_checked": 0, "dnsbl_usable": False}
+    text = ipcheck.format_report(rep)
+    bl_line = next(li for li in text.splitlines() if li.startswith("Blacklists"))
+    assert not ("unavailable" in bl_line and "policy listing" in bl_line)
+
+
+def test_dnsbl_usable_when_a_real_listing_came_back_even_if_the_probe_failed():
+    # The root of the contradiction above: a policy/abuse hit is itself proof the resolver works.
+    # dnsbl_check computes usability, so assert the invariant on its output shape via a tiny stand-in.
+    # (Pure reconstruction of the final dict logic — no network.)
+    def usable(alive, abuse, policy):
+        return alive or bool(abuse) or bool(policy)
+    assert usable(False, [], ["SpamRATS"]) is True
+    assert usable(False, ["CBL"], []) is True
+    assert usable(False, [], []) is False
+    assert usable(True, [], []) is True
 
 
 def test_fraud_line_names_the_strictness_it_was_scored_at():

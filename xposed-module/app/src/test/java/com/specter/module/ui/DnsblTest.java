@@ -87,6 +87,13 @@ public class DnsblTest {
         eq("SpamRATS (dynamic reverse DNS; no reverse DNS)",
                 Dnsbl.policyLabel("SpamRATS", "all.spamrats.com", Arrays.asList("127.0.0.36", "127.0.0.37")),
                 "several reasons join, no duplicates");
+        // DNS answer order must NOT change the rendering — codes sort ascending, matching the Python twin.
+        eq("SpamRATS (dynamic reverse DNS; no reverse DNS)",
+                Dnsbl.policyLabel("SpamRATS", "all.spamrats.com", Arrays.asList("127.0.0.37", "127.0.0.36")),
+                "reversed answer order renders identically");
+        eq("SpamRATS (dynamic reverse DNS)",
+                Dnsbl.policyLabel("SpamRATS", "all.spamrats.com", Arrays.asList("127.0.0.36", "127.0.0.36")),
+                "a duplicated code is not doubled");
         eq("DroneBL", Dnsbl.policyLabel("DroneBL", "dnsbl.dronebl.org", Collections.singletonList("127.0.0.3")),
                 "a zone with no policy semantics keeps the bare name");
         eq("Spamhaus", Dnsbl.policyLabel("Spamhaus", "zen.spamhaus.org", null), "null answers are safe");
