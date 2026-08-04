@@ -1,6 +1,9 @@
 """Pure-logic tests for the exit-IP reputation checker. No network — every function under test
 takes already-fetched data."""
 
+import re
+from pathlib import Path
+
 from specter import ipcheck
 
 
@@ -70,7 +73,20 @@ def test_policy_zones_are_a_subset_of_the_zone_table():
     zones = {z for _, z in ipcheck.DNSBL_ZONES}
     assert set(ipcheck.POLICY_CODES) <= zones
     assert "dnsbl.sorbs.net" not in zones      # shut down in 2024; answers clean for everything
-    assert ipcheck.SENTINEL == "2.0.0.127." + ipcheck.DNSBL_ZONES[0][1]
+
+
+def test_zone_table_matches_the_android_side():
+    # The two implementations must classify identically, so their tables have to agree. A zone
+    # present on one side only would make the same IP score differently on phone and desktop.
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" /
+            "java" / "com" / "specter" / "module" / "ui" / "Dnsbl.java").read_text("utf-8")
+    java_zones = re.findall(r'\{"([^"]+)",\s*"([^"]+)"\}', java)
+    assert java_zones == [(n, z) for n, z in ipcheck.DNSBL_ZONES]
+    # ...and so do the policy codes that keep residential IPs out of the abuse count.
+    for zone, codes in ipcheck.POLICY_CODES.items():
+        m = re.search(r'"' + re.escape(zone) + r'"\.equals\(zone\)\) return ([^;]+);', java)
+        assert m, f"{zone} has no policy-code branch in Dnsbl.java"
+        assert {int(c) for c in re.findall(r"code == (\d+)", m.group(1))} == codes
 
 
 # ---- verdict -------------------------------------------------------------------------------

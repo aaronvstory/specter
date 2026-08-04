@@ -35,9 +35,9 @@ CONFIG = Path.home() / ".specter-ipcheck.json"
 TIMEOUT = 8
 
 # The blocklists behind the "found in N blacklists" count — keyless, no quota, no account. Every
-# zone here was verified live (its sentinel answers); SORBS is deliberately absent, it shut down in
-# 2024 and now answers "not listed" for everything, which reads as a silent all-clear.
-# Same table as xposed-module/.../ui/Dnsbl.java; keep the two in sync.
+# zone here was verified live (queried for 127.0.0.2, which each one lists by convention). SORBS is
+# deliberately absent: it shut down in 2024 and now answers "not listed" for everything, which reads
+# as a silent all-clear. Same table as xposed-module/.../ui/Dnsbl.java; keep the two in sync.
 DNSBL_ZONES = [
     ("Spamhaus", "zen.spamhaus.org"),
     ("CBL", "cbl.abuseat.org"),
@@ -62,9 +62,10 @@ POLICY_CODES = {
     "all.spamrats.com": {36, 37},        # Dyna (dynamic rDNS) and NoPtr (no reverse DNS)
 }
 
-# Every DNSBL lists 127.0.0.2 by convention, so this query MUST resolve. Without it, a resolver
-# that filters blocklist zones reads as a clean "0 of N" — a false all-clear.
-SENTINEL = "2.0.0.127." + DNSBL_ZONES[0][1]
+# ponytail: Spamhaus and CBL refuse queries relayed by large public resolvers (they answer
+# 127.255.255.254), which is what a DoH lookup looks like to them — so those two report "blocked"
+# rather than a listing. Upgrade path if their coverage is wanted: a free Spamhaus DQS key and the
+# private <key>.zen.dq.spamhaus.net zone, which answers from anywhere. The other ten answer fine.
 
 # IPQS boolean verdicts worth showing, in the order they matter. active_* means the anonymising
 # service is live on that IP right now, not merely that it was one historically.
@@ -305,24 +306,37 @@ def lookup_abuseipdb(ip: str, key: str, opener) -> dict:
     }
 
 
+def resolve_a(host: str) -> list[str]:
+    """Every A record for ``host``; empty when it doesn't resolve.
+
+    The system resolver, deliberately — not DNS-over-HTTPS. Spamhaus and CBL refuse queries relayed
+    by large public resolvers, so asking Cloudflare loses the two most valuable zones; a normal ISP
+    resolver gets real answers from all twelve. (The Android side has no choice: the proxy apps it
+    runs behind hijack DNS with a fake-IP pool, so it must use DoH and accepts losing those two.)"""
+    try:
+        return [str(i[4][0]) for i in socket.getaddrinfo(host, None, socket.AF_INET)]
+    except socket.gaierror:
+        return []               # NXDOMAIN, or a resolver failure — see the liveness probe below
+
+
 def dnsbl_check(ip: str) -> dict:
-    """Query every zone in parallel. Returns hits, how many zones answered, and whether the
-    sentinel resolved (without which a zero-hit result proves nothing)."""
+    """Query every zone in parallel. Zones that refuse are excluded rather than counted clear, and
+    a liveness probe guards the whole result — ``socket.gaierror`` cannot tell "not listed" from
+    "resolver is broken", so without it a dead resolver would report a confident "none of 12"."""
     rev = reverse_v4(ip)
     if not rev:
-        return {"blacklists": [], "dnsbl_checked": 0, "dnsbl_usable": False}
+        return {"blacklists": [], "policy_lists": [], "dnsbl_checked": 0, "dnsbl_usable": False}
 
-    def probe(host):
-        try:
-            return [str(i[4][0]) for i in socket.getaddrinfo(host, None, socket.AF_INET)]
-        except socket.gaierror:
-            return []           # NXDOMAIN: the zone answered, this IP just isn't on it
-
-    abuse, policy, checked, usable = [], [], 0, False
-    jobs = [("__sentinel__", "", SENTINEL)]
+    # Every DNSBL lists 127.0.0.2 by convention, so these MUST resolve. Several zones, not one:
+    # gating on a single zone means that zone's outage (or its refusal to answer this resolver)
+    # silently reports every IP as "unavailable".
+    probes = [f"2.0.0.127.{z}" for _, z in DNSBL_ZONES[:4]]
+    jobs = [(None, None, p) for p in probes]
     jobs += [(name, zone, f"{rev}.{zone}") for name, zone in DNSBL_ZONES]
+
+    abuse, policy, checked, alive = [], [], 0, False
     with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
-        futs = {ex.submit(probe, host): (name, zone) for name, zone, host in jobs}
+        futs = {ex.submit(resolve_a, host): (name, zone) for name, zone, host in jobs}
         try:
             done = list(as_completed(futs, timeout=TIMEOUT + 2))
         except TimeoutError:
@@ -333,8 +347,8 @@ def dnsbl_check(ip: str) -> dict:
                 addrs = f.result()
             except Exception:
                 continue        # this zone did not answer
-            if name == "__sentinel__":
-                usable = any(listed(a) for a in addrs)
+            if name is None:
+                alive = alive or any(listed(a) for a in addrs)
                 continue
             kind = classify(zone, addrs)
             if kind == "blocked":
@@ -348,7 +362,7 @@ def dnsbl_check(ip: str) -> dict:
     abuse.sort(key=order.index)
     policy.sort(key=order.index)
     return {"blacklists": abuse, "policy_lists": policy,
-            "dnsbl_checked": checked, "dnsbl_usable": usable}
+            "dnsbl_checked": checked if alive else 0, "dnsbl_usable": alive}
 
 
 def check(proxy: str | None = None, ip: str | None = None,
@@ -376,9 +390,10 @@ def check(proxy: str | None = None, ip: str | None = None,
     if abuse_key:
         merge(lookup_abuseipdb(rep["ip"], abuse_key, opener))
 
-    # ponytail: DNSBL queries go out the LOCAL resolver, not the proxy — an HTTP proxy can't carry
-    # DNS. That's fine here: the query names the exit IP explicitly, so the answer is about that IP
-    # either way. (On-device it must be pinned, because there the lookup is how we learn the IP.)
+    # ponytail: the blocklist queries go out the LOCAL resolver, not the proxy — an HTTP proxy
+    # can't carry DNS. That's fine here: the query names the exit IP explicitly, so the answer is
+    # about that IP either way. (On-device it must go through the tunnel, because there the lookup
+    # is also how the IP itself is learned.)
     rep.update(dnsbl_check(rep["ip"]))
     rep["verdict"], rep["verdict_reason"] = verdict(rep)
     rep["flags"] = flags(rep)

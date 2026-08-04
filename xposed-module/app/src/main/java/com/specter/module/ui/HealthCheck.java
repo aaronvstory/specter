@@ -483,10 +483,13 @@ final class HealthCheck {
                 try { v = f.get(); } catch (Throwable t) { continue; }   // timed out / cancelled
                 if (v == null) continue;                                  // no usable answer
                 // A BLOCKED zone told us nothing — counting it would turn a refusal into a clean result.
-                if (v.startsWith(Dnsbl.BLOCKED)) continue;
+                if (v.startsWith(Dnsbl.BLOCKED + ":")) continue;
                 out.dnsblChecked++;
-                if (v.startsWith(Dnsbl.ABUSE + ":")) out.blacklists.add(v.substring(6));
-                else if (v.startsWith(Dnsbl.POLICY + ":")) out.policyLists.add(v.substring(7));
+                int sep = v.indexOf(':');
+                if (sep < 0) continue;                                    // "" — answered, not listed
+                String kind = v.substring(0, sep), zoneName = v.substring(sep + 1);
+                if (Dnsbl.ABUSE.equals(kind)) out.blacklists.add(zoneName);
+                else if (Dnsbl.POLICY.equals(kind)) out.policyLists.add(zoneName);
             }
             // DoH returns an explicit status, so a zone that answered NXDOMAIN is a definitive "not listed" —
             // no sentinel probe needed to tell a real all-clear from a dead resolver.
