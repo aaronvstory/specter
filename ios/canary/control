@@ -1,0 +1,9 @@
+Package: com.specter.canary
+Name: SpecterCanary
+Version: 0.1.0
+Architecture: iphoneos-arm64e
+Description: Inert injected dylib (loads, hooks nothing) — control for the Specter-iOS detection experiment.
+Author: Specter
+Maintainer: Specter
+Section: Tweaks
+Depends: ellekit
