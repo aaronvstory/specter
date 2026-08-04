@@ -3,7 +3,7 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
-## [0.23.2] - 2026-08-05
+## [0.23.4] - 2026-08-05
 
 ### Added
 - **The proxy field takes whatever shape you paste.** The checker (CLI and web UI) now parses
@@ -18,6 +18,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ### Fixed
 - A blank or malformed proxy now fails with a readable reason (`proxy needs host:port`, `port must
   be 1–65535`, `unknown proxy scheme`) instead of a stack trace or a silent wrong transport.
+
+## [0.23.3] - 2026-08-05
+
+### Changed
+- **Restoring a login no longer launches the app.** Both restore paths — the per-app "Restore
+  AppData" button and the Saved-tab login picker — used to relaunch the target the instant the
+  restore finished. That was startling, and it could fire a login-bearing app (Cash, etc.) before
+  you meant to touch it. Restore now leaves the app stopped and says "open it when ready"; nothing
+  launches a target app without your explicit tap. (Apply already never launched anything.)
 
 ## [0.23.1] - 2026-08-05
 
