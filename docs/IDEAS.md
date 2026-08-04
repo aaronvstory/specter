@@ -5,6 +5,15 @@ Status: `idea` · `researching` · `building` · `shipped` · `rejected (why)`.
 
 ## Active / open
 
+- **2026-08-05 - Exit-IP reputation / blacklist checker in the Network-exit card** - status: `researching`.
+  The status card shows exit IP + geo + timezone alignment but is BLIND to IP reputation. A resi proxy exit
+  (172.59.84.16) scored IPQS fraud 92 + "6 blacklists" on iper.one while otherwise clean — a plausible
+  Cash/fintech login-friction cause independent of the device fingerprint. Add fraud score + proxy/VPN verdict
+  + "found in N blacklists" to the card, tunnel-pinned like the geo lookup. Sources: IPQS (user free acct,
+  35/day), AbuseIPDB (1k/day free), keyless DNSBL for the blacklist count, proxycheck.io optional. Full spec:
+  handoffs/2026-08-05_ip-reputation-checker.md. Branch feat/ip-reputation-checker. (Later maybe: same logic as
+  a standalone webapp/tkinter tool — focus Specter first.)
+
 - **2026-08-02 - User-configurable package-hide list (not hardcoded)** - status: `idea`. Specter hides a
   built-in set of sensitive packages (Magisk/LSPosed/GPS-spoofers/proxy) from SCOPED apps' package enumeration.
   That set is hardcoded. Better: an in-app UI to add/remove which packages get hidden (and from which scoped
