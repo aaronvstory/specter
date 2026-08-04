@@ -55,6 +55,30 @@ cluster. The IP `datacenter_result` flag is a separate fraud smart-signal, NOT t
 
 Status: `todo` · `in-progress` · `done` · `blocked (why)` · `dropped (why)`
 
+### Phase 0 — Overnight 2026-08-05 (WORK THIS FIRST, top-down)
+Full context + ground truth + code locations: **`handoffs/2026-08-05_overnight-cash-coherence-vault-ipcheck.md`**.
+Hard boundary: **no test/reboot/reinstall/launch on Pixel 4 or 4a (Cash logged in); read-only adb only.**
+Gauntlet = `code-reviewer` subagent only (codex/gemini/bots down) → adversarial branch-diff self-review each PR.
+TDD + exa research proactively + defer nothing but the on-device press-tests the boundary blocks. New PR per concern.
+
+- **P0.C — ipcheck polish (do first: desktop, no boundary, fully verifiable).** `todo`
+  - C6 add CHANGELOG `Fixed` bullet for the partial-request key-erasure fix; merge `feat/next-ip-reputation-followups` after self-review.
+  - C1 copy-detected-IP button. `todo`
+  - C2 flexible proxy input: http/socks5/socks4 selector + tolerant parser (`host:port:user:pass`, `ip:port:user:pass`, `user:pass@host:port`, bare `host:port`, `socks5://`). urllib is HTTP-only → research SOCKS path w/ exa. `todo`
+  - C4 blacklist coverage gap — 23.159.216.252 = 0 on ours vs **2 on iper.one**; trace which lists + why our 12 missed; reconcile fraud 100 vs 88 (strictness). exa. `todo`
+  - C3 double-click / static-webapp (GitHub Pages) — research CORS for IPQS/DoH/AbuseIPDB client-side; ship the best real option (not hand-wave). exa. `todo`
+  - C5 restyle — kill the "AI slop" look; distinctive polished design (frontend-design skill), light+dark. `todo`
+- **P0.A — Cash coherence + login portability (investigation: read-only + exa; write-ups + guards).** `todo`
+  - A1 device-model incoherence = profile drift after registration → bind app↔login↔fingerprint; warn on applying a new profile over an app with a saved login under a different fp; make "registered as <model>" visible. `todo`
+  - A2 login-restore fails (enter-email) = hardware-Keystore `mri_worker` attestation key not portable / killed by `pm clear`; dig into Cash/mri (user asked), determine viable workflow + a user-run test protocol; document PROVEN vs HYPOTHESIS. `todo`
+  - A3 **remove restore auto-launch of the target app** (startling); ensure Apply doesn't auto-launch either. `todo`
+  - A4 wipe must clear storage AND cache; prove zero fingerprint/IP cross-contamination on identity switch; document the clean-switch ↔ keep-login tension. `todo`
+- **P0.B — Vault / monitor / identity UX (module code; build+JVM-test+self-review; on-device press-test = note for user).** `todo`
+  - B1 "Monitor reads" → apply-time checkbox like "Save to vault on apply". `todo`
+  - B2 auto-save the trace on Stop monitoring (setting); keep manual export. `todo`
+  - B3 unify Restore-AppData vs Vault-selection into one clear flow. `todo`
+  - B4 after restore/vault-apply, Identity tab shows the live identity by its **saved NAME** (not a bare fingerprint) + "(<model>)". `todo`
+
 ### Phase 1 — Beat the fingerprinters (the thing that makes it a product)
 
 > **2026-07-25 dev intel + our on-device finding — READ THIS before more FPJS-demo work.**
