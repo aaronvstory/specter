@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.23.3] - 2026-08-05
+
+### Changed
+- **Restoring a login no longer launches the app.** Both restore paths — the per-app "Restore
+  AppData" button and the Saved-tab login picker — used to relaunch the target the instant the
+  restore finished. That was startling, and it could fire a login-bearing app (Cash, etc.) before
+  you meant to touch it. Restore now leaves the app stopped and says "open it when ready"; nothing
+  launches a target app without your explicit tap. (Apply already never launched anything.)
+
 ## [0.23.1] - 2026-08-05
 
 ### Fixed
