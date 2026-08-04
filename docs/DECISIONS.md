@@ -2,6 +2,28 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-05 (v0.23.1): the exit-IP check stays on IPQualityScore strictness 1, and prints the setting.**
+  WHY: a third-party checker scored the Mullvad exit `23.159.216.252` at 88 where we said 100, which looked
+  like we were mis-tuned. MEASURED against that IP with our own key: strictness 0 returns `fraud_score` **20**
+  with `proxy: false` — blind to a commercial VPN exit — while strictness 1 returns **100** with `proxy`,
+  `recent_abuse` and `bot_status` all true; strictness 2 matches 1, and `allow_public_access_points` changes
+  nothing. IPQS documents 0 as the recommended starting point, but 0 cannot answer the only question this tool
+  asks, so "reconciling down to 88" would have made the tool worse. Both readouts now name the strictness, so
+  the same IP scoring differently elsewhere is explainable instead of alarming.
+- **2026-08-05 (v0.23.1): the blacklist zone table was NOT extended to close the reported coverage gap — there
+  was nothing to add.** WHY: `23.159.216.252` read "0 blacklists" for us against 2 elsewhere. ~120 DNSBL zones
+  were swept for it; exactly **one** lists it, Spamhaus PBL (`127.0.0.11`), which we already query and had
+  filed under policy. Padding the table with zones that fire on nothing would inflate the denominator and the
+  apparent thoroughness without adding a single real answer. The fix was to stop hiding the policy hit from the
+  headline. Corollary caught on the way: three zones answer OUTSIDE `127.0.0.0/8` (`*.anti-spam.org.cn`
+  wildcards to `208.98.43.x`) and would each be a phantom hit — the existing 127/8 guard is load-bearing.
+- **2026-08-05 (v0.23.1): a policy listing is named by its CODE, not just its zone.** WHY: Spamhaus PBL has two
+  codes with different meanings — `127.0.0.10` is the network owner declaring its own range end-user (every
+  consumer line has one), `127.0.0.11` is Spamhaus listing a range the owner never declared. Collapsing both to
+  "Spamhaus · normal for residential IPs" was actively wrong on a hosting address: nothing about a datacenter
+  exit is residential, and the second code there is Spamhaus making a statement about that netblock — which is
+  the whole reason a proxy is being vetted. `Dnsbl.policyReason` / `ipcheck.policy_reasons` are the one source
+  of truth for the code meanings on each side, and `isPolicyCode` delegates to it so the two cannot drift.
 - **2026-08-05: a Cash login is device-bound by a TEE Keystore attestation key, so cross-device restore can
   NEVER keep it logged in — and same-device restore must never `pm clear` first.** WHY: read-only 4a
   inspection PROVED `/data/misc/keystore/user_0/10263_USRPKEY_cashapp+^ak+^mri_worker` is a hardware

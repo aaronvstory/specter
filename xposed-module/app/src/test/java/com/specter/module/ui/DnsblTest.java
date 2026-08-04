@@ -68,6 +68,40 @@ public class DnsblTest {
         eq(Dnsbl.ABUSE, Dnsbl.classify("bl.spamcop.net", Collections.singletonList("127.0.0.10")),
                 "code 10 is only policy on zones that define it that way");
 
+        // ---- naming the policy code, not just the zone ----
+        // Spamhaus splits PBL: .10 is the network owner declaring its own range end-user, .11 is Spamhaus
+        // listing a range the owner never declared. On a hosting network only the second happens, and it is
+        // a statement about that netblock — a bare "Spamhaus" throws away the half that matters.
+        eq("PBL, network owner declared it end-user", Dnsbl.policyReason("zen.spamhaus.org", 10),
+                "PBL 10 is the ISP's own declaration");
+        eq("PBL, Spamhaus listed the range", Dnsbl.policyReason("zen.spamhaus.org", 11),
+                "PBL 11 is Spamhaus listing the range");
+        eq("dynamic reverse DNS", Dnsbl.policyReason("all.spamrats.com", 36), "SpamRATS Dyna");
+        eq("no reverse DNS", Dnsbl.policyReason("all.spamrats.com", 37), "SpamRATS NoPtr");
+        eq(null, Dnsbl.policyReason("zen.spamhaus.org", 2), "SBL is not a policy code");
+        eq(null, Dnsbl.policyReason("cbl.abuseat.org", 10), "code 10 is only policy where defined");
+
+        eq("Spamhaus (PBL, Spamhaus listed the range)",
+                Dnsbl.policyLabel("Spamhaus", "zen.spamhaus.org", Collections.singletonList("127.0.0.11")),
+                "the label carries the reason");
+        eq("SpamRATS (dynamic reverse DNS; no reverse DNS)",
+                Dnsbl.policyLabel("SpamRATS", "all.spamrats.com", Arrays.asList("127.0.0.36", "127.0.0.37")),
+                "several reasons join, no duplicates");
+        // DNS answer order must NOT change the rendering — codes sort ascending, matching the Python twin.
+        eq("SpamRATS (dynamic reverse DNS; no reverse DNS)",
+                Dnsbl.policyLabel("SpamRATS", "all.spamrats.com", Arrays.asList("127.0.0.37", "127.0.0.36")),
+                "reversed answer order renders identically");
+        eq("SpamRATS (dynamic reverse DNS)",
+                Dnsbl.policyLabel("SpamRATS", "all.spamrats.com", Arrays.asList("127.0.0.36", "127.0.0.36")),
+                "a duplicated code is not doubled");
+        eq("DroneBL", Dnsbl.policyLabel("DroneBL", "dnsbl.dronebl.org", Collections.singletonList("127.0.0.3")),
+                "a zone with no policy semantics keeps the bare name");
+        eq("Spamhaus", Dnsbl.policyLabel("Spamhaus", "zen.spamhaus.org", null), "null answers are safe");
+        // The label is embedded in a "kind:name" string that HealthCheck splits on the FIRST ':', so a
+        // label containing one would silently truncate the zone name.
+        eq(-1, Dnsbl.policyLabel("Spamhaus", "zen.spamhaus.org",
+                Arrays.asList("127.0.0.10", "127.0.0.11")).indexOf(':'), "no colon in a policy label");
+
         // ---- the zone table ----
         boolean sorbs = false;
         for (String[] z : Dnsbl.ZONES) if (z[1].contains("sorbs")) sorbs = true;

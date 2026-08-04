@@ -2402,7 +2402,10 @@ public class MainActivity extends Activity {
                 // IPQualityScore's own bands: 75+ suspicious, 85+ high risk. Below 60 is unremarkable.
                 int c = rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE;
                 String word = rep.fraudScore >= 85 ? "high risk" : rep.fraudScore >= 60 ? "suspicious" : "clean";
-                box.addView(networkMetaRow("FRAUD RISK", rep.fraudScore + " · " + word, c));
+                // Naming the strictness is what lets this reconcile with another checker's number for the
+                // same IP — the same address scores 20 at strictness 0 and 100 at 1.
+                box.addView(networkMetaRow("FRAUD RISK", rep.fraudScore + " · " + word
+                        + " · IPQS strictness " + HealthCheck.IPQS_STRICTNESS, c));
             }
             if (rep.fraudScore != null) {
                 java.util.List<String> flags = new java.util.ArrayList<>();
@@ -2419,22 +2422,29 @@ public class MainActivity extends Activity {
                 if (rep.asn != null) conn = conn.isEmpty() ? rep.asn : conn + " · " + rep.asn;
                 box.addView(networkMetaRow("CONNECTION", conn, Theme.INK));
             }
-            int n = rep.blacklists.size();
+            int n = rep.blacklists.size(), pol = rep.policyLists.size();
+            String bl;
             if (n > 0) {
-                box.addView(networkMetaRow("BLACKLISTS", n + " of " + rep.dnsblChecked + " · "
-                        + android.text.TextUtils.join(", ", rep.blacklists), n >= 3 ? Theme.RED : Theme.AMBER));
+                bl = n + " of " + rep.dnsblChecked + " · " + android.text.TextUtils.join(", ", rep.blacklists);
             } else if (rep.dnsblUsable && rep.dnsblChecked > 0) {
-                box.addView(networkMetaRow("BLACKLISTS", "None of " + rep.dnsblChecked + " lists", Theme.SAGE));
+                bl = "None of " + rep.dnsblChecked + " lists";
             } else {
                 // Honest: DNS didn't answer for the known-listed sentinel, so "no hits" proves nothing here.
-                box.addView(networkMetaRow("BLACKLISTS", "Unavailable · blocklist DNS unreachable", Theme.DIM));
+                bl = "Unavailable · blocklist DNS unreachable";
             }
-            // Policy listings are shown but never scored: Spamhaus PBL and SpamRATS Dyna/NoPtr list EVERY
-            // dynamic consumer address, so a residential or mobile exit is always on them. Folding these into
-            // the blacklist count would mark every good resi proxy dirty.
-            if (!rep.policyLists.isEmpty()) {
+            // A policy listing is still a listing. A bare "None of 12" beside one reads as a clean IP next to
+            // any checker that counts every hit — the abuse/policy split is the point, hiding it isn't.
+            if (pol > 0) bl += " · plus " + pol + " policy listing" + (pol > 1 ? "s" : "");
+            box.addView(networkMetaRow("BLACKLISTS", bl,
+                    n >= 3 ? Theme.RED : n > 0 ? Theme.AMBER
+                            : rep.dnsblUsable && rep.dnsblChecked > 0 ? Theme.SAGE : Theme.DIM));
+            // Policy listings are shown but never scored: they say "nothing here should be sending mail
+            // directly", which every dynamic consumer address carries by design. Folding them into the
+            // blacklist count would mark every good resi proxy dirty.
+            if (pol > 0) {
                 box.addView(networkMetaRow("POLICY LISTS",
-                        android.text.TextUtils.join(", ", rep.policyLists) + " · normal for residential IPs",
+                        android.text.TextUtils.join(", ", rep.policyLists)
+                                + " · a mail-sending policy listing, not an abuse report",
                         Theme.BLUE));
             }
             if (rep.abuseConfidence != null) {

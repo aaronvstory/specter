@@ -54,13 +54,31 @@ DNSBL_ZONES = [
 ]
 
 # A DNSBL answers in 127.0.0.0/8 and the LAST OCTET says why. Most of them mean abuse, but a few
-# are pure POLICY listings — "this is a dynamic consumer IP" — which every residential and mobile
-# address carries by design. Counting those as abuse would mark every resi proxy dirty, so they're
-# tracked separately and kept out of the verdict.
+# are pure POLICY listings — "nothing here should be sending mail directly" — which every
+# residential and mobile address carries by design. Counting those as abuse would mark every resi
+# proxy dirty, so they're tracked separately and kept out of the verdict.
+#
+# The code is worth spelling out rather than collapsing to the zone name. Spamhaus splits PBL into
+# 127.0.0.10, an entry the network owner declared themselves, and 127.0.0.11, one Spamhaus added
+# because the owner never did (docs.spamhaus.com, Available Zones). Every consumer line carries the
+# first; a hosting range carries the second only when Spamhaus decided that range shouldn't be
+# emitting mail — which is a statement about the netblock, not the routine consumer case, and is
+# exactly what a proxy is being vetted for.
 POLICY_CODES = {
-    "zen.spamhaus.org": {10, 11},        # PBL: dynamic/consumer range, not an abuse listing
-    "all.spamrats.com": {36, 37},        # Dyna (dynamic rDNS) and NoPtr (no reverse DNS)
+    "zen.spamhaus.org": {
+        10: "PBL, network owner declared it end-user",
+        11: "PBL, Spamhaus listed the range",
+    },
+    "all.spamrats.com": {36: "dynamic reverse DNS", 37: "no reverse DNS"},
 }
+
+# IPQualityScore's own scoring strictness, sent on every lookup. MEASURED on 23.159.216.252 (a
+# Mullvad exit, AS17243) on 2026-08-05: strictness 0 returns fraud_score 20 with proxy=false —
+# blind to a commercial VPN exit — while strictness 1 returns 100 with proxy, recent_abuse and
+# bot_status all true. Strictness 2 matches 1. IPQS documents 0 as the recommended starting point,
+# but 0 cannot answer the only question this tool asks, so 1 it is. The readout names the setting
+# because the same IP scores differently elsewhere and a reader needs to be able to reconcile that.
+IPQS_STRICTNESS = 1
 
 # ponytail: Spamhaus and CBL refuse queries relayed by large public resolvers (they answer
 # 127.255.255.254), which is what a DoH lookup looks like to them — so those two report "blocked"
@@ -126,8 +144,23 @@ def classify(zone: str, addrs: list[str]) -> str | None:
     hits = [a for a in addrs if listed(a)]
     if not hits:
         return None
-    policy = POLICY_CODES.get(zone, set())
+    policy = POLICY_CODES.get(zone, {})
     return "policy" if all(int(a.split(".")[3]) in policy for a in hits) else "abuse"
+
+
+def policy_reasons(zone: str, addrs: list[str]) -> list[str]:
+    """What a zone's policy listing actually says, in words, in ASCENDING CODE order — not the order
+    the addresses arrived (DNS makes no ordering guarantee). The Java twin sorts a TreeSet of the hit
+    codes for exactly this reason; the two must render the same multi-code answer identically."""
+    known = POLICY_CODES.get(zone, {})
+    hit = sorted({int(a.split(".")[3]) for a in addrs if listed(a)})   # set() dedups, like the TreeSet
+    return [known[c] for c in hit if c in known]
+
+
+def policy_label(name: str, zone: str, addrs: list[str]) -> str:
+    """A policy listing as one display string: the zone, and why it lists this IP."""
+    why = policy_reasons(zone, addrs)
+    return f"{name} ({'; '.join(why)})" if why else name
 
 
 def flags(rep: dict) -> list[str]:
@@ -187,23 +220,36 @@ def format_report(rep: dict) -> str:
 
     fraud = rep.get("fraud_score")
     if fraud is not None:
-        rows.append(("Fraud risk", f"{fraud} · {fraud_band(fraud)}"))
+        strict = rep.get("ipqs_strictness")
+        band = f"{fraud} · {fraud_band(fraud)}"
+        rows.append(("Fraud risk",
+                     f"{band} · IPQS strictness {strict}" if strict is not None else band))
         on = flags(rep)
         rows.append(("Flagged as", " · ".join(on) if on else "not flagged as proxy or VPN"))
     if rep.get("abuse_velocity"):
         rows.append(("Abuse velocity", rep["abuse_velocity"]))
 
     hits = rep.get("blacklists") or []
+    pol = rep.get("policy_lists") or []
     checked = rep.get("dnsbl_checked", 0)
+    available = bool(hits) or (rep.get("dnsbl_usable") and checked)
     if hits:
-        rows.append(("Blacklists", f"{len(hits)} of {checked} · " + ", ".join(hits)))
+        line = f"{len(hits)} of {checked} · " + ", ".join(hits)
     elif rep.get("dnsbl_usable") and checked:
-        rows.append(("Blacklists", f"none of {checked} lists"))
+        line = f"none of {checked} lists"
     else:
-        rows.append(("Blacklists", "unavailable · blocklist DNS unreachable"))
-    if rep.get("policy_lists"):
-        rows.append(("Policy lists", ", ".join(rep["policy_lists"])
-                     + " — normal for residential and mobile IPs, not abuse"))
+        line = "unavailable · blocklist DNS unreachable"
+    # A policy listing is still a listing. Reporting a bare "none of 12" beside one is how this read
+    # as a clean IP next to a checker that counts every hit — the split is the point, hiding it isn't.
+    # But only when the lookup actually worked: "unavailable … plus 1 policy listing" would claim DNS
+    # was both unreachable and answered. (dnsbl_check already makes a real hit force usable=True, so
+    # live data never lands here; this keeps format_report honest if handed the combination anyway.)
+    if pol and available:
+        line += f" · plus {len(pol)} policy listing" + ("s" if len(pol) > 1 else "")
+    rows.append(("Blacklists", line))
+    if pol and available:
+        rows.append(("Policy lists", ", ".join(pol)
+                     + " — a mail-sending policy listing, not an abuse report"))
 
     if rep.get("abuse_confidence") is not None:
         n = rep.get("abuse_reports") or 0
@@ -268,14 +314,15 @@ def lookup_ipqs(ip: str, key: str, opener) -> dict:
     """IPQualityScore proxy/VPN detection. Returns the fields worth showing, or a note explaining
     why there's no score (their error body says whether it's the key or the quota)."""
     url = ("https://ipqualityscore.com/api/json/ip/"
-           f"{urllib.parse.quote(key, safe='')}/{urllib.parse.quote(ip, safe='')}?strictness=1")
+           f"{urllib.parse.quote(key, safe='')}/{urllib.parse.quote(ip, safe='')}"
+           f"?strictness={IPQS_STRICTNESS}")
     o = _get_json(url, opener)
     if not o:
         return {"notes": ["IPQualityScore unreachable — check the network or proxy"]}
     if not o.get("success"):
         return {"notes": ["IPQualityScore: " + (o.get("message") or "lookup rejected")]}
 
-    out: dict = {"fraud_score": o.get("fraud_score")}
+    out: dict = {"fraud_score": o.get("fraud_score"), "ipqs_strictness": IPQS_STRICTNESS}
     for key_name, _ in IPQS_FLAGS:
         out[key_name] = bool(o.get(key_name))
     for src, dst in (("connection_type", "connection_type"), ("abuse_velocity", "abuse_velocity"),
@@ -358,12 +405,17 @@ def dnsbl_check(ip: str) -> dict:
             if kind == "abuse":
                 abuse.append(name)
             elif kind == "policy":
-                policy.append(name)
+                policy.append((name, policy_label(name, zone, addrs)))
     order = [z[0] for z in DNSBL_ZONES]
     abuse.sort(key=order.index)
-    policy.sort(key=order.index)
+    policy = [label for _, label in sorted(policy, key=lambda p: order.index(p[0]))]
+    # A real listing — abuse OR policy — is itself proof the resolver works, independent of the
+    # sentinel probe. Without this, a run where the 4 probe zones all fail but another zone returns a
+    # listing would report the result as "unavailable" AND carry that listing, a contradiction. (This
+    # also aligns the desktop with the Android side, whose usable flag is "any zone answered".)
+    usable = alive or bool(abuse) or bool(policy)
     return {"blacklists": abuse, "policy_lists": policy,
-            "dnsbl_checked": checked if alive else 0, "dnsbl_usable": alive}
+            "dnsbl_checked": checked if usable else 0, "dnsbl_usable": usable}
 
 
 def check(proxy: str | None = None, ip: str | None = None,
@@ -513,15 +565,18 @@ function render(r){
   if(r.timezone)t+=`<div class=sub>${esc(r.timezone)}</div>`;
   t+=`</div>`;
   t+='<div class=tiles>';
+  const pol=(r.policy_lists||[]).length;
   if(r.fraud_score!=null)t+=`<div class=tile><em>Fraud risk</em><strong class="${band(r.fraud_score)
       }" style="color:var(--${band(r.fraud_score)==='dirty'?'red':band(r.fraud_score)==='suspect'?'amber':'sage'})">${
-      esc(r.fraud_score)}</strong><small>IPQualityScore · ${esc(r.fraud_score>=85?'high risk':r.fraud_score>=60?'suspicious':'clean')}</small></div>`;
+      esc(r.fraud_score)}</strong><small>IPQualityScore${r.ipqs_strictness!=null?` · strictness ${esc(r.ipqs_strictness)}`:''} · ${esc(r.fraud_score>=85?'high risk':r.fraud_score>=60?'suspicious':'clean')}</small></div>`;
   const hits=(r.blacklists||[]).length, col=hits>=3?'red':hits?'amber':(r.dnsbl_usable?'sage':'dim');
+  // A policy listing is still a listing: say so here, or this tile reads "0" beside a checker that counts it.
   t+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${col})">${
       r.dnsbl_usable||hits?hits:'—'}</strong><small>${
-      hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}</small></div>`;
-  if((r.policy_lists||[]).length)t+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--blue)">${
-      r.policy_lists.length}</strong><small>${esc(r.policy_lists.join(', '))} · normal for residential IPs, not abuse</small></div>`;
+      hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}${
+      pol?` · plus ${pol} policy listing${pol>1?'s':''}`:''}</small></div>`;
+  if(pol)t+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--blue)">${
+      pol}</strong><small>${esc(r.policy_lists.join(', '))} · a mail-sending policy listing, not an abuse report</small></div>`;
   if(r.abuse_confidence!=null){const ac=r.abuse_confidence>=50?'red':r.abuse_confidence>=10?'amber':'sage';
     t+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${esc(r.abuse_confidence)}%</strong><small>${
       esc(r.abuse_reports||0)} reports in 90 days</small></div>`}
