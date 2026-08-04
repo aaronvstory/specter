@@ -2,6 +2,16 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-05 (v0.23.4): the apply-time drift warning triggers on a saved login's DEVICE, not its fingerprint
+  label, and only WARNS (never blocks).** WHY: the incoherence the user hit (Cash "Your devices" = Pixel 4a
+  while live reads = SM-G996U) is a device-MODEL mismatch, and the buildable signal for it is the saved
+  login's captured `device` string vs the model being applied — the fingerprint vault-label isn't reliable
+  because a freshly-randomized identity isn't in the vault yet. Comparison is case/space-insensitive on the
+  model string. It only warns because setting up a genuinely NEW account on an app that happens to have an old
+  saved login is legitimate; the coherent alternative (restore the saved login, which re-applies its own
+  device) is named in the dialog. The check is a pure static `AppDataVault.conflictingDevices` so it's
+  JVM-tested without a device.
+
 - **2026-08-05 (v0.23.1): the exit-IP check stays on IPQualityScore strictness 1, and prints the setting.**
   WHY: a third-party checker scored the Mullvad exit `23.159.216.252` at 88 where we said 100, which looked
   like we were mis-tuned. MEASURED against that IP with our own key: strictness 0 returns `fraud_score` **20**

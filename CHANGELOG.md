@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.23.4] - 2026-08-05
+
+### Added
+- **Apply warns before it makes a saved login incoherent.** A saved login binds an app to the device
+  it was captured under. Applying a *different* device over that app leaves it mismatched — the
+  server still remembers the old model (this is why Cash's "Your devices" showed Pixel 4a while the
+  live reads said SM-G996U). Apply now checks each target for a saved login under a different device
+  and, if it finds one, asks first: "<app> has a saved login as <device> — applying <new device>
+  won't match it." The coherent move it points you to is restoring that login from Saved (which
+  re-applies its own device); applying a mismatched identity is now a deliberate, confirmed choice.
+
 ## [0.23.3] - 2026-08-05
 
 ### Changed
