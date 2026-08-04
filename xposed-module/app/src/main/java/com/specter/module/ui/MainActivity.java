@@ -698,6 +698,12 @@ public class MainActivity extends Activity {
                     // must remain retryable, not be suppressed as "done".
                     if (allApplied && prefs.getBoolean("save_on_apply", true)) promptSaveName(appliedTargets());
                     persistCurrentState();
+                    // Monitor-on-apply: arm the read capture on the first applied target so it's ready for the
+                    // relaunch — no separate tap. Only when nothing is already being monitored (don't fight a
+                    // running capture), and only for an app that actually applied.
+                    if (prefs.getBoolean("monitor_on_apply", false) && monitoringPkg == null && !okPkgs.isEmpty()) {
+                        startMonitor(okPkgs.get(0), status);
+                    }
                 } finally {
                     opBusy = false;
                     render();   // AFTER opBusy=false, so the summary flips to "Applied" (not stuck "Applying…")
@@ -1158,6 +1164,25 @@ public class MainActivity extends Activity {
         save.setPadding(dp(Theme.S1), 0, 0, 0);
         save.setOnCheckedChangeListener((b, on) -> prefs.edit().putBoolean("save_on_apply", on).apply());
         c.addView(save);
+
+        // "Monitor reads on apply" — the same one-line-checkbox pattern. Off by default: capture is heavier
+        // than a vault save (it runs a logcat capture), so it arms only when the user opts in. When on, a
+        // successful apply auto-starts the per-app read monitor on the first applied target, so a read-capture
+        // is armed for the relaunch you're about to do — no separate "Monitor reads" tap to forget.
+        final android.widget.CheckBox mon = new android.widget.CheckBox(this);
+        mon.setChecked(prefs.getBoolean("monitor_on_apply", false));
+        mon.setText("Monitor reads on apply");
+        mon.setTextColor(Theme.SOFT);
+        mon.setTextSize(Theme.T_CAPTION);
+        mon.setButtonTintList(android.content.res.ColorStateList.valueOf(Theme.GOLD));
+        mon.setMinHeight(0); mon.setMinimumHeight(0);
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        mlp.topMargin = dp(Theme.S2);
+        mon.setLayoutParams(mlp);
+        mon.setPadding(dp(Theme.S1), 0, 0, 0);
+        mon.setOnCheckedChangeListener((b, on) -> prefs.edit().putBoolean("monitor_on_apply", on).apply());
+        c.addView(mon);
         // Already applied but not yet in the vault -> a quiet one-tap save link (only when it's actionable).
         if (appliedN > 0 && activeVaultLabel.isEmpty()) {
             TextView saveNow = new TextView(this);
@@ -1397,6 +1422,13 @@ public class MainActivity extends Activity {
     private void toggleMonitor(final String pkg, final TextView statusView) {
         if (pkg.equals(monitoringPkg)) { stopMonitor(); return; }
         if (monitoringPkg != null) { toast("Already monitoring " + Targets.label(this, monitoringPkg) + " — stop it first."); return; }
+        startMonitor(pkg, statusView);
+    }
+
+    /** Arm trace on {@code pkg} + start the capture, reporting into {@code statusView}. Assumes no monitor is
+     *  currently running (the caller guards that). Shared by the per-app button and the monitor-on-apply
+     *  checkbox so both take the exact same trace-bookkeeping and 30-min-auto-stop path. */
+    private void startMonitor(final String pkg, final TextView statusView) {
         statusView.setTextColor(Theme.DIM);
         statusView.setText("Starting monitor…");
         new Thread(() -> {
