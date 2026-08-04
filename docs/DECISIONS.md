@@ -2,6 +2,16 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-05: the identity-switch wipe stays `pm clear`, never a partial `rm` — and it's guarded by a
+  test.** WHY: a clean switch must leave zero prior-identity residue. `pm clear` resets the app to
+  first-install, which uniquely clears the EXTERNAL cache (`/sdcard/Android/data/<pkg>`) alongside internal
+  data + cache; a hand-rolled `rm -rf /data/data/<pkg>/*` looks equivalent but misses the external cache. A
+  regression to `rm` would silently reintroduce cross-identity residue, so `SessionMigratorTest` now asserts
+  the command contains no `rm -rf`. Combined with `RootWriter`'s atomic whole-file profile overwrite
+  (no merge path) and the clear-before-write ordering (a failed clear skips the write), the switch is clean
+  by construction — PROVEN on-device: the applied Cash profile is one coherent SM-G996U identity, 0 residue.
+  Audit + proof in `docs/ANTI-FINGERPRINT-STRATEGY.md` (2026-08-05 clean-switch section).
+
 - **2026-08-05 (v0.23.5): the apply-time drift warning triggers on a saved login's DEVICE, not its fingerprint
   label, and only WARNS (never blocks).** WHY: the incoherence the user hit (Cash "Your devices" = Pixel 4a
   while live reads = SM-G996U) is a device-MODEL mismatch, and the buildable signal for it is the saved

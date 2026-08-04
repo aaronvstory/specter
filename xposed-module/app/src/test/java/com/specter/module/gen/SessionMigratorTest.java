@@ -118,6 +118,11 @@ public class SessionMigratorTest {
         String clr = SessionMigrator.buildClearCommand("com.doordash.driverapp");
         check(clr.contains("pm clear com.doordash.driverapp"), "clear runs pm clear on the pkg");
         check(clr.contains("Success"), "clear asserts on the Success marker");
+        // Clean-switch guard: the wipe MUST be `pm clear` (resets to first-install — internal data,
+        // internal cache, AND the external /sdcard/Android/data/<pkg> cache), not a partial `rm` that
+        // would miss the external cache and leave prior-identity residue across a switch.
+        check(!clr.contains("rm -rf") && !clr.contains("rm -r "),
+                "clear uses pm clear (full first-install reset), never a partial rm that misses external cache");
         boolean clrThrew = false;
         try { SessionMigrator.buildClearCommand("bad;rm"); } catch (SessionMigrator.SessionException e) { clrThrew = true; }
         check(clrThrew, "clear rejects bad pkg at build");
