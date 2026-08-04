@@ -30,6 +30,7 @@ import os
 import socket
 import struct
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -376,9 +377,17 @@ def _socks4_connect(host: str, port: int, user: str) -> bytes:
             + user.encode() + b"\x00" + host.encode() + b"\x00")
 
 
-def _recvn(sock, n: int) -> bytes:
+def _recvn(sock, n: int, deadline: float | None) -> bytes:
+    """Read exactly n bytes, but never past `deadline` (a monotonic timestamp). The socket's own
+    timeout is a PER-CALL budget, so a proxy trickling one byte per interval could otherwise hold a
+    handshake open for unbounded wall-clock; the deadline caps the whole negotiation."""
     buf = b""
     while len(buf) < n:
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise OSError("SOCKS proxy handshake timed out")
+            sock.settimeout(remaining)
         chunk = sock.recv(n - len(buf))
         if not chunk:
             raise OSError("SOCKS proxy closed the connection early")
@@ -387,21 +396,32 @@ def _recvn(sock, n: int) -> bytes:
 
 
 def _socks_tunnel(proxy: Proxy, dest_host: str, dest_port: int, timeout: float | None):
-    """Open a socket to `proxy`, negotiate a CONNECT tunnel to (dest_host, dest_port), return it."""
+    """Open a socket to `proxy`, negotiate a CONNECT tunnel to (dest_host, dest_port), return it. The
+    whole negotiation shares one `timeout` budget (see _recvn) so a slow-loris proxy can't hang it."""
+    deadline = time.monotonic() + timeout if timeout else None
     s = socket.create_connection((proxy.host, proxy.port), timeout)
+
+    def recvn(n):
+        return _recvn(s, n, deadline)
+
     try:
         if proxy.scheme == "socks5":
             s.sendall(_socks5_greeting(bool(proxy.user)))
-            method = _recvn(s, 2)[1]
+            method = recvn(2)[1]
             if method == 0x02:
+                # Fail closed: only do user/pass auth if we actually OFFERED it. A proxy selecting 0x02
+                # when we sent a no-auth-only greeting is protocol-violating; sending empty credentials
+                # would be worse than refusing.
+                if not proxy.user:
+                    raise OSError("SOCKS5 proxy demanded credentials we didn't offer")
                 s.sendall(_socks5_userpass(proxy.user, proxy.password))
-                if _recvn(s, 2)[1] != 0:
+                if recvn(2)[1] != 0:
                     raise OSError("SOCKS5 proxy rejected the username/password")
             elif method != 0x00:
                 raise OSError("SOCKS5 proxy wants an auth method we don't offer "
                               "(credentials required?)")
             s.sendall(_socks5_connect(dest_host, dest_port))
-            rep = _recvn(s, 4)
+            rep = recvn(4)
             if rep[1] != 0:
                 raise OSError(f"SOCKS5 CONNECT failed (reply code {rep[1]})")
             # Consume the bound address + port so the socket is left at the start of the tunnelled
@@ -409,17 +429,17 @@ def _socks_tunnel(proxy: Proxy, dest_host: str, dest_port: int, timeout: float |
             # length-prefixed domain name.
             atyp = rep[3]
             if atyp == 1:
-                _recvn(s, 4)
+                recvn(4)
             elif atyp == 4:
-                _recvn(s, 16)
+                recvn(16)
             elif atyp == 3:
-                _recvn(s, _recvn(s, 1)[0])
+                recvn(recvn(1)[0])
             else:
                 raise OSError(f"SOCKS5 sent an unknown address type ({atyp})")
-            _recvn(s, 2)   # bound port
+            recvn(2)   # bound port
         else:   # socks4a
             s.sendall(_socks4_connect(dest_host, dest_port, proxy.user))
-            rep = _recvn(s, 8)
+            rep = recvn(8)
             if rep[1] != 0x5a:
                 raise OSError(f"SOCKS4 CONNECT failed (reply code {rep[1]})")
         return s
