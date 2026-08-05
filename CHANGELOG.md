@@ -23,6 +23,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   shrink + proguard-rules.pro), so a decompile reads as a.a(b). The Xposed entry point (HookEntry) and the
   BuildConfig/version markers are kept; dev API keys are seeded ONLY into the debug build, never release.
 
+### Fixed
+- **Android: scrub the API key from IPQualityScore's rejection message.** IPQS takes the key in the URL
+  path and echoes it in the error body; the Android health check surfaced it verbatim (Python already
+  scrubbed it). Now replaced with `<key>` before display.
+
 ## [0.27.0] - 2026-08-06
 
 ### Added

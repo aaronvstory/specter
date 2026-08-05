@@ -682,8 +682,11 @@ final class HealthCheck {
                 r.notes.add("IPQualityScore unreachable");
             } else if (!o.optBoolean("success", false)) {
                 // Their error body says WHY (bad key vs. daily quota spent) — surface it instead of a
-                // generic failure the user can't act on.
-                r.notes.add("IPQualityScore: " + emptyOr(o.optString("message"), "lookup rejected"));
+                // generic failure the user can't act on. IPQS takes the key in the URL PATH and echoes it
+                // back in the rejection message, so scrub it first (matches the Python core) — even though
+                // it's the device owner's own key, a secret must never ride out in a surfaced string.
+                String msg = emptyOr(o.optString("message"), "lookup rejected");
+                r.notes.add("IPQualityScore: " + msg.replace(ipqsKey, "<key>"));
             } else {
                 if (o.has("fraud_score")) r.fraudScore = o.optInt("fraud_score");
                 r.proxy = o.optBoolean("proxy", false) || o.optBoolean("active_vpn", false);
