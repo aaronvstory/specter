@@ -2580,7 +2580,11 @@ public class MainActivity extends Activity {
                 // and vetting proxies is the point. One tile among the signals.
                 tiles.add(repTile(String.valueOf(rep.fraudScore), "Fraud score",
                         rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE));
+            } else {
+                tiles.add(repTile("n/a", "Fraud score", Theme.DIM));
             }
+            if (rep.abuseConfidence == null) tiles.add(repTile("n/a", "Abuse", Theme.DIM));
+            if (rep.getipintel == null) tiles.add(repTile("n/a", "getIPIntel", Theme.DIM));
             if (rep.getipintel != null) {
                 double g = rep.getipintel;
                 tiles.add(repTile(String.format(java.util.Locale.US, "%.2f", g), "getIPIntel",
@@ -2607,20 +2611,10 @@ public class MainActivity extends Activity {
                     v -> { repDetailsExpanded = !repDetailsExpanded; render(); }));
             if (repDetailsExpanded) box.addView(reputationDetail(rep, geoIsp));
 
-            // Every source that failed says so, in its own line — one shared line would let whichever
-            // failed first hide the others, and "no abuse row" with no reason is the confusing case.
-            java.util.List<String> hints = new java.util.ArrayList<>(rep.notes);
-            if (rep.fraudScore == null && prefs.getString("ipqs_key", "").isEmpty()) {
-                hints.add("IPQualityScore: add a key in Settings for a fraud score");
-            }
-            // "Source: what happened" renders as the same label -> value row as everything else, rather
-            // than a loose sentence per line.
-            for (String h : hints) {
-                int sep = h.indexOf(": ");
-                box.addView(sep > 0 ? networkMetaRow(h.substring(0, sep).toUpperCase(java.util.Locale.US),
-                                                     h.substring(sep + 2), Theme.SOFT)
-                                    : networkMetaRow("NOTE", h, Theme.SOFT));
-            }
+            // A source that could not run gets a TILE reading n/a, not a sentence. Spelling out "add a key
+            // in Settings for a fraud score" on the main card buried the actual result under advice, and a
+            // caption long enough to say it wraps. The tile keeps the source visible so its absence is
+            // obvious, and the reason lives in the breakdown.
         }
 
         // Off-tunnel there's no proxy exit — this IP is the device's REAL public IP. Checking it still works
@@ -2668,6 +2662,7 @@ public class MainActivity extends Activity {
      *  {@code detail} completes the sentence "…uses your device's real public IP by …". This is what lets the
      *  off-tunnel reputation check and timezone fix exist without ever leaking the home IP by accident. */
     private void confirmRealIpAction(String detail, java.util.function.Consumer<Boolean> onDecided) {
+        // `detail` is kept for the call sites to state what they do with the IP; nothing renders it now.
         // The real-IP consent decision is captured HERE, once, and handed to the callback as a boolean. The
         // callback must NOT re-query the VPN state later to decide, or a tunnel that flaps up (skipping this
         // dialog) then down before the worker thread would run a real-IP action with no dialog ever shown.
@@ -2675,13 +2670,11 @@ public class MainActivity extends Activity {
             onDecided.accept(false);   // on a tunnel: the exit is the proxy's — no real-IP consent needed or given
             return;
         }
-        new AlertDialog.Builder(this)
-                .setTitle("Use your real IP?")
-                .setMessage("No VPN/proxy tunnel is active, so this uses your device's real public IP by "
-                        + detail + ".")
-                .setPositiveButton("Continue", (d, w) -> onDecided.accept(true))   // real-IP consent given
-                .setNegativeButton("Cancel", null)
-                .show();
+        // No dialog. The button that reaches this path already SAYS it uses the real IP ("Check this IP
+        // anyway", under a note that spells it out), so a modal asking again is a second click for a
+        // decision the user already made. Consent is still an explicit boolean on this path, and the
+        // auto-check never reaches it — it stays tunnel-only.
+        onDecided.accept(true);
     }
 
     /** Look up an IP's reputation. On a tunnel the lookup is PINNED to it (so the exit IP is provably the proxy's);
@@ -2919,6 +2912,10 @@ public class MainActivity extends Activity {
         // A gutter the label can never spend: without it a long caption ("ORGANIZATION") runs straight into
         // its value with no space between them.
         label.setPadding(0, 0, dp(Theme.S2), 0);
+        // One line, ellipsised. Without this a caption longer than the column breaks MID-WORD
+        // ("IPQUALITYSCO / RE"), which is unreadable and ragged. Keep captions short as well.
+        label.setSingleLine(true);
+        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         row.addView(label, new LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView value = new TextView(this);
