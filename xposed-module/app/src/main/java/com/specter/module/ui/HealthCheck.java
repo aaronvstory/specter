@@ -219,12 +219,13 @@ final class HealthCheck {
         }
 
         // Routing: is traffic actually going through a VPN/proxy tunnel, or straight out the home network? This
-        // is the SAFETY GATE for timezone alignment — we must NEVER align the device timezone to the phone's own
-        // home/carrier IP (that would MOVE a real-location device to look like it's elsewhere). Only when a VPN/
-        // proxy tunnel is up is the public IP an intentional exit worth matching. Read from ConnectivityManager
-        // (this UI app is unscoped, so hide_vpn doesn't hide the tunnel from us). No standalone warning row here
-        // — the network card already states the detection boundary; missing VPN transport can't prove direct
-        // traffic (a plain proxy or upstream VPN would still read this way), so a red flag would overclaim.
+        // gates the AUTOMATIC paths — auto timezone alignment on apply, and auto reputation check on open — which
+        // stay tunnel-only so the phone's real IP is never handed to a fraud API or matched by accident. Manual,
+        // user-confirmed actions (the "check this IP anyway" / timezone-fix buttons) ARE allowed off-tunnel on
+        // the real IP — the user asked to score/align without a tunnel — behind an explicit "uses your real IP"
+        // confirm in the UI. Read from ConnectivityManager (this UI app is unscoped, so hide_vpn doesn't hide the
+        // tunnel from us). No standalone warning row here — missing VPN transport can't prove direct traffic (a
+        // plain proxy or upstream VPN would still read this way), so a red flag would overclaim.
         android.net.Network vpnNet = activeVpnNetwork(ctx);
         boolean routedThroughVpn = vpnNet != null;
 
@@ -235,24 +236,24 @@ final class HealthCheck {
         if (g == null) {
             out.add(Check.warn("Public IP", "IP lookup unavailable · check network", Fix.NONE, null));
         } else if (g.tz != null) {
-            // Timezone alignment — ONLY when routed through a proxy/VPN (see the safety gate above). The device's
-            // spoofed timezone (per applied profile) vs the IP's timezone; a mismatch is exactly detectme.pro's
-            // "Timezone Mismatch" flag. One-tap fix rewrites the applied profiles' timezone to the IP's zone.
-            if (routedThroughVpn && targets != null && !targets.isEmpty()) {
+            // Timezone alignment: the device's spoofed timezone (per applied profile) vs the IP's timezone; a
+            // mismatch is exactly detectme.pro's "Timezone Mismatch" flag. One-tap fix rewrites the applied
+            // profiles' timezone to the IP's zone. Offered BOTH on- and off-tunnel — the difference is only WHICH
+            // IP's zone (the proxy exit's, or the device's real public IP off-tunnel). Off-tunnel the fix goes
+            // through a "this uses your real IP" confirm (auto-alignment on apply still stays tunnel-only).
+            if (targets != null && !targets.isEmpty()) {
                 String mismatch = null;
                 for (String pkg : targets) {
                     String ptz = profileTimezone(sh, pkg);
                     if (ptz != null && !ptz.equals(g.tz)) { mismatch = ptz; break; }
                 }
+                String src = routedThroughVpn ? "IP" : "real IP";
                 if (mismatch != null) {
                     out.add(Check.warn("Timezone vs IP",
-                            "Device: " + mismatch + " · IP: " + g.tz, Fix.MATCH_TZ, g.tz));
+                            "Device: " + mismatch + " · " + src + ": " + g.tz, Fix.MATCH_TZ, g.tz));
                 } else {
-                    out.add(Check.ok("Timezone vs IP", "Device timezone matches IP · " + g.tz));
+                    out.add(Check.ok("Timezone vs IP", "Device timezone matches " + src + " · " + g.tz));
                 }
-            } else if (!routedThroughVpn) {
-                out.add(Check.warn("Timezone vs IP",
-                        "Connect an on-device VPN before auto-matching", Fix.NONE, null));
             }
         }
 
@@ -434,10 +435,11 @@ final class HealthCheck {
         return (r != null && ip != null && ip.equals(r.ip)) ? r : null;
     }
 
-    /** Blocking exit-IP reputation lookup, PINNED to {@code net} (the VPN tunnel) — the same safety gate the geo
-     *  lookup uses: every HTTP request and every DNS query leaves through the tunnel, so the home IP can neither
-     *  be checked by mistake nor exposed to these APIs. Both keys are optional; with neither set this still
-     *  returns the keyless DNSBL count. Never throws. Call off the UI thread. */
+    /** Blocking exit-IP reputation lookup. When {@code net} is a VPN tunnel the request is PINNED to it, so the
+     *  exit IP is provably the proxy's and the home IP is never exposed. {@code net} may be null (the default
+     *  network / the device's REAL public IP) ONLY on the user-confirmed off-tunnel path — the automatic paths
+     *  always pass the tunnel. Both keys are optional; with neither set this still returns the keyless DNSBL
+     *  count. Never throws. Call off the UI thread. */
     static Reputation lookupReputation(android.net.Network net, String ip, String ipqsKey, String abuseKey) {
         Reputation r = new Reputation();
         r.ip = ip;
