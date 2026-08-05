@@ -13,6 +13,13 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   `build_version_release` is empty in the profile, so the OS major is read from the fingerprint's `:N/` token;
   and the pool's SoCs map cleanly (qcom→Qualcomm/Adreno, exynos/tensor→ARM/Mali — no MTK/Kirin/AMD present),
   so `_soc_family` returns "" for anything unrecognised and the check skips rather than guesses.
+  COVERAGE CAVEAT (code-reviewer, 2026-08-05): the live pool is Android-11-only (`MIN==MAX_ANDROID_MAJOR==11`),
+  so the 25k-profile sweep only exercises the qcom + Android-11 branches — the exynos/tensor SoC branch and
+  the non-"11" `base_year` rows are proven only by the minimal-dict unit tests (and, for SoC/GPU, by an
+  exhaustive scan of all 70 hardware.json entries), NOT end-to-end. Re-run the sweep when `MAX_ANDROID_MAJOR`
+  is bumped. Two of the four (board==hardware, carrier==MCC/MNC) are guaranteed-equal at construction today,
+  so they're forward regression guards (against a future refactor that decouples the sources), not live
+  coverage — kept deliberately.
 
 - **2026-08-05 (v0.24.5): `armTrace` disarm also strips a LEGACY unquoted `{trace:1,` — found by a read-only
   fleet audit.** WHY: a read-only coherence audit of the applied profiles on both phones found one (the 4a
