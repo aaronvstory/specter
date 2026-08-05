@@ -924,3 +924,16 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 - **The reputation lookup is user-triggered, not part of the automatic health run.** WHY: IPQS's free tier is
   35 lookups a day, and the Status screen re-runs its checks on every open. Auto-polling would burn the quota
   in a morning. Result is cached per IP for the process lifetime so re-opening the screen is free.
+- **Every reputation source shows its OWN score, labeled by source — a combined/normalized score may sit on
+  top but never replaces the per-source breakdown.** WHY (user, 2026-08-05): "show what score exactly where how
+  much, not just the normalized." IPQS fraud score (with strictness), AbuseIPDB confidence %/reports, and the
+  DNSBL n-of-N each render as their own line/tile on both the web UI and the Android card; the verdict line
+  enumerates which signal contributed what. When a new scored source is added, it MUST get its own labeled
+  element before it feeds any aggregate — a single opaque number that hides which source said what is exactly
+  what this forbids.
+- **ip-api.io and Scamalytics were evaluated as extra reputation sources and REJECTED (2026-08-05).** WHY:
+  ip-api.io advertises a "free key" but the risk-score endpoint is paid-only ($10/mo min) — a generated key
+  returns 401 "Valid API key is required" on every endpoint (verified against their own OpenAPI: auth format
+  was correct, the key simply isn't entitled). Scamalytics' 5k/mo free tier needs a company signup the user
+  won't do. So the checker stays keyless-first (DNSBL + ipwho.is geo), with IPQS + AbuseIPDB as the optional
+  keyed enrichers. Revisit only if a source appears with a genuinely keyless-or-personal free tier.
