@@ -56,6 +56,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - **Reputation was measured on one address and reported as another.** On a dual-stack exit the address was
   switched to IPv4 *after* IPQS/AbuseIPDB/getIPIntel/Scamalytics had already been asked about the IPv6 one.
   The family is now settled before any source is queried.
+- **A dead proxy crashed the page.** `check()` returned early with no `verdict` key when the exit-IP
+  lookup failed, and the page did `r.verdict.toUpperCase()` on it — so an ordinary unreachable proxy read
+  "FAILED · TypeError: Cannot read properties of undefined". Every return carries a verdict now, and the
+  renderer defaults rather than assumes.
+- **The bulk table no longer scrolls horizontally** at a normal window width. Column headings name their
+  SOURCE (IPQS · GII · AbuseDB · SCAM · DNSBL) so a bare number is never anonymous; IPQS's flags are
+  three-letter codes with the meaning on hover and a `+N` overflow instead of "VPN Proxy Recent abuse Bot";
+  the policy-listing count moved to a sub-line; locations read "Redmond, US" rather than
+  "Redmond, Washington, United States"; the proxy host truncates while its port never does.
+- **Scrollbars follow the theme.** The default light-grey OS bar under a dark panel read as a rendering
+  fault, on a table that is horizontally scrollable by design.
+- getIPIntel's `n/a` now says WHY — it meters 15 lookups a minute per contact, so a bulk run can genuinely
+  exhaust it mid-batch, and a bare "n/a" left no way to tell that from a failure.
 - **Three of six line icons rendered blank**, and a fourth as a featureless rectangle. `rx=1.2/>` unquoted
   parses as the value `1.2/` with no self-close, so the element swallowed its siblings — `ban` drew
   nothing at all. Every inline-SVG attribute is quoted, the shapes are redrawn for 13px, and

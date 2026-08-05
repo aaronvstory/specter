@@ -1326,14 +1326,37 @@ def test_the_generated_page_javascript_parses():
     assert r.returncode == 0, "generated page JS does not parse:\n" + (r.stderr or r.stdout)
 
 
-def test_the_generated_page_is_in_sync_with_PAGE():
+def test_the_generated_page_runs_without_a_top_level_error():
+    """Load the SHIPPED page in a real browser and check it reached the end of its own script.
+
+    Parsing is not enough. A `const` read from an earlier line — "Cannot access 'KEYFIELDS' before
+    initialization" — parses perfectly, kills the whole <script> at load, and leaves a page that renders
+    its complete markup with every button inert. Nothing fails loudly. The page's last statement stamps
+    `data-specter-ready`, so its ABSENCE in the post-JS DOM is the failure.
+
+    `--virtual-time-budget` runs the timers and promises before dumping, so async work is included; the
+    network calls the page makes just fail and are caught, which is the point of testing the real file."""
+    import shutil
+    import subprocess
+    chrome = next((c for c in (r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                               r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe",
+                               "/usr/bin/google-chrome", "/usr/bin/chromium")
+                   if Path(c).exists()), None) or shutil.which("chrome") or shutil.which("chromium")
+    if not chrome:
+        return                                          # no browser here; it still runs locally
+    page = Path(__file__).resolve().parents[1] / "webapp" / "index.html"
+    r = subprocess.run([chrome, "--headless", "--disable-gpu", "--virtual-time-budget=6000",
+                        "--dump-dom", page.as_uri()], capture_output=True, text=True, timeout=120)
+    assert "data-specter-ready" in r.stdout, (
+        "the page's script did not run to completion — a top-level runtime error killed it, so every "
+        "control on the page is dead. Open it in a browser and read the console.")
     """A PAGE edit that never had build.py re-run ships an index.html missing it — silently, because both
     files look fine on their own."""
     root = Path(__file__).resolve().parents[1]
     html = (root / "webapp" / "index.html").read_text("utf-8")
     # The rewritten bits differ by design; everything else must match line-for-line.
-    for marker in ("id=scamuser", "id=scamkey", "const KEYFIELDS", "scamalytics_raw",
-                   "h:'Scamalytics'", "ccColour"):
+    for marker in ("id=scamuser", "id=scamkey", "markKeys", "scamalytics_raw",
+                   "k:'scam'", "ccColour", "shortLoc", "scrollbar-color"):
         assert marker in html, f"webapp/index.html is stale — re-run python webapp/build.py ({marker})"
     assert "localStorage.getItem" in html and "fetch('/config')" not in html
 

@@ -1119,7 +1119,15 @@ def check(proxy: str | None = None, ip: str | None = None,
             rep["proxy_ms"] = latency_ms
     if not rep.get("ip"):
         if not ip:
+            # EVERY return carries a verdict. This one used to return a report with no `verdict` key at
+            # all, and the page did `r.verdict.toUpperCase()` on it — so a proxy that simply didn't answer
+            # rendered as "FAILED · TypeError: Cannot read properties of undefined". A dead proxy is an
+            # ordinary, expected outcome and has to read like one.
             rep["notes"].append("Exit IP: lookup failed — proxy down, or no route out?")
+            rep["verdict"] = "unknown"
+            rep["verdict_factors"] = ["No exit IP — the proxy did not answer, so nothing could be checked"]
+            rep["verdict_reason"] = rep["verdict_factors"][0]
+            rep["flags"] = []
             return rep
         rep["ip"] = ip      # geo failed, but we were told which IP to check — carry on without it
 
@@ -1417,6 +1425,25 @@ table.bulk th.s[data-dir="-1"]::after{content:"▼"}
 .bsum .s-dirty b{color:var(--dirty)} .bsum .s-suspect b{color:var(--suspect)}
 .bsum .s-clean b{color:var(--clean)} .bsum .s-dead b{color:var(--dirty)}
 .tablewrap{overflow-x:auto}
+/* Scrollbars follow the theme. The default light-grey OS bar sits under a dark panel looking like a
+   rendering fault, and this table is horizontally scrollable BY DESIGN, so its bar is on screen the whole
+   time. `scrollbar-color` covers Firefox; the ::-webkit rules cover Chrome and Safari. */
+*{scrollbar-color:var(--line) transparent;scrollbar-width:thin}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;border:2px solid transparent;
+  background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--dim);background-clip:content-box;border:2px solid transparent}
+::-webkit-scrollbar-corner{background:transparent}
+/* A column heading names its SOURCE, so a number is never anonymous. The full name is on the title, and
+   the sub-line under a value carries the secondary fact (a policy listing, a band) instead of widening the
+   column with it. */
+table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
+.sub{display:block;font-size:9.5px;line-height:1.35;color:var(--dim);letter-spacing:.02em}
+/* Detected-as codes: three letters each, full meaning on hover. Spelling them out
+   ("VPN Proxy Recent abuse Bot") made this the widest column on the table for the least information. */
+.fx{display:inline-block;padding:2px 4px;margin-right:3px;border-radius:4px;font-size:10px;font-weight:700;
+  background:color-mix(in srgb,var(--suspect) 15%,transparent);color:var(--suspect)}
 /* Copy chip: one click copies, a tick confirms. The tick's slot is ALWAYS reserved, so confirming never
    changes the chip's width and never nudges the row. */
 .cp{position:relative;display:inline-block;cursor:pointer;border:1px solid var(--line);border-radius:6px;
@@ -1459,7 +1486,10 @@ table.bulk td .trunc{display:block;overflow:hidden;text-overflow:ellipsis}
 table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
 /* The HOST truncates; the PORT never does. The port is the only thing distinguishing one line from the
    next, so it must survive whatever the column width is. */
-.pxh{color:var(--ink)}
+/* The host truncates, the PORT never does — a vendor hands out one hostname and N ports, so the port is
+   the only thing telling one row from the next. Full line on the title. */
+.pxh{color:var(--ink);display:inline-block;max-width:112px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;vertical-align:bottom}
 .pxp{color:var(--accent);font-weight:700}
 .ipv{font-size:12px}
 .ms{font-variant-numeric:tabular-nums}
@@ -1471,8 +1501,10 @@ table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
 .detrow>td{padding:0 0 10px !important;white-space:normal !important;max-width:none !important}
 table.bulk tr.open>td{background:var(--panel2)}
 table.bulk{width:100%;border-collapse:collapse;font:12.5px/1.4 var(--mono)}
-table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
-table.bulk td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+/* 7px of horizontal padding, not 10. Across fifteen columns that is ~90px of the horizontal scroll,
+   bought back without dropping a single value. */
+table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 7px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bulk td{padding:9px 7px;border-bottom:1px solid var(--line);vertical-align:middle}
 table.bulk tr:last-child td{border-bottom:0}
 table.bulk tbody tr:hover td{background:var(--panel2)}
 .vpill{display:inline-block;padding:3px 9px;border-radius:6px;font:600 10px/1.5 var(--mono);letter-spacing:.04em}
@@ -1573,9 +1605,15 @@ fetch('/config').then(r=>r.json()).then(c=>{
 // first call assigning onto undefined.
 // Field-list driven, because Scamalytics is a USER + KEY pair behind one badge: "your key" only once BOTH
 // are filled, since half a pair never runs.
-const KEYFIELDS=[['ipqs',['ipqs']],['abuse',['abuse']],['scam',['scamuser','scamkey']]];
+//
+// The list lives INSIDE the function, like _kst above and for the same reason: the config block runs before
+// this line, so a `const KEYFIELDS` at module scope is in the temporal dead zone when markKeys({}) is
+// called from it — "Cannot access 'KEYFIELDS' before initialization", which kills the whole <script> and
+// leaves a page that renders perfectly with every button dead. `node --check` cannot see it; only loading
+// the page can, which is what the smoke test does.
 function markKeys(st){const s=window._kst=Object.assign(window._kst||{},st||{});
-  KEYFIELDS.forEach(([id,fields])=>{const e=$('#'+id+'-st'); if(!e)return;
+  [['ipqs',['ipqs']],['abuse',['abuse']],['scam',['scamuser','scamkey']]].forEach(([id,fields])=>{
+    const e=$('#'+id+'-st'); if(!e)return;
     e.textContent=fields.every(f=>$('#'+f).value)?'· your key':(s[id==='scam'?'scamalytics':id]?'· shared active':'');});}
 ['ipqs','abuse','scamuser','scamkey'].forEach(id=>$('#'+id).addEventListener('input',()=>markKeys()));
 // On open: PREFILL "check directly" with the visitor's OWN public IP (client-side; ipwho.is is CORS-open),
@@ -1788,8 +1826,11 @@ function render(r){
   const blk=(h)=>`<div class=blk style="animation-delay:${(i++)*55}ms">${h}</div>`;
 
   // The verdict names its own evidence: one chip per signal that decided it. A bare "SUSPECT" says nothing.
+  // `verdict` is defaulted rather than assumed: a report that arrives without one must degrade to UNKNOWN,
+  // not throw a TypeError over the whole page and turn an ordinary dead proxy into "FAILED".
+  const lvl=r.verdict||'unknown';
   const vf=(r.verdict_factors||[]).map(x=>`<span>${esc(x)}</span>`).join('');
-  t+=blk(`<div class="verdict v-${r.verdict}"><div class=v><span class=dot></span><b>${esc(r.verdict.toUpperCase())}</b></div>`+
+  t+=blk(`<div class="verdict v-${lvl}"><div class=v><span class=dot></span><b>${esc(lvl.toUpperCase())}</b></div>`+
     (vf?`<div class=vfx>${vf}</div>`:`<span>${esc(r.verdict_reason||'')}</span>`)+`</div>`);
 
   // Exit-IP hero + copy, with the WHO/WHERE rows attached to it rather than floating in a second panel as an
@@ -2109,48 +2150,70 @@ $('#bulkgo').onclick=async()=>{
        ?flagImg(x.r.country_code||'')+`<span class=ipv>${esc(x.r.ip)}</span>`+
         (x.r.exit_ipv6?'<span class=tag title="Dual-stack — this proxy also exits over IPv6">+v6</span>':'')
        :'<span class=dim>—</span>'},
-    {k:'lists', h:'Blocklists', get:x=>num(x.r&&(x.r.blacklists||[]).length),
-     cell:x=>listsCell(x.r)},
-    {k:'detected', h:'Detected as', get:x=>num(x.r&&(x.r.flags||[]).length),
-     cell:x=>detectedCell(x.r)},
-    {k:'fraud', h:'Fraud', get:x=>num(x.r&&x.r.fraud_score),
+    // Headings name the SOURCE, so a bare number is never anonymous. Full name on the title.
+    {k:'lists', h:'DNSBL', ttl:'Public blocklist zones — hits / zones that answered',
+     get:x=>num(x.r&&(x.r.blacklists||[]).length), cell:x=>listsCell(x.r)},
+    {k:'detected', h:'Flags', ttl:'What IPQualityScore detected — hover a code for its meaning',
+     get:x=>num(x.r&&(x.r.flags||[]).length), cell:x=>detectedCell(x.r)},
+    {k:'fraud', h:'IPQS', ttl:'IPQualityScore fraud score, 0-100', get:x=>num(x.r&&x.r.fraud_score),
      cell:x=>x.r&&x.r.fraud_score!=null
        ?`<span class="c-${band(x.r.fraud_score)}">${x.r.fraud_score}</span>`
        :'<span class=dim title="No IPQualityScore key — not measured">n/k</span>'},
-    {k:'gii', h:'getIPIntel', get:x=>num(x.r&&x.r.getipintel_score),
+    {k:'gii', h:'GII', ttl:'getIPIntel proxy/hosting probability, 0-1',
+     get:x=>num(x.r&&x.r.getipintel_score),
      cell:x=>x.r&&x.r.getipintel_score!=null
        ?`<span class="c-${x.r.getipintel_score>=0.99?'dirty':x.r.getipintel_score>=0.90?'suspect':'clean'}">`+
         x.r.getipintel_score.toFixed(2)+`</span>`
-       :'<span class=dim title="getIPIntel did not answer — not measured">n/a</span>'},
-    {k:'abuse', h:'Abuse', get:x=>num(x.r&&x.r.abuse_confidence),
+       // WHY it has no score, not just that it hasn't. getIPIntel meters 15/min per contact AND per
+       // connecting IP, so a bulk run can genuinely exhaust it mid-batch — and "n/a" with no reason sent
+       // the user asking why one row was blank. The note it returned is the answer; show it.
+       :`<span class=dim title="${esc(giiWhy(x.r))}">n/a</span>`},
+    {k:'abuse', h:'AbuseDB', ttl:'AbuseIPDB confidence — reports in the last 90 days',
+     get:x=>num(x.r&&x.r.abuse_confidence),
      cell:x=>x.r&&x.r.abuse_confidence!=null
        ?`<span class="c-${x.r.abuse_confidence>=50?'dirty':x.r.abuse_confidence>=10?'suspect':'clean'}">`+
         x.r.abuse_confidence+`%</span>`
        :'<span class=dim title="No AbuseIPDB key — not measured">n/k</span>'},
     // Scamalytics: the OVERALL score + band, and nothing more. Sorting by it is offered because the user
-    // asked to see it, but the colour never goes green and the header says "shown, not scored" — the score
+    // asked to see it, but the colour never goes green and the band sits on the sub-line — the score
     // MIS-RANKS (Tor 15 "low", clean Comcast 18, Mullvad 44 highest), so it must not read as a ranking.
-    {k:'scam', h:'Scamalytics', get:x=>num(x.r&&x.r.scam_score),
+    {k:'scam', h:'SCAM', ttl:'Scamalytics score — shown, not scored: it tracks the ISP score, not this IP',
+     get:x=>num(x.r&&x.r.scam_score),
      cell:x=>x.r&&x.r.scam_risk
        ?`<span class="c-${scamColour(x.r.scam_risk)}" title="Scamalytics ${esc(x.r.scam_score)} · `+
         `${esc(x.r.scam_risk)}. Shown, not scored: it tracks the ISP score, not this IP.">`+
-        `${esc(x.r.scam_score)}</span><span class=dimnote> ${esc(x.r.scam_risk)}</span>`
+        `${esc(x.r.scam_score)}</span><span class=sub>${esc(x.r.scam_risk)}</span>`
        :'<span class=dim title="No Scamalytics credentials — not measured">n/k</span>'},
-    {k:'type', h:'Exit type', get:x=>(x.r&&x.r.connection_class)||'zz',
+    {k:'type', h:'Exit', ttl:'Exit type — hosting, Tor or a mobile line, where it could be determined',
+     get:x=>(x.r&&x.r.connection_class)||'zz',
      cell:x=>x.r&&x.r.connection_class
-       ?`<span class="c-${ccColour(x.r.connection_class)}">${esc(x.r.connection_class)}</span>`
+       ?`<span class="c-${ccColour(x.r.connection_class)}" title="${esc(ccCap(x.r.connection_class))}">`+
+        `${esc({datacenter:'hosting',tor:'Tor',mobile:'mobile'}[x.r.connection_class]||x.r.connection_class)}</span>`
        :`<span class=dim title="${x.r&&x.r.scam_risk!=null
            ?'Scamalytics raised no datacenter or proxy record, and no hosting name matched — not proof of a real line'
            :'No hosting name matched, and Scamalytics did not run — not proof of a real line'}">—</span>`},
     {k:'isp', h:'ISP', get:x=>(x.r&&(x.r.isp||x.r.organization))||'',
      cell:x=>{const v=x.r&&(x.r.isp||x.r.organization);
        return v?`<span class=trunc title="${esc(v)}">${esc(v)}</span>`:'<span class=dim>—</span>';}},
+    // City, then the COUNTRY CODE — not "Redmond, Washington, United States", which made this the second
+    // widest column on a table that already scrolls. The full string is on the title.
     {k:'loc', h:'Location', get:x=>(x.r&&x.r.location)||'',
      cell:x=>{const v=x.r&&x.r.location;
-       return v?`<span class=trunc title="${esc(v)}">${esc(v)}</span>`:'<span class=dim>—</span>';}},
+       return v?`<span class=trunc title="${esc(v)}">${esc(shortLoc(v,x.r.country_code))}</span>`
+              :'<span class=dim>—</span>';}},
   ];
 
+  // "Redmond, Washington, United States" -> "Redmond, US". Keeps the city (the part that differs between
+  // two exits from the same provider) and drops the two that a country flag already told you.
+  function shortLoc(v,cc){
+    const p=String(v).split(',').map(s=>s.trim()).filter(Boolean);
+    if(!p.length)return v;
+    return cc?p[0]+', '+cc:(p.length>2?p[0]+', '+p[p.length-1]:v);
+  }
+
   // Blocklists: a real sweep, a partial sweep and "never checked" must never look alike.
+  // The policy count goes on a SUB-LINE, not inline: "+2 policy" repeated down every row made this column
+  // four times wider than the "0/17" it exists to show.
   function listsCell(r){
     if(!r||!r.ip)return '<span class=dim>—</span>';
     if(!r.dnsbl_usable){
@@ -2161,8 +2224,15 @@ $('#bulkgo').onclick=async()=>{
       (pol?'Plus '+pol+' policy listing: '+(r.policy_lists||[]).join(', ')+'. ':'')+
       total+' of '+(r.dnsbl_zones_total||total)+fam+' zones answered.';
     return `<span class="c-${hits>=2?'dirty':hits?'suspect':'clean'}" title="${esc(t)}">${hits}/${total}</span>`+
-      (pol?`<span class=dimnote title="${esc((r.policy_lists||[]).join(', '))}"> +${pol} policy</span>`:'');
+      (pol?`<span class=sub title="${esc((r.policy_lists||[]).join(', '))}">+${pol} policy</span>`:'');
   }
+
+  // IPQS's flags as three-letter codes. Spelling them out ("VPN Proxy Recent abuse Bot") made this the
+  // widest column on the table for the least information; each code carries its full meaning on hover.
+  const FXC=[[/tor/i,'TOR','Tor'],[/vpn/i,'VPN','VPN'],[/proxy/i,'PRX','Proxy'],
+             [/recent abuse|frequent/i,'ABU','Recent abuse'],[/bot/i,'BOT','Bot'],
+             [/crawler|spider/i,'CRW','Crawler'],[/scanner/i,'SCN','Security scanner'],
+             [/high.risk/i,'ATK','High-risk attacks']];
 
   // "Is it detectable as a proxy at all" — the question the fraud score can't answer, because it saturates.
   function detectedCell(r){
@@ -2171,8 +2241,23 @@ $('#bulkgo').onclick=async()=>{
       return '<span class=dim title="No source that detects proxies answered">n/k</span>';
     const f=r.flags||[];
     if(!f.length)return '<span class=c-clean title="IPQualityScore raised no proxy/VPN/Tor flag">none</span>';
-    return `<span class="c-suspect trunc" title="${esc(f.join(' · '))}">`+
-      esc(f.map(s=>s.replace(' (active)','*')).join(' '))+`</span>`;
+    // Three codes, then "+N" — six flags on a row made this the widest column on the table. The overflow
+    // count is never silent: the full list is on the cell, and the detail row spells every one of them out.
+    const CAPN=3;
+    const codes=f.map(s=>{const m=FXC.find(([re])=>re.test(s));
+      // An unmatched flag keeps its own text rather than being dropped — a code table must never silently
+      // swallow a signal it has no abbreviation for.
+      return `<span class=fx title="${esc(s)}">${esc(m?m[1]:s)}</span>`;});
+    return `<span title="${esc(f.join(' · '))}">`+codes.slice(0,CAPN).join('')+
+      (codes.length>CAPN?`<span class=fx>+${codes.length-CAPN}</span>`:'')+`</span>`;
+  }
+
+  // WHY getIPIntel has no number for this row. It meters 15/min per contact AND per connecting IP, so a
+  // bulk run really can exhaust it part-way — and a bare "n/a" left the user asking why one row was blank.
+  function giiWhy(r){
+    const n=((r&&r.notes)||[]).find(n=>String(n).startsWith('getIPIntel'));
+    return n?n+' — not measured'
+            :'getIPIntel did not answer — not measured (it allows 15 lookups a minute per contact)';
   }
 
   let sortKey='', sortDir=1;
@@ -2195,6 +2280,7 @@ $('#bulkgo').onclick=async()=>{
       (live.length?`<span>Median <b>${live[Math.floor(live.length/2)]} ms</b></span>`:'')+
       `</div><div class=tablewrap><table class=bulk><thead><tr><th class=cw></th>`+
       COLS.map(c=>`<th class=s data-sort="${c.k}"`+
+        (c.ttl?` title="${esc(c.ttl)}"`:'')+
         (sortKey===c.k?` data-dir="${sortDir}"`:'')+`>${esc(c.h)}</th>`).join('')+
       `</tr></thead><tbody>`;
     for(const x of view){
@@ -2206,7 +2292,8 @@ $('#bulkgo').onclick=async()=>{
       if(x.open)h+=`<tr class=detrow><td colspan="${COLS.length+1}">${bulkDetail(x)}</td></tr>`;
     }
     h+=`</tbody></table></div><p class=note style="padding:10px 2px 0">`+
-      `Click a heading to sort · the chevron opens that proxy's full detail · n/k = no key, so not measured`+
+      `Click a heading to sort · the chevron opens a proxy's full detail · hover a heading, code or `+
+      `truncated value for the full text · n/k = no key, n/a = the source didn't answer — neither is clean`+
       `</p></div></div>`;
     out.innerHTML=h;
   };
@@ -2222,6 +2309,13 @@ $('#bulkgo').onclick=async()=>{
   b.disabled=false; b.textContent='Check all';
 };
 
+// LAST statement in the script, and the tripwire for a whole class of failure: if ANY top-level statement
+// above threw, execution never reaches here and the stamp is absent. Loading the page and checking for it
+// is the only thing that catches a runtime error — `node --check` parses the file happily, and a page that
+// died on line 3 still renders its full markup with every button inert. That is exactly what shipped once
+// (a `const` read from an earlier line, "Cannot access 'KEYFIELDS' before initialization"), and the page
+// looked completely normal. tests/test_ipcheck.py asserts this attribute.
+document.documentElement.dataset.specterReady='1';
 </script>
 """
 

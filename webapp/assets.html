@@ -189,6 +189,25 @@ table.bulk th.s[data-dir="-1"]::after{content:"▼"}
 .bsum .s-dirty b{color:var(--dirty)} .bsum .s-suspect b{color:var(--suspect)}
 .bsum .s-clean b{color:var(--clean)} .bsum .s-dead b{color:var(--dirty)}
 .tablewrap{overflow-x:auto}
+/* Scrollbars follow the theme. The default light-grey OS bar sits under a dark panel looking like a
+   rendering fault, and this table is horizontally scrollable BY DESIGN, so its bar is on screen the whole
+   time. `scrollbar-color` covers Firefox; the ::-webkit rules cover Chrome and Safari. */
+*{scrollbar-color:var(--line) transparent;scrollbar-width:thin}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;border:2px solid transparent;
+  background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--dim);background-clip:content-box;border:2px solid transparent}
+::-webkit-scrollbar-corner{background:transparent}
+/* A column heading names its SOURCE, so a number is never anonymous. The full name is on the title, and
+   the sub-line under a value carries the secondary fact (a policy listing, a band) instead of widening the
+   column with it. */
+table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
+.sub{display:block;font-size:9.5px;line-height:1.35;color:var(--dim);letter-spacing:.02em}
+/* Detected-as codes: three letters each, full meaning on hover. Spelling them out
+   ("VPN Proxy Recent abuse Bot") made this the widest column on the table for the least information. */
+.fx{display:inline-block;padding:2px 4px;margin-right:3px;border-radius:4px;font-size:10px;font-weight:700;
+  background:color-mix(in srgb,var(--suspect) 15%,transparent);color:var(--suspect)}
 /* Copy chip: one click copies, a tick confirms. The tick's slot is ALWAYS reserved, so confirming never
    changes the chip's width and never nudges the row. */
 .cp{position:relative;display:inline-block;cursor:pointer;border:1px solid var(--line);border-radius:6px;
@@ -231,7 +250,10 @@ table.bulk td .trunc{display:block;overflow:hidden;text-overflow:ellipsis}
 table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
 /* The HOST truncates; the PORT never does. The port is the only thing distinguishing one line from the
    next, so it must survive whatever the column width is. */
-.pxh{color:var(--ink)}
+/* The host truncates, the PORT never does — a vendor hands out one hostname and N ports, so the port is
+   the only thing telling one row from the next. Full line on the title. */
+.pxh{color:var(--ink);display:inline-block;max-width:112px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;vertical-align:bottom}
 .pxp{color:var(--accent);font-weight:700}
 .ipv{font-size:12px}
 .ms{font-variant-numeric:tabular-nums}
@@ -243,8 +265,10 @@ table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
 .detrow>td{padding:0 0 10px !important;white-space:normal !important;max-width:none !important}
 table.bulk tr.open>td{background:var(--panel2)}
 table.bulk{width:100%;border-collapse:collapse;font:12.5px/1.4 var(--mono)}
-table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
-table.bulk td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+/* 7px of horizontal padding, not 10. Across fifteen columns that is ~90px of the horizontal scroll,
+   bought back without dropping a single value. */
+table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 7px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bulk td{padding:9px 7px;border-bottom:1px solid var(--line);vertical-align:middle}
 table.bulk tr:last-child td{border-bottom:0}
 table.bulk tbody tr:hover td{background:var(--panel2)}
 .vpill{display:inline-block;padding:3px 9px;border-radius:6px;font:600 10px/1.5 var(--mono);letter-spacing:.04em}
