@@ -3,6 +3,23 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.25.1] - 2026-08-05
+
+### Added
+- **getIPIntel as a keyless reputation source.** Free, no signup — it only needs a contact email — and it
+  DISCRIMINATES where IPQS saturates: a 0-1 probability that grades residential-vs-hosting (measured live:
+  AWS 1.0, Starlink 0.0) plus a BadIP flag for malicious behaviour. It also catches hosting/VPN exits the
+  name-based datacenter check misses (e.g. Cloudflare). A near-1 score or the BadIP flag drives the verdict;
+  shown as its own tile/row on the web UI and the Android card, and it leads the “sharpen detection” settings.
+
+### Changed
+- **IPQS's abuse flags no longer condemn on their own.** recent_abuse/bot/frequent_abuser saturate on shared
+  and residential-proxy IPs the same way the score does, so alone they now read SUSPECT, not DIRTY — a
+  reliable independent source (blacklist, AbuseIPDB, getIPIntel) is what escalates to dirty.
+- **Web UI: IPQS is no longer the visual hero.** The giant fraud meter is gone; the score is one tile among
+  the signals (Blacklists · Fraud · getIPIntel · Exit type), matching the de-weighted model. The legend is
+  accurate (17 blocklists, datacenter + getIPIntel, keyless-first) and the Blacklists tile turns red at 2+.
+
 ## [0.25.0] - 2026-08-05
 
 ### Changed

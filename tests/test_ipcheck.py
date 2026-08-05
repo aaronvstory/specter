@@ -406,6 +406,40 @@ def test_datacenter_catches_gcp_azure_by_org_name_but_not_google_fiber():
     assert ipcheck.is_datacenter({"isp": "Comcast Cable"}) is False
 
 
+def test_getipintel_parses_score_and_badip(monkeypatch):
+    monkeypatch.setattr(ipcheck, "_get_json",
+                        lambda url, opener: {"status": "success", "result": "0.997", "BadIP": 1})
+    out = ipcheck.lookup_getipintel("1.2.3.4", "me@example.com", None)
+    assert out["getipintel_score"] == 0.997 and out["getipintel_bad"] is True
+
+
+def test_getipintel_reports_a_rejected_contact(monkeypatch):
+    monkeypatch.setattr(ipcheck, "_get_json",
+                        lambda url, opener: {"status": "error", "result": "-6", "message": "no contact"})
+    out = ipcheck.lookup_getipintel("1.2.3.4", "", None)
+    assert "notes" in out and "getIPIntel" in out["notes"][0]
+
+
+def test_getipintel_a_negative_result_is_an_error_not_a_score(monkeypatch):
+    # A negative result is an error code (-1..-6), NOT a 0-probability — must never read as a clean score.
+    monkeypatch.setattr(ipcheck, "_get_json",
+                        lambda url, opener: {"status": "success", "result": "-5"})
+    out = ipcheck.lookup_getipintel("1.2.3.4", "me@example.com", None)
+    assert "getipintel_score" not in out and out["notes"][0].startswith("getIPIntel error")
+
+
+def test_verdict_getipintel_badip_or_hosting_verdict_is_dirty():
+    # getIPIntel EARNS a dirty on its own (it grades residential-vs-hosting; AWS 1.0, Starlink 0.0) — unlike
+    # the raw IPQS proxy flag which saturates.
+    assert ipcheck.verdict({"getipintel_bad": True, "dnsbl_usable": True})[0] == "dirty"
+    assert ipcheck.verdict({"getipintel_score": 1.0, "dnsbl_usable": True})[0] == "dirty"
+
+
+def test_verdict_getipintel_midrange_is_suspect_and_low_stays_clean():
+    assert ipcheck.verdict({"getipintel_score": 0.93, "dnsbl_usable": True})[0] == "suspect"
+    assert ipcheck.verdict({"getipintel_score": 0.10, "dnsbl_usable": True})[0] == "clean"
+
+
 def test_verdict_clean_on_a_residential_proxy_despite_ipqs_100():
     # A real ISP exit (no datacenter name, no abuse) is usable even though IPQS flags proxy at score 100.
     rep = {"isp": "Comcast Cable", "organization": "Comcast", "fraud_score": 100, "proxy": True,
@@ -419,10 +453,18 @@ def test_verdict_dirty_on_two_or_more_abuse_listings():
     assert level == "dirty"
 
 
-def test_verdict_dirty_on_ipqs_abuse_flags_even_at_a_low_score():
-    # IPQS's ABUSE sub-flags (recent_abuse / bot / frequent_abuser) are real corroboration — unlike the bare
-    # proxy/vpn flag — so they condemn even when the numeric score is modest.
-    level, _ = ipcheck.verdict({"fraud_score": 40, "recent_abuse": True, "dnsbl_usable": True})
+def test_verdict_ipqs_abuse_flags_alone_are_suspect_not_dirty():
+    # IPQS's abuse sub-flags (recent_abuse / bot) saturate on shared/residential-proxy IPs, so ON THEIR OWN
+    # they're only "worth a look", not "burned" — a reliable independent source (blacklist/AbuseIPDB/getIPIntel)
+    # is what escalates to dirty.
+    level, why = ipcheck.verdict({"fraud_score": 40, "recent_abuse": True, "dnsbl_usable": True})
+    assert level == "suspect" and "IPQS abuse" in why
+
+
+def test_verdict_ipqs_abuse_plus_a_blacklist_is_dirty():
+    # Corroboration escalates: the blacklist is the reliable signal that makes it dirty.
+    level, _ = ipcheck.verdict(
+        {"recent_abuse": True, "blacklists": ["Spamhaus", "CBL"], "dnsbl_usable": True})
     assert level == "dirty"
 
 
