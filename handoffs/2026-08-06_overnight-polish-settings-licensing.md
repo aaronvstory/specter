@@ -1,5 +1,42 @@
 # Handoff: overnight polish pass, then the settings + licensing build
 
+> ## ✅ UPDATE 2026-08-06 ~06:50 — §1–§3 SHIPPED and MERGED. Do NOT redo the below.
+> **PR #83 is squash-MERGED to main (sha f37a742).** Everything in §1/§2/§3 that was actionable is done,
+> reviewed clean (code-reviewer subagent on the full diff + CodeRabbit fixes addressed), and merged. Work
+> now happens on a NEW branch **`feat/coherence-and-appdata-followups`** off main.
+>
+> **What shipped this run (11 commits, +1396/−92):**
+> - §2b Device-bound activation — offline signed codes (EC **P-256**, not Ed25519: native on the API-30
+>   fleet), operator `scripts/make_activation.py`, `ActivationVerifier` + `ActivationStore`, activation
+>   screen + top-right key/cog icons. **PROVEN end-to-end on the P4** (real hash → 1-week code → "Active").
+> - §2a Settings cogwheel — web (native `<dialog>`) + Android (header gear + key). API keys live there now.
+> - §1 Core use case — **bulk now accepts bare IPs** (was proxy-only; bare IPs came back DEAD). Verified
+>   web single+bulk+settings both themes by screenshot. Single check is a polished live verdict.
+> - §2e **R8-obfuscated release** — proven hooks on-device (the `XC_MethodHook` keep rule was the fix);
+>   dev keys seed debug-only; `build-release.sh` now builds the release variant for distribution.
+> - §3 exa research → `docs/ANTI-FINGERPRINT-STRATEGY.md` + next-levers in `docs/IDEAS.md`.
+> - Fixes: CodeRabbit (key file perms, rollback-clamped remaining-time, cached direct-baseline so bulk
+>   doesn't rate-limit itself), IPQS key-scrub parity on Android, `scope_probe.py` base64 transport.
+>
+> **Known/hand-off state:**
+> - **CI is dead at the ACCOUNT level** (every run fails with no runner — "insufficient credits"). NOT
+>   code; local pytest (263) + JVM are green. The USER must fix GitHub Actions billing. Don't chase it.
+>   (memory `ci-dead-account-level`.) codex out of quota (~Sep 4); Kilo/Sourcery credit/limit-capped.
+> - **P4** on the seeded debug v0.28.0 build, probe RE-SCOPED (verify_on_device.py works again, all ✅).
+>   **4a still on 0.27.0** — NOT updated (Lockito GPS running; a reinstall needs a reboot that drops it —
+>   rule zero). Update the 4a when Lockito isn't needed, then reboot to re-register the module.
+> - Not run: the live Dasher AppData round-trip (needs a fresh Dasher login; the capture/restore DESIGN is
+>   confirmed correct — see `docs/DECISIONS.md`).
+>
+> **Highest-value NEXT items (in `docs/IDEAS.md`, 2026-08-06 entry):** (1) local coherence check — exit-IP
+> timezone vs the profile's applied timezone + exit geo vs carrier/MCC (zero API cost, real vendor weight);
+> (2) add a discriminating reputation source where IPQS/AbuseIPDB saturate (ip-api.com → ipapi.is); (3)
+> in-app login export + pre-wipe archive to `/sdcard/Specter-exports/`; (4) the live Dasher round-trip.
+>
+> The detail below is the ORIGINAL brief, kept for context. It is DONE — read it only for specifics.
+
+---
+
 Created 2026-08-06 ~04:30 local (+0800). Branch **`feat/bulk-comparison-and-ipv6-coverage`**, PR **#83**.
 Everything below is committed and pushed; Vercel and both phones are on the current build.
 
