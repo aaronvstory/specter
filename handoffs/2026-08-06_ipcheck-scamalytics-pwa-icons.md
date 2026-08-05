@@ -38,23 +38,61 @@ build — deliberately. The user wants **one batched deploy at the end of a run*
 
 ### 1. Scamalytics — "beautifully integrated" (the user's priority)
 
-A **workflow measured the v3 API live and produced an implementation spec** — read it before writing code
-(run id `wf_33fff9a6-39a`; the journal is under
-`.claude/projects/F--claude-specter/<session>/subagents/workflows/`). Endpoint
-`https://api11.scamalytics.com/v3/<user>/?key=<key>&ip=<ip>`, docs
-<https://docs.scamalytics.com/ip-fraud-risk-api/v3/>.
+A workflow measured the v3 API live (~200 lookups) and wrote a full implementation spec. Run id
+`wf_33fff9a6-39a`; journal under `.claude/projects/F--claude-specter/<session>/subagents/workflows/`.
+Endpoint `https://api11.scamalytics.com/v3/<user>/?key=<key>&ip=<ip>` (US node; EU is `api12`, bound at
+signup). Docs <https://docs.scamalytics.com/ip-fraud-risk-api/v3/>. Account is **Premium**.
 
-- Credential is a **USER + KEY pair** — a first. `resolve_keys()`, the CLI flags, the local server's
-  config fallback, the Vercel function's env fallback and `/api/config` all currently assume one value per
-  source. Expect to touch all five.
-- Keys UI: two fields, stacked, beside IPQualityScore and AbuseIPDB, showing "shared active" when the
-  deploy already has them.
-- Bulk table: **one** new column. Detail view: the full field set.
-- **The question the measurement answers:** does its score DISCRIMINATE residential-proxy vs hosting the
-  way getIPIntel does, or SATURATE the way IPQS's `fraud_score` does? A second saturating score is noise —
-  if it saturates, show it but never let it move `verdict_factors()`.
-- Strip anything echoing the user id or key from the raw body AND from error messages, exactly as
-  `lookup_getipintel` and `lookup_ipqs` already do. Write the leak test.
+**THE HEADLINE, and it decides the design: the SCORE is noise, the FLAGS are the reason to add this.**
+
+- The score does not saturate like IPQS — it fails the opposite way, flattening everything low and
+  MIS-RANKING. Measured: Tor exit **15 "low"**, clean Comcast residential **18**, AWS **1**, Cloudflare
+  **0**, Google **0**, and the highest score in the whole set is Mullvad at **44**.
+- Why: `scamalytics_score` ≈ `scamalytics_isp_score` on every single IP. It is an ISP/ASN reputation
+  prior, not an IP-level abuse measure — constant at 13 across three Starlink IPs with different abuse
+  histories.
+- No threshold orders the set correctly: catching Mullvad (44) means passing a Tor exit (15) and flagging
+  clean Comcast (18). **Give it zero weight in `verdict_factors()`.** Show it labelled next to the ISP
+  score, warn-only colour at high / very high, never green.
+- The FLAGS are genuinely additive: `scamalytics_proxy.is_datacenter` + `ip2proxy.proxy_type` (DCH/TOR)
+  caught **all four** hosting IPs our own name heuristic missed. Specific, not trigger-happy — all three
+  Starlink exits and T-Mobile came back `proxy_type "0"`, `is_datacenter false`.
+- **This already paid for itself:** that finding exposed a live false-benign — `8.8.8.8` and `1.1.1.1`
+  read verdict CLEAN, "No datacenter signal". FIXED on this branch (commit "Fix a false all-clear"), both
+  now read DIRTY. The Scamalytics classifier would have caught it independently.
+- Recommendation to implement: union `is_datacenter` + `ip2proxy` DCH/VPN/PUB/WEB/SES into
+  `connection_class()` (which already drives dirty), and add TOR as its own dirty factor.
+
+**Bands** (documented + all four observed): `low` `medium` `high` `very high` — lowercase, with a SPACE.
+Thresholds 0-19 / 20-59 / 60-89 / 90-100. NOT the quartiles the website uses.
+
+**Traps, all measured — these will bite:**
+
+- **HTTP 200 does not mean success.** Always read `scamalytics.status`. A malformed IP and a missing
+  key/ip both return 200 with `status:"error"`.
+- **A rejected key returns HTTP 404 with an Apache HTML body**, not JSON. Never `json.loads` unguarded.
+  (The docs claim 401 + JSON. They are wrong.)
+- **On any error, `external_datasources` flips from an object to an empty ARRAY `[]`** — so
+  `.get("firehol", {})` raises. Check `status` FIRST; the guard order is load-bearing.
+- **Reserved/unroutable IPs are not errors**: `127.0.0.1`, `10.0.0.1`, `0.0.0.0` all return ok / score 0 /
+  `low`. A "0 low" can mean "not a real exit" and must never render as reassurance.
+- **Never render `ip2proxy_lite`** — measured empty on all 8 IPs; it would read as "checked and clean".
+- `ipsum.num_blacklists` is int `0` when clean but the STRING `"3"` when listed. `credits.*` change type
+  in test mode. On the Essential tier the Premium fields hold the literal
+  `"PREMIUM FIELD - upgrade to view"` — the existing `_premium()` helper already matches it, reuse it.
+- `scamalytics_raw` must be **FLAT**: `kv()`/`fmtv()` in `PAGE` render a nested object as
+  `[object Object]`. Add `LBL` entries or the card prints raw snake_case.
+- **No credential echo anywhere in the response** (substring-checked, both values). But the key rides in
+  the QUERY STRING, so never put the request URL — or an exception carrying it — into a note, a log, or a
+  `*_raw`. Strip `credits.*` from client output too: that is our quota state, not the visitor's business.
+- Cost ~2 credits/lookup, ~2500 lookups left of 5000. Surface `credits.remaining` so an exhausted balance
+  says so instead of silently degrading the verdict.
+
+**Plumbing — it is a USER + KEY pair, a first.** `resolve_keys()` returns a 3-tuple today (one caller,
+`main()`); make it a dict. `check()` gains `scam_user`/`scam_key` as trailing keyword params so existing
+positional calls are unaffected. The config key tuple appears TWICE in the local server (GET `/config`
+and POST). Also: the Vercel function's env fallback, `/api/config`'s booleans, the CLI flags, and two
+stacked fields in the keys UI.
 
 ### 2. Kill the apply-time "Identity won't match a saved login" dialog
 
@@ -136,11 +174,15 @@ Do not dump everything. Show what the use case needs: blocklists (hits/checked),
 proxy/VPN/Tor is DETECTED, abuse, getIPIntel, Scamalytics, exit type. Mirror the IPv6/dual-stack handling,
 the v6 zone table + honest denominator, and the "not checked ≠ clean" wording.
 
-### 6. Deploy ONCE, verify by comparison
+### 6. Deploy ONCE, verify by comparison — Pixel 4a ONLY
+
+**The Pixel 4 is IN ACTIVE USE by the user. Do not install to it, do not send input events, do not
+force-stop anything on it.** A blind `adb shell input tap` sequence already landed inside a live DoorDash
+onboarding flow on that device this session. Always check
+`adb -s <dev> shell "dumpsys window | grep mCurrentFocus"` before touching ANY phone.
 
 Live page md5 (EOL-normalised) vs `webapp/index.html`. For Android compare dex **marker strings**, NOT dex
-md5 — two builds of identical source differ on this toolchain. Phones:
-`adb connect 192.168.50.144:5556` (P4), `192.168.50.19:5557` (4a).
+md5 — two builds of identical source differ on this toolchain. Pixel 4a: `adb connect 192.168.50.19:5557`. The P4 (`192.168.50.144:5556`) is off-limits for now — the user will say when it is free.
 
 ### 7. Codex review
 
