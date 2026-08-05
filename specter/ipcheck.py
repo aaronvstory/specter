@@ -668,7 +668,12 @@ def lookup_ipqs(ip: str, key: str, opener) -> dict:
     if not o:
         return {"notes": ["IPQualityScore unreachable — check the network or proxy"]}
     if not o.get("success"):
-        return {"notes": ["IPQualityScore: " + (o.get("message") or "lookup rejected")]}
+        # Scrub the key out of the echoed message. IPQS takes the key in the URL PATH and its rejection
+        # messages can quote what was rejected — and on the hosted deploy this branch is reached by every
+        # visitor who brings no key of their own the moment the shared server-side key expires or runs out
+        # of quota. That would hand the operator's key to each of them, rendered into the page.
+        msg = str(o.get("message") or "lookup rejected")
+        return {"notes": ["IPQualityScore: " + (msg.replace(key, "<key>") if key else msg)]}
 
     out: dict = {"fraud_score": o.get("fraud_score"), "ipqs_strictness": IPQS_STRICTNESS}
     # The whole response, for the per-source detail card — this is what IPQS actually saw, and reading it is
@@ -1019,8 +1024,14 @@ details[open] summary::before{content:"− "}
 .track .mk{position:absolute;top:-4px;width:3px;height:17px;border-radius:2px;background:var(--mc);
   box-shadow:0 0 8px var(--mc);transform:translateX(-50%);transition:left .5s cubic-bezier(.2,.7,.2,1)}
 .scale{display:flex;justify-content:space-between;margin-top:6px;font:10px/1 var(--mono);color:var(--dim)}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
-.tile{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+/* Flex, not grid: a grid column count is fixed per row, so a 5th tile lands alone in column 1 with three
+   dead columns beside it. Flex lets the last row's tiles grow into the space instead of stranding one. */
+.tiles{display:flex;flex-wrap:wrap;gap:12px}
+/* Basis 120px so the realistic tile counts (4-5) all fit ONE row at the 760px page width and grow to fill
+   it; anything left over on a final row grows too, rather than sitting at a quarter width beside dead
+   space. min-width:0 is required — a flex item otherwise floors at its CONTENT width, which both widens
+   the tile with the longest caption and stops that caption's ellipsis from ever engaging. */
+.tile{flex:1 1 120px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
 .tile em{font-style:normal;display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
 .tile strong{display:block;font:700 27px/1 var(--mono);margin:9px 0 5px}
 /* One line, always. Tiles share a grid row, so a caption that wraps to three lines makes EVERY tile that
@@ -1059,7 +1070,6 @@ details.deep[open]>summary{border-bottom-left-radius:0;border-bottom-right-radiu
 img.flag{width:14px;height:10px;border-radius:1px;vertical-align:0;margin-right:6px;
   box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 15%,transparent)}
 svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
-.dimnote{color:var(--dim);font-size:11.5px}
 /* Blocklists GROUPED by what the answer means — the group label carries the meaning, so a colour never has
    to be decoded. A flat rainbow of 17 chips is unreadable. */
 .zgrp{padding:9px 0;border-bottom:1px solid var(--line)}
@@ -1216,19 +1226,25 @@ const ICON={
   bot:    SVG('<rect x=2.8 y=5.2 width=10.4 height=7.6 rx=2.2/><path d="M6.3 8.8h.01M9.7 8.8h.01M8 5.2V2.8"/>'),
   ban:    SVG('<circle cx=8 cy=8 r=5.4/><path d="M4.2 11.8 11.8 4.2"/>'),
 };
-// What kind of line an exit sits on, from the free-text IPQS connection_type or AbuseIPDB usageType. A real
-// consumer line passes where a hosting range draws friction, so this is worth reading at a glance rather
-// than parsing out of a sentence. Order matters: "Data Center/Web Hosting/Transit" must match before the
-// generic ISP rule.
+// What kind of line an exit sits on, from the free-text IPQS connection_type or AbuseIPDB usageType.
+//
+// The icon is for scanning; the COLOUR is deliberately one-directional. These are the vendor's own labels
+// and they are not reliable in the reassuring direction — measured on 185.220.101.45, a NordVPN-operated
+// Tor exit (`tor-exit-45.for-privacy.net`): AbuseIPDB calls it "Fixed Line ISP". Painting that green said
+// "consumer line" about an IP with 100% abuse confidence and seven proxy flags. So only the HOSTING match
+// is coloured, because a warning that turns out to be wrong is survivable and a false all-clear is not.
+// Whether an exit is really a datacenter is answered by connection_class + the verdict, from our own
+// name heuristic, not by trusting this field.
+// Order matters: "Data Center/Web Hosting/Transit" must match before the generic ISP rule.
 const USAGE=[
-  [/data ?cent|hosting|transit|colo/i,           ICON.server,'dirty',  'hosting range'],
-  [/mobile|cellular|wireless/i,                  ICON.signal,'clean',  'mobile carrier'],
-  [/fixed line|residential|cable|dsl|fiber|isp/i,ICON.home,  'clean',  'consumer line'],
-  [/university|college|school|library/i,          ICON.build, 'suspect','institutional'],
-  [/government|military/i,                        ICON.build, 'suspect','government'],
-  [/search engine|spider|crawler/i,               ICON.bot,   'dirty',  'crawler range'],
-  [/commercial|organization|business/i,           ICON.build, 'suspect','business line'],
-  [/reserved/i,                                   ICON.ban,   '',       'reserved range'],
+  [/data ?cent|hosting|transit|colo/i,           ICON.server,'dirty'],
+  [/mobile|cellular|wireless/i,                  ICON.signal,''],
+  [/fixed line|residential|cable|dsl|fiber|isp/i,ICON.home,  ''],
+  [/university|college|school|library/i,          ICON.build, ''],
+  [/government|military/i,                        ICON.build, ''],
+  [/search engine|spider|crawler/i,               ICON.bot,   'dirty'],
+  [/commercial|organization|business/i,           ICON.build, ''],
+  [/reserved/i,                                   ICON.ban,   ''],
 ];
 const usageOf=v=>USAGE.find(([re])=>re.test(String(v||'')))||null;
 
@@ -1341,7 +1357,7 @@ function render(r){
     // network this is reads at a glance instead of out of a phrase.
     if(v==='location'&&r.country_code){meta+=richRow(k,flagImg(r.country_code)+esc(r[v]));return;}
     const u=(v==='connection_type'||v==='usage_type')&&usageOf(r[v]);
-    if(u){meta+=richRow(k,u[1]+esc(r[v])+` <span class=dimnote>${esc(u[3])}</span>`,u[2]);return;}
+    if(u){meta+=richRow(k,u[1]+esc(r[v]),u[2]);return;}
     meta+=row(k,r[v]);});
   let hero=`<div class=panel><div class=iprow><span class=ip>${esc(r.ip||'unknown')}</span>`;
   if(r.ip)hero+=`<button class=copy data-ip="${esc(r.ip)}">Copy</button>`;

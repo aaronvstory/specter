@@ -2562,7 +2562,11 @@ public class MainActivity extends Activity {
             boolean dc = HealthCheck.isDatacenter(rep.organization, rep.isp != null ? rep.isp : geoIsp, rep.host);
             int n = rep.blacklists.size(), pol = rep.policyLists.size();
             java.util.List<View> tiles = new java.util.ArrayList<>();
-            tiles.add(repTile(dc ? "Hosting" : "Real line", "Exit type", dc ? Theme.RED : Theme.SAGE));
+            // Only shown when it says something. "Not obviously a datacenter" is all a name heuristic can
+            // claim, and rendering that as a green "Real line" reassures about exits it simply failed to
+            // recognise — measured on a NordVPN-operated Tor exit, which no name rule catches. Mirrors
+            // connection_class in ipcheck.py, which returns None rather than guessing "residential".
+            if (dc) tiles.add(repTile("Hosting", "Exit type", Theme.RED));
             tiles.add(repTile(rep.dnsblUsable || n > 0 ? String.valueOf(n) : "—", "Blacklists",
                     n >= 2 ? Theme.RED : n > 0 ? Theme.AMBER
                             : rep.dnsblUsable && rep.dnsblChecked > 0 ? Theme.SAGE : Theme.DIM));

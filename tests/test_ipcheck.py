@@ -831,3 +831,14 @@ def test_the_android_getipintel_wording_mirrors_the_python_one():
             f"Android is missing the getIPIntel band for {score}"
     assert "oflags=bc" in java, "Android must ask getIPIntel for the country too"
     assert "over quota from here — this IP wasn't checked" in java
+
+
+def test_ipqs_scrubs_the_key_out_of_a_rejection_message(monkeypatch):
+    # The hosted deploy falls back to a SHARED server-side key for any visitor who brings none. The moment
+    # that key expires or runs out of quota, every such visitor reaches this branch — so an IPQS rejection
+    # message that quotes the key would hand the operator's key to each of them, rendered into the page.
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener, headers=None: {
+        "success": False, "message": "Invalid or expired key SECRETKEY. Please check your account."})
+    out = ipcheck.lookup_ipqs("8.8.8.8", "SECRETKEY", None)
+    assert "SECRETKEY" not in json.dumps(out)
+    assert "Invalid or expired key" in out["notes"][0]     # ...while still saying what went wrong
