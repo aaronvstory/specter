@@ -76,19 +76,26 @@ def cmd_setup() -> None:
     from cryptography.hazmat.primitives.asymmetric import ec
     if KEY_PATH.exists():
         priv = _load_private()
-        print(f"operator key already exists at {KEY_PATH} (reusing it)")
-    else:
-        priv = ec.generate_private_key(ec.SECP256R1())
-        KEY_PATH.write_bytes(priv.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        ))
-        try:
+        try:                                    # repair perms on reuse — never leave the key group/world-readable
             os.chmod(KEY_PATH, 0o600)
         except OSError:
             pass
-        print(f"wrote new operator private key -> {KEY_PATH}  (chmod 600, keep it secret)")
+        print(f"operator key already exists at {KEY_PATH} (reusing it)")
+    else:
+        priv = ec.generate_private_key(ec.SECP256R1())
+        pem = priv.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        # Create owner-only FROM THE START (O_EXCL + 0o600), so the signing key is never briefly exposed by
+        # the umask before a follow-up chmod — the whole security model rests on this key staying secret.
+        fd = os.open(str(KEY_PATH), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, pem)
+        finally:
+            os.close(fd)
+        print(f"wrote new operator private key -> {KEY_PATH}  (created 0600, keep it secret)")
     pub = _public_key_b64(priv)
     print("\nPaste this into ActivationVerifier.PUBLIC_KEY_B64:\n")
     print(f'    public static final String PUBLIC_KEY_B64 =\n            "{pub}";\n')

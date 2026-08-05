@@ -2065,10 +2065,11 @@ public class MainActivity extends Activity {
         // drilling in — "Active · 6 days left" / "Expired" / "Not activated".
         content.addView(sectionLabel("Account"));
         LinearLayout actCard = card();
-        ActivationStore.Status ast = new ActivationStore(this).status();
+        ActivationStore actStore = new ActivationStore(this);
+        ActivationStore.Status ast = actStore.status();
         String actSub;
         switch (ast.state) {
-            case ACTIVE:  actSub = "Active · " + ActivationStore.remaining(ast.until); break;
+            case ACTIVE:  actSub = "Active · " + actStore.remaining(ast.until); break;
             case EXPIRED: actSub = "Expired — enter a new key"; break;
             default:      actSub = "Not activated — enter a key"; break;
         }
@@ -2222,7 +2223,7 @@ public class MainActivity extends Activity {
             statusCard.addView(statusPill("Active", Theme.SAGE));
             TextView until = value("Activated until " + fmt.format(new java.util.Date(st.until * 1000L)));
             statusCard.addView(until);
-            TextView left = label(ActivationStore.remaining(st.until) + "  ·  " + st.tier + " key");
+            TextView left = label(store.remaining(st.until) + "  ·  " + st.tier + " key");
             left.setTextColor(Theme.SOFT); left.setPadding(0, dp(2), 0, 0);
             statusCard.addView(left);
         } else if (st.state == ActivationStore.State.EXPIRED) {
@@ -2280,7 +2281,7 @@ public class MainActivity extends Activity {
             String code = in.getText().toString();
             if (code.trim().isEmpty()) { toast("Paste a key first"); return; }
             com.specter.module.gen.ActivationVerifier.Result r = store.activate(code);
-            if (r.valid) toast("Activated · " + ActivationStore.remaining(r.until));
+            if (r.valid) toast("Activated · " + store.remaining(r.until));
             else toast("Not activated: " + r.reason);
             render();   // reflect the new status
         }));

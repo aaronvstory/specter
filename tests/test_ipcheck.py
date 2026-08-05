@@ -1307,6 +1307,27 @@ def test_latency_reports_what_the_proxy_ADDS_not_the_raw_round_trip(monkeypatch)
     assert rep["proxy_added_ms"] >= 0, "a faster-than-baseline proxy must clamp to 0, never go negative"
 
 
+def test_direct_baseline_is_measured_once_per_run_not_per_row(monkeypatch):
+    """The baseline is this MACHINE's latency to the endpoint — constant across a bulk run. Re-measuring it
+    per row doubled the request rate to one shared free endpoint, so a throttled reply rendered a live proxy
+    as DEAD. It must be measured once and cached (the autouse fixture clears the cache before this test)."""
+    direct_calls = []
+
+    def fake_geo(opener, ip=None):
+        if opener != "PROXIED":
+            direct_calls.append(opener)     # only the DIRECT baseline lookups, not the proxied primary ones
+        return {"ip": "1.2.3.4", "isp": "X"}
+
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": "PROXIED")
+    monkeypatch.setattr(ipcheck, "lookup_geo", fake_geo)
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    for host in ("a:1", "b:2", "c:3"):      # a 3-row "bulk run"
+        ipcheck.check(host)
+    assert len(direct_calls) == 1, f"the baseline must be measured once for the run, got {len(direct_calls)}"
+
+
 def test_no_baseline_request_is_made_when_there_is_no_proxy(monkeypatch):
     # The extra round trip exists only to interpret a PROXY's cost. Spending it on a direct check would
     # double every keyless lookup for nothing.

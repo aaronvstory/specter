@@ -75,9 +75,15 @@ public final class ActivationStore {
 
     public boolean isActive() { return status().state == State.ACTIVE; }
 
+    /** "3 days 4 hours left" — compared against the ROLLBACK-CLAMPED now (same value {@link #status} gates
+     *  expiry on), so a wound-back clock can't make the UI show more validity than the key actually has. */
+    public String remaining(long until) {
+        return remaining(until, effectiveNow());
+    }
+
     /** "3 days 4 hours left" / "5 hours left" / "12 minutes left" — one short line, never a paragraph. */
-    public static String remaining(long until) {
-        long secs = until - System.currentTimeMillis() / 1000L;
+    static String remaining(long until, long now) {
+        long secs = until - now;
         if (secs <= 0) return "expired";
         long days = secs / 86400, hours = (secs % 86400) / 3600, mins = (secs % 3600) / 60;
         if (days > 0) return days + (days == 1 ? " day " : " days ") + hours + (hours == 1 ? " hour left" : " hours left");

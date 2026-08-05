@@ -1118,6 +1118,30 @@ def dnsbl_check(ip: str) -> dict:
             "dnsbl_detail": [{"name": n, "zone": z, "status": detail[n]} for n, z in zones]}
 
 
+# The direct-path baseline (this machine's own latency to the geo endpoint) is MACHINE-CONSTANT — it does
+# not vary per row — so a bulk run must not re-measure it N times. That doubled the request rate to one
+# shared free endpoint and a throttled reply (empty geo) dropped a row's baseline or failed another row's
+# primary lookup, rendering a live proxy as DEAD. Measure it once and reuse for a short TTL. The race under
+# the server's concurrent workers is benign: the worst case is a few extra measurements during warm-up.
+_DIRECT_BASELINE = {"ms": None, "at": 0.0}
+_DIRECT_BASELINE_TTL = 60.0
+
+
+def _direct_baseline_ms(ip: str | None) -> int | None:
+    """Milliseconds for a DIRECT (no-proxy) geo lookup from here, cached ~60s. None if the endpoint didn't
+    answer (so proxy_added_ms is simply omitted rather than attributing the whole round trip to the proxy)."""
+    now = time.monotonic()
+    cached = _DIRECT_BASELINE
+    if cached["ms"] is not None and now - cached["at"] < _DIRECT_BASELINE_TTL:
+        return cached["ms"]
+    started = time.monotonic()
+    if not lookup_geo(urllib.request.build_opener(), ip):
+        return None
+    ms = int((time.monotonic() - started) * 1000)
+    _DIRECT_BASELINE["ms"], _DIRECT_BASELINE["at"] = ms, now
+    return ms
+
+
 def check(proxy: str | None = None, ip: str | None = None,
           ipqs_key: str = "", abuse_key: str = "", proxy_scheme: str = "http",
           getipintel_contact: str = "", scam_user: str = "", scam_key: str = "") -> dict:
@@ -1180,11 +1204,10 @@ def check(proxy: str | None = None, ip: str | None = None,
             # separates the two. `proxy_added_ms` is the honest figure — "what this proxy costs on top of
             # this machine's own path" — and it is comparable between a laptop in Asia and a Lambda in
             # Virginia, which the raw round trip is not. One extra request, only when a proxy is in play.
-            started = time.monotonic()
-            base = lookup_geo(urllib.request.build_opener(), ip)
-            if base:
-                rep["direct_ms"] = int((time.monotonic() - started) * 1000)
-                rep["proxy_added_ms"] = max(0, latency_ms - rep["direct_ms"])
+            base_ms = _direct_baseline_ms(ip)   # cached, machine-constant — not re-measured per bulk row
+            if base_ms is not None:
+                rep["direct_ms"] = base_ms
+                rep["proxy_added_ms"] = max(0, latency_ms - base_ms)
         elif retried_scheme is None:
             rep["notes"].append("Proxy: no answer as " + proxy_scheme.upper()
                                 + ", and the other transport did not answer either — it is down, "
