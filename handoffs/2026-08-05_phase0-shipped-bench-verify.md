@@ -31,6 +31,7 @@ should be turnkey; no stale-`.class` surprise.
 | **#57** (auto-save trace) | With "Auto-save report when monitoring stops" on, Stop a monitor → a `specter-coverage-*.txt` lands in `Download/Specter` **without** tapping Export. Toggle off → only the manual Export writes it. |
 | **#58** (unified restore) | Per-app "Restore AppData" with **one** saved login → restores it directly (re-applies its fingerprint). With **several** → a "Restore which … login?" picker. With **none** vaulted → falls back to the last staged capture. |
 | **#60** (auto-check reputation) | Open the Status/Network card with the tunnel up → the exit-IP reputation runs **automatically** (no "Check" tap). Re-opening for the same IP shows the cached result (no second IPQS call). A rotated IP auto-checks afresh. Off-tunnel → still gated, never checks the home IP. |
+| **#64** (armtrace disarm cleans legacy cruft) | Low priority — self-heals. Monitor a target that carries the legacy unquoted `{trace:1,` (the 4a Dasher profile did), then Stop → its `/data/local/tmp/specter/<pkg>.json` should be valid JSON again (`python -c 'import json; json.load(...)'`). Spoofing was never affected either way; this just tidies the file. |
 
 ## Not shipped (deliberately) — the remaining user steers
 - **Off-tunnel reputation scoring + geo/VPN (steer #15) and click-to-fix timezone with no tunnel (#16)**
