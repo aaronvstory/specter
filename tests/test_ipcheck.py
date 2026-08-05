@@ -931,3 +931,38 @@ def test_android_uses_a_resolver_that_does_not_lose_or_fake_blocklist_answers():
     assert 'DOH_FALLBACK = "https://cloudflare-dns.com' in java
     # ...and it must be the one that degrades safely, never the one that manufactures a clean result.
     assert "google" not in java[java.index("DOH_FALLBACK"):java.index("DOH_FALLBACK") + 200].lower()
+
+
+# ---- secrets ---------------------------------------------------------------------------------
+
+
+def test_no_api_credential_is_ever_committed():
+    """No live credential may sit in a tracked file. The repository is PUBLIC, so a committed key is
+    published the moment it is pushed and rotating it is the only remedy.
+
+    This checks the ACTUAL secrets held in ~/.specter-ipcheck.json rather than guessing at key shapes —
+    a shape scan flags uv.lock's package hashes and every UUID in the docs, which trains people to ignore
+    it. Keys belong in that file (outside the repo) or in the deploy's env vars, never in the tree."""
+    import subprocess
+    root = Path(__file__).resolve().parents[1]
+    cfg = Path.home() / ".specter-ipcheck.json"
+    if not cfg.exists():
+        return                                  # no local keys to leak (CI); nothing to assert
+    secrets = {str(v) for k, v in json.loads(cfg.read_text("utf-8")).items()
+               if isinstance(v, str) and len(v) >= 12 and ("key" in k or "user" in k)}
+    if not secrets:
+        return
+    tracked = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True).stdout.split()
+    bad = []
+    for rel in tracked:
+        if rel == "tests/test_ipcheck.py":
+            continue
+        try:
+            text = (root / rel).read_text("utf-8", errors="ignore")
+        except (OSError, IsADirectoryError):
+            continue
+        for sec in secrets:
+            if sec in text:
+                bad.append(f"{rel} contains a live credential ({sec[:8]}…)")
+    joined = chr(10).join("  " + b for b in bad)
+    assert not bad, "SECRET COMMITTED — rotate it, then remove it from history:" + chr(10) + joined

@@ -1128,3 +1128,19 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
     tree from the most significant end).
   - Verified working: 8/12 live IPv6 Tor exits came back listed. And a dual-stack proxy now falls back to
     an IPv4 exit lookup, so the richer 17-zone table is used when one is available.
+
+- **2026-08-06 — Scamalytics v3 added as a reputation source.** Credentials are a USER + KEY pair, which is
+  a first — every existing source takes a single value, so `resolve_keys`, the CLI flags, the local
+  server's config fallback, the Vercel env fallback and `/api/config` all assume one value per source.
+  Stored in `~/.specter-ipcheck.json` and as `SCAMALYTICS_USER` / `SCAMALYTICS_KEY` on Vercel. Status:
+  building. The open question the measurement has to answer is whether its score DISCRIMINATES the way
+  getIPIntel does or SATURATES the way IPQS's fraud_score does — a second saturating score is noise, and
+  in that case it gets shown but never allowed to decide the verdict.
+- **2026-08-06 — checker.net (docs.checker.net): PARKED, not built.** Another IP-reputation API. The key is
+  held locally in case it is revisited, but on inspection it does not look like it adds anything the five
+  existing sources do not already cover. Status: rejected-for-now; revisit only if a measurement shows it
+  separating residential proxies from hosting better than getIPIntel.
+- **2026-08-06 — the repo is temporarily PUBLIC** so the review bots (Sourcery/CodeRabbit) can run on PR
+  #83. That makes any committed credential instantly published, so `test_no_api_credential_is_ever_committed`
+  now scans every tracked file for the live values held in `~/.specter-ipcheck.json`. Set the repo back to
+  private once the bots have been evaluated.
