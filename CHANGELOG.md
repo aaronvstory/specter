@@ -19,6 +19,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   so one paste can mix both. Fixes bare IPs coming back DEAD.
 - **Web: a settings cogwheel, top-right.** The API keys moved out of an inline section into a cogwheel that
   opens a native dialog (ESC / backdrop / â to close). Keys still store in the browser only.
+- **Obfuscated release build (R8).** The release variant now shrinks + obfuscates (minify + resource
+  shrink + proguard-rules.pro), so a decompile reads as a.a(b). The Xposed entry point (HookEntry) and the
+  BuildConfig/version markers are kept; dev API keys are seeded ONLY into the debug build, never release.
 
 ## [0.27.0] - 2026-08-06
 
