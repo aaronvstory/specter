@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "api/check.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb",
+        "includeFiles": "api/ipcheck_core.py"
+      }
+    },
+    {
+      "src": "api/config.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/check",
+      "methods": [
+        "POST",
+        "OPTIONS"
+      ],
+      "dest": "/api/check.py"
+    },
+    {
+      "src": "/api/config",
+      "dest": "/api/config.py"
+    },
+    {
+      "src": "/",
+      "dest": "/index.html"
+    }
+  ]
+}

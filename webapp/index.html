@@ -1,0 +1,570 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Specter · exit-IP signal desk</title>
+<style>
+/* "Signal desk": a monospace network instrument. One accent, semantic bands, works light + dark. */
+:root{
+  --bg:#0b0c0f; --grid:#12141a; --panel:#131519; --panel2:#181b21; --line:#242832;
+  --ink:#e9ebef; --soft:#a3a8b2; --dim:#666c78;
+  --accent:#57e3bf; --accent-ink:#04110d;
+  --clean:#5fd39a; --suspect:#f2c04b; --dirty:#f07070; --info:#63b8ea;
+  --glow:0 0 0 1px rgba(87,227,191,.14), 0 8px 30px -12px rgba(0,0,0,.7);
+  --mono:"Cascadia Code","JetBrains Mono","SFMono-Regular",ui-monospace,"Menlo",Consolas,monospace;
+  --sans:-apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;
+}
+:root[data-theme=light]{
+  --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
+  --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
+  --accent:#0e9c81; --accent-ink:#ffffff;
+  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
+}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]){
+  --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
+  --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
+  --accent:#0e9c81; --accent-ink:#ffffff;
+  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
+}}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
+  background:
+    linear-gradient(var(--grid) 1px,transparent 1px) 0 0/100% 46px,
+    radial-gradient(1200px 500px at 78% -8%, color-mix(in srgb,var(--accent) 8%,transparent), transparent 70%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased;}
+.wrap{max-width:760px;margin:0 auto;padding:30px 20px 72px}
+.top{display:flex;align-items:center;justify-content:space-between;margin:0 0 20px}
+.brand{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--soft)}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.theme{background:none;border:1px solid var(--line);color:var(--soft);border-radius:8px;width:34px;height:30px;cursor:pointer;font-size:14px;padding:0}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.field label{display:block;font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
+.kst{font:600 9px/1 var(--mono);letter-spacing:.04em;text-transform:none;color:var(--clean)}
+input,select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  color:var(--ink);padding:11px 12px;font:14px/1.2 var(--mono)}
+input::placeholder{color:var(--dim)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.grid{display:grid;grid-template-columns:1fr 210px;gap:12px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.proxyrow{display:flex;gap:8px}.proxyrow select{width:108px;flex:none;cursor:pointer}
+details{margin-top:13px}summary{cursor:pointer;color:var(--soft);font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;list-style:none}
+summary::-webkit-details-marker{display:none}summary::before{content:"+ ";color:var(--accent)}
+details[open] summary::before{content:"− "}
+.go{width:100%;margin-top:16px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:9px;
+  padding:14px;font:600 13px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:transform .08s,filter .15s}
+.go:hover{filter:brightness(1.06)}.go:active{transform:translateY(1px)}
+.go:disabled{background:var(--panel2);color:var(--dim);cursor:default;filter:none}
+#out{margin-top:16px;display:flex;flex-direction:column;gap:13px}
+.blk{animation:rise .42s cubic-bezier(.2,.7,.2,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.verdict{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px 18px 17px 22px;box-shadow:var(--glow)}
+.verdict::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--vc,var(--dim))}
+.verdict .v{display:flex;align-items:baseline;gap:11px}
+.verdict b{font:700 20px/1 var(--mono);letter-spacing:.06em;color:var(--vc,var(--ink))}
+.verdict .dot{width:9px;height:9px;border-radius:50%;background:var(--vc);align-self:center}
+.verdict span{display:block;color:var(--soft);font-size:13px;margin-top:6px}
+.v-dirty{--vc:var(--dirty)}.v-suspect{--vc:var(--suspect)}.v-clean{--vc:var(--clean)}.v-unknown{--vc:var(--dim)}
+.iprow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ip{font:600 30px/1.1 var(--mono);letter-spacing:-.02em;word-break:break-all}
+.copy{background:var(--panel2);border:1px solid var(--line);color:var(--soft);border-radius:7px;padding:6px 10px;
+  font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:.15s}
+.copy:hover{border-color:var(--accent);color:var(--accent)}
+/* Copy confirmation is a colour flash, never a label swap — a wider "Copied ✓" resizes the button. */
+.copy.done,.cc.done{border-color:var(--clean);color:var(--clean);
+  background:color-mix(in srgb,var(--clean) 18%,transparent)}
+.sub{color:var(--soft);font:13px/1.5 var(--mono);margin-top:8px}
+.meter{margin-top:16px}
+.meter .head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px}
+.meter .score{font:700 34px/1 var(--mono);color:var(--mc)}
+.meter .cap{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:right}
+.track{position:relative;height:9px;border-radius:6px;background:
+  linear-gradient(90deg,color-mix(in srgb,var(--clean) 30%,transparent) 0 60%,
+  color-mix(in srgb,var(--suspect) 32%,transparent) 60% 85%,
+  color-mix(in srgb,var(--dirty) 34%,transparent) 85% 100%)}
+.track .mk{position:absolute;top:-4px;width:3px;height:17px;border-radius:2px;background:var(--mc);
+  box-shadow:0 0 8px var(--mc);transform:translateX(-50%);transition:left .5s cubic-bezier(.2,.7,.2,1)}
+.scale{display:flex;justify-content:space-between;margin-top:6px;font:10px/1 var(--mono);color:var(--dim)}
+/* Flex, not grid: a grid column count is fixed per row, so a 5th tile lands alone in column 1 with three
+   dead columns beside it. Flex lets the last row's tiles grow into the space instead of stranding one. */
+.tiles{display:flex;flex-wrap:wrap;gap:12px}
+/* Basis 120px so the realistic tile counts (4-5) all fit ONE row at the 760px page width and grow to fill
+   it; anything left over on a final row grows too, rather than sitting at a quarter width beside dead
+   space. min-width:0 is required — a flex item otherwise floors at its CONTENT width, which both widens
+   the tile with the longest caption and stops that caption's ellipsis from ever engaging. */
+.tile{flex:1 1 120px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+.tile em{font-style:normal;display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.tile strong{display:block;font:700 27px/1 var(--mono);margin:9px 0 5px}
+/* One line, always. Tiles share a grid row, so a caption that wraps to three lines makes EVERY tile that
+   tall — the caption is clipped instead, and the full text lives in the detail breakdown below. */
+.tile small{display:block;color:var(--soft);font-size:12px;line-height:1.4;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{font:600 11px/1 var(--mono);letter-spacing:.04em;padding:6px 11px;border-radius:7px;
+  background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect);border:1px solid color-mix(in srgb,var(--suspect) 30%,transparent)}
+.chip.ok{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean);border-color:color-mix(in srgb,var(--clean) 28%,transparent)}
+.lbl{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:11px}
+/* Flags read as an unfinished box when a label sits above three small chips in a full-width panel.
+   Inline the label instead, so the row fills its width by construction. */
+.flagbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.flagbar .lbl{margin:0;flex:none}
+.vfx{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.vfx span{font:600 10px/1 var(--mono);letter-spacing:.04em;padding:5px 9px;border-radius:6px;
+  background:color-mix(in srgb,var(--vc) 14%,transparent);color:var(--vc);
+  border:1px solid color-mix(in srgb,var(--vc) 28%,transparent)}
+/* Detail breakdown: collapsed by default — every field every source returned, for when a verdict needs auditing. */
+details.deep{margin-top:0}
+details.deep>summary{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 16px}
+details.deep[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0}
+.src{background:var(--panel);border:1px solid var(--line);border-top:0;padding:14px 16px}
+.src:last-child{border-radius:0 0 11px 11px}
+.src h4{margin:0 0 11px;display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  font:600 11px/1.3 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.src h4 em{font-style:normal;font-weight:400;letter-spacing:.02em;text-transform:none;color:var(--soft);text-align:right}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:0 22px}
+/* ONE LINE per field, no exceptions. A value that wraps mid-word ragged-ends its neighbours and the whole
+   grid stops lining up; the full text is on the element's title and survives a copy. */
+.kv>div{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:7px 0;
+  border-bottom:1px solid var(--line);font:12px/1.5 var(--mono);white-space:nowrap;overflow:hidden}
+.kv i{font-style:normal;color:var(--dim);flex:none}
+.kv b{font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}
+img.flag{width:14px;height:10px;border-radius:1px;vertical-align:0;margin-right:6px;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 15%,transparent)}
+svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
+/* Blocklists GROUPED by what the answer means — the group label carries the meaning, so a colour never has
+   to be decoded. A flat rainbow of 17 chips is unreadable. */
+.zgrp{padding:9px 0;border-bottom:1px solid var(--line)}
+.zgrp:last-child{border-bottom:0}
+.zgrp em{font-style:normal;display:block;margin-bottom:7px;font:600 10px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.zgrp em span{letter-spacing:.02em;text-transform:none;font-weight:400;color:var(--dim)}
+.zones{display:flex;flex-wrap:wrap;gap:6px}
+.z{font:600 10px/1 var(--mono);padding:6px 9px;border-radius:6px;border:1px solid var(--line);color:var(--soft)}
+.g-listed em{color:var(--dirty)} .g-listed .z{background:color-mix(in srgb,var(--dirty) 15%,transparent);color:var(--dirty);border-color:color-mix(in srgb,var(--dirty) 30%,transparent)}
+.g-policy em{color:var(--info)} .g-policy .z{background:color-mix(in srgb,var(--info) 14%,transparent);color:var(--info);border-color:color-mix(in srgb,var(--info) 28%,transparent)}
+.g-clean em{color:var(--clean)} .g-clean .z{color:var(--clean);border-color:color-mix(in srgb,var(--clean) 26%,transparent)}
+.g-none em{color:var(--dim)} .g-none .z{opacity:.6}
+/* Form hints reuse the label→meaning row: scannable in one pass, never a paragraph to decipher. */
+.hint{margin-top:12px}
+.hint .rw{padding:7px 0;font-size:12.5px}
+.hint .rw i{width:84px}
+.hint .rw div{color:var(--soft)}
+.rows{display:flex;flex-direction:column}
+.rw{display:flex;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+.rw:first-child{border-top:0}
+.rw i{font-style:normal;color:var(--dim);width:118px;flex:none;font:600 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
+.rw div{font-family:var(--mono);word-break:break-all}
+.note{color:var(--soft);font-size:12.5px;padding:4px 0}.note+.note{border-top:1px solid var(--line);margin-top:2px;padding-top:8px}
+textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
+  padding:11px 12px;font:13px/1.5 var(--mono);resize:vertical;margin-top:12px}
+textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.tablewrap{overflow-x:auto}
+table.bulk{width:100%;border-collapse:collapse;font:12.5px/1.4 var(--mono)}
+table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bulk td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.bulk tr:last-child td{border-bottom:0}
+table.bulk tbody tr:hover td{background:var(--panel2)}
+.vpill{display:inline-block;padding:3px 9px;border-radius:6px;font:600 10px/1.5 var(--mono);letter-spacing:.04em}
+.v-dirty-p{background:color-mix(in srgb,var(--dirty) 16%,transparent);color:var(--dirty)}
+.v-suspect-p{background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect)}
+.v-clean-p{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean)}
+.v-unknown-p{background:color-mix(in srgb,var(--dim) 16%,transparent);color:var(--soft)}
+.cc{cursor:pointer;color:var(--soft);border:1px solid var(--line);border-radius:6px;padding:4px 8px;
+  font:600 9px/1 var(--mono);background:none;letter-spacing:.06em;text-transform:uppercase}
+.cc:hover{border-color:var(--accent);color:var(--accent)} .cc.done{border-color:var(--clean);color:var(--clean)}
+.pxcell{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft)}
+.loading{color:var(--soft);font:13px/1 var(--mono);letter-spacing:.06em}
+.loading::after{content:"";animation:dots 1.4s steps(4,end) infinite}
+@keyframes dots{0%{content:""}25%{content:"·"}50%{content:"··"}75%{content:"···"}}
+</style>
+<div class=wrap>
+  <div class=top>
+    <div class=brand><span class=pulse></span>Specter · exit-IP signal desk</div>
+    <button class=theme id=theme title="Toggle theme">◐</button>
+  </div>
+  <div class=panel>
+    <!-- Stacked, not side by side: these are two ALTERNATIVES, and a proxy overrides the IP field rather
+         than complementing it. Reading top-to-bottom says that; a two-column row implies they combine. -->
+    <div class=field><label for=ip>Check an IP</label><input id=ip placeholder="prefilled with your own"></div>
+    <div class=field style="margin-top:14px"><label for=proxy>Or through a proxy — checks its exit IP instead</label>
+      <div class=proxyrow>
+        <select id=ptype><option value=http>HTTP</option><option value=socks5>SOCKS5</option><option value=socks4>SOCKS4</option></select>
+        <input id=proxy placeholder="host:port:user:pass">
+      </div></div>
+    <details><summary>Accepted proxy formats</summary>
+      <div class="rows hint">
+        <div class=rw><i>No auth</i><div>host:port</div></div>
+        <div class=rw><i>With auth</i><div>host:port:user:pass</div></div>
+        <div class=rw><i>Or</i><div>user:pass@host:port</div></div>
+        <div class=rw><i>With scheme</i><div>socks5://user:pass@host:port — wins over the selector</div></div>
+      </div>
+    </details>
+    <!-- The button acts on the two fields directly above it, so nothing goes between them. Bulk is its own
+         self-contained mode with its own input and its own button; keys are set-once config, so they go last. -->
+    <button class=go id=go>Run check</button>
+    <details><summary>Bulk — compare many proxies</summary>
+      <textarea id=bulk rows=5 placeholder="one proxy per line"></textarea>
+      <button class=go id=bulkgo style="margin-top:10px">Check all</button>
+      <div class="rows hint">
+        <div class=rw><i>Input</i><div>one proxy per line, any format above</div></div>
+        <div class=rw><i>Transport</i><div>the selector above</div></div>
+      </div>
+    </details>
+    <details><summary>API keys — optional, it works without them</summary>
+      <div class=field style="margin-top:12px"><label for=ipqs>IPQualityScore <span id=ipqs-st class=kst></span></label><input id=ipqs type=password placeholder="your key · optional"></div>
+      <div class=field style="margin-top:11px"><label for=abuse>AbuseIPDB <span id=abuse-st class=kst></span></label><input id=abuse type=password placeholder="your key · optional"></div>
+      <div class="rows hint">
+        <div class=rw><i>No keys</i><div>datacenter · 17 blocklists · getIPIntel still run</div></div>
+        <div class=rw><i>Blank field</i><div>use the server's key, if it has one</div></div>
+        <div class=rw><i>Your key</i><div>overrides it</div></div>
+        <div class=rw><i>Stored</i><div>your browser only (localStorage)</div></div>
+      </div>
+    </details>
+  </div>
+  <div id=out></div>
+</div>
+<script>
+const $=s=>document.querySelector(s), out=$('#out');
+const q=new URLSearchParams(location.search);
+
+// Theme: follow the OS, remember an explicit toggle.
+const root=document.documentElement;
+try{const sv=localStorage.getItem('specter-theme'); if(sv)root.dataset.theme=sv;}catch(e){}
+$('#theme').onclick=()=>{
+  const dark=root.dataset.theme?root.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+  root.dataset.theme=dark?'light':'dark';
+  try{localStorage.setItem('specter-theme',root.dataset.theme);}catch(e){}
+};
+
+(function(){const ls=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};
+  $('#proxy').value=q.get('proxy')||'';
+  $('#ptype').value=q.get('ptype')||'http';
+  $('#ipqs').value=ls('ipqs_key'); $('#abuse').value=ls('abuse_key');
+  $('#ip').value=q.get('ip')||'';
+  markKeys({});
+  // Which sources the DEPLOY already has a key for (booleans only, never the values), so a blank
+  // field reads 'shared active' instead of looking unconfigured.
+  fetch('/api/config').then(r=>r.json()).then(markKeys).catch(()=>{});
+  boot();
+})();
+// Key status: "your key" when the field has a value, else "shared active" when the server (env) has one.
+// _kst is initialised INSIDE markKeys, not above it: the config block runs before this line, and the
+// Vercel build rewrites that block into a synchronous IIFE — a bare `window._kst={}` here would leave the
+// first call assigning onto undefined.
+function markKeys(st){const s=window._kst=Object.assign(window._kst||{},st||{});
+  [['ipqs',s.ipqs],['abuse',s.abuse]].forEach(([id,on])=>{const e=$('#'+id+'-st'); if(!e)return;
+    e.textContent=$('#'+id).value?'· your key':(on?'· shared active':'');});}
+['ipqs','abuse'].forEach(id=>$('#'+id).addEventListener('input',()=>markKeys()));
+// On open: PREFILL "check directly" with the visitor's OWN public IP (client-side; ipwho.is is CORS-open),
+// so checking your own IP is one click. Prefill only — the check never runs by itself; opening the page
+// must not spend an API quota or a getIPIntel rate-limit slot the visitor didn't ask for.
+// Two sources: ipwho.is answers HTTP 200 with {success:false} when it rate-limits a caller, so a single
+// endpoint leaves the field blank exactly when the tool is being used a lot. ipify is the keyless fallback.
+async function boot(){
+  if($('#ip').value || $('#proxy').value)return;
+  for(const [url,pick] of [['https://ipwho.is/',o=>o&&o.success!==false&&o.ip],
+                           ['https://api.ipify.org?format=json',o=>o&&o.ip]]){
+    try{const ip=pick(await (await fetch(url)).json()); if(ip){$('#ip').value=ip; return;}}catch(e){}
+  }
+}
+const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
+const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
+// Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score
+// means getIPIntel saw no proxy evidence, which does not prove a real ISP line.
+const giiBand=g=>g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':g>=0.50?'mixed signals':'no proxy signal';
+function row(k,v){return `<div class=rw><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
+// A row whose value carries pre-built markup (a flag image, an icon) and an optional colour.
+function richRow(k,html,colour){
+  return `<div class=rw><i>${esc(k)}</i><div${colour?` style="color:var(--${colour})"`:''}>${html}</div></div>`}
+
+// Line-type icons. Drawn inline in currentColor, NOT emoji: emoji render differently on every platform,
+// carry their own colour, and look out of place next to monospace readouts.
+const SVG=p=>`<svg class=ico viewBox="0 0 16 16" fill=none stroke=currentColor stroke-width=1.3 `+
+  `stroke-linecap=round stroke-linejoin=round aria-hidden=true>${p}</svg>`;
+const ICON={
+  server: SVG('<rect x=2.2 y=2.6 width=11.6 height=4.2 rx=1.2/><rect x=2.2 y=9.2 width=11.6 height=4.2 rx=1.2/>'+
+              '<path d="M4.8 4.7h.01M4.8 11.3h.01"/>'),
+  signal: SVG('<path d="M3 13.4v-3M6.3 13.4V8.2M9.6 13.4V5.6M12.9 13.4V3"/>'),
+  home:   SVG('<path d="M2.4 7.4 8 2.7l5.6 4.7"/><path d="M3.9 6.9v6.4h8.2V6.9"/>'),
+  build:  SVG('<rect x=3.2 y=2.6 width=9.6 height=10.8 rx=1.1/><path d="M5.9 5.6h1M9.1 5.6h1M5.9 8h1M9.1 8h1M5.9 10.4h1M9.1 10.4h1"/>'),
+  bot:    SVG('<rect x=2.8 y=5.2 width=10.4 height=7.6 rx=2.2/><path d="M6.3 8.8h.01M9.7 8.8h.01M8 5.2V2.8"/>'),
+  ban:    SVG('<circle cx=8 cy=8 r=5.4/><path d="M4.2 11.8 11.8 4.2"/>'),
+};
+// What kind of line an exit sits on, from the free-text IPQS connection_type or AbuseIPDB usageType.
+//
+// The icon is for scanning; the COLOUR is deliberately one-directional. These are the vendor's own labels
+// and they are not reliable in the reassuring direction — measured on 185.220.101.45, a NordVPN-operated
+// Tor exit (`tor-exit-45.for-privacy.net`): AbuseIPDB calls it "Fixed Line ISP". Painting that green said
+// "consumer line" about an IP with 100% abuse confidence and seven proxy flags. So only the HOSTING match
+// is coloured, because a warning that turns out to be wrong is survivable and a false all-clear is not.
+// Whether an exit is really a datacenter is answered by connection_class + the verdict, from our own
+// name heuristic, not by trusting this field.
+// Order matters: "Data Center/Web Hosting/Transit" must match before the generic ISP rule.
+const USAGE=[
+  [/data ?cent|hosting|transit|colo/i,           ICON.server,'dirty'],
+  [/mobile|cellular|wireless/i,                  ICON.signal,''],
+  [/fixed line|residential|cable|dsl|fiber|isp/i,ICON.home,  ''],
+  [/university|college|school|library/i,          ICON.build, ''],
+  [/government|military/i,                        ICON.build, ''],
+  [/search engine|spider|crawler/i,               ICON.bot,   'dirty'],
+  [/commercial|organization|business/i,           ICON.build, ''],
+  [/reserved/i,                                   ICON.ban,   ''],
+];
+const usageOf=v=>USAGE.find(([re])=>re.test(String(v||'')))||null;
+
+// ---- detail breakdown: every field every source returned ------------------------------------
+// Friendly names for the raw API keys. A key that isn't here still shows, under its own name — the point
+// is to show EVERYTHING each source answered, not a curated subset that hides the inconvenient field.
+const LBL={fraud_score:'Fraud score',country_code:'Country',countryCode:'Country',region:'Region',city:'City',
+ zip_code:'ZIP',ISP:'ISP',isp:'ISP',ASN:'ASN',organization:'Organization',host:'Reverse DNS',
+ connection_type:'Connection',abuse_velocity:'Abuse velocity',latitude:'Latitude',longitude:'Longitude',
+ timezone:'Time zone',is_crawler:'Crawler',recent_abuse:'Recent abuse',bot_status:'Bot',vpn:'VPN',
+ active_vpn:'VPN active now',tor:'Tor',active_tor:'Tor active now',proxy:'Proxy',mobile:'Mobile',
+ frequent_abuser:'Frequent abuser',high_risk_attacks:'High-risk attacks',security_scanner:'Security scanner',
+ shared_connection:'Shared connection',dynamic_connection:'Dynamic IP',trusted_network:'Trusted network',
+ result:'Proxy probability',BadIP:'Bad IP',queryIP:'Queried IP',Country:'Country',status:'Status',
+ abuseConfidenceScore:'Abuse confidence',totalReports:'Reports (90d)',numDistinctUsers:'Distinct reporters',
+ lastReportedAt:'Last report',usageType:'Usage type',domain:'Domain',hostnames:'Host names',isTor:'Tor exit',
+ isWhitelisted:'Whitelisted',ipAddress:'IP',isPublic:'Public IP',ipVersion:'IP version'};
+const fmtv=v=>v===true?'yes':v===false?'no':Array.isArray(v)?(v.length?v.join(', '):'—')
+  :(v===''||v==null?'—':String(v));
+// A two-letter country code gets a real flag icon. NOT the flag emoji: Windows ships no flag glyphs, so a
+// regional-indicator pair falls back to drawing the two letters — which next to the code reads as "DE DE".
+// A tiny image works on every platform, and if it can't load (offline, blocked) it removes itself and the
+// code alone remains.
+const CC_KEYS=new Set(['country_code','countryCode','Country','reporterCountryCode']);
+const flagImg=cc=>/^[A-Za-z]{2}$/.test(cc)
+  ?`<img class=flag src="https://flagcdn.com/32x24/${cc.toLowerCase()}.png" alt="" onerror="this.remove()">`:'';
+// Which fields earn a colour, and which way. Flags that mean trouble go red when true and green when false;
+// everything else stays neutral, because colouring every field is as unreadable as colouring none.
+const RISKY=new Set(['proxy','vpn','tor','active_vpn','active_tor','recent_abuse','bot_status','is_crawler',
+  'frequent_abuser','high_risk_attacks','security_scanner','dynamic_connection','isTor','BadIP']);
+const REASSURING=new Set(['isWhitelisted','trusted_network']);
+function vcolour(k,v){
+  if(v===true)return RISKY.has(k)?'dirty':REASSURING.has(k)?'clean':'';
+  if(v===false)return RISKY.has(k)?'clean':'';
+  if(k==='fraud_score')return band(+v);
+  if(k==='abuseConfidenceScore')return +v>=50?'dirty':+v>=10?'suspect':'clean';
+  if(k==='result'){const g=+v;return g>=0.99?'dirty':g>=0.90?'suspect':'clean';}
+  // AbuseIPDB's usageType is the datacenter-vs-real-line call the verdict leans on, so it gets the same
+  // colour language as the Exit type tile.
+  if(k==='usageType'||k==='connection_type'){const u=usageOf(v);return u?u[2]:'';}
+  return '';
+}
+// The icon that goes in front of a line-type value in the detail grid.
+const kvIcon=(k,v)=>{if(k!=='usageType'&&k!=='connection_type')return '';
+  const u=usageOf(v);return u?u[1]:'';};
+function kv(obj){const ks=Object.keys(obj||{});if(!ks.length)return '';
+  return `<div class=kv>${ks.map(k=>{const raw=obj[k], v=fmtv(raw), c=vcolour(k,raw);
+    // esc() the value, then prepend our own markup — the img/span tags are ours, the value never is.
+    const disp=(CC_KEYS.has(k)?flagImg(String(raw)):kvIcon(k,v))+esc(v);
+    return `<div title="${esc(LBL[k]||k)}: ${esc(v)}"><i>${esc(LBL[k]||k)}</i>`+
+      `<b${c?` style="color:var(--${c})"`:''}>${disp}</b></div>`;}).join('')}</div>`;}
+const srcCard=(t,sub,body)=>`<div class=src><h4>${esc(t)}<em>${esc(sub||'')}</em></h4>${body}</div>`;
+
+// Blocklist zones grouped by what the answer MEANS, each group labelled with its meaning — a reader should
+// never have to work out what a colour stands for.
+const ZGROUPS=[
+  ['listed','g-listed','Listed','abuse reports against this IP'],
+  ['policy','g-policy','Policy only','a mail-sending policy listing, not abuse'],
+  ['clean','g-clean','Clean','answered, not listed'],
+  ['none','g-none','No answer','the zone refused or never replied — not a clean result'],
+];
+function zoneGroups(d,reasons){
+  const by={listed:[],policy:[],clean:[],none:[]};
+  d.forEach(z=>(by[z.status] || by.none).push(z));
+  return ZGROUPS.filter(([k])=>by[k].length).map(([k,cls,title,meaning])=>
+    `<div class="zgrp ${cls}"><em>${esc(title)} · ${by[k].length} <span>— ${esc(meaning)}</span></em>`+
+    `<div class=zones>${by[k].map(z=>`<span class=z title="${esc(reasons[z.name]||z.zone)}">${esc(z.name)}</span>`)
+      .join('')}</div></div>`).join('');
+}
+
+function deep(r){
+  // No verdict card here — the verdict and its signals are already at the top of the result. This section is
+  // strictly "what each source answered".
+  let s='';
+  if(r.ipqs_raw)s+=srcCard('IPQualityScore',
+    `fraud ${esc(r.fraud_score)}${r.ipqs_strictness!=null?' · strictness '+esc(r.ipqs_strictness):''}`,kv(r.ipqs_raw));
+  if(r.getipintel_raw)s+=srcCard('getIPIntel',
+    `${r.getipintel_score.toFixed(3)} · ${giiBand(r.getipintel_score)}`,kv(r.getipintel_raw));
+  if(r.abuseipdb_raw)s+=srcCard('AbuseIPDB',
+    `${esc(r.abuse_confidence)}% · ${esc(r.abuse_reports||0)} reports in 90d`,kv(r.abuseipdb_raw));
+  const d=r.dnsbl_detail||[];
+  if(d.length){
+    // policy_lists carries "Zone (why it lists this IP)" — hang the reason on the chip's tooltip.
+    const reasons={};(r.policy_lists||[]).forEach(p=>{const i=p.indexOf(' (');if(i>0)reasons[p.slice(0,i)]=p;});
+    s+=srcCard('Blocklists',`${d.length} zones queried`,zoneGroups(d,reasons));
+  }
+  if(!s)return '';
+  return `<details class=deep><summary>Detailed breakdown — every field each source returned</summary>${s}</details>`;
+}
+
+function render(r){
+  if(r.error){out.innerHTML=`<div class="blk verdict v-dirty"><div class=v><span class=dot></span><b>FAILED</b></div><span>${esc(r.error)}</span></div>`;return}
+  let t='', i=0;
+  const blk=(h)=>`<div class=blk style="animation-delay:${(i++)*55}ms">${h}</div>`;
+
+  // The verdict names its own evidence: one chip per signal that decided it. A bare "SUSPECT" says nothing.
+  const vf=(r.verdict_factors||[]).map(x=>`<span>${esc(x)}</span>`).join('');
+  t+=blk(`<div class="verdict v-${r.verdict}"><div class=v><span class=dot></span><b>${esc(r.verdict.toUpperCase())}</b></div>`+
+    (vf?`<div class=vfx>${vf}</div>`:`<span>${esc(r.verdict_reason||'')}</span>`)+`</div>`);
+
+  // Exit-IP hero + copy, with the WHO/WHERE rows attached to it rather than floating in a second panel as an
+  // unlabelled run-on line ("Stiftung Erneuerbare Freiheit · Berlin, Brandenburg, Germany"). Same label→value
+  // row as everywhere else, so it scans in one pass.
+  let meta='';
+  [['ISP','isp'],['Organization','organization'],['ASN','asn'],['Host','host'],
+   ['Connection','connection_type'],['Usage','usage_type'],['Location','location'],
+   ['Time zone','timezone']].forEach(([k,v])=>{
+    if(!r[v])return;
+    // Location gets its country flag; the two line-type fields get an icon + colour, so what kind of
+    // network this is reads at a glance instead of out of a phrase.
+    if(v==='location'&&r.country_code){meta+=richRow(k,flagImg(r.country_code)+esc(r[v]));return;}
+    const u=(v==='connection_type'||v==='usage_type')&&usageOf(r[v]);
+    if(u){meta+=richRow(k,u[1]+esc(r[v]),u[2]);return;}
+    meta+=row(k,r[v]);});
+  let hero=`<div class=panel><div class=iprow><span class=ip>${esc(r.ip||'unknown')}</span>`;
+  if(r.ip)hero+=`<button class=copy data-ip="${esc(r.ip)}">Copy</button>`;
+  hero+=`</div>`+(meta?`<div class="rows meta">${meta}</div>`:'')+`</div>`;
+  t+=blk(hero);
+  // IPQS's fraud_score is deliberately NOT the visual hero — it saturates on proxies, so it's one tile among
+  // the signals below, not a giant meter that reads as "the verdict".
+
+  // Signal tiles.
+  const pol=(r.policy_lists||[]).length, hits=(r.blacklists||[]).length;
+  let tiles='';
+  // Exit type leads — a datacenter/hosting exit is the strongest usability signal (real ISPs pass more easily).
+  // Every caption is ONE short line — tiles share a grid row, so a caption that wraps makes every tile tall.
+  // A clipped caption stays readable: tile() hangs the full text on the title, and the detail breakdown below
+  // lists it in full. Never truncate without leaving a way to read the rest.
+  const tile=(label,value,cap,colour,small)=>
+    `<div class=tile title="${esc(label)}: ${esc(cap)}"><em>${esc(label)}</em>`+
+    `<strong style="${small?'font-size:20px;':''}color:var(--${colour})">${esc(value)}</strong>`+
+    `<small>${esc(cap)}</small></div>`;
+  // Latency leads when a proxy was used — a proxy that works but takes 4s is a different problem from a
+  // dirty one, and neither shows up in any reputation source.
+  if(r.proxy_ms!=null)tiles+=tile('Latency', r.proxy_ms+' ms',
+    r.proxy_ms<400?'fast':r.proxy_ms<1200?'usable':'slow',
+    r.proxy_ms<400?'clean':r.proxy_ms<1200?'suspect':'dirty', true);
+  if(r.connection_class){const dc=r.connection_class==='datacenter';
+    tiles+=tile('Exit type', r.connection_class[0].toUpperCase()+r.connection_class.slice(1),
+      dc?'hosting network':'real network line', dc?'dirty':'clean', true);}
+  const bl=hits>=2?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
+  tiles+=tile('Blacklists', r.dnsbl_usable||hits?hits:'—',
+    hits?r.blacklists.join(', '):r.dnsbl_usable?`none of ${r.dnsbl_checked}`:'DNS unreachable', bl);
+  if(pol)tiles+=tile('Policy lists', pol, r.policy_lists.join(', '), 'info');
+  if(r.abuse_confidence!=null)tiles+=tile('Abuse', r.abuse_confidence+'%',
+    `${r.abuse_reports||0} reports · 90d`,
+    r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean');
+  if(r.abuse_velocity)tiles+=tile('Abuse velocity', r.abuse_velocity, 'IPQualityScore', 'ink', true);
+  // Fraud score as ONE tile among the signals — not a hero meter; it saturates on any proxy.
+  if(r.fraud_score!=null)tiles+=tile('Fraud score', r.fraud_score,
+    `IPQS · strictness ${r.ipqs_strictness!=null?r.ipqs_strictness:'—'}`, band(r.fraud_score));
+  if(r.getipintel_score!=null){const g=r.getipintel_score;
+    tiles+=tile('getIPIntel', g.toFixed(2), giiBand(g)+(r.getipintel_bad?' · bad IP':''),
+      g>=0.99?'dirty':g>=0.90?'suspect':'clean');}
+  t+=blk(`<div class=tiles>${tiles}</div>`);
+
+  if(r.fraud_score!=null){
+    const chips=(r.flags||[]).length?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
+      :'<span class="chip ok">Not flagged as proxy or VPN</span>';
+    t+=blk(`<div class="panel flagbar"><div class=lbl>Flagged as</div><div class=chips>${chips}</div></div>`);
+  }
+
+  const dp=deep(r); if(dp)t+=blk(dp);
+  // Notes are "Source: what happened" — split them onto the same label→value row as everything else
+  // rather than printing a sentence per line.
+  if((r.notes||[]).length)t+=blk(`<div class=panel><div class="rows hint">${r.notes.map(n=>{
+    const i=String(n).indexOf(': ');
+    return i>0?row(n.slice(0,i),n.slice(i+2)):row('Note',n);}).join('')}</div></div>`);
+  out.innerHTML=t;
+}
+
+// Copy (delegated — renders rebuild the buttons). Handles the hero .copy (data-ip) and the bulk table .cc
+// (data-copy: a proxy string or an exit IP).
+out.addEventListener('click',async e=>{
+  const b=e.target.closest('.copy,.cc'); if(!b)return;
+  const txt=b.dataset.copy!=null?b.dataset.copy:b.dataset.ip; if(!txt)return;
+  try{await navigator.clipboard.writeText(txt);}
+  catch(err){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
+  // Flash the colour, never the label — swapping "Copy" for "Copied ✓" resizes the button and shoves its
+  // neighbours around. Confirmation must not move the layout.
+  b.classList.add('done');
+  setTimeout(()=>b.classList.remove('done'),1100);
+});
+
+// API endpoint — the local server serves /check; build.py rewrites this to /api/check for the Vercel deploy.
+const API='/api/check';
+const saveKeys=()=>{try{localStorage.setItem('ipqs_key',$('#ipqs').value.trim());
+  localStorage.setItem('abuse_key',$('#abuse').value.trim());}catch(e){}};
+// getipintel_contact is NOT sent — the server supplies it (env var on Vercel, config file locally).
+function checkBody(proxy){return JSON.stringify({proxy:proxy, proxy_scheme:$('#ptype').value,
+  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()});}
+
+$('#go').onclick=async()=>{
+  const b=$('#go'); b.disabled=true; b.textContent='Checking…'; saveKeys();
+  out.innerHTML='<div class="blk panel"><span class=loading>Running lookups</span></div>';
+  try{
+    const r=await fetch(API,{method:'POST',body:checkBody($('#proxy').value.trim())});
+    render(await r.json());
+  }catch(e){render({error:String(e)})}
+  b.disabled=false; b.textContent='Run check';
+};
+
+// Bulk: check many proxies (one per line) and show them in one copyable comparison table.
+const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpperCase())}</span>`;
+// The current bulk run, so the row expander can be registered ONCE — re-registering per run would stack
+// listeners that each redraw a stale table.
+let bulk=null;
+out.addEventListener('click',e=>{const b=e.target.closest('[data-deep]'); if(!b||!bulk)return;
+  const x=bulk.rows[+b.dataset.deep]; if(!x)return; x.open=!x.open; bulk.draw();});
+$('#bulkgo').onclick=async()=>{
+  const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!lines.length)return;
+  saveKeys();
+  const b=$('#bulkgo'); b.disabled=true; b.textContent='Checking…';
+  const rows=lines.map(line=>({line, r:null, busy:true}));
+  const cell=(txt,cls)=>`<td class="${cls||''}">${esc(txt)}</td>`;
+  const draw=()=>{
+    const done=rows.filter(x=>!x.busy).length;
+    let h=`<div class="blk panel tablewrap"><table class=bulk><thead><tr><th>Proxy</th><th>Alive</th>`+
+      `<th>Latency</th><th>Exit IP</th>`+
+      `<th>Verdict</th><th>getIPIntel</th><th>Lists</th><th>Type</th><th>Copy</th></tr></thead><tbody>`;
+    rows.forEach((x,i)=>{const r=x.r||{};
+      const ip=r.ip||(x.busy?'…':'—');
+      const g=r.getipintel_score!=null?r.getipintel_score.toFixed(2):'—';
+      const hits=r.ip?String((r.blacklists||[]).length):(x.busy?'':'—');
+      // Never invent "residential" — connection_class returns null when the name heuristic can't tell.
+      const type=r.connection_class||(x.busy?'':'—');
+      // Dead-or-alive is the first thing you want when comparing a list, and latency the second — neither
+      // is a reputation signal, so no source reports them.
+      const alive=x.busy?'<span class="vpill v-unknown-p">…</span>'
+        :r.proxy_alive===false||r.error?'<span class="vpill v-dirty-p">DEAD</span>'
+        :r.ip?'<span class="vpill v-clean-p">UP</span>':'<span class="vpill v-unknown-p">—</span>';
+      const ms=r.proxy_ms!=null?r.proxy_ms+' ms':(x.busy?'':'—');
+      const vd=x.busy?'<span class="vpill v-unknown-p">…</span>':vpill(r.error?'unknown':r.verdict);
+      h+=`<tr>${cell(x.line,'pxcell')}<td>${alive}</td>${cell(ms)}${cell(ip)}<td>${vd}</td>${cell(g)}${cell(hits)}${cell(type)}`+
+        `<td style="white-space:nowrap"><button class=cc data-copy="${esc(x.line)}">proxy</button> `+
+        (r.ip?`<button class=cc data-copy="${esc(r.ip)}">ip</button> `:'')+
+        (r.ip?`<button class=cc data-deep="${i}">${x.open?'hide':'why'}</button>`:'')+`</td></tr>`;
+      // Same per-source breakdown as the single check, inline under its row — a bulk verdict is only
+      // actionable if you can see what produced it.
+      if(x.open&&r.ip)h+=`<tr><td colspan=9 style="padding:0 0 12px">${deep(r)||'<p class=note>no source detail</p>'}</td></tr>`;
+    });
+    h+=`</tbody></table><p class=note style="padding:10px 10px 0">${done}/${rows.length} checked · Proxy/IP copies · Why opens the breakdown</p></div>`;
+    out.innerHTML=h;
+  };
+  bulk={rows, draw};      // hand the current run to the once-registered row expander below
+  draw();
+  let idx=0; const CAP=4;
+  const worker=async()=>{ while(idx<rows.length){const x=rows[idx++];
+    try{const resp=await fetch(API,{method:'POST',body:checkBody(x.line)}); x.r=await resp.json();}
+    catch(e){x.r={error:String(e)};}
+    x.busy=false; draw();
+  }};
+  await Promise.all(Array.from({length:Math.min(CAP,rows.length)},worker));
+  b.disabled=false; b.textContent='Check all';
+};
+</script>

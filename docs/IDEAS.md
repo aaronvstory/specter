@@ -1096,3 +1096,14 @@ privacy-sensitive part — on-device, confirm that OFF-tunnel the card makes ZER
 "anyway" button is tapped-and-confirmed (watch with the read-monitor / a proxy-off capture), and that the
 confirm copy names the real-IP exposure. Left as a design, not blind code, for the same reason as #18: a
 mistake here leaks the user's real IP to a fraud API, so it must be seen on a real device.
+
+- **2026-08-05 — Pixel 4 wireless-adb port discovery.** `adb mdns services` returns empty on this box and
+  Android 11+ wireless debugging uses a random port, so the P4 can't be reached without reading the port off
+  the phone. Status: open. Options: pair once and script `adb pair`, or have the phone hold a fixed
+  `adb tcpip 5555` after each boot (needs USB once per boot, so it doesn't fully solve it).
+- **2026-08-05 — surface per-report detail from AbuseIPDB (`verbose`).** Free-tier, adds `countryName` and a
+  `reports[]` array with attacker log lines. Measured: ~100 report objects / 30-60 KB for a busy IP, so it
+  can't be dumped raw — would need "newest 3-5, comment truncated". Status: idea, deliberately not built.
+- **2026-08-05 — getIPIntel has more oflags worth showing.** `r` = a 0-1 ResidentialProxy score (beta,
+  IPv4-only) and `i` = VPNType (GoogleOneVPN / iCloudRelayEgress / GoogleFiVPN). ResidentialProxy in
+  particular grades exactly what this tool cares about. Status: researching — `bc` shipped, `r`/`i` untested.

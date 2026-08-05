@@ -3,6 +3,49 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.26.0] - 2026-08-05
+
+### Added
+- **Per-source detail breakdown, collapsed by default** (web + Android). Every field each source returned,
+  grouped by source, so a verdict can be audited instead of taken on faith: IPQualityScore's full response,
+  getIPIntel's score/BadIP/country, AbuseIPDB's usage type, reporters and last report, and every blocklist
+  zone with its own outcome.
+- **Blocklist zones grouped by what the answer MEANS** — Listed / Policy only / Clean / No answer, each
+  labelled with its meaning, so a colour never has to be decoded. Zones that refused or never replied are
+  kept out of "clean": a zone that didn't answer proved nothing.
+- **The verdict names its own evidence.** `verdict_factors()` exposes the individual signals behind a
+  level, shown as chips under the verdict instead of a bare "SUSPECT".
+- **Proxy liveness and latency.** The geo lookup is the first request through the tunnel, so it doubles as
+  the probe: `proxy_alive` and `proxy_ms`, with Alive and Latency columns in the bulk table.
+- **getIPIntel: country, plain-language errors, and contact rotation.** `oflags=bc` also returns the
+  country; negative results map to one-line meanings (-5 is "over quota from here", not a verdict on the
+  checked IP); several contact addresses can be configured and rotate when one is refused for quota.
+
+### Changed
+- **One layout rule everywhere: a value never wraps mid-text, and nothing is truncated without a way to
+  read the rest.** Tile captions are one line with the full text on hover; detail rows are one line each;
+  info blocks are label -> value rows instead of prose; copy buttons flash a colour instead of resizing.
+- **No auto-run on open.** The page prefills the visitor's IP and waits to be asked — opening it no longer
+  spends an API quota or a getIPIntel rate-limit slot. A second lookup source covers ipwho.is throttling.
+- Form reordered: IP above proxy (they are alternatives, not a pair), Run check on its own inputs, accepted
+  proxy formats collapsed, API keys last and stacked one per line.
+- Country flags, and an icon plus colour for the line type (hosting / mobile / consumer / institutional).
+- Dropped "residential-ish" and the editorial fraud-score captions from all three surfaces. A low getIPIntel
+  score now reads "no proxy signal": it means no proxy evidence was seen, not that a real ISP line was proven.
+
+### Fixed
+- **The generated Vercel page was one regenerate away from being completely inert.** `webapp/build.py`'s
+  config rewrite used a non-greedy regex that stopped at a `});` INSIDE the block, leaving orphan lines --
+  a JavaScript SyntaxError that kills the whole `<script>`, so the page renders but every button is dead.
+  Anchored the match and added a tripwire assert. Also dropped a selector for an element that no longer
+  exists and restored the `/api/config` fetch, so shared server-side keys show as "shared active" again.
+- **getIPIntel echoes the contact address in every response** (measured). It is stripped from the raw body
+  and from any rejection message, so a server-side contact can never reach a visitor's browser.
+- IPQS's `abuse_events` is a LIST holding an "Enterprise plan required" notice; the premium-placeholder
+  filter only checked strings, so the notice was being shown as data.
+- The local web UI silently stopped running getIPIntel once the page stopped sending a contact; the server
+  now falls back to its own config/env, as the hosted function already did.
+
 ## [0.25.1] - 2026-08-05
 
 ### Added

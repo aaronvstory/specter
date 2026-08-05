@@ -440,13 +440,94 @@ final class HealthCheck {
         Double getipintel;                       // getIPIntel 0-1 proxy/hosting probability (null = not run)
         boolean getipintelBad;                   // getIPIntel: the IP behaved maliciously
         String connectionType, organization, asn, abuseVelocity, isp, host;   // IPQualityScore context
+        String usageType, countryCode, domain, lastReport;    // AbuseIPDB context
+        Integer abuseReporters;                 // AbuseIPDB: distinct reporters (one loud reporter != real abuse)
+        String getipintelCountry;               // getIPIntel oflags=c
         int dnsblChecked;                       // DNSBL zones that actually answered
         boolean dnsblUsable;                    // the sentinel resolved -> a zero-hit result is trustworthy
         final List<String> blacklists = new ArrayList<>();    // zones listing this IP for ABUSE
         final List<String> policyLists = new ArrayList<>();   // dynamic/consumer-range listings (not abuse)
+        /** Per-zone outcome for the detail breakdown: zone name -> listed / policy / clean / refused /
+         *  no answer. Every zone in the table appears, so "12 clean, 3 refused" is visible instead of only
+         *  the count of hits. Mirrors dnsbl_detail in specter/ipcheck.py. */
+        final java.util.LinkedHashMap<String, String> zoneStatus = new java.util.LinkedHashMap<>();
         /** Why a source had nothing to say (bad key, quota spent). One per source — a single field
          *  would let whichever failed first hide the other's reason entirely. */
         final List<String> notes = new ArrayList<>();
+    }
+
+    /** What a getIPIntel error code means, in one line. Mirrors GETIPINTEL_ERRORS in specter/ipcheck.py.
+     *  -5 is the one worth acting on: the CONNECTING device is banned or over quota, which says nothing
+     *  about the IP being checked. */
+    static String getipintelError(int code, String raw) {
+        switch (code) {
+            case -1: return "invalid query";
+            case -2: return "invalid IP address";
+            case -3: return "unroutable or private address";
+            case -4: return "database unreachable — mid-update";
+            case -5: return "over quota from here — this IP wasn't checked";
+            case -6: return "no valid contact address";
+            default: return "error " + raw;
+        }
+    }
+
+    /** What a getIPIntel 0-1 probability means, in words. Deliberately NOT "residential" at the low end: a low
+     *  score means getIPIntel saw no proxy evidence, which is not the same as proving a real ISP line.
+     *  Mirrors getipintel_band() in specter/ipcheck.py. */
+    static String getipintelBand(double score) {
+        return score >= 0.99 ? "proxy/hosting exit" : score >= 0.90 ? "likely proxy"
+                : score >= 0.50 ? "mixed signals" : "no proxy signal";
+    }
+
+    /** clean / suspect / dirty / unknown, plus the individual signals that decided it — element 0 is the
+     *  level, the rest are the factors. Mirrors verdict_factors() in specter/ipcheck.py, INCLUDING its
+     *  central judgement: a bare high fraud score never decides, because IPQS scores almost any proxy 75-100
+     *  and vetting proxies is the whole point. What separates a usable exit from a burned one is
+     *  datacenter-vs-real-line plus INDEPENDENT abuse evidence.
+     *
+     *  <p>{@code geoIsp} is the free ipwho.is ISP, needed because rep.isp is only set when an IPQS key is
+     *  present — without it the datacenter check silently never fires on the keyless path. */
+    static List<String> verdictFactors(Reputation r, String geoIsp) {
+        List<String> why = new ArrayList<>();
+        if (r == null) { why.add("unknown"); why.add("no check has run"); return why; }
+        int hits = r.blacklists.size();
+        boolean dc = isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host);
+        boolean ipqsAbuse = Boolean.TRUE.equals(r.recentAbuse);
+
+        // DIRTY: a datacenter exit, corroborated abuse, or getIPIntel's near-certain hosting verdict.
+        if (dc) why.add("datacenter/hosting IP");
+        if (hits >= 2) why.add(hits + " blacklists");
+        if (r.abuseConfidence != null && r.abuseConfidence >= 50) why.add(r.abuseConfidence + "% abuse confidence");
+        if (r.getipintelBad) why.add("getIPIntel bad-IP");
+        if (r.getipintel != null && r.getipintel >= 0.99) why.add("getIPIntel proxy/hosting");
+        if (!why.isEmpty()) { why.add(0, "dirty"); return why; }
+
+        // SUSPECT: one weaker signal worth knowing about. IPQS's abuse flags live HERE, not in dirty — they
+        // saturate on shared/residential-proxy IPs the same way its score does.
+        if (hits == 1) why.add("1 blacklist");
+        if (r.abuseConfidence != null && r.abuseConfidence >= 10 && r.abuseConfidence < 50)
+            why.add(r.abuseConfidence + "% abuse confidence");
+        if (ipqsAbuse) why.add("IPQS abuse flags");
+        if ("medium".equals(r.abuseVelocity) || "high".equals(r.abuseVelocity))
+            why.add(r.abuseVelocity + " abuse velocity");
+        if (r.getipintel != null && r.getipintel >= 0.90 && r.getipintel < 0.99)
+            why.add((int) (r.getipintel * 100) + "% proxy (getIPIntel)");
+        if (!why.isEmpty()) { why.add(0, "suspect"); return why; }
+
+        if (r.fraudScore == null && r.abuseConfidence == null && r.getipintel == null && !r.dnsblUsable) {
+            why.add("unknown"); why.add("no source answered — add an API key, or check the network");
+            return why;
+        }
+        // CLEAN. Not called "residential": a name heuristic can't prove a real line, only fail to find a
+        // hosting name, so the verdict must not claim more than was measured.
+        why.add("clean");
+        why.add("no datacenter signal");
+        boolean proxyFlag = Boolean.TRUE.equals(r.proxy) || Boolean.TRUE.equals(r.vpn)
+                || Boolean.TRUE.equals(r.tor) || (r.fraudScore != null && r.fraudScore >= 60);
+        why.add(proxyFlag ? "no abuse history" : "no proxy flag");
+        if (proxyFlag) why.add("detectable as a proxy/VPN");
+        else why.add("no abuse or blacklist history");
+        return why;
     }
 
     private static volatile Reputation repCache;
@@ -522,6 +603,11 @@ final class HealthCheck {
             if (d != null) {
                 r.abuseConfidence = d.optInt("abuseConfidenceScore");
                 r.abuseReports = d.optInt("totalReports");
+                r.abuseReporters = d.optInt("numDistinctUsers");
+                r.usageType = emptyToNull(d.optString("usageType"));
+                r.countryCode = emptyToNull(d.optString("countryCode"));
+                r.domain = emptyToNull(d.optString("domain"));
+                r.lastReport = emptyToNull(d.optString("lastReportedAt"));
             } else {
                 // Their 401/402/429 bodies carry the actual reason; getJson reads the error stream
                 // so we can repeat it instead of guessing between "bad key" and "quota spent".
@@ -533,18 +619,30 @@ final class HealthCheck {
         // hosting/VPN/Tor exit) + a BadIP flag. Docs: do NOT URL-encode the params. Mirrors lookup_getipintel
         // in specter/ipcheck.py.
         if (getipintelContact != null && !getipintelContact.isEmpty()) {
+            // oflags is a character SET: "bc" asks for the BadIP verdict AND the country getIPIntel resolved.
+            // Verified live 2026-08-05 that the combined form is accepted.
             org.json.JSONObject o = getJson(net, "https://check.getipintel.net/check.php?ip=" + ip
-                    + "&contact=" + getipintelContact + "&format=json&oflags=b", null);
+                    + "&contact=" + getipintelContact + "&format=json&oflags=bc", null);
             if (o == null) {
                 r.notes.add("getIPIntel unreachable");
-            } else if (!"success".equals(o.optString("status"))) {
-                r.notes.add("getIPIntel: " + emptyOr(o.optString("message"), "rejected — is the contact email valid?"));
             } else {
-                try {
-                    double s = Double.parseDouble(o.optString("result"));
-                    if (s >= 0) { r.getipintel = s; r.getipintelBad = o.optInt("BadIP", 0) == 1; }
-                    else r.notes.add("getIPIntel error " + o.optString("result"));
-                } catch (NumberFormatException e) { r.notes.add("getIPIntel: unparseable result"); }
+                // `result` carries the error code on BOTH statuses, so read it first: its one-line meaning
+                // beats getIPIntel's own message, which is a three-sentence paragraph of questions.
+                Double s = null;
+                try { s = Double.parseDouble(o.optString("result")); } catch (NumberFormatException ignored) {}
+                if (s != null && s < 0) {
+                    r.notes.add("getIPIntel: " + getipintelError((int) (double) s, o.optString("result")));
+                } else if (s == null || !"success".equals(o.optString("status"))) {
+                    // First sentence only, contact scrubbed — getIPIntel echoes the contact in every response.
+                    String msg = emptyOr(o.optString("message"), "rejected — is the contact address valid?");
+                    int dot = msg.indexOf(". ");
+                    if (dot > 0) msg = msg.substring(0, dot);
+                    r.notes.add("getIPIntel: " + msg.replace(getipintelContact, "<contact>"));
+                } else {
+                    r.getipintel = s;
+                    r.getipintelBad = o.optInt("BadIP", 0) == 1;
+                    r.getipintelCountry = emptyToNull(o.optString("Country"));
+                }
             }
         }
 
@@ -560,6 +658,9 @@ final class HealthCheck {
     private static void checkDnsbl(final android.net.Network net, String ip, Reputation out) {
         final String rev = Dnsbl.reverseV4(ip);
         if (rev == null) return;
+        // "no answer" is the default for every zone in the table: a zone that never replied is not a clean
+        // result and must not read as one. Overwritten below by whatever it actually said.
+        for (String[] z : Dnsbl.ZONES) out.zoneStatus.put(z[0], "no answer");
         java.util.concurrent.ExecutorService ex =
                 java.util.concurrent.Executors.newFixedThreadPool(Dnsbl.ZONES.length);
         try {
@@ -577,18 +678,22 @@ final class HealthCheck {
 
             List<java.util.concurrent.Future<String>> fs =
                     ex.invokeAll(tasks, 10, java.util.concurrent.TimeUnit.SECONDS);
-            for (java.util.concurrent.Future<String> f : fs) {
+            // invokeAll returns futures in submission order, so index i is Dnsbl.ZONES[i] — that's what lets
+            // each zone's outcome be recorded by name for the detail breakdown.
+            for (int i = 0; i < fs.size(); i++) {
+                String zone = Dnsbl.ZONES[i][0];
                 String v;
-                try { v = f.get(); } catch (Throwable t) { continue; }   // timed out / cancelled
+                try { v = fs.get(i).get(); } catch (Throwable t) { continue; }   // timed out / cancelled
                 if (v == null) continue;                                  // no usable answer
                 // A BLOCKED zone told us nothing — counting it would turn a refusal into a clean result.
-                if (v.startsWith(Dnsbl.BLOCKED + ":")) continue;
+                if (v.startsWith(Dnsbl.BLOCKED + ":")) { out.zoneStatus.put(zone, "refused"); continue; }
                 out.dnsblChecked++;
                 int sep = v.indexOf(':');
-                if (sep < 0) continue;                                    // "" — answered, not listed
+                if (sep < 0) { out.zoneStatus.put(zone, "clean"); continue; }   // "" — answered, not listed
                 String kind = v.substring(0, sep), zoneName = v.substring(sep + 1);
-                if (Dnsbl.ABUSE.equals(kind)) out.blacklists.add(zoneName);
-                else if (Dnsbl.POLICY.equals(kind)) out.policyLists.add(zoneName);
+                if (Dnsbl.ABUSE.equals(kind)) { out.blacklists.add(zoneName); out.zoneStatus.put(zone, "listed"); }
+                else if (Dnsbl.POLICY.equals(kind)) { out.policyLists.add(zoneName); out.zoneStatus.put(zone, "policy"); }
+                else out.zoneStatus.put(zone, "clean");
             }
             // DoH returns an explicit status, so a zone that answered NXDOMAIN is a definitive "not listed" —
             // no sentinel probe needed to tell a real all-clear from a dead resolver.
