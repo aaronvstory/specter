@@ -378,6 +378,23 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     return p
 
 
+def _soc_family(soc):
+    """Coarse SoC vendor family from a ro.board.platform token, or "" when unrecognised (a check that
+    reads this then skips, rather than guessing)."""
+    t = (soc or "").lower()
+    if re.search(r"exynos|universal|s5e", t):
+        return "exynos"
+    if re.search(r"lahaina|kona|lito|bengal|msm|sdm|^sm\d|trinket|talos|moorea|qcom|kalama|taro|cape", t):
+        return "qcom"
+    if re.search(r"tensor|gs1|gs2", t):
+        return "tensor"
+    if re.search(r"^mt|dimensity|helio", t):
+        return "mtk"
+    if re.search(r"kirin|hi3", t):
+        return "kirin"
+    return ""
+
+
 def validate(profile):
     """Return (ok, [errors]). Checks per-field format + cross-field coherence."""
     errors = []
@@ -397,6 +414,34 @@ def validate(profile):
     expected_iin = G._ICCID_IIN.get(mccmnc)
     if expected_iin and not iccid.startswith(expected_iin):
         errors.append(f"incoherent: ICCID {iccid[:8]} does not match carrier IIN {expected_iin}")
+    # SoC family <-> GPU vendor: a Qualcomm SoC pairs with Adreno (vendor Qualcomm), Exynos/Tensor with
+    # ARM Mali. A budget SoC under a flagship GPU (or vice-versa) is the classic incoherent pair.
+    fam = _soc_family(profile.get("soc_platform"))
+    gpu_vendor = (profile.get("hw_gpu_vendor") or "").lower()
+    if fam and gpu_vendor:
+        want = "qualcomm" if fam == "qcom" else "arm"
+        if want not in gpu_vendor:
+            errors.append(f"incoherent: soc_platform {profile.get('soc_platform')} ({fam}) vs GPU vendor "
+                          f"{profile.get('hw_gpu_vendor')}")
+    # Carrier NAME must match its MCC/MNC (the authoritative US_CARRIERS map).
+    mccmnc = profile.get("sim_operator_mccmnc")
+    carrier_name = profile.get("sim_operator_name")
+    expected_carrier = dict(US_CARRIERS).get(mccmnc)
+    if mccmnc and carrier_name and expected_carrier and expected_carrier != carrier_name:
+        errors.append(f"incoherent: carrier {carrier_name} != {expected_carrier} for MCC/MNC {mccmnc}")
+    # build_board and build_hardware are both the product codename -> they must agree.
+    if (profile.get("build_board") and profile.get("build_hardware")
+            and profile["build_board"] != profile["build_hardware"]):
+        errors.append(f"incoherent: build_board {profile['build_board']} != build_hardware "
+                      f"{profile['build_hardware']}")
+    # Security patch can't predate the OS release era (OS major read from the fingerprint's :N/ token).
+    os_m = re.search(r":(\d+)/", fp)
+    patch_yr = re.search(r"(20\d\d)", profile.get("build_security_patch", "") or "")
+    if os_m and patch_yr:
+        base_year = {"10": 2019, "11": 2020, "12": 2021, "13": 2022, "14": 2023}.get(os_m.group(1))
+        if base_year and int(patch_yr.group(1)) < base_year:
+            errors.append(f"incoherent: security patch {profile.get('build_security_patch')} predates "
+                          f"Android {os_m.group(1)}")
     return (len(errors) == 0, errors)
 
 
