@@ -23,7 +23,10 @@ import java.util.Set;
 final class HealthCheck {
     private HealthCheck() {}
 
-    enum State { OK, WARN, BAD }
+    // READY = configured and the module is PROVEN to load this boot (some scoped app wrote a fresh heartbeat),
+    // but THIS app hasn't run yet — so it will hook on launch. Distinct from OK (this app proven hooked this boot)
+    // and from WARN (genuinely unverified). Lets the status not nag "open every app" once one has proven the layer.
+    enum State { OK, WARN, BAD, READY }
 
     /** A fix the UI can offer. NONE = the guidance is inline in the row's detail (no button); the others get
      *  a one-tap action button. (No dialog-based "guide" fixes — the detail text carries the steps.) */
@@ -40,6 +43,7 @@ final class HealthCheck {
         static Check ok(String l, String d) { return new Check(l, State.OK, d, Fix.NONE, null); }
         static Check warn(String l, String d, Fix f, String a) { return new Check(l, State.WARN, d, f, a); }
         static Check bad(String l, String d, Fix f, String a) { return new Check(l, State.BAD, d, f, a); }
+        static Check ready(String l, String d, String a) { return new Check(l, State.READY, d, Fix.NONE, a); }
     }
 
     /** A section of checks with a heading. {@code geo} is set only on the Network group so the UI can render
@@ -116,48 +120,65 @@ final class HealthCheck {
             // so a hooked process reads a different boot_id than this (unscoped) UI — they'd never match. Wall
             // time isn't spoofed and is comparable across processes. Small slack for clock settle after boot.
             long bootWallMs = System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime();
+            long nowMs = System.currentTimeMillis();
+
+            // Pass 1: read every target's facts up front, and note whether the module has PROVEN it loads on this
+            // boot in ANY scoped target (a single fresh, same-version heartbeat). One launched app proves the whole
+            // injection layer works this boot — so every OTHER scoped+applied app is READY (will hook on launch)
+            // without its own launch. That's what stops the "open each app to check it" churn (steer #18), while
+            // still reserving GREEN for an app whose OWN hooks are proven running this boot (no false-GREEN).
+            final class AppFact {
+                String pkg, label; boolean scoped, applied; Heartbeat hb; boolean fresh, sameVer, live;
+            }
+            List<AppFact> facts = new ArrayList<>();
+            boolean moduleLiveThisBoot = false;
             for (String pkg : targets) {
-                String label = Targets.label(ctx, pkg);
-                boolean scoped = appScoped(ctx, sh, pkg);
-                boolean applied = profileApplied(sh, pkg);
-                if (!scoped) {
-                    perApp.add(Check.bad(label, "Not scoped · add in LSPosed, then reboot",
-                            Fix.NONE, pkg));
-                } else if (!applied) {
-                    perApp.add(Check.warn(label, "Scoped · no identity applied",
-                            Fix.REAPPLY_PROFILE, pkg));
-                } else {
-                    // Scope-row + profile-file present is only CONFIGURATION. Proof the hooks actually RAN in
-                    // this app on THIS boot is the runtime heartbeat the Java layer writes after installing its
-                    // hooks. Without a boot-matching heartbeat we must NOT claim GREEN — that false-GREEN is what
-                    // let a mis-hooked app reach fleet looking "protected".
-                    Heartbeat hb = readHeartbeat(sh, pkg);
+                AppFact f = new AppFact();
+                f.pkg = pkg;
+                f.label = Targets.label(ctx, pkg);
+                f.scoped = appScoped(ctx, sh, pkg);
+                f.applied = profileApplied(sh, pkg);
+                if (f.scoped && f.applied) {
+                    f.hb = readHeartbeat(sh, pkg);
                     // Written this boot, by THIS module version? epochMs must be within [bootWall-10s, now+1min]:
                     // the lower bound rejects a previous boot; the upper bound rejects a forged/rolled-forward
                     // future timestamp (a stale heartbeat can't pass by jumping the clock ahead). The version
                     // match rejects a heartbeat written by OLD module code still loaded after an APK update.
-                    long nowMs = System.currentTimeMillis();
-                    boolean fresh = hb != null && hb.epochMs >= (bootWallMs - 10_000L) && hb.epochMs <= (nowMs + 60_000L);
-                    boolean sameVer = hb != null && HookConstants.MODULE_VERSION.equals(hb.version);
-                    boolean live = fresh && sameVer;
-                    if (live) {
-                        // "N fields" is the loaded profile's key count, NOT a per-hook success count — each
-                        // hookX() swallows its own errors, so a signal could still have failed to hook. Word it
-                        // as "loaded this boot" (the heartbeat proves the Java layer ran + read the profile),
-                        // not "every field verified" (that needs per-hook instrumentation — see IDEAS).
-                        perApp.add(Check.ok(label,
-                                "Hooks loaded this boot · " + hb.fields + " profile fields · v" + hb.version));
-                    } else if (hb != null && fresh && !sameVer) {
-                        perApp.add(Check.warn(label,
-                                "Old module loaded · " + hb.version + " → " + HookConstants.MODULE_VERSION,
-                                Fix.NONE, pkg));
-                    } else if (hb != null) {
-                        perApp.add(Check.warn(label,
-                                "Last verified before this boot · relaunch app", Fix.NONE, pkg));
-                    } else {
-                        perApp.add(Check.warn(label,
-                                "Hooks unverified · open app, then re-check", Fix.NONE, pkg));
-                    }
+                    f.fresh = f.hb != null && f.hb.epochMs >= (bootWallMs - 10_000L) && f.hb.epochMs <= (nowMs + 60_000L);
+                    f.sameVer = f.hb != null && HookConstants.MODULE_VERSION.equals(f.hb.version);
+                    f.live = f.fresh && f.sameVer;
+                    if (f.live) moduleLiveThisBoot = true;
+                }
+                facts.add(f);
+            }
+
+            // Pass 2: emit one check per target now that "module live this boot" is known.
+            for (AppFact f : facts) {
+                if (!f.scoped) {
+                    perApp.add(Check.bad(f.label, "Not scoped · add in LSPosed, then reboot", Fix.NONE, f.pkg));
+                } else if (!f.applied) {
+                    perApp.add(Check.warn(f.label, "Scoped · no identity applied", Fix.REAPPLY_PROFILE, f.pkg));
+                } else if (f.live) {
+                    // "N fields" is the loaded profile's key count, NOT a per-hook success count — each hookX()
+                    // swallows its own errors, so a signal could still have failed to hook. Word it as "loaded this
+                    // boot" (the heartbeat proves the Java layer ran + read the profile), not "every field verified".
+                    perApp.add(Check.ok(f.label,
+                            "Hooks loaded this boot · " + f.hb.fields + " profile fields · v" + f.hb.version));
+                } else if (f.hb != null && f.fresh && !f.sameVer) {
+                    perApp.add(Check.warn(f.label,
+                            "Old module loaded · " + f.hb.version + " → " + HookConstants.MODULE_VERSION,
+                            Fix.NONE, f.pkg));
+                } else if (moduleLiveThisBoot) {
+                    // Not run yet this boot, but the layer is proven live (another scoped app has a fresh heartbeat)
+                    // and this app is scoped + has an identity — so it WILL hook on launch. READY, not a warning.
+                    perApp.add(Check.ready(f.label,
+                            "Ready · identity applied · module live this boot — hooks on launch", f.pkg));
+                } else {
+                    // Nothing has proven the module loads on this boot yet (e.g. just after a reboot). Open ANY one
+                    // target once to confirm the layer is live — then the rest read READY without their own launch.
+                    perApp.add(Check.warn(f.label,
+                            "Identity applied · open any target once to confirm hooks load this boot",
+                            Fix.NONE, f.pkg));
                 }
             }
         }
