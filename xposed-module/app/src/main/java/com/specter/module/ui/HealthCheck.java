@@ -437,6 +437,8 @@ final class HealthCheck {
         Integer fraudScore;                     // IPQualityScore 0-100 (null = no key / lookup failed)
         Boolean proxy, vpn, tor, recentAbuse;   // IPQualityScore verdicts
         Integer abuseConfidence, abuseReports;  // AbuseIPDB (null = no key / lookup failed)
+        Double getipintel;                       // getIPIntel 0-1 proxy/hosting probability (null = not run)
+        boolean getipintelBad;                   // getIPIntel: the IP behaved maliciously
         String connectionType, organization, asn, abuseVelocity, isp, host;   // IPQualityScore context
         int dnsblChecked;                       // DNSBL zones that actually answered
         boolean dnsblUsable;                    // the sentinel resolved -> a zero-hit result is trustworthy
@@ -479,7 +481,8 @@ final class HealthCheck {
      *  network / the device's REAL public IP) ONLY on the user-confirmed off-tunnel path — the automatic paths
      *  always pass the tunnel. Both keys are optional; with neither set this still returns the keyless DNSBL
      *  count. Never throws. Call off the UI thread. */
-    static Reputation lookupReputation(android.net.Network net, String ip, String ipqsKey, String abuseKey) {
+    static Reputation lookupReputation(android.net.Network net, String ip, String ipqsKey, String abuseKey,
+                                       String getipintelContact) {
         Reputation r = new Reputation();
         r.ip = ip;
         if (ip == null) return r;
@@ -523,6 +526,25 @@ final class HealthCheck {
                 // Their 401/402/429 bodies carry the actual reason; getJson reads the error stream
                 // so we can repeat it instead of guessing between "bad key" and "quota spent".
                 r.notes.add("AbuseIPDB: " + abuseError(o));
+            }
+        }
+
+        // getIPIntel — free, no signup, just a contact email. A 0-1 proxy/hosting probability (near 1 = a
+        // hosting/VPN/Tor exit) + a BadIP flag. Docs: do NOT URL-encode the params. Mirrors lookup_getipintel
+        // in specter/ipcheck.py.
+        if (getipintelContact != null && !getipintelContact.isEmpty()) {
+            org.json.JSONObject o = getJson(net, "https://check.getipintel.net/check.php?ip=" + ip
+                    + "&contact=" + getipintelContact + "&format=json&oflags=b", null);
+            if (o == null) {
+                r.notes.add("getIPIntel unreachable");
+            } else if (!"success".equals(o.optString("status"))) {
+                r.notes.add("getIPIntel: " + emptyOr(o.optString("message"), "rejected — is the contact email valid?"));
+            } else {
+                try {
+                    double s = Double.parseDouble(o.optString("result"));
+                    if (s >= 0) { r.getipintel = s; r.getipintelBad = o.optInt("BadIP", 0) == 1; }
+                    else r.notes.add("getIPIntel error " + o.optString("result"));
+                } catch (NumberFormatException e) { r.notes.add("getIPIntel: unparseable result"); }
             }
         }
 

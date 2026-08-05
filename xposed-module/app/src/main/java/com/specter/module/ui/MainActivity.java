@@ -2104,6 +2104,11 @@ public class MainActivity extends Activity {
         // signal that actually catches a burned proxy, and that needs a key. Never hardcoded, never shipped.
         content.addView(sectionLabel("IP reputation"));
         LinearLayout repKeys = card();
+        // getIPIntel leads — it's the free, no-signup one (just a contact email) and the datacenter check +
+        // 17 blacklists already work with nothing set. Keys below only sharpen the result.
+        repKeys.addView(apiKeyRow("getIPIntel email", "getipintel_contact",
+                "Free proxy/VPN score · no signup, just a contact email"));
+        repKeys.addView(hairlineInset());
         repKeys.addView(apiKeyRow("IPQualityScore key", "ipqs_key",
                 "Fraud score and proxy verdict · 35 lookups a day free"));
         repKeys.addView(hairlineInset());
@@ -2614,6 +2619,16 @@ public class MainActivity extends Activity {
                 box.addView(networkMetaRow("ABUSE REPORTS",
                         reports + " in 90 days · " + rep.abuseConfidence + "% confidence", c));
             }
+            // getIPIntel: a 0-1 proxy/hosting probability that grades residential-vs-hosting (unlike IPQS's
+            // saturated flag) — near 1 is a hosting/VPN/Tor exit; a bad-IP flag means it behaved maliciously.
+            if (rep.getipintel != null) {
+                double g = rep.getipintel;
+                int c = g >= 0.99 ? Theme.RED : g >= 0.90 ? Theme.AMBER : Theme.SAGE;
+                String band = g >= 0.99 ? "proxy/hosting exit" : g >= 0.90 ? "likely proxy" : "residential-ish";
+                box.addView(networkMetaRow("GETIPINTEL",
+                        String.format(java.util.Locale.US, "%.2f", g) + " · " + band
+                                + (rep.getipintelBad ? " · bad IP" : ""), c));
+            }
             // Every source that failed says so, in its own line — one shared line would let whichever
             // failed first hide the others, and "no abuse row" with no reason is the confusing case.
             java.util.List<String> hints = new java.util.ArrayList<>(rep.notes);
@@ -2709,11 +2724,12 @@ public class MainActivity extends Activity {
         }
         final String ipqs = prefs.getString("ipqs_key", "").trim();
         final String abuse = prefs.getString("abuseipdb_key", "").trim();
+        final String giiContact = prefs.getString("getipintel_contact", "").trim();
         repBusy = true;
         status.setText("Checking exit-IP reputation…");
         render();   // repaint the button as "Checking…"
         new Thread(() -> {
-            final HealthCheck.Reputation r = HealthCheck.lookupReputation(vpn, ip, ipqs, abuse);
+            final HealthCheck.Reputation r = HealthCheck.lookupReputation(vpn, ip, ipqs, abuse, giiContact);
             runOnUiThread(() -> {
                 repBusy = false;
                 if (!alive()) return;

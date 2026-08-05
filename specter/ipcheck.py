@@ -238,34 +238,47 @@ def verdict(rep: dict) -> tuple[str, str]:
     abuse = rep.get("abuse_confidence")
     fraud = rep.get("fraud_score")
     dc = is_datacenter(rep)
+    gii = rep.get("getipintel_score")            # getIPIntel 0-1: near 1 = hosting/VPN/Tor exit
+    gii_bad = rep.get("getipintel_bad")          # getIPIntel: the IP behaved maliciously
     # IPQS ABUSE history — distinct from the mere proxy/vpn detection, which is expected on every proxy.
     ipqs_abuse = bool(rep.get("recent_abuse") or rep.get("frequent_abuser")
                       or rep.get("high_risk_attacks") or rep.get("bot_status"))
     why = []
-    # DIRTY (high friction): a datacenter exit, or corroborated abuse — two blacklists agreeing, a heavy
-    # AbuseIPDB score, or IPQS's own abuse flags. A single stray listing isn't enough to condemn on its own.
+    # DIRTY (high friction): a datacenter exit, corroborated abuse (two blacklists, a heavy AbuseIPDB score, or
+    # IPQS's own abuse flags), or a getIPIntel near-certain hosting/VPN verdict / bad-IP flag. getIPIntel earns a
+    # dirty on its own here (unlike the raw IPQS proxy flag) because it grades residential-vs-hosting rather than
+    # flagging every proxy — proven live (AWS 1.0, Starlink 0.0). A single stray blacklist isn't enough alone.
     if dc:
         why.append("datacenter/hosting IP")
     if len(hits) >= 2:
         why.append(f"{len(hits)} blacklists")
     if abuse is not None and abuse >= 50:
         why.append(f"{abuse}% abuse confidence")
-    if ipqs_abuse:
-        why.append("abuse history")
+    if gii_bad:
+        why.append("getIPIntel bad-IP")
+    if gii is not None and gii >= 0.99:
+        why.append("getIPIntel proxy/hosting")
     if why:
         return "dirty", "High friction — " + ", ".join(why)
 
-    # SUSPECT: a single weaker signal worth knowing about.
+    # SUSPECT: a single weaker signal worth knowing about. IPQS's abuse flags (recent_abuse/bot) live HERE, not
+    # in dirty — they saturate on shared/residential-proxy IPs the same way its score does, so on their own they
+    # mark "worth a look", not "burned". A reliable independent source (a blacklist, AbuseIPDB, getIPIntel) is
+    # what escalates to dirty above.
     if len(hits) == 1:
         why.append("1 blacklist")
     if abuse is not None and 10 <= abuse < 50:
         why.append(f"{abuse}% abuse confidence")
+    if ipqs_abuse:
+        why.append("IPQS abuse flags")
     if rep.get("abuse_velocity") in ("medium", "high"):
         why.append(f"{rep['abuse_velocity']} abuse velocity")
+    if gii is not None and 0.90 <= gii < 0.99:
+        why.append(f"getIPIntel {int(gii * 100)}% proxy")
     if why:
         return "suspect", "Some risk — " + ", ".join(why)
 
-    if fraud is None and abuse is None and not rep.get("dnsbl_usable"):
+    if fraud is None and abuse is None and gii is None and not rep.get("dnsbl_usable"):
         return "unknown", "No source answered — add an API key, or check the network"
 
     # CLEAN: not a datacenter, no abuse or blacklist history. Note when IPQS still flags it as a proxy — some
@@ -303,6 +316,11 @@ def format_report(rep: dict) -> str:
         rows.append(("Flagged as", " · ".join(on) if on else "not flagged as proxy or VPN"))
     if rep.get("abuse_velocity"):
         rows.append(("Abuse velocity", rep["abuse_velocity"]))
+    gii = rep.get("getipintel_score")
+    if gii is not None:
+        band = "proxy/hosting exit" if gii >= 0.99 else "likely proxy" if gii >= 0.90 else "residential-ish"
+        line = f"{gii:.2f} · {band}" + (" · bad IP" if rep.get("getipintel_bad") else "")
+        rows.append(("getIPIntel", line))
 
     hits = rep.get("blacklists") or []
     pol = rep.get("policy_lists") or []
@@ -632,6 +650,29 @@ def lookup_abuseipdb(ip: str, key: str, opener) -> dict:
     }
 
 
+def lookup_getipintel(ip: str, contact: str, opener) -> dict:
+    """getIPIntel proxy/VPN/hosting probability (0-1) + a BadIP flag. Free, NO signup — it only needs a contact
+    email (for abuse contact, not auth). A value near 1 is a hosting/VPN/Tor exit (high friction for a strict
+    app); BadIP means the IP itself behaved maliciously. Unlike IPQS it grades residential-vs-hosting — measured
+    live: AWS 1.0, Starlink 0.0 — so it DISCRIMINATES where IPQS saturates. Rate-limited (15/min, 500/day); the
+    docs say do NOT URL-encode the params, and reject any query without a valid contact."""
+    o = _get_json(f"https://check.getipintel.net/check.php?ip={ip}&contact={contact}&format=json&oflags=b", opener)
+    if not o:
+        return {"notes": ["getIPIntel unreachable"]}
+    if o.get("status") != "success":
+        return {"notes": ["getIPIntel: " + str(o.get("message") or "rejected — is the contact email valid?")]}
+    try:
+        score = float(str(o.get("result")))
+    except (TypeError, ValueError):
+        return {"notes": ["getIPIntel: unparseable result"]}
+    if score < 0:                       # negative result = an error code (-1..-6)
+        return {"notes": [f"getIPIntel error {o.get('result')}"]}
+    out: dict = {"getipintel_score": round(score, 3)}
+    if o.get("BadIP"):
+        out["getipintel_bad"] = True
+    return out
+
+
 def resolve_a(host: str) -> list[str]:
     """Every A record for ``host``; empty when it doesn't resolve.
 
@@ -697,7 +738,8 @@ def dnsbl_check(ip: str) -> dict:
 
 
 def check(proxy: str | None = None, ip: str | None = None,
-          ipqs_key: str = "", abuse_key: str = "", proxy_scheme: str = "http") -> dict:
+          ipqs_key: str = "", abuse_key: str = "", proxy_scheme: str = "http",
+          getipintel_contact: str = "") -> dict:
     """Run every available source and return one flat report dict. Blocking (network). ``proxy`` is
     parsed leniently (see ``parse_proxy``); ``proxy_scheme`` fills in the transport when ``proxy``
     carries no ``scheme://`` of its own."""
@@ -723,6 +765,8 @@ def check(proxy: str | None = None, ip: str | None = None,
         rep["notes"].append("No IPQualityScore key — no fraud score (set it in the Keys row)")
     if abuse_key:
         merge(lookup_abuseipdb(rep["ip"], abuse_key, opener))
+    if getipintel_contact:
+        merge(lookup_getipintel(rep["ip"], getipintel_contact, opener))
 
     # ponytail: the blocklist queries go out the LOCAL resolver, not the proxy — an HTTP proxy
     # can't carry DNS. That's fine here: the query names the exit IP explicitly, so the answer is
@@ -755,10 +799,13 @@ def save_config(cfg: dict) -> None:
         pass
 
 
-def resolve_keys(args, cfg: dict) -> tuple[str, str]:
+def resolve_keys(args, cfg: dict) -> tuple[str, str, str]:
     ipqs = args.ipqs_key or os.environ.get("IPQS_KEY") or cfg.get("ipqs_key") or ""
     abuse = args.abuse_key or os.environ.get("ABUSEIPDB_KEY") or cfg.get("abuse_key") or ""
-    return ipqs.strip(), abuse.strip()
+    # getIPIntel needs a contact email, not a key — free, no signup. Env GETIPINTEL_CONTACT or the config.
+    contact = (getattr(args, "getipintel_contact", "") or os.environ.get("GETIPINTEL_CONTACT")
+               or cfg.get("getipintel_contact") or "")
+    return ipqs.strip(), abuse.strip(), contact.strip()
 
 
 # ---- local web UI --------------------------------------------------------------------------
@@ -883,15 +930,16 @@ details[open] summary::before{content:"− "}
         </div></div>
       <div class=field><label for=ip>IP · optional</label><input id=ip placeholder="check directly"></div>
     </div>
-    <details><summary>API keys</summary>
+    <details><summary>Optional: sharpen detection</summary>
       <div class=grid style="margin-top:12px">
-        <div class=field><label for=ipqs>IPQualityScore</label><input id=ipqs type=password placeholder="fraud score · optional"></div>
-        <div class=field><label for=abuse>AbuseIPDB</label><input id=abuse type=password placeholder="abuse history · optional"></div>
+        <div class=field><label for=gii>getIPIntel email</label><input id=gii placeholder="your email · free, no signup"></div>
+        <div class=field><label for=ipqs>IPQualityScore key</label><input id=ipqs type=password placeholder="fraud score · optional"></div>
+        <div class=field><label for=abuse>AbuseIPDB key</label><input id=abuse type=password placeholder="abuse history · optional"></div>
       </div>
-      <p class=note>Stored locally in ~/.specter-ipcheck.json. The blacklist count needs no key.</p>
+      <p class=note>All optional — the verdict already uses datacenter detection + 17 blacklists with no keys. getIPIntel adds a strong proxy/VPN score and only needs a contact email (free, no signup). Stored locally in ~/.specter-ipcheck.json.</p>
     </details>
     <button class=go id=go>Run check</button>
-    <p class=note style="margin-top:10px">Scored from <b>ipwho.is</b> geo/ISP · <b>~120 DNSBLs</b> blacklists + mail-policy lists — both free, no key. Add a key above for <b>IPQualityScore</b> (0–100 fraud score, proxy/VPN/bot flags) and <b>AbuseIPDB</b> (abuse history). The verdict combines whatever ran.</p>
+    <p class=note style="margin-top:10px">No keys needed — <b>datacenter detection</b> + <b>17 blocklists</b> already grade the exit. Add a <b>getIPIntel</b> email (free, no signup) for a proxy/hosting score, or IPQualityScore / AbuseIPDB keys to sharpen it.</p>
   </div>
   <div id=out></div>
 </div>
@@ -911,7 +959,7 @@ $('#theme').onclick=()=>{
 fetch('/config').then(r=>r.json()).then(c=>{
   $('#proxy').value=q.get('proxy')||c.proxy||'';
   $('#ptype').value=q.get('ptype')||c.proxy_scheme||'http';
-  $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||'';
+  $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||''; $('#gii').value=c.getipintel_contact||'';
   $('#ip').value=q.get('ip')||'';
   // Show the current exit IP + geo/score immediately on open — an empty proxy checks this machine's own
   // exit. A ?ip=/?proxy= from a bookmark just seeds the fields first, then the same auto-run picks them up.
@@ -934,14 +982,10 @@ function render(r){
   if(r.ip)hero+=`<button class=copy data-ip="${esc(r.ip)}">Copy</button>`;
   hero+=`</div><div class=sub>${esc([r.isp,r.connection_type,r.location].filter(Boolean).join('  ·  ')||'—')}</div>`;
   if(r.timezone)hero+=`<div class=sub>${esc(r.timezone)}</div>`;
-  // Fraud-score meter.
-  if(r.fraud_score!=null){const b=band(r.fraud_score),mc=`var(--${b})`;
-    hero+=`<div class=meter style="--mc:${mc}"><div class=head><span class=score>${esc(r.fraud_score)}</span>`+
-      `<span class=cap>IPQualityScore${r.ipqs_strictness!=null?` · strictness ${esc(r.ipqs_strictness)}`:''}<br>${esc(bandWord(r.fraud_score))}</span></div>`+
-      `<div class=track><span class=mk style="left:${Math.max(0,Math.min(100,r.fraud_score))}%"></span></div>`+
-      `<div class=scale><span>0</span><span>60</span><span>85</span><span>100</span></div></div>`;}
   hero+=`</div>`;
   t+=blk(hero);
+  // IPQS's fraud_score is deliberately NOT the visual hero — it saturates on proxies, so it's one tile among
+  // the signals below, not a giant meter that reads as "the verdict".
 
   // Signal tiles.
   const pol=(r.policy_lists||[]).length, hits=(r.blacklists||[]).length;
@@ -950,13 +994,19 @@ function render(r){
   if(r.connection_class){const dc=r.connection_class==='datacenter';
     const ct=r.connection_class[0].toUpperCase()+r.connection_class.slice(1);
     tiles+=`<div class=tile><em>Exit type</em><strong style="font-size:20px;color:var(--${dc?'dirty':'clean'})">${esc(ct)}</strong><small>${dc?'hosting IP — real ISPs pass more easily':'real network line'}</small></div>`;}
-  const bl=hits>=3?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
+  const bl=hits>=2?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
   tiles+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${bl})">${r.dnsbl_usable||hits?hits:'—'}</strong>`+
     `<small>${hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}${pol?` · plus ${pol} policy listing${pol>1?'s':''}`:''}</small></div>`;
   if(pol)tiles+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--info)">${pol}</strong><small>${esc(r.policy_lists.join(', '))} · a mail-sending policy listing, not an abuse report</small></div>`;
   if(r.abuse_confidence!=null){const ac=r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean';
     tiles+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${esc(r.abuse_confidence)}%</strong><small>${esc(r.abuse_reports||0)} reports in 90 days</small></div>`;}
   if(r.abuse_velocity)tiles+=`<div class=tile><em>Abuse velocity</em><strong style="font-size:20px">${esc(r.abuse_velocity)}</strong><small>IPQualityScore</small></div>`;
+  // Fraud score as ONE tile among the signals — not a hero meter. Labeled "detects proxies" so a saturated
+  // 100 reads as expected, not as the verdict.
+  if(r.fraud_score!=null){const fb=band(r.fraud_score);
+    tiles+=`<div class=tile><em>Fraud score</em><strong style="color:var(--${fb})">${esc(r.fraud_score)}</strong><small>IPQualityScore${r.ipqs_strictness!=null?' · strictness '+esc(r.ipqs_strictness):''}${r.fraud_score>=85?' · flags every proxy, runs high':''}</small></div>`;}
+  if(r.getipintel_score!=null){const g=r.getipintel_score, gb=g>=0.99?'dirty':g>=0.90?'suspect':'clean';
+    tiles+=`<div class=tile><em>getIPIntel</em><strong style="color:var(--${gb})">${g.toFixed(2)}</strong><small>${g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':'residential-ish'}${r.getipintel_bad?' · bad IP':''}</small></div>`;}
   t+=blk(`<div class=tiles>${tiles}</div>`);
 
   if(r.fraud_score!=null){
@@ -989,7 +1039,8 @@ $('#go').onclick=async()=>{
   try{
     const r=await fetch('/check',{method:'POST',body:JSON.stringify({
       proxy:$('#proxy').value.trim(), proxy_scheme:$('#ptype').value, ip:$('#ip').value.trim(),
-      ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()})});
+      ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim(),
+      getipintel_contact:$('#gii').value.trim()})});
     render(await r.json());
   }catch(e){render({error:String(e)})}
   b.disabled=false; b.textContent='Run check';
@@ -1044,7 +1095,7 @@ def serve(port: int, open_browser: bool = True) -> None:
             if path == "/config":
                 cfg = load_config()
                 self._send(json.dumps({k: cfg.get(k, "") for k in
-                                       ("proxy", "proxy_scheme", "ipqs_key", "abuse_key")}).encode(),
+                                       ("proxy", "proxy_scheme", "ipqs_key", "abuse_key", "getipintel_contact")}).encode(),
                            "application/json")
             elif path in ("/", "/index.html"):
                 self._send(PAGE.encode("utf-8"), "text/html; charset=utf-8")
@@ -1067,13 +1118,14 @@ def serve(port: int, open_browser: bool = True) -> None:
             # Only fields the request actually carried. Defaulting a missing one to "" would let any
             # partial request erase a saved key — the page always sends all three, but nothing else
             # has to. Sending "" explicitly still clears, which is how the UI clears a key.
-            cfg.update({k: req[k] for k in ("proxy", "proxy_scheme", "ipqs_key", "abuse_key")
+            cfg.update({k: req[k] for k in ("proxy", "proxy_scheme", "ipqs_key", "abuse_key", "getipintel_contact")
                         if k in req})
             save_config(cfg)
             try:
                 rep = check(req.get("proxy") or None, req.get("ip") or None,
                             req.get("ipqs_key", ""), req.get("abuse_key", ""),
-                            req.get("proxy_scheme") or "http")
+                            req.get("proxy_scheme") or "http",
+                            req.get("getipintel_contact", ""))
             except Exception as exc:
                 rep = {"error": str(exc)}
             self._send(json.dumps(rep).encode(), "application/json")
@@ -1101,6 +1153,8 @@ def main(argv=None) -> int:
     ap.add_argument("--ip", default="", help="check this IP directly (skips the exit-IP lookup)")
     ap.add_argument("--ipqs-key", default="", help="IPQualityScore API key")
     ap.add_argument("--abuse-key", default="", help="AbuseIPDB API key")
+    ap.add_argument("--getipintel-contact", default="",
+                    help="contact email for getIPIntel proxy/VPN detection (free, no signup)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--serve", nargs="?", const=8787, type=int, metavar="PORT",
                     help="open the local web UI (default port 8787)")
@@ -1110,9 +1164,9 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     cfg = load_config()
-    ipqs, abuse = resolve_keys(args, cfg)
+    ipqs, abuse, gii_contact = resolve_keys(args, cfg)
     if args.save_keys:
-        cfg.update({"ipqs_key": ipqs, "abuse_key": abuse})
+        cfg.update({"ipqs_key": ipqs, "abuse_key": abuse, "getipintel_contact": gii_contact})
         save_config(cfg)
         print(f"keys saved to {CONFIG}")
 
@@ -1121,7 +1175,7 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        rep = check(args.proxy or None, args.ip or None, ipqs, abuse, args.proxy_type)
+        rep = check(args.proxy or None, args.ip or None, ipqs, abuse, args.proxy_type, gii_contact)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
