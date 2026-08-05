@@ -2,6 +2,30 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-06 — AppData capture/restore design CONFIRMED correct against the research recipe (not
+  re-architected).** `SessionMigrator` already does everything the Neo/Titanium root-backup lineage
+  converges on: excludes `cache/code_cache/oat/app_textures/lib` (a stale `code_cache` with the old uid can
+  trigger a full data wipe on reboot — Android 13+), force-stops the app BEFORE the snapshot AND before
+  restore (aborting if it won't stop, so nothing is swapped under a live writer), tars the WHOLE
+  `databases/` incl `-wal/-shm` (the live login row sits in the WAL), restores by atomic mv-aside + swap
+  with rollback, then re-`chown`s to THIS install's uid and `restorecon`s. So §2d's "no cross-contamination
+  / does it hold" is a CONFIRM, and it holds. No code change was needed.
+- **2026-08-06 — the Keystore ceiling is a documented boundary, not a bug to fix.** Hardware/TEE-wrapped
+  session tokens (EncryptedSharedPreferences, Firebase Auth Tink keyset, FIDO/passkeys) are non-exportable
+  by construction — no file copy can carry them to another identity, and a restore that copies the
+  ciphertext without the device-bound key yields `AEADBadTagException`/logged-out. Plain cookie/JWT/sqlite
+  logins DO survive a copy; keystore-wrapped ones do not; server-side device-binding needs the spoofed
+  identity to line up server-side. Restore should report WHICH layer failed rather than a bare "restore
+  failed" (backlog in IDEAS.md). See the research in docs/ANTI-FINGERPRINT-STRATEGY.md.
+- **2026-08-06 — no-cross-contamination is guaranteed by generation uniqueness, already test-guarded.** A
+  saved vault entry IS a generated profile, and `test_ledger_enforces_uniqueness` +
+  `test_used_store_persists_and_blocks_reuse` prove no `android_id`/`gsf`/`serial`/`imei` ever repeats
+  across gens (the ledger's retry-on-collision is the guarantee). So two vault entries cannot share an
+  identifying field; a separate "hash the vault tuple" test would be redundant (YAGNI). The live on-device
+  round-trip (log into Dasher on the 4a → save → apply identity B → restore → still logged in) still needs
+  a fresh Dasher login to exercise and was NOT run this session (no credentials; rule zero keeps it off
+  Cash App). Comprehensive spoof COVERAGE is separately proven by the probe (every Build.*/id field ✅).
+
 - **2026-08-05: the 6-device pool is CORRECT for the A11 fleet — do NOT lower `MIN_ANDROID_MAJOR` to grow
   it.** WHY: the pool looks small (only ~6 models survive `MIN==MAX_ANDROID_MAJOR==11` + phones-only + US),
   and lowering the floor to 10 to add Android-10 devices is tempting for identity diversity. It's a
