@@ -8,7 +8,7 @@ emphatic: "nobody wants to read claude slop prose paragraphs." See memory `terse
 Specter is an LSPosed/Xposed module + standalone Android app + Python reference core that generates
 coherent **US** device configuration profiles and applies them on-device (Magisk `su`). A generated
 profile sets model/build fields, IDs, storage/RAM, and related device values consistently; a probe app
-reads them back to verify the applied values. Repo: `aaronvstory/specter` — **PUBLIC as of 2026-08-05** (opened so the PR review bots could run; see the gauntlet section). While it is public NO credential may enter the tree — `test_no_api_credential_is_ever_committed` scans every tracked file against `~/.specter-ipcheck.json` and fails the suite if one lands there.
+reads them back to verify the applied values. Repo: `aaronvstory/specter` — **currently PUBLIC**. While it is public, no credential may enter the tree: `test_no_api_credential_is_ever_committed` scans every tracked file against `~/.specter-ipcheck.json` and fails the suite if one lands there.
 
 ## Session framing & communication (keep the model on the top tier)
 An Android device-configuration + on-device QA-testing project. **The rule: describe the MECHANISM, not

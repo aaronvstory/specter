@@ -1373,6 +1373,35 @@ def test_scamalytics_reserved_addresses_are_not_a_clean_signal(monkeypatch):
 # ---- generated page ---------------------------------------------------------------------------
 
 
+def test_every_delegated_selector_matches_something_the_page_emits():
+    """A delegated handler whose selector names a class the markup never produces is a DEAD control that
+    looks completely normal.
+
+    That is not hypothetical: the copy handler read `.copy,.cc` while every credential chip is `.cp`, so
+    clicking host / port / user / password copied nothing and did not even flash — the tool's headline
+    feature, silently inert. `.cc` matched nothing at all, which is the tell this test looks for.
+
+    Both directions matter. A selector with no markup is a dead handler; an interactive class with no
+    handler is a dead button."""
+    from tools.page_assets import PAGE as page  # noqa: F401  (same source the page is built from)
+    handled = set()
+    for sel in re.findall(r"closest\('([^']+)'\)", ipcheck.PAGE):
+        handled |= {s.strip().lstrip(".") for s in sel.split(",") if s.strip().startswith(".")}
+    # Classes the page actually renders onto a <button>.
+    emitted = set(re.findall(r"<button[^>]*\bclass=([A-Za-z][\w-]*)", ipcheck.PAGE))
+    emitted |= set(re.findall(r"<button[^>]*\bclass=\"([^\"]+)\"", ipcheck.PAGE))
+    emitted = {c for grp in emitted for c in grp.split()}
+
+    dead_handlers = handled - emitted
+    assert not dead_handlers, (
+        f"delegated selector(s) {sorted(dead_handlers)} match no <button> the page emits — the handler is "
+        f"dead. Emitted button classes: {sorted(emitted)}")
+    # ...and every clickable chip class must be reachable by some handler.
+    for cls in ("cp", "copy"):
+        assert cls in emitted, f".{cls} is no longer emitted — update this test with the new class"
+        assert cls in handled, f".{cls} buttons are rendered but no delegated handler listens for them"
+
+
 def test_no_inline_svg_attribute_is_unquoted():
     """`rx=1.2/>` parses as the VALUE `1.2/` with no self-close, so the element swallows its siblings.
 
@@ -1468,6 +1497,32 @@ def test_the_generated_page_is_in_sync_with_PAGE():
                    "k:'scam'", "ccColour", "shortLoc", "scrollbar-color"):
         assert marker in html, f"webapp/index.html is stale — re-run python webapp/build.py ({marker})"
     assert "localStorage.getItem" in html and "fetch('/config')" not in html
+
+
+# ---- backup safety ------------------------------------------------------------------------------
+
+
+def test_the_backup_directory_name_cannot_escape_backups():
+    """`ro.product.device` and the adb serial are read FROM the connected device and land in a directory
+    name, so a hostile or malformed value could place an archive of real login data outside `backups/`.
+
+    The second half matters as much: the naming must stay STABLE. Sanitising `.` out of an adb serial
+    renamed every directory, and `--check` then reported "NO BACKUP EVER" for devices that had one — a
+    backup checker that cannot find the backups is worse than no checker."""
+    import importlib.util
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("backup_vault", root / "scripts" / "backup_vault.py")
+    assert spec and spec.loader
+    bv = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bv)
+
+    for hostile in ("../../etc", "/tmp/x", "..", ".", "", "a/b", "..\\..\\x", "  "):
+        got = bv._safe(hostile, "fallback")
+        assert "/" not in got and "\\" not in got, f"{hostile!r} -> {got!r} is not one path component"
+        assert got not in (".", "", ".."), f"{hostile!r} -> {got!r} is a relative-path token"
+    # ...and ordinary values survive intact, in the shape the existing backups already use.
+    assert bv._safe("sunfish", "x") == "sunfish"
+    assert bv._safe("192.168.50.19_5557".replace(".", "_"), "x") == "192_168_50_19_5557"
 
 
 # ---- secrets ---------------------------------------------------------------------------------

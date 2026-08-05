@@ -1,13 +1,13 @@
-"""Write xposed-module/dev-keys.properties from ~/.specter-ipcheck.json, so a LOCAL build comes up with the
-reputation keys already filled in.
+"""Write xposed-module/dev-keys.properties from ~/.specter-ipcheck.json.
 
     python xposed-module/make-dev-keys.py
 
-The output is GITIGNORED and the repo is PUBLIC — no key may ever enter the tree. A DISTRIBUTABLE build is
-simply one made without this file: every BuildConfig field is then empty and the app shows "Not set", which
-is already the correct UI for a user who has to bring their own keys. Delete the file to go back to that.
+The output is gitignored and written 0600. A build made WITH the file compiles the values into BuildConfig
+and the app writes them into prefs on first launch; a build made WITHOUT it gets empty strings and the app
+shows "Not set". Delete the file to return to that state.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -37,7 +37,19 @@ def main() -> int:
             have.append(prop)
         # Properties escaping: only a backslash needs it for these values (no ':' or '=' in a key/email).
         lines.append(f"{prop}={v.replace(chr(92), chr(92) * 2)}")
-    OUT.write_text("\n".join(lines) + "\n", "utf-8")
+    # Owner-only, created 0600 from the start rather than chmod'd after — this file holds LIVE API keys,
+    # and .gitignore keeps it out of the repo but does nothing about another local account reading it.
+    # Written to a private temp file in the same directory then atomically replaced, so a reader never
+    # sees a half-written file and never sees one with default permissions.
+    #
+    # HONEST LIMIT: the mode is POSIX. On Windows os.open's mode only toggles the read-only attribute and
+    # access follows inherited NTFS ACLs, so this does NOT make the file private there — it will still
+    # show as -rw-r--r--. On Windows the protection is the location, not this call.
+    tmp = OUT.with_suffix(".properties.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, OUT)
     print(f"wrote {OUT.name} with {len(have)} key(s): {', '.join(have) or 'none'}")
     print("this APK is for THIS machine — do not distribute it")
     return 0

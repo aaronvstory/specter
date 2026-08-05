@@ -220,6 +220,11 @@ table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
 .cp::after{content:"";position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:11px;line-height:1}
 .cp.done{border-color:var(--clean);color:var(--clean);background:color-mix(in srgb,var(--clean) 16%,transparent)}
 .cp.done::after{content:"✓"}
+/* A copy that FAILED must not look like one that worked — the reserved slot means neither state resizes
+   the chip, so the mark is the only thing that changes. */
+.cp.failed,.copy.failed{border-color:var(--dirty);color:var(--dirty);
+  background:color-mix(in srgb,var(--dirty) 16%,transparent)}
+.cp.failed::after{content:"✕"}
 .cp i{font-style:normal;color:var(--dim);margin-right:5px;font-weight:400}
 .cp:hover i{color:inherit;opacity:.7}
 /* Details chevron: right when collapsed, down when open. One click, no second step. */
@@ -700,11 +705,27 @@ function render(r){
 
 // Copy (delegated — renders rebuild the buttons). Handles the hero .copy (data-ip) and the bulk table .cc
 // (data-copy: a proxy string or an exit IP).
+// `.cp` is the credential chip (host / port / user / pass / whole line) and `.copy` the hero button.
+// This selector used to read `.copy,.cc` — `.cc` is emitted NOWHERE, and every `.cp` chip therefore had
+// no handler at all: clicking a password copied nothing and did not even flash. That is the tool's whole
+// point ("click to copy the hostname / port / username / password"), silently broken, which is why
+// test_every_delegated_selector_matches_something_the_page_emits now pins the two lists to each other.
 out.addEventListener('click',async e=>{
-  const b=e.target.closest('.copy,.cc'); if(!b)return;
+  const b=e.target.closest('.copy,.cp'); if(!b)return;
   const txt=b.dataset.copy!=null?b.dataset.copy:b.dataset.ip; if(!txt)return;
-  try{await navigator.clipboard.writeText(txt);}
-  catch(err){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
+  let ok=false;
+  try{await navigator.clipboard.writeText(txt); ok=true;}
+  catch(err){
+    // execCommand is the fallback for a denied permission or a non-secure origin. It reports whether it
+    // worked, and that answer is used: flashing "done" after a FAILED copy tells the user their password
+    // is on the clipboard when it is not.
+    const ta=document.createElement('textarea');
+    ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ok=document.execCommand('copy');}catch(e2){ok=false;}
+    ta.remove();
+  }
+  if(!ok){b.classList.add('failed'); setTimeout(()=>b.classList.remove('failed'),1400); return;}
   // Flash the colour, never the label — swapping "Copy" for "Copied ✓" resizes the button and shoves its
   // neighbours around. Confirmation must not move the layout.
   b.classList.add('done');

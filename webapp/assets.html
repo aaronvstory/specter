@@ -217,6 +217,11 @@ table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
 .cp::after{content:"";position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:11px;line-height:1}
 .cp.done{border-color:var(--clean);color:var(--clean);background:color-mix(in srgb,var(--clean) 16%,transparent)}
 .cp.done::after{content:"✓"}
+/* A copy that FAILED must not look like one that worked — the reserved slot means neither state resizes
+   the chip, so the mark is the only thing that changes. */
+.cp.failed,.copy.failed{border-color:var(--dirty);color:var(--dirty);
+  background:color-mix(in srgb,var(--dirty) 16%,transparent)}
+.cp.failed::after{content:"✕"}
 .cp i{font-style:normal;color:var(--dim);margin-right:5px;font-weight:400}
 .cp:hover i{color:inherit;opacity:.7}
 /* Details chevron: right when collapsed, down when open. One click, no second step. */
@@ -488,10 +493,12 @@ h+=sec('Verdict pills + status',
 h+=sec('Copy controls · the button must not resize',
   'Click each one. The confirmation is a colour flash — swapping the label for “Copied ✓” would shove its neighbours around.',
   '<div class=at-card style="flex:1 1 100%"><div class=at-row>'+
+  // `.cp` and `.copy` are the ONLY copy classes the page emits. This gallery previously demoed a `.cc`
+  // that exists nowhere in the product — unstyled here, and no evidence about anything that ships.
   '<button class=copy data-copy="hero">Copy</button>'+
-  '<button class=cc data-copy="1.2.3.4"><i>ip</i>1.2.3.4</button>'+
-  '<button class=cc data-copy="res.example.com"><i>host</i>res.example.com</button>'+
-  '<button class=cc data-copy="10000"><i>port</i>10000</button>'+
+  '<button class=cp data-copy="1.2.3.4"><i>ip</i>1.2.3.4</button>'+
+  '<button class=cp data-copy="res.example.com"><i>host</i>res.example.com</button>'+
+  '<button class=cp data-copy="10000"><i>port</i>10000</button>'+
   '<button class=cp data-copy="hunter2"><i>pass</i>•••••••</button>'+
   '</div></div>');
 
@@ -512,10 +519,16 @@ h+=sec('App icon · every shipped size, 1×',
 $$('#at-out').innerHTML=h;
 
 // Copy behaviour, mirrored from the page so the flash can actually be tried here.
+// Mirrors the page's handler, including the part that matters: the flash reflects whether the copy
+// actually happened. Flashing "done" after a rejected clipboard write tells the reader their password is
+// on the clipboard when it is not — and this page exists to show controls behaving honestly.
 document.addEventListener('click',async e=>{
-  const b=e.target.closest('.copy,.cc,.cp'); if(!b||b.id==='at-theme')return;
-  const t=b.dataset.copy; if(t){try{await navigator.clipboard.writeText(t);}catch(err){}}
-  b.classList.add('done'); setTimeout(()=>b.classList.remove('done'),1100);
+  const b=e.target.closest('.copy,.cp'); if(!b||b.id==='at-theme')return;
+  const t=b.dataset.copy; if(!t)return;
+  let ok=false;
+  try{await navigator.clipboard.writeText(t); ok=true;}catch(err){ok=false;}
+  const cls=ok?'done':'failed';
+  b.classList.add(cls); setTimeout(()=>b.classList.remove(cls),1200);
 });
 $$('#at-theme').onclick=()=>{
   const r=document.documentElement;
