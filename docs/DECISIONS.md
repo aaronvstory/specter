@@ -2,6 +2,18 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-05 (v0.24.6): the coherence sweep (Phase 2.2) is enforced as EXTRA checks in `validate()`, not a
+  separate validator, and every check is proven false-positive-free over 500 generated profiles before it
+  ships.** WHY: `validate()` already ran on generated profiles and is tested, so adding the SoC↔GPU-vendor,
+  carrier-name↔MCC/MNC, board↔hardware, and patch↔OS checks there gives them teeth (a regression that made an
+  incoherent profile would now fail the suite) without a parallel code path to drift. The false-positive bar
+  is non-negotiable because `validate()` gates generation: a check that wrongly rejects a valid profile would
+  break the generator, so each was run against 500 seeds (0 failures) first. Gotchas that shaped the checks:
+  `build_device` (t2q) is NOT `build_board`/`build_hardware` (t2qsqw) — only board==hardware is required;
+  `build_version_release` is empty in the profile, so the OS major is read from the fingerprint's `:N/` token;
+  and the pool's SoCs map cleanly (qcom→Qualcomm/Adreno, exynos/tensor→ARM/Mali — no MTK/Kirin/AMD present),
+  so `_soc_family` returns "" for anything unrecognised and the check skips rather than guesses.
+
 - **2026-08-05 (v0.24.5): `armTrace` disarm also strips a LEGACY unquoted `{trace:1,` — found by a read-only
   fleet audit.** WHY: a read-only coherence audit of the applied profiles on both phones found one (the 4a
   Dasher profile) starting `{trace:1,…` — an unquoted key an OLDER armTrace wrote before the flag was

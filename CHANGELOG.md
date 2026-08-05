@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.6] - 2026-08-05
+
+### Added
+- **Profile validation now catches four more incoherent field pairs.** `validate()` already checked
+  formats, the fingerprint, and the SIM's IMSI/ICCID; it now also flags a SoC that disagrees with its
+  GPU vendor (a Qualcomm/Adreno chip reporting an ARM GPU, or vice-versa), a carrier NAME that doesn't
+  match its MCC/MNC, a `build_board`/`build_hardware` codename disagreement, and a security-patch date
+  that predates the OS release. Proven false-positive-free over 500 generated profiles; catches the
+  class of generator regression the coherence sweep exists to prevent. Validation-only — no seeded
+  draw changes, so Java↔Python byte-parity is unaffected.
+
 ## [0.24.5] - 2026-08-05
 
 ### Fixed

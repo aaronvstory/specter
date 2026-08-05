@@ -222,6 +222,13 @@ check for ipcheck. See `docs/IDEAS.md`.**
   hardware bundle, so ro.board.platform agrees with the GPU/cpuinfo the same profile carries; PURE (no
   RNG), byte-parity held, verified on-device (Moto Z3 Play -> msm8998 across soc_platform + native GPU
   Adreno 540 + cpuinfo MSM8998).
+  **ENFORCED 2026-08-05 (v0.24.6): the sweep is now guarded in `validate()`.** Four more incoherent pairs
+  are caught — SoC↔GPU-vendor, carrier-name↔MCC/MNC, board↔hardware, security-patch↔OS — each proven
+  false-positive-free over 500 generated profiles, so a generator regression that produced an incoherent
+  profile fails the test suite. Validation-only, byte-parity unaffected. (Motivated by the read-only fleet
+  coherence audit that also caught the legacy trace-flag cruft, #64.) Remaining candidates left as ideas:
+  `build_host`/`build_incremental` shape vs brand, carrier vs phone-number area code (national carriers make
+  this weak).
 
 ### Phase 3 — UX (the part that makes it feel like a product)
 
