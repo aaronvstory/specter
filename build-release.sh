@@ -8,8 +8,10 @@ echo "[release] building Specter v${VERSION}"
 
 # 1. build the module APK (if toolchain present)
 if [ -x xposed-module/build-apk.sh ]; then
-    echo "[release] building module APK..."
-    ( cd xposed-module && ./build-apk.sh ) || echo "[release] APK build skipped (no toolchain)"
+    echo "[release] building module APK (R8-obfuscated, no seeded keys)..."
+    # SPECTER_RELEASE=1 => the distributable is obfuscated + carries no dev keys (§2e). A dev build is the
+    # default (readable + seeded); the thing we hand out must not be.
+    ( cd xposed-module && SPECTER_RELEASE=1 ./build-apk.sh ) || echo "[release] APK build skipped (no toolchain)"
 fi
 
 # 2. stage the distributable tree

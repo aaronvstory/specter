@@ -37,12 +37,21 @@ else
     echo "[build] WARN: no built zygisk .so found — run build-zygisk.sh first so the app can self-install it"
 fi
 
+# SPECTER_RELEASE=1 builds the DISTRIBUTABLE variant: R8-obfuscated, resource-shrunk, and with NO seeded
+# dev keys (see app/build.gradle + proguard-rules.pro). Default is DEBUG — readable + seeded, fast to
+# iterate — which is what dev/on-device debugging wants. build-release.sh sets SPECTER_RELEASE=1.
 # Force a fresh Java compile so a NEW compile error can't be masked by stale incremental .class files
 # (that once shipped a broken APK — a full 'BUILD SUCCESSFUL' on code that didn't actually compile).
 "$GRADLE" :app:clean --no-daemon
-"$GRADLE" :app:assembleDebug --no-daemon "$@"
-APK="app/build/outputs/apk/debug/app-debug.apk"
-echo "[build] APK: $APK"
+if [ "${SPECTER_RELEASE:-}" = "1" ]; then
+    "$GRADLE" :app:assembleRelease --no-daemon "$@"
+    APK="app/build/outputs/apk/release/app-release.apk"
+    echo "[build] RELEASE (obfuscated, no seeded keys): $APK"
+else
+    "$GRADLE" :app:assembleDebug --no-daemon "$@"
+    APK="app/build/outputs/apk/debug/app-debug.apk"
+    echo "[build] DEBUG (readable, seeded if dev-keys.properties present): $APK"
+fi
 mkdir -p ../dist
 cp "$APK" "../dist/specter-module-v${VERSION}.apk"
 echo "[build] staged -> dist/specter-module-v${VERSION}.apk"
