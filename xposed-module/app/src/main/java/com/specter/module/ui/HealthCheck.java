@@ -827,7 +827,7 @@ final class HealthCheck {
                 r.ipapiAsname = emptyOr(ia.optString("asname"), null);
                 if (Boolean.TRUE.equals(r.ipapiMobile)) r.mobile = true;
             }
-        } catch (Throwable ignored) {}
+        } catch (Exception ignored) {}   // a failed ip-api lookup is an absent signal, never fatal — but don't swallow VM Errors
 
         checkDnsbl(net, ip, r);
         repCache = r;

@@ -2,6 +2,14 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-06 — ip-api.COM (free, keyless) was ADDED (v0.29.0) — do NOT confuse it with ip-api.IO (paid,
+  rejected below, 2026-08-05).** They are DIFFERENT services. `ip-api.io`'s risk endpoint is paid-only, so
+  it was rejected. `ip-api.com`'s free tier gives `hosting`/`proxy`/`mobile` booleans + ASN name with no key
+  and no signup (45 req/min, HTTP-only). Measured before integrating (the "earn its place" rule): it flagged
+  a 31173 VPN exit as `proxy=true` that the keyless path otherwise missed, and stayed quiet on residential.
+  It feeds `connection_class`, so a NO-KEY user now gets a real exit-type verdict. Android needed a scoped
+  cleartext exception (its free tier is HTTP-only; targetSdk 36 blocks cleartext by default) — proven
+  on-device. Kept in web↔Android parity. If more discrimination is needed later, ipapi.is is next.
 - **2026-08-06 — AppData capture/restore design CONFIRMED correct against the research recipe (not
   re-architected).** `SessionMigrator` already does everything the Neo/Titanium root-backup lineage
   converges on: excludes `cache/code_cache/oat/app_textures/lib` (a stale `code_cache` with the old uid can

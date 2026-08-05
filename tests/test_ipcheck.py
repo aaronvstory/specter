@@ -1355,7 +1355,8 @@ def test_ipapi_feeds_check_flow_and_proxy_note(monkeypatch):
         "ipapi_hosting": True, "ipapi_proxy": True, "ipapi_mobile": False, "ipapi_asname": "ESAB-AS"})
     rep = ipcheck.check(ip="45.83.220.5")
     assert rep["connection_class"] == "datacenter"
-    assert any("proxy" in n.lower() for n in rep["notes"]), rep["notes"]
+    # name the ACTUAL source (ip-api.com) — not ip-api.io, a different, paid, rejected service.
+    assert any("ip-api.com" in n and "proxy" in n.lower() for n in rep["notes"]), rep["notes"]
 
 
 def test_no_baseline_request_is_made_when_there_is_no_proxy(monkeypatch):

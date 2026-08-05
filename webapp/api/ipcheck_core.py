@@ -1290,7 +1290,7 @@ def check(proxy: str | None = None, ip: str | None = None,
     if rep.get("ipapi_mobile"):
         rep["mobile"] = True
     if rep.get("ipapi_proxy"):
-        rep["notes"].append("ip-api.io: flagged this exit as a proxy/VPN")
+        rep["notes"].append("ip-api.com: flagged this exit as a proxy/VPN")
     cc = connection_class(rep)
     if cc:
         rep["connection_class"] = cc     # "datacenter" / "mobile" — the strongest usability signal
