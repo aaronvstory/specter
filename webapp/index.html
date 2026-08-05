@@ -49,6 +49,16 @@ body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 .theme{background:none;border:1px solid var(--line);color:var(--soft);border-radius:8px;width:34px;height:30px;cursor:pointer;font-size:14px;padding:0}
 .theme:hover{border-color:var(--accent);color:var(--accent)}
+.actions{display:flex;align-items:center;gap:8px}
+.theme svg{display:block;width:16px;height:16px;margin:auto}
+/* Settings sheet — a native <dialog>, so ESC + backdrop-click + focus-trap come free. */
+dialog#settings{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:0;width:min(440px,calc(100vw - 32px));box-shadow:var(--glow)}
+dialog#settings::backdrop{background:rgba(0,0,0,.55)}
+.sheet{padding:18px}
+.sheethead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 4px}
+.sheethead h2{font:600 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--soft);margin:0}
+.sheetclose{background:none;border:1px solid var(--line);color:var(--soft);border-radius:8px;width:30px;height:28px;cursor:pointer;font-size:15px;line-height:1;padding:0}
+.sheetclose:hover{border-color:var(--accent);color:var(--accent)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
 .field label{display:block;font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
 .kst{font:600 9px/1 var(--mono);letter-spacing:.04em;text-transform:none;color:var(--clean)}
@@ -299,7 +309,10 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
 <div class=wrap>
   <div class=top>
     <div class=brand><span class=pulse></span>Specter · exit-IP signal desk</div>
-    <button class=theme id=theme title="Toggle theme">◐</button>
+    <div class=actions>
+      <button class=theme id=gear title="Settings — API keys" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+      <button class=theme id=theme title="Toggle theme">◐</button>
+    </div>
   </div>
   <div class=panel>
     <!-- Stacked, not side by side: these are two ALTERNATIVES, and a proxy overrides the IP field rather
@@ -330,7 +343,8 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
         <div class=rw><i>Transport</i><div>the selector above (proxies only)</div></div>
       </div>
     </details>
-    <details><summary>API keys — optional, it works without them</summary>
+    <dialog id=settings><div class=sheet>
+      <div class=sheethead><h2>API keys — optional</h2><button class=sheetclose id=settingsclose title="Close" aria-label="Close">✕</button></div>
       <div class=field style="margin-top:12px"><label for=ipqs>IPQualityScore <span id=ipqs-st class=kst></span></label><input id=ipqs type=password placeholder="your key · optional"></div>
       <div class=field style="margin-top:11px"><label for=abuse>AbuseIPDB <span id=abuse-st class=kst></span></label><input id=abuse type=password placeholder="your key · optional"></div>
       <!-- One credential, two fields. The username is type=text so you can see WHICH account is in use;
@@ -344,7 +358,7 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
         <div class=rw><i>Your key</i><div>overrides it</div></div>
         <div class=rw><i>Stored</i><div>your browser only (localStorage)</div></div>
       </div>
-    </details>
+    </div></dialog>
   </div>
   <div id=out></div>
 </div>
@@ -366,6 +380,12 @@ $('#theme').onclick=()=>{
   root.dataset.theme=dark?'light':'dark';
   try{localStorage.setItem('specter-theme',root.dataset.theme);}catch(e){}
 };
+
+// Settings sheet: the cogwheel opens the API-key dialog; the ✕, ESC and a backdrop click all close it.
+const settings=$('#settings');
+$('#gear').onclick=()=>settings.showModal();
+$('#settingsclose').onclick=()=>settings.close();
+settings.addEventListener('click',e=>{ if(e.target===settings)settings.close(); });   // click the backdrop to dismiss
 
 (function(){const ls=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};
   $('#proxy').value=q.get('proxy')||'';

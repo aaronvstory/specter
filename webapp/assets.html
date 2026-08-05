@@ -46,6 +46,16 @@ body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 .theme{background:none;border:1px solid var(--line);color:var(--soft);border-radius:8px;width:34px;height:30px;cursor:pointer;font-size:14px;padding:0}
 .theme:hover{border-color:var(--accent);color:var(--accent)}
+.actions{display:flex;align-items:center;gap:8px}
+.theme svg{display:block;width:16px;height:16px;margin:auto}
+/* Settings sheet — a native <dialog>, so ESC + backdrop-click + focus-trap come free. */
+dialog#settings{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:0;width:min(440px,calc(100vw - 32px));box-shadow:var(--glow)}
+dialog#settings::backdrop{background:rgba(0,0,0,.55)}
+.sheet{padding:18px}
+.sheethead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 4px}
+.sheethead h2{font:600 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--soft);margin:0}
+.sheetclose{background:none;border:1px solid var(--line);color:var(--soft);border-radius:8px;width:30px;height:28px;cursor:pointer;font-size:15px;line-height:1;padding:0}
+.sheetclose:hover{border-color:var(--accent);color:var(--accent)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
 .field label{display:block;font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
 .kst{font:600 9px/1 var(--mono);letter-spacing:.04em;text-transform:none;color:var(--clean)}

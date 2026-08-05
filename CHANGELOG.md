@@ -14,6 +14,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   outside the public repo); `<device-hash> <1d|1w|1m>` signs a code and logs it to a local ledger.
 - Keys bind to the REAL device (android_id hash), not the spoofed one, and a monotonic clock guard stops a
   rolled-back clock from resurrecting an expired key. Proven end-to-end on-device.
+- **Web: bulk now accepts bare IPs, not just proxies.** A line with no port cannot be a proxy, so bulk
+  checks bare IPv4/IPv6 lines directly (shown as IP in the status column) and everything else as a proxy —
+  so one paste can mix both. Fixes bare IPs coming back DEAD.
+- **Web: a settings cogwheel, top-right.** The API keys moved out of an inline section into a cogwheel that
+  opens a native dialog (ESC / backdrop / â to close). Keys still store in the browser only.
 
 ## [0.27.0] - 2026-08-06
 
