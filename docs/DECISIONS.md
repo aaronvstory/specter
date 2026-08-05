@@ -937,3 +937,13 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   was correct, the key simply isn't entitled). Scamalytics' 5k/mo free tier needs a company signup the user
   won't do. So the checker stays keyless-first (DNSBL + ipwho.is geo), with IPQS + AbuseIPDB as the optional
   keyed enrichers. Revisit only if a source appears with a genuinely keyless-or-personal free tier.
+- **IP-reputation scoring targets proxy USABILITY, not mail-spam reputation (2026-08-05).** WHY (user): a
+  proxy checker is only useful if it predicts whether the exit survives a strict app's checks. Two changes:
+  (1) IPQS fraud_score is no longer a verdict driver — measured on-device it scores nearly every proxy/VPN
+  75-100 ("is this a proxy?" dominates), so it can't rank exits; it's shown as its own signal only. (2) The
+  verdict is driven by datacenter-vs-residential (a datacenter/hosting exit is the strongest negative — real
+  users don't come from AWS/OVH; detected free from ISP/org/host names since IPQS connection_type is
+  premium-gated) plus independent abuse evidence (blacklists, AbuseIPDB, IPQS abuse sub-flags — not the bare
+  proxy flag). So a clean residential exit reads CLEAN at IPQS 100; a datacenter exit reads dirty even with a
+  spotless blacklist record. The target-app framing is kept out of the UI copy (neutral "high friction" /
+  "Exit type"). Also expanded the keyless DNSBL set 12 → 17 to close a coverage gap.

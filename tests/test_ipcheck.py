@@ -134,6 +134,21 @@ def test_zone_table_matches_the_android_side():
         assert java_map == dict(codes), f"{zone}: Java {java_map} != Python {dict(codes)}"
 
 
+def test_datacenter_heuristic_matches_the_android_side():
+    # The datacenter name heuristic must be identical desktop vs Android, or the same IP classifies as a
+    # datacenter on one and residential on the other. Compare the provider terms in ipcheck._DATACENTER_RE
+    # against HealthCheck.DATACENTER (whose literal is split across concatenated Java "..." chunks).
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" /
+            "java" / "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    block = re.search(r"Pattern DATACENTER = .*?compile\((.*?),\s*\n?\s*java\.util\.regex", java, re.S)
+    assert block, "DATACENTER pattern not found in HealthCheck.java"
+    java_literal = "".join(re.findall(r'"([^"]*)"', block.group(1)))
+    # Alphabetic anchor words (>=2 letters), ignoring regex glue (\b, \s). Both sides list the same providers.
+    py_terms = set(re.findall(r"[a-z]{2,}", ipcheck._DATACENTER_RE.pattern))
+    java_terms = set(re.findall(r"[a-z]{2,}", java_literal))
+    assert py_terms == java_terms, f"datacenter term drift: py-only={py_terms - java_terms}, java-only={java_terms - py_terms}"
+
+
 # ---- proxy parsing -------------------------------------------------------------------------
 
 
@@ -360,20 +375,61 @@ def test_socks4_tunnel_success_and_failure():
 # ---- verdict -------------------------------------------------------------------------------
 
 
-def test_verdict_dirty_on_a_high_fraud_score():
-    level, why = ipcheck.verdict({"fraud_score": 92, "dnsbl_usable": True})
+def test_verdict_ignores_a_bare_high_fraud_score():
+    # IPQS scores almost any proxy 75-100 ("it's a proxy"), so a high fraud_score with NO independent abuse
+    # evidence and NO datacenter signal must NOT read dirty — a clean residential proxy is usable. The reason
+    # still flags that it's detectable as a proxy.
+    level, why = ipcheck.verdict({"fraud_score": 100, "proxy": True, "dnsbl_usable": True, "dnsbl_checked": 17})
+    assert level == "clean"
+    assert "proxy" in why.lower()
+
+
+def test_verdict_dirty_on_a_datacenter_exit_even_with_no_abuse():
+    # The whole Cash-App-usability point: a datacenter/hosting exit draws friction even with a spotless
+    # blacklist/abuse record — real users don't originate from AWS. Detected from the ISP/org name, free.
+    rep = {"isp": "Amazon.com", "organization": "Amazon Data Services", "fraud_score": 75,
+           "proxy": True, "blacklists": [], "dnsbl_usable": True}
+    assert ipcheck.is_datacenter(rep) is True
+    level, why = ipcheck.verdict(rep)
+    assert level == "dirty" and "datacenter" in why.lower()
+
+
+def test_datacenter_catches_gcp_azure_by_org_name_but_not_google_fiber():
+    # GCP/Azure don't self-identify as "cloud" in free WHOIS — they read "Google LLC" / "Microsoft
+    # Corporation" — so those exact strings are matched. Google Fiber ("Google Fiber Inc") is a real
+    # residential ISP and must NOT be flagged (this is why we match `google llc`, not a bare "google").
+    assert ipcheck.is_datacenter({"isp": "Google LLC"}) is True
+    assert ipcheck.is_datacenter({"isp": "Microsoft Corporation"}) is True
+    assert ipcheck.is_datacenter({"host": "1.2.3.4.bc.googleusercontent.com"}) is True
+    assert ipcheck.is_datacenter({"host": "myvm.cloudapp.azure.com"}) is True
+    assert ipcheck.is_datacenter({"isp": "Google Fiber Inc"}) is False
+    assert ipcheck.is_datacenter({"isp": "Comcast Cable"}) is False
+
+
+def test_verdict_clean_on_a_residential_proxy_despite_ipqs_100():
+    # A real ISP exit (no datacenter name, no abuse) is usable even though IPQS flags proxy at score 100.
+    rep = {"isp": "Comcast Cable", "organization": "Comcast", "fraud_score": 100, "proxy": True,
+           "vpn": True, "blacklists": [], "dnsbl_usable": True}
+    assert ipcheck.is_datacenter(rep) is False
+    assert ipcheck.verdict(rep)[0] == "clean"
+
+
+def test_verdict_dirty_on_two_or_more_abuse_listings():
+    level, _ = ipcheck.verdict({"blacklists": ["Spamhaus", "CBL"], "dnsbl_usable": True})
     assert level == "dirty"
-    assert "92" in why
 
 
-def test_verdict_dirty_on_three_or_more_abuse_listings():
-    level, _ = ipcheck.verdict(
-        {"blacklists": ["Spamhaus", "CBL", "Barracuda"], "dnsbl_usable": True})
+def test_verdict_dirty_on_ipqs_abuse_flags_even_at_a_low_score():
+    # IPQS's ABUSE sub-flags (recent_abuse / bot / frequent_abuser) are real corroboration — unlike the bare
+    # proxy/vpn flag — so they condemn even when the numeric score is modest.
+    level, _ = ipcheck.verdict({"fraud_score": 40, "recent_abuse": True, "dnsbl_usable": True})
     assert level == "dirty"
 
 
-def test_verdict_suspect_on_a_single_listing():
-    level, why = ipcheck.verdict({"blacklists": ["Spamhaus"], "dnsbl_usable": True})
+def test_verdict_a_single_listing_on_a_proxy_is_suspect_not_dirty():
+    # A fresh proxy that IPQS flags (score 100) with ONE stray blacklist hit is suspect, not condemned.
+    level, why = ipcheck.verdict(
+        {"fraud_score": 100, "proxy": True, "blacklists": ["Spamhaus"], "dnsbl_usable": True})
     assert level == "suspect"
     assert "1 blacklist" in why
 
@@ -498,7 +554,7 @@ def test_check_merges_every_source_and_assembles_verdict_and_flags(monkeypatch):
     rep = ipcheck.check(ipqs_key="k", abuse_key="a")
     assert rep["ip"] == "1.2.3.4" and rep["isp"] == "ACME"
     assert rep["fraud_score"] == 90 and rep["abuse_confidence"] == 70
-    assert rep["verdict"] == "dirty"                 # 90 fraud -> dirty
+    assert rep["verdict"] == "dirty"                 # abuse 70% -> dirty (fraud 90 alone would NOT be)
     assert "Proxy" in rep["flags"]                   # flags derived from the merged verdicts
 
 

@@ -3,6 +3,33 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.25.0] - 2026-08-05
+
+### Changed
+- **IP reputation now scores for real proxy usability, not mail-spam reputation.** Two problems with the
+  old scoring: (1) IPQualityScore's fraud_score saturates — it scores almost any proxy/VPN 75-100 because
+  “is this a proxy?” dominates it, so it can't tell a fresh residential proxy from a burned one; (2) the
+  verdict leaned on email DNSBLs, which measure mail spam, not what a strict app checks. The verdict is now
+  driven by the signals that actually predict friction: whether the exit is a **datacenter/hosting IP**
+  (detected free from the ISP/org/host names — real users don't originate from AWS/OVH) and **independent
+  abuse evidence** (blacklists, AbuseIPDB, IPQS's *abuse* sub-flags — not the bare proxy flag). A clean
+  residential exit now reads CLEAN even at IPQS 100; a datacenter exit reads high-friction even with a
+  spotless blacklist record. The raw IPQS score and proxy flag are still shown as their own signals, and a
+  new **Exit type** appears on the web UI, terminal, and the Android network card.
+
+### Fixed
+- **Datacenter detection works with no API key** — it reads the free ipwho.is ISP name, so an AWS/OVH/GCP/
+  Azure exit is flagged even without an IPQualityScore key. GCP/Azure are matched by their “Google LLC” /
+  “Microsoft Corporation” WHOIS names (which don't contain “cloud”); Google Fiber stays unflagged.
+- **The off-tunnel “use your real IP” confirm can't be bypassed by a tunnel flap** — the consent decision is
+  captured in the dialog and passed through, never re-inferred from later VPN state, so a tunnel flapping
+  up-then-down can't run a reputation check or timezone-align on the real IP without the dialog showing.
+
+### Added
+- **Five more blacklist zones** (0SPAM, SpamEatingMonkey, Backscatterer, UCEPROTECT L2/L3) — 12 → 17,
+  closing a coverage gap (an IP reading 1 here matched 6 on other tools). UCEPROTECT L2/L3 are netblock/ASN
+  listings, shown as policy — not folded into the per-IP abuse count. Desktop + Android tables kept in sync.
+
 ## [0.24.9] - 2026-08-05
 
 ### Added
