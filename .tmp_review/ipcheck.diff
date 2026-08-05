@@ -1,0 +1,874 @@
+diff --git a/specter/ipcheck.py b/specter/ipcheck.py
+index ce2adf7..60d3d98 100644
+--- a/specter/ipcheck.py
++++ b/specter/ipcheck.py
+@@ -102,6 +102,24 @@ POLICY_CODES = {
+ # because the same IP scores differently elsewhere and a reader needs to be able to reconcile that.
+ IPQS_STRICTNESS = 1
+ 
++# getIPIntel returns a NEGATIVE `result` instead of a 0-1 probability when the query failed, always with
++# HTTP 200 — so the code is the only signal that a "score" isn't one. Spelled out rather than printed raw:
++# a bare "error -5" sends the reader to the docs, and -5 in particular is the one worth acting on (the
++# CONNECTING IP is banned or over quota, which is a property of where you ran this, not of the IP checked).
++# Meanings from getipintel.net's API page, -2/-3/-6 confirmed live 2026-08-05.
++GETIPINTEL_ERRORS = {
++    -1: "invalid query",
++    -2: "invalid IP address",
++    -3: "unroutable or private address",
++    -4: "database unreachable — mid-update",
++    -5: "over quota from here — this IP wasn't checked",
++    -6: "no valid contact address",
++}
++# -5 and -6 are the two that another contact address might get past: getIPIntel meters per contact as well
++# as per connecting IP, so a second address is worth one attempt. The rest are verdicts about the QUERY
++# (bad IP, private range) and retrying them with a different contact would just burn quota.
++GETIPINTEL_RETRYABLE = (-5, -6)
++
+ # ponytail: Spamhaus and CBL refuse queries relayed by large public resolvers (they answer
+ # 127.255.255.254), which is what a DoH lookup looks like to them — so those two report "blocked"
+ # rather than a listing. Upgrade path if their coverage is wanted: a free Spamhaus DQS key and the
+@@ -223,8 +241,16 @@ def flags(rep: dict) -> list[str]:
+     return [label for key, label in IPQS_FLAGS if rep.get(key)]
+ 
+ 
+-def verdict(rep: dict) -> tuple[str, str]:
+-    """(level, one-line reason) from the collected signals. level is clean / suspect / dirty / unknown.
++_VERDICT_LEAD = {"dirty": "High friction — ", "suspect": "Some risk — "}
++
++
++def verdict_factors(rep: dict) -> tuple[str, list[str]]:
++    """(level, the individual signals that decided it) from the collected signals. level is
++    clean / suspect / dirty / unknown.
++
++    The factor LIST, not a joined sentence, is the real output — the UI shows each signal as its own
++    line under the verdict, which is the whole answer to "what makes this suspect?". ``verdict()``
++    joins the same list for the terminal readout.
+ 
+     The verdict answers "how much friction will this exit draw at a strict app", not "is this a mail spammer".
+     Two facts shape it: (1) a DATACENTER/hosting exit is the strongest negative — strict apps expect real users,
+@@ -259,7 +285,7 @@ def verdict(rep: dict) -> tuple[str, str]:
+     if gii is not None and gii >= 0.99:
+         why.append("getIPIntel proxy/hosting")
+     if why:
+-        return "dirty", "High friction — " + ", ".join(why)
++        return "dirty", why
+ 
+     # SUSPECT: a single weaker signal worth knowing about. IPQS's abuse flags (recent_abuse/bot) live HERE, not
+     # in dirty — they saturate on shared/residential-proxy IPs the same way its score does, so on their own they
+@@ -276,22 +302,37 @@ def verdict(rep: dict) -> tuple[str, str]:
+     if gii is not None and 0.90 <= gii < 0.99:
+         why.append(f"getIPIntel {int(gii * 100)}% proxy")
+     if why:
+-        return "suspect", "Some risk — " + ", ".join(why)
++        return "suspect", why
+ 
+     if fraud is None and abuse is None and gii is None and not rep.get("dnsbl_usable"):
+-        return "unknown", "No source answered — add an API key, or check the network"
++        return "unknown", ["No source answered — add an API key, or check the network"]
+ 
+     # CLEAN: not a datacenter, no abuse or blacklist history. Note when IPQS still flags it as a proxy — some
+     # checkers reject ALL detected proxies, so the user should know it's detectable even though it's unburned.
++    # Deliberately NOT called "residential": connection_class refuses to guess that from a name heuristic, so
++    # the verdict must not claim it either. "No datacenter signal" is what was actually measured.
+     if rep.get("proxy") or rep.get("vpn") or rep.get("tor") or (fraud is not None and fraud >= 60):
+-        return "clean", "Residential-looking, no abuse history — though it's detectable as a proxy/VPN"
+-    return "clean", "Residential-looking, no proxy flag, no abuse or blacklist history"
++        return "clean", ["No datacenter signal", "no abuse history", "detectable as a proxy/VPN"]
++    return "clean", ["No datacenter signal", "no proxy flag", "no abuse or blacklist history"]
++
++
++def verdict(rep: dict) -> tuple[str, str]:
++    """(level, one-line reason) — ``verdict_factors`` with its signals joined, for the terminal."""
++    level, why = verdict_factors(rep)
++    return level, _VERDICT_LEAD.get(level, "") + ", ".join(why)
+ 
+ 
+ def fraud_band(score: int) -> str:
+     return "high risk" if score >= 85 else "suspicious" if score >= 60 else "clean"
+ 
+ 
++def getipintel_band(score: float) -> str:
++    """What a getIPIntel 0-1 probability means, in words. Deliberately NOT "residential" at the low end:
++    a low score means getIPIntel saw no proxy evidence, which is not the same as proving a real ISP line."""
++    return ("proxy/hosting exit" if score >= 0.99 else "likely proxy" if score >= 0.90
++            else "mixed signals" if score >= 0.50 else "no proxy signal")
++
++
+ def format_report(rep: dict) -> str:
+     """The terminal readout. Every line is omitted when its source had nothing to say, so the
+     output never implies a check ran that didn't."""
+@@ -318,8 +359,7 @@ def format_report(rep: dict) -> str:
+         rows.append(("Abuse velocity", rep["abuse_velocity"]))
+     gii = rep.get("getipintel_score")
+     if gii is not None:
+-        band = "proxy/hosting exit" if gii >= 0.99 else "likely proxy" if gii >= 0.90 else "residential-ish"
+-        line = f"{gii:.2f} · {band}" + (" · bad IP" if rep.get("getipintel_bad") else "")
++        line = f"{gii:.2f} · {getipintel_band(gii)}" + (" · bad IP" if rep.get("getipintel_bad") else "")
+         rows.append(("getIPIntel", line))
+ 
+     hits = rep.get("blacklists") or []
+@@ -602,10 +642,22 @@ def lookup_geo(opener, ip: str | None = None) -> dict:
+         "ip": o.get("ip"),
+         "isp": (o.get("connection") or {}).get("isp"),
+         "location": where or None,
++        # Carried so the UI can show the country's flag beside the location, not just its name.
++        "country_code": o.get("country_code"),
+         "timezone": (o.get("timezone") or {}).get("id"),
+     }
+ 
+ 
++def _premium(v) -> bool:
++    """True for an IPQS field that is a paywall notice rather than a value. Showing one in a detail card
++    would read as data. Two shapes, both measured live on the free plan 2026-08-05: the string
++    ``"Premium required."`` (connection_type, abuse_velocity), and ``abuse_events``, which is a LIST whose
++    one element is ``"Enterprise plan required to view abuse events…"`` — a plain string check misses it."""
++    if isinstance(v, list):
++        return bool(v) and all(_premium(x) for x in v)
++    return isinstance(v, str) and bool(re.match(r"\s*(premium|enterprise)\b", v, re.I))
++
++
+ def lookup_ipqs(ip: str, key: str, opener) -> dict:
+     """IPQualityScore proxy/VPN detection. Returns the fields worth showing, or a note explaining
+     why there's no score (their error body says whether it's the key or the quota)."""
+@@ -619,13 +671,19 @@ def lookup_ipqs(ip: str, key: str, opener) -> dict:
+         return {"notes": ["IPQualityScore: " + (o.get("message") or "lookup rejected")]}
+ 
+     out: dict = {"fraud_score": o.get("fraud_score"), "ipqs_strictness": IPQS_STRICTNESS}
++    # The whole response, for the per-source detail card — this is what IPQS actually saw, and reading it is
++    # the only way to reconcile a verdict with the raw signals. Premium placeholders are dropped (they're not
++    # values), and anything echoing the API key is dropped as a matter of principle: this dict goes to the
++    # browser, and a shared server-side key must never ride along with it.
++    out["ipqs_raw"] = {k: v for k, v in o.items()
++                       if k not in ("success", "message", "request_id", "api_version")
++                       and not _premium(v) and not (isinstance(v, str) and key and key in v)}
+     for key_name, _ in IPQS_FLAGS:
+         out[key_name] = bool(o.get(key_name))
+     for src, dst in (("connection_type", "connection_type"), ("abuse_velocity", "abuse_velocity"),
+                      ("organization", "organization"), ("ISP", "isp"), ("host", "host")):
+         v = o.get(src)
+-        # The free tier answers "Premium required." for the paid fields — that's not a value.
+-        if v and not (isinstance(v, str) and v.lower().startswith("premium")):
++        if v and not _premium(v):
+             out[dst] = v
+     if o.get("ASN"):
+         out["asn"] = f"AS{o['ASN']}"
+@@ -647,29 +705,66 @@ def lookup_abuseipdb(ip: str, key: str, opener) -> dict:
+         "abuse_confidence": data.get("abuseConfidenceScore"),
+         "abuse_reports": data.get("totalReports"),
+         "usage_type": data.get("usageType"),
++        "abuse_reporters": data.get("numDistinctUsers"),
++        "abuse_last_report": data.get("lastReportedAt"),
++        "abuseipdb_raw": data,      # the whole record, for the detail card
+     }
+ 
+ 
+ def lookup_getipintel(ip: str, contact: str, opener) -> dict:
++    """getIPIntel through one or more contact addresses. ``contact`` may hold SEVERAL, separated by commas
++    or whitespace: getIPIntel meters per contact as well as per connecting IP (15/min, 500/day), so a
++    second address gets one more attempt when the first is refused for quota. Only the quota-shaped
++    refusals rotate — a verdict about the query itself (private range, bad IP) would just burn the next
++    address's budget. Returns the first real answer, or the LAST refusal so the note explains what happened."""
++    contacts = [c for c in re.split(r"[,;\s]+", contact or "") if c]
++    if not contacts:
++        out = _getipintel_once(ip, "", opener)
++        out.pop("_retry", None)         # internal control flag, never part of the report
++        return out
++    out: dict = {}
++    for c in contacts:
++        out = _getipintel_once(ip, c, opener)
++        if "getipintel_score" in out or not out.pop("_retry", False):
++            return out
++    return out
++
++
++def _getipintel_once(ip: str, contact: str, opener) -> dict:
+     """getIPIntel proxy/VPN/hosting probability (0-1) + a BadIP flag. Free, NO signup — it only needs a contact
+     email (for abuse contact, not auth). A value near 1 is a hosting/VPN/Tor exit (high friction for a strict
+     app); BadIP means the IP itself behaved maliciously. Unlike IPQS it grades residential-vs-hosting — measured
+     live: AWS 1.0, Starlink 0.0 — so it DISCRIMINATES where IPQS saturates. Rate-limited (15/min, 500/day); the
+-    docs say do NOT URL-encode the params, and reject any query without a valid contact."""
+-    o = _get_json(f"https://check.getipintel.net/check.php?ip={ip}&contact={contact}&format=json&oflags=b", opener)
++    docs say do NOT URL-encode the params, and reject any query without a valid contact.
++
++    ``oflags`` is a character SET, not a single flag — ``bc`` asks for the BadIP verdict AND the country
++    getIPIntel resolved, which is worth showing next to the score. Verified live 2026-08-05 that the
++    combined form is accepted and echoed back in ``queryOFlags``."""
++    o = _get_json(f"https://check.getipintel.net/check.php?ip={ip}&contact={contact}&format=json&oflags=bc", opener)
+     if not o:
+         return {"notes": ["getIPIntel unreachable"]}
+-    if o.get("status") != "success":
+-        return {"notes": ["getIPIntel: " + str(o.get("message") or "rejected — is the contact email valid?")]}
++    # `result` carries the error code on BOTH the success and error statuses, so read it first: its mapped
++    # one-line meaning beats getIPIntel's own `message`, which is a three-sentence paragraph of questions.
+     try:
+         score = float(str(o.get("result")))
+     except (TypeError, ValueError):
+-        return {"notes": ["getIPIntel: unparseable result"]}
+-    if score < 0:                       # negative result = an error code (-1..-6)
+-        return {"notes": [f"getIPIntel error {o.get('result')}"]}
++        score = None
++    if score is not None and score < 0:
++        code = int(score)
++        return {"notes": ["getIPIntel: " + GETIPINTEL_ERRORS.get(code, f"error {o.get('result')}")],
++                "_retry": code in GETIPINTEL_RETRYABLE}
++    if o.get("status") != "success" or score is None:
++        # Fall back to their message, but only its first sentence, and with the contact scrubbed — on the
++        # hosted deploy that address is a server-side env var and this note renders in a visitor's browser.
++        msg = str(o.get("message") or "rejected — is the contact address valid?").split(". ")[0].strip()
++        return {"notes": ["getIPIntel: " + (msg.replace(contact, "<contact>") if contact else msg)]}
+     out: dict = {"getipintel_score": round(score, 3)}
+     if o.get("BadIP"):
+         out["getipintel_bad"] = True
++    # The raw answer for the detail card, MINUS the contact address — getIPIntel echoes the contact it was
++    # queried with, and on the hosted deploy that is a server-side env var. It must never reach the browser.
++    out["getipintel_raw"] = {k: v for k, v in o.items()
++                             if k != "contact" and not (isinstance(v, str) and contact and contact in v)}
+     return out
+ 
+ 
+@@ -692,7 +787,8 @@ def dnsbl_check(ip: str) -> dict:
+     "resolver is broken", so without it a dead resolver would report a confident "none of 12"."""
+     rev = reverse_v4(ip)
+     if not rev:
+-        return {"blacklists": [], "policy_lists": [], "dnsbl_checked": 0, "dnsbl_usable": False}
++        return {"blacklists": [], "policy_lists": [], "dnsbl_checked": 0, "dnsbl_usable": False,
++                "dnsbl_detail": []}
+ 
+     # Every DNSBL lists 127.0.0.2 by convention, so these MUST resolve. Several zones, not one:
+     # gating on a single zone means that zone's outage (or its refusal to answer this resolver)
+@@ -702,6 +798,10 @@ def dnsbl_check(ip: str) -> dict:
+     jobs += [(name, zone, f"{rev}.{zone}") for name, zone in DNSBL_ZONES]
+ 
+     abuse, policy, checked, alive = [], [], 0, False
++    # Per-zone outcome for the detail card: every zone in the table appears, so "12 clean, 3 refused" is
++    # visible instead of only the count of hits. "no answer" is the default — a zone that never returned
++    # is not a clean result and must not read as one.
++    detail = {name: "no answer" for name, _ in DNSBL_ZONES}
+     with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
+         futs = {ex.submit(resolve_a, host): (name, zone) for name, zone, host in jobs}
+         try:
+@@ -719,12 +819,17 @@ def dnsbl_check(ip: str) -> dict:
+                 continue
+             kind = classify(zone, addrs)
+             if kind == "blocked":
++                detail[name] = "refused"
+                 continue        # the zone refused — it told us nothing, so don't count it as clear
+             checked += 1
+             if kind == "abuse":
+                 abuse.append(name)
++                detail[name] = "listed"
+             elif kind == "policy":
+                 policy.append((name, policy_label(name, zone, addrs)))
++                detail[name] = "policy"
++            else:
++                detail[name] = "clean"
+     order = [z[0] for z in DNSBL_ZONES]
+     abuse.sort(key=order.index)
+     policy = [label for _, label in sorted(policy, key=lambda p: order.index(p[0]))]
+@@ -734,7 +839,8 @@ def dnsbl_check(ip: str) -> dict:
+     # also aligns the desktop with the Android side, whose usable flag is "any zone answered".)
+     usable = alive or bool(abuse) or bool(policy)
+     return {"blacklists": abuse, "policy_lists": policy,
+-            "dnsbl_checked": checked if usable else 0, "dnsbl_usable": usable}
++            "dnsbl_checked": checked if usable else 0, "dnsbl_usable": usable,
++            "dnsbl_detail": [{"name": n, "zone": z, "status": detail[n]} for n, z in DNSBL_ZONES]}
+ 
+ 
+ def check(proxy: str | None = None, ip: str | None = None,
+@@ -752,10 +858,23 @@ def check(proxy: str | None = None, ip: str | None = None,
+ 
+     # An explicit --ip still gets ISP/location/timezone — the readout would otherwise show a bare
+     # address with a dash under it, and where an IP sits is half of judging it.
+-    merge(lookup_geo(opener, ip))
++    #
++    # This is also the liveness + latency probe when a proxy is in play: it is the first request that has to
++    # traverse the tunnel, so whether it answers IS whether the proxy works, and how long it took is the
++    # round trip a real request would pay. ponytail: one timed HTTPS round trip, not a separate TCP dial —
++    # it measures usable latency (connect + TLS + fetch) rather than a raw handshake. Upgrade path if the
++    # split ever matters: time the CONNECT separately to tell "proxy slow" from "upstream slow".
++    started = time.monotonic()
++    geo = lookup_geo(opener, ip)
++    latency_ms = int((time.monotonic() - started) * 1000)
++    merge(geo)
++    if proxy:
++        rep["proxy_alive"] = bool(geo)
++        if geo:
++            rep["proxy_ms"] = latency_ms
+     if not rep.get("ip"):
+         if not ip:
+-            rep["notes"].append("Exit-IP lookup failed — proxy down, or no route out?")
++            rep["notes"].append("Exit IP: lookup failed — proxy down, or no route out?")
+             return rep
+         rep["ip"] = ip      # geo failed, but we were told which IP to check — carry on without it
+ 
+@@ -776,7 +895,8 @@ def check(proxy: str | None = None, ip: str | None = None,
+     cc = connection_class(rep)
+     if cc:
+         rep["connection_class"] = cc     # "datacenter" / "mobile" — the strongest usability signal
+-    rep["verdict"], rep["verdict_reason"] = verdict(rep)
++    rep["verdict"], rep["verdict_factors"] = verdict_factors(rep)
++    rep["verdict_reason"] = _VERDICT_LEAD.get(rep["verdict"], "") + ", ".join(rep["verdict_factors"])
+     rep["flags"] = flags(rep)
+     return rep
+ 
+@@ -854,6 +974,7 @@ body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
+ .theme:hover{border-color:var(--accent);color:var(--accent)}
+ .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+ .field label{display:block;font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
++.kst{font:600 9px/1 var(--mono);letter-spacing:.04em;text-transform:none;color:var(--clean)}
+ input,select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+   color:var(--ink);padding:11px 12px;font:14px/1.2 var(--mono)}
+ input::placeholder{color:var(--dim)}
+@@ -883,7 +1004,9 @@ details[open] summary::before{content:"− "}
+ .copy{background:var(--panel2);border:1px solid var(--line);color:var(--soft);border-radius:7px;padding:6px 10px;
+   font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:.15s}
+ .copy:hover{border-color:var(--accent);color:var(--accent)}
+-.copy.done{border-color:var(--clean);color:var(--clean)}
++/* Copy confirmation is a colour flash, never a label swap — a wider "Copied ✓" resizes the button. */
++.copy.done,.cc.done{border-color:var(--clean);color:var(--clean);
++  background:color-mix(in srgb,var(--clean) 18%,transparent)}
+ .sub{color:var(--soft);font:13px/1.5 var(--mono);margin-top:8px}
+ .meter{margin-top:16px}
+ .meter .head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px}
+@@ -900,18 +1023,84 @@ details[open] summary::before{content:"− "}
+ .tile{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+ .tile em{font-style:normal;display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+ .tile strong{display:block;font:700 27px/1 var(--mono);margin:9px 0 5px}
+-.tile small{color:var(--soft);font-size:12px;line-height:1.45}
++/* One line, always. Tiles share a grid row, so a caption that wraps to three lines makes EVERY tile that
++   tall — the caption is clipped instead, and the full text lives in the detail breakdown below. */
++.tile small{display:block;color:var(--soft);font-size:12px;line-height:1.4;
++  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .chips{display:flex;flex-wrap:wrap;gap:7px}
+ .chip{font:600 11px/1 var(--mono);letter-spacing:.04em;padding:6px 11px;border-radius:7px;
+   background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect);border:1px solid color-mix(in srgb,var(--suspect) 30%,transparent)}
+ .chip.ok{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean);border-color:color-mix(in srgb,var(--clean) 28%,transparent)}
+ .lbl{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:11px}
++/* Flags read as an unfinished box when a label sits above three small chips in a full-width panel.
++   Inline the label instead, so the row fills its width by construction. */
++.flagbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
++.flagbar .lbl{margin:0;flex:none}
++.vfx{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
++.vfx span{font:600 10px/1 var(--mono);letter-spacing:.04em;padding:5px 9px;border-radius:6px;
++  background:color-mix(in srgb,var(--vc) 14%,transparent);color:var(--vc);
++  border:1px solid color-mix(in srgb,var(--vc) 28%,transparent)}
++/* Detail breakdown: collapsed by default — every field every source returned, for when a verdict needs auditing. */
++details.deep{margin-top:0}
++details.deep>summary{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 16px}
++details.deep[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0}
++.src{background:var(--panel);border:1px solid var(--line);border-top:0;padding:14px 16px}
++.src:last-child{border-radius:0 0 11px 11px}
++.src h4{margin:0 0 11px;display:flex;justify-content:space-between;align-items:baseline;gap:12px;
++  font:600 11px/1.3 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
++.src h4 em{font-style:normal;font-weight:400;letter-spacing:.02em;text-transform:none;color:var(--soft);text-align:right}
++.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:0 22px}
++/* ONE LINE per field, no exceptions. A value that wraps mid-word ragged-ends its neighbours and the whole
++   grid stops lining up; the full text is on the element's title and survives a copy. */
++.kv>div{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:7px 0;
++  border-bottom:1px solid var(--line);font:12px/1.5 var(--mono);white-space:nowrap;overflow:hidden}
++.kv i{font-style:normal;color:var(--dim);flex:none}
++.kv b{font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}
++img.flag{width:14px;height:10px;border-radius:1px;vertical-align:0;margin-right:6px;
++  box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 15%,transparent)}
++svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
++.dimnote{color:var(--dim);font-size:11.5px}
++/* Blocklists GROUPED by what the answer means — the group label carries the meaning, so a colour never has
++   to be decoded. A flat rainbow of 17 chips is unreadable. */
++.zgrp{padding:9px 0;border-bottom:1px solid var(--line)}
++.zgrp:last-child{border-bottom:0}
++.zgrp em{font-style:normal;display:block;margin-bottom:7px;font:600 10px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase}
++.zgrp em span{letter-spacing:.02em;text-transform:none;font-weight:400;color:var(--dim)}
++.zones{display:flex;flex-wrap:wrap;gap:6px}
++.z{font:600 10px/1 var(--mono);padding:6px 9px;border-radius:6px;border:1px solid var(--line);color:var(--soft)}
++.g-listed em{color:var(--dirty)} .g-listed .z{background:color-mix(in srgb,var(--dirty) 15%,transparent);color:var(--dirty);border-color:color-mix(in srgb,var(--dirty) 30%,transparent)}
++.g-policy em{color:var(--info)} .g-policy .z{background:color-mix(in srgb,var(--info) 14%,transparent);color:var(--info);border-color:color-mix(in srgb,var(--info) 28%,transparent)}
++.g-clean em{color:var(--clean)} .g-clean .z{color:var(--clean);border-color:color-mix(in srgb,var(--clean) 26%,transparent)}
++.g-none em{color:var(--dim)} .g-none .z{opacity:.6}
++/* Form hints reuse the label→meaning row: scannable in one pass, never a paragraph to decipher. */
++.hint{margin-top:12px}
++.hint .rw{padding:7px 0;font-size:12.5px}
++.hint .rw i{width:84px}
++.hint .rw div{color:var(--soft)}
+ .rows{display:flex;flex-direction:column}
+ .rw{display:flex;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+ .rw:first-child{border-top:0}
+ .rw i{font-style:normal;color:var(--dim);width:118px;flex:none;font:600 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
+ .rw div{font-family:var(--mono);word-break:break-all}
+ .note{color:var(--soft);font-size:12.5px;padding:4px 0}.note+.note{border-top:1px solid var(--line);margin-top:2px;padding-top:8px}
++textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
++  padding:11px 12px;font:13px/1.5 var(--mono);resize:vertical;margin-top:12px}
++textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
++.tablewrap{overflow-x:auto}
++table.bulk{width:100%;border-collapse:collapse;font:12.5px/1.4 var(--mono)}
++table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
++table.bulk td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
++table.bulk tr:last-child td{border-bottom:0}
++table.bulk tbody tr:hover td{background:var(--panel2)}
++.vpill{display:inline-block;padding:3px 9px;border-radius:6px;font:600 10px/1.5 var(--mono);letter-spacing:.04em}
++.v-dirty-p{background:color-mix(in srgb,var(--dirty) 16%,transparent);color:var(--dirty)}
++.v-suspect-p{background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect)}
++.v-clean-p{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean)}
++.v-unknown-p{background:color-mix(in srgb,var(--dim) 16%,transparent);color:var(--soft)}
++.cc{cursor:pointer;color:var(--soft);border:1px solid var(--line);border-radius:6px;padding:4px 8px;
++  font:600 9px/1 var(--mono);background:none;letter-spacing:.06em;text-transform:uppercase}
++.cc:hover{border-color:var(--accent);color:var(--accent)} .cc.done{border-color:var(--clean);color:var(--clean)}
++.pxcell{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft)}
+ .loading{color:var(--soft);font:13px/1 var(--mono);letter-spacing:.06em}
+ .loading::after{content:"";animation:dots 1.4s steps(4,end) infinite}
+ @keyframes dots{0%{content:""}25%{content:"·"}50%{content:"··"}75%{content:"···"}}
+@@ -922,24 +1111,43 @@ details[open] summary::before{content:"− "}
+     <button class=theme id=theme title="Toggle theme">◐</button>
+   </div>
+   <div class=panel>
+-    <div class=grid>
+-      <div class=field><label for=proxy>Proxy</label>
+-        <div class=proxyrow>
+-          <select id=ptype><option value=http>HTTP</option><option value=socks5>SOCKS5</option><option value=socks4>SOCKS4</option></select>
+-          <input id=proxy placeholder="host:port:user:pass · host:port">
+-        </div></div>
+-      <div class=field><label for=ip>IP · optional</label><input id=ip placeholder="check directly"></div>
+-    </div>
+-    <details><summary>Optional: sharpen detection</summary>
+-      <div class=grid style="margin-top:12px">
+-        <div class=field><label for=gii>getIPIntel email</label><input id=gii placeholder="your email · free, no signup"></div>
+-        <div class=field><label for=ipqs>IPQualityScore key</label><input id=ipqs type=password placeholder="fraud score · optional"></div>
+-        <div class=field><label for=abuse>AbuseIPDB key</label><input id=abuse type=password placeholder="abuse history · optional"></div>
++    <!-- Stacked, not side by side: these are two ALTERNATIVES, and a proxy overrides the IP field rather
++         than complementing it. Reading top-to-bottom says that; a two-column row implies they combine. -->
++    <div class=field><label for=ip>Check an IP</label><input id=ip placeholder="prefilled with your own"></div>
++    <div class=field style="margin-top:14px"><label for=proxy>Or through a proxy — checks its exit IP instead</label>
++      <div class=proxyrow>
++        <select id=ptype><option value=http>HTTP</option><option value=socks5>SOCKS5</option><option value=socks4>SOCKS4</option></select>
++        <input id=proxy placeholder="host:port:user:pass">
++      </div></div>
++    <details><summary>Accepted proxy formats</summary>
++      <div class="rows hint">
++        <div class=rw><i>No auth</i><div>host:port</div></div>
++        <div class=rw><i>With auth</i><div>host:port:user:pass</div></div>
++        <div class=rw><i>Or</i><div>user:pass@host:port</div></div>
++        <div class=rw><i>With scheme</i><div>socks5://user:pass@host:port — wins over the selector</div></div>
+       </div>
+-      <p class=note>All optional — the verdict already uses datacenter detection + 17 blacklists with no keys. getIPIntel adds a strong proxy/VPN score and only needs a contact email (free, no signup). Stored locally in ~/.specter-ipcheck.json.</p>
+     </details>
++    <!-- The button acts on the two fields directly above it, so nothing goes between them. Bulk is its own
++         self-contained mode with its own input and its own button; keys are set-once config, so they go last. -->
+     <button class=go id=go>Run check</button>
+-    <p class=note style="margin-top:10px">No keys needed — <b>datacenter detection</b> + <b>17 blocklists</b> already grade the exit. Add a <b>getIPIntel</b> email (free, no signup) for a proxy/hosting score, or IPQualityScore / AbuseIPDB keys to sharpen it.</p>
++    <details><summary>Bulk — compare many proxies</summary>
++      <textarea id=bulk rows=5 placeholder="one proxy per line"></textarea>
++      <button class=go id=bulkgo style="margin-top:10px">Check all</button>
++      <div class="rows hint">
++        <div class=rw><i>Input</i><div>one proxy per line, any format above</div></div>
++        <div class=rw><i>Transport</i><div>the selector above</div></div>
++      </div>
++    </details>
++    <details><summary>API keys — optional, it works without them</summary>
++      <div class=field style="margin-top:12px"><label for=ipqs>IPQualityScore <span id=ipqs-st class=kst></span></label><input id=ipqs type=password placeholder="your key · optional"></div>
++      <div class=field style="margin-top:11px"><label for=abuse>AbuseIPDB <span id=abuse-st class=kst></span></label><input id=abuse type=password placeholder="your key · optional"></div>
++      <div class="rows hint">
++        <div class=rw><i>No keys</i><div>datacenter · 17 blocklists · getIPIntel still run</div></div>
++        <div class=rw><i>Blank field</i><div>use the server's key, if it has one</div></div>
++        <div class=rw><i>Your key</i><div>overrides it</div></div>
++        <div class=rw><i>Stored</i><div>~/.specter-ipcheck.json</div></div>
++      </div>
++    </details>
+   </div>
+   <div id=out></div>
+ </div>
+@@ -959,30 +1167,185 @@ $('#theme').onclick=()=>{
+ fetch('/config').then(r=>r.json()).then(c=>{
+   $('#proxy').value=q.get('proxy')||c.proxy||'';
+   $('#ptype').value=q.get('ptype')||c.proxy_scheme||'http';
+-  $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||''; $('#gii').value=c.getipintel_contact||'';
++  $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||'';
++  markKeys({});
+   $('#ip').value=q.get('ip')||'';
+-  // Show the current exit IP + geo/score immediately on open — an empty proxy checks this machine's own
+-  // exit. A ?ip=/?proxy= from a bookmark just seeds the fields first, then the same auto-run picks them up.
+-  $('#go').click();
++  boot();
+ });
+-const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
++// Key status: "your key" when the field has a value, else "shared active" when the server (env) has one.
++// _kst is initialised INSIDE markKeys, not above it: the config block runs before this line, and the
++// Vercel build rewrites that block into a synchronous IIFE — a bare `window._kst={}` here would leave the
++// first call assigning onto undefined.
++function markKeys(st){const s=window._kst=Object.assign(window._kst||{},st||{});
++  [['ipqs',s.ipqs],['abuse',s.abuse]].forEach(([id,on])=>{const e=$('#'+id+'-st'); if(!e)return;
++    e.textContent=$('#'+id).value?'· your key':(on?'· shared active':'');});}
++['ipqs','abuse'].forEach(id=>$('#'+id).addEventListener('input',()=>markKeys()));
++// On open: PREFILL "check directly" with the visitor's OWN public IP (client-side; ipwho.is is CORS-open),
++// so checking your own IP is one click. Prefill only — the check never runs by itself; opening the page
++// must not spend an API quota or a getIPIntel rate-limit slot the visitor didn't ask for.
++// Two sources: ipwho.is answers HTTP 200 with {success:false} when it rate-limits a caller, so a single
++// endpoint leaves the field blank exactly when the tool is being used a lot. ipify is the keyless fallback.
++async function boot(){
++  if($('#ip').value || $('#proxy').value)return;
++  for(const [url,pick] of [['https://ipwho.is/',o=>o&&o.success!==false&&o.ip],
++                           ['https://api.ipify.org?format=json',o=>o&&o.ip]]){
++    try{const ip=pick(await (await fetch(url)).json()); if(ip){$('#ip').value=ip; return;}}catch(e){}
++  }
++}
++const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+ const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
+ const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
++// Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score
++// means getIPIntel saw no proxy evidence, which does not prove a real ISP line.
++const giiBand=g=>g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':g>=0.50?'mixed signals':'no proxy signal';
+ function row(k,v){return `<div class=rw><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
++// A row whose value carries pre-built markup (a flag image, an icon) and an optional colour.
++function richRow(k,html,colour){
++  return `<div class=rw><i>${esc(k)}</i><div${colour?` style="color:var(--${colour})"`:''}>${html}</div></div>`}
++
++// Line-type icons. Drawn inline in currentColor, NOT emoji: emoji render differently on every platform,
++// carry their own colour, and look out of place next to monospace readouts.
++const SVG=p=>`<svg class=ico viewBox="0 0 16 16" fill=none stroke=currentColor stroke-width=1.3 `+
++  `stroke-linecap=round stroke-linejoin=round aria-hidden=true>${p}</svg>`;
++const ICON={
++  server: SVG('<rect x=2.2 y=2.6 width=11.6 height=4.2 rx=1.2/><rect x=2.2 y=9.2 width=11.6 height=4.2 rx=1.2/>'+
++              '<path d="M4.8 4.7h.01M4.8 11.3h.01"/>'),
++  signal: SVG('<path d="M3 13.4v-3M6.3 13.4V8.2M9.6 13.4V5.6M12.9 13.4V3"/>'),
++  home:   SVG('<path d="M2.4 7.4 8 2.7l5.6 4.7"/><path d="M3.9 6.9v6.4h8.2V6.9"/>'),
++  build:  SVG('<rect x=3.2 y=2.6 width=9.6 height=10.8 rx=1.1/><path d="M5.9 5.6h1M9.1 5.6h1M5.9 8h1M9.1 8h1M5.9 10.4h1M9.1 10.4h1"/>'),
++  bot:    SVG('<rect x=2.8 y=5.2 width=10.4 height=7.6 rx=2.2/><path d="M6.3 8.8h.01M9.7 8.8h.01M8 5.2V2.8"/>'),
++  ban:    SVG('<circle cx=8 cy=8 r=5.4/><path d="M4.2 11.8 11.8 4.2"/>'),
++};
++// What kind of line an exit sits on, from the free-text IPQS connection_type or AbuseIPDB usageType. A real
++// consumer line passes where a hosting range draws friction, so this is worth reading at a glance rather
++// than parsing out of a sentence. Order matters: "Data Center/Web Hosting/Transit" must match before the
++// generic ISP rule.
++const USAGE=[
++  [/data ?cent|hosting|transit|colo/i,           ICON.server,'dirty',  'hosting range'],
++  [/mobile|cellular|wireless/i,                  ICON.signal,'clean',  'mobile carrier'],
++  [/fixed line|residential|cable|dsl|fiber|isp/i,ICON.home,  'clean',  'consumer line'],
++  [/university|college|school|library/i,          ICON.build, 'suspect','institutional'],
++  [/government|military/i,                        ICON.build, 'suspect','government'],
++  [/search engine|spider|crawler/i,               ICON.bot,   'dirty',  'crawler range'],
++  [/commercial|organization|business/i,           ICON.build, 'suspect','business line'],
++  [/reserved/i,                                   ICON.ban,   '',       'reserved range'],
++];
++const usageOf=v=>USAGE.find(([re])=>re.test(String(v||'')))||null;
++
++// ---- detail breakdown: every field every source returned ------------------------------------
++// Friendly names for the raw API keys. A key that isn't here still shows, under its own name — the point
++// is to show EVERYTHING each source answered, not a curated subset that hides the inconvenient field.
++const LBL={fraud_score:'Fraud score',country_code:'Country',countryCode:'Country',region:'Region',city:'City',
++ zip_code:'ZIP',ISP:'ISP',isp:'ISP',ASN:'ASN',organization:'Organization',host:'Reverse DNS',
++ connection_type:'Connection',abuse_velocity:'Abuse velocity',latitude:'Latitude',longitude:'Longitude',
++ timezone:'Time zone',is_crawler:'Crawler',recent_abuse:'Recent abuse',bot_status:'Bot',vpn:'VPN',
++ active_vpn:'VPN active now',tor:'Tor',active_tor:'Tor active now',proxy:'Proxy',mobile:'Mobile',
++ frequent_abuser:'Frequent abuser',high_risk_attacks:'High-risk attacks',security_scanner:'Security scanner',
++ shared_connection:'Shared connection',dynamic_connection:'Dynamic IP',trusted_network:'Trusted network',
++ result:'Proxy probability',BadIP:'Bad IP',queryIP:'Queried IP',Country:'Country',status:'Status',
++ abuseConfidenceScore:'Abuse confidence',totalReports:'Reports (90d)',numDistinctUsers:'Distinct reporters',
++ lastReportedAt:'Last report',usageType:'Usage type',domain:'Domain',hostnames:'Host names',isTor:'Tor exit',
++ isWhitelisted:'Whitelisted',ipAddress:'IP',isPublic:'Public IP',ipVersion:'IP version'};
++const fmtv=v=>v===true?'yes':v===false?'no':Array.isArray(v)?(v.length?v.join(', '):'—')
++  :(v===''||v==null?'—':String(v));
++// A two-letter country code gets a real flag icon. NOT the flag emoji: Windows ships no flag glyphs, so a
++// regional-indicator pair falls back to drawing the two letters — which next to the code reads as "DE DE".
++// A tiny image works on every platform, and if it can't load (offline, blocked) it removes itself and the
++// code alone remains.
++const CC_KEYS=new Set(['country_code','countryCode','Country','reporterCountryCode']);
++const flagImg=cc=>/^[A-Za-z]{2}$/.test(cc)
++  ?`<img class=flag src="https://flagcdn.com/32x24/${cc.toLowerCase()}.png" alt="" onerror="this.remove()">`:'';
++// Which fields earn a colour, and which way. Flags that mean trouble go red when true and green when false;
++// everything else stays neutral, because colouring every field is as unreadable as colouring none.
++const RISKY=new Set(['proxy','vpn','tor','active_vpn','active_tor','recent_abuse','bot_status','is_crawler',
++  'frequent_abuser','high_risk_attacks','security_scanner','dynamic_connection','isTor','BadIP']);
++const REASSURING=new Set(['isWhitelisted','trusted_network']);
++function vcolour(k,v){
++  if(v===true)return RISKY.has(k)?'dirty':REASSURING.has(k)?'clean':'';
++  if(v===false)return RISKY.has(k)?'clean':'';
++  if(k==='fraud_score')return band(+v);
++  if(k==='abuseConfidenceScore')return +v>=50?'dirty':+v>=10?'suspect':'clean';
++  if(k==='result'){const g=+v;return g>=0.99?'dirty':g>=0.90?'suspect':'clean';}
++  // AbuseIPDB's usageType is the datacenter-vs-real-line call the verdict leans on, so it gets the same
++  // colour language as the Exit type tile.
++  if(k==='usageType'||k==='connection_type'){const u=usageOf(v);return u?u[2]:'';}
++  return '';
++}
++// The icon that goes in front of a line-type value in the detail grid.
++const kvIcon=(k,v)=>{if(k!=='usageType'&&k!=='connection_type')return '';
++  const u=usageOf(v);return u?u[1]:'';};
++function kv(obj){const ks=Object.keys(obj||{});if(!ks.length)return '';
++  return `<div class=kv>${ks.map(k=>{const raw=obj[k], v=fmtv(raw), c=vcolour(k,raw);
++    // esc() the value, then prepend our own markup — the img/span tags are ours, the value never is.
++    const disp=(CC_KEYS.has(k)?flagImg(String(raw)):kvIcon(k,v))+esc(v);
++    return `<div title="${esc(LBL[k]||k)}: ${esc(v)}"><i>${esc(LBL[k]||k)}</i>`+
++      `<b${c?` style="color:var(--${c})"`:''}>${disp}</b></div>`;}).join('')}</div>`;}
++const srcCard=(t,sub,body)=>`<div class=src><h4>${esc(t)}<em>${esc(sub||'')}</em></h4>${body}</div>`;
++
++// Blocklist zones grouped by what the answer MEANS, each group labelled with its meaning — a reader should
++// never have to work out what a colour stands for.
++const ZGROUPS=[
++  ['listed','g-listed','Listed','abuse reports against this IP'],
++  ['policy','g-policy','Policy only','a mail-sending policy listing, not abuse'],
++  ['clean','g-clean','Clean','answered, not listed'],
++  ['none','g-none','No answer','the zone refused or never replied — not a clean result'],
++];
++function zoneGroups(d,reasons){
++  const by={listed:[],policy:[],clean:[],none:[]};
++  d.forEach(z=>(by[z.status] || by.none).push(z));
++  return ZGROUPS.filter(([k])=>by[k].length).map(([k,cls,title,meaning])=>
++    `<div class="zgrp ${cls}"><em>${esc(title)} · ${by[k].length} <span>— ${esc(meaning)}</span></em>`+
++    `<div class=zones>${by[k].map(z=>`<span class=z title="${esc(reasons[z.name]||z.zone)}">${esc(z.name)}</span>`)
++      .join('')}</div></div>`).join('');
++}
++
++function deep(r){
++  // No verdict card here — the verdict and its signals are already at the top of the result. This section is
++  // strictly "what each source answered".
++  let s='';
++  if(r.ipqs_raw)s+=srcCard('IPQualityScore',
++    `fraud ${esc(r.fraud_score)}${r.ipqs_strictness!=null?' · strictness '+esc(r.ipqs_strictness):''}`,kv(r.ipqs_raw));
++  if(r.getipintel_raw)s+=srcCard('getIPIntel',
++    `${r.getipintel_score.toFixed(3)} · ${giiBand(r.getipintel_score)}`,kv(r.getipintel_raw));
++  if(r.abuseipdb_raw)s+=srcCard('AbuseIPDB',
++    `${esc(r.abuse_confidence)}% · ${esc(r.abuse_reports||0)} reports in 90d`,kv(r.abuseipdb_raw));
++  const d=r.dnsbl_detail||[];
++  if(d.length){
++    // policy_lists carries "Zone (why it lists this IP)" — hang the reason on the chip's tooltip.
++    const reasons={};(r.policy_lists||[]).forEach(p=>{const i=p.indexOf(' (');if(i>0)reasons[p.slice(0,i)]=p;});
++    s+=srcCard('Blocklists',`${d.length} zones queried`,zoneGroups(d,reasons));
++  }
++  if(!s)return '';
++  return `<details class=deep><summary>Detailed breakdown — every field each source returned</summary>${s}</details>`;
++}
+ 
+ function render(r){
+   if(r.error){out.innerHTML=`<div class="blk verdict v-dirty"><div class=v><span class=dot></span><b>FAILED</b></div><span>${esc(r.error)}</span></div>`;return}
+   let t='', i=0;
+   const blk=(h)=>`<div class=blk style="animation-delay:${(i++)*55}ms">${h}</div>`;
+ 
+-  t+=blk(`<div class="verdict v-${r.verdict}"><div class=v><span class=dot></span><b>${esc(r.verdict.toUpperCase())}</b></div><span>${esc(r.verdict_reason)}</span></div>`);
++  // The verdict names its own evidence: one chip per signal that decided it. A bare "SUSPECT" says nothing.
++  const vf=(r.verdict_factors||[]).map(x=>`<span>${esc(x)}</span>`).join('');
++  t+=blk(`<div class="verdict v-${r.verdict}"><div class=v><span class=dot></span><b>${esc(r.verdict.toUpperCase())}</b></div>`+
++    (vf?`<div class=vfx>${vf}</div>`:`<span>${esc(r.verdict_reason||'')}</span>`)+`</div>`);
+ 
+-  // Exit-IP hero + copy.
++  // Exit-IP hero + copy, with the WHO/WHERE rows attached to it rather than floating in a second panel as an
++  // unlabelled run-on line ("Stiftung Erneuerbare Freiheit · Berlin, Brandenburg, Germany"). Same label→value
++  // row as everywhere else, so it scans in one pass.
++  let meta='';
++  [['ISP','isp'],['Organization','organization'],['ASN','asn'],['Host','host'],
++   ['Connection','connection_type'],['Usage','usage_type'],['Location','location'],
++   ['Time zone','timezone']].forEach(([k,v])=>{
++    if(!r[v])return;
++    // Location gets its country flag; the two line-type fields get an icon + colour, so what kind of
++    // network this is reads at a glance instead of out of a phrase.
++    if(v==='location'&&r.country_code){meta+=richRow(k,flagImg(r.country_code)+esc(r[v]));return;}
++    const u=(v==='connection_type'||v==='usage_type')&&usageOf(r[v]);
++    if(u){meta+=richRow(k,u[1]+esc(r[v])+` <span class=dimnote>${esc(u[3])}</span>`,u[2]);return;}
++    meta+=row(k,r[v]);});
+   let hero=`<div class=panel><div class=iprow><span class=ip>${esc(r.ip||'unknown')}</span>`;
+   if(r.ip)hero+=`<button class=copy data-ip="${esc(r.ip)}">Copy</button>`;
+-  hero+=`</div><div class=sub>${esc([r.isp,r.connection_type,r.location].filter(Boolean).join('  ·  ')||'—')}</div>`;
+-  if(r.timezone)hero+=`<div class=sub>${esc(r.timezone)}</div>`;
+-  hero+=`</div>`;
++  hero+=`</div>`+(meta?`<div class="rows meta">${meta}</div>`:'')+`</div>`;
+   t+=blk(hero);
+   // IPQS's fraud_score is deliberately NOT the visual hero — it saturates on proxies, so it's one tile among
+   // the signals below, not a giant meter that reads as "the verdict".
+@@ -991,60 +1354,137 @@ function render(r){
+   const pol=(r.policy_lists||[]).length, hits=(r.blacklists||[]).length;
+   let tiles='';
+   // Exit type leads — a datacenter/hosting exit is the strongest usability signal (real ISPs pass more easily).
++  // Every caption is ONE short line — tiles share a grid row, so a caption that wraps makes every tile tall.
++  // A clipped caption stays readable: tile() hangs the full text on the title, and the detail breakdown below
++  // lists it in full. Never truncate without leaving a way to read the rest.
++  const tile=(label,value,cap,colour,small)=>
++    `<div class=tile title="${esc(label)}: ${esc(cap)}"><em>${esc(label)}</em>`+
++    `<strong style="${small?'font-size:20px;':''}color:var(--${colour})">${esc(value)}</strong>`+
++    `<small>${esc(cap)}</small></div>`;
++  // Latency leads when a proxy was used — a proxy that works but takes 4s is a different problem from a
++  // dirty one, and neither shows up in any reputation source.
++  if(r.proxy_ms!=null)tiles+=tile('Latency', r.proxy_ms+' ms',
++    r.proxy_ms<400?'fast':r.proxy_ms<1200?'usable':'slow',
++    r.proxy_ms<400?'clean':r.proxy_ms<1200?'suspect':'dirty', true);
+   if(r.connection_class){const dc=r.connection_class==='datacenter';
+-    const ct=r.connection_class[0].toUpperCase()+r.connection_class.slice(1);
+-    tiles+=`<div class=tile><em>Exit type</em><strong style="font-size:20px;color:var(--${dc?'dirty':'clean'})">${esc(ct)}</strong><small>${dc?'hosting IP — real ISPs pass more easily':'real network line'}</small></div>`;}
++    tiles+=tile('Exit type', r.connection_class[0].toUpperCase()+r.connection_class.slice(1),
++      dc?'hosting network':'real network line', dc?'dirty':'clean', true);}
+   const bl=hits>=2?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
+-  tiles+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${bl})">${r.dnsbl_usable||hits?hits:'—'}</strong>`+
+-    `<small>${hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}${pol?` · plus ${pol} policy listing${pol>1?'s':''}`:''}</small></div>`;
+-  if(pol)tiles+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--info)">${pol}</strong><small>${esc(r.policy_lists.join(', '))} · a mail-sending policy listing, not an abuse report</small></div>`;
+-  if(r.abuse_confidence!=null){const ac=r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean';
+-    tiles+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${esc(r.abuse_confidence)}%</strong><small>${esc(r.abuse_reports||0)} reports in 90 days</small></div>`;}
+-  if(r.abuse_velocity)tiles+=`<div class=tile><em>Abuse velocity</em><strong style="font-size:20px">${esc(r.abuse_velocity)}</strong><small>IPQualityScore</small></div>`;
+-  // Fraud score as ONE tile among the signals — not a hero meter. Labeled "detects proxies" so a saturated
+-  // 100 reads as expected, not as the verdict.
+-  if(r.fraud_score!=null){const fb=band(r.fraud_score);
+-    tiles+=`<div class=tile><em>Fraud score</em><strong style="color:var(--${fb})">${esc(r.fraud_score)}</strong><small>IPQualityScore${r.ipqs_strictness!=null?' · strictness '+esc(r.ipqs_strictness):''}${r.fraud_score>=85?' · flags every proxy, runs high':''}</small></div>`;}
+-  if(r.getipintel_score!=null){const g=r.getipintel_score, gb=g>=0.99?'dirty':g>=0.90?'suspect':'clean';
+-    tiles+=`<div class=tile><em>getIPIntel</em><strong style="color:var(--${gb})">${g.toFixed(2)}</strong><small>${g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':'residential-ish'}${r.getipintel_bad?' · bad IP':''}</small></div>`;}
++  tiles+=tile('Blacklists', r.dnsbl_usable||hits?hits:'—',
++    hits?r.blacklists.join(', '):r.dnsbl_usable?`none of ${r.dnsbl_checked}`:'DNS unreachable', bl);
++  if(pol)tiles+=tile('Policy lists', pol, r.policy_lists.join(', '), 'info');
++  if(r.abuse_confidence!=null)tiles+=tile('Abuse', r.abuse_confidence+'%',
++    `${r.abuse_reports||0} reports · 90d`,
++    r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean');
++  if(r.abuse_velocity)tiles+=tile('Abuse velocity', r.abuse_velocity, 'IPQualityScore', 'ink', true);
++  // Fraud score as ONE tile among the signals — not a hero meter; it saturates on any proxy.
++  if(r.fraud_score!=null)tiles+=tile('Fraud score', r.fraud_score,
++    `IPQS · strictness ${r.ipqs_strictness!=null?r.ipqs_strictness:'—'}`, band(r.fraud_score));
++  if(r.getipintel_score!=null){const g=r.getipintel_score;
++    tiles+=tile('getIPIntel', g.toFixed(2), giiBand(g)+(r.getipintel_bad?' · bad IP':''),
++      g>=0.99?'dirty':g>=0.90?'suspect':'clean');}
+   t+=blk(`<div class=tiles>${tiles}</div>`);
+ 
+   if(r.fraud_score!=null){
+     const chips=(r.flags||[]).length?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
+       :'<span class="chip ok">Not flagged as proxy or VPN</span>';
+-    t+=blk(`<div class=panel><div class=lbl>Flagged as</div><div class=chips>${chips}</div></div>`);
++    t+=blk(`<div class="panel flagbar"><div class=lbl>Flagged as</div><div class=chips>${chips}</div></div>`);
+   }
+ 
+-  let d='';
+-  [['ISP','isp'],['Organization','organization'],['ASN','asn'],['Host','host'],
+-   ['Connection','connection_type'],['Usage','usage_type'],['Location','location'],
+-   ['Time zone','timezone']].forEach(([k,v])=>{if(r[v])d+=row(k,r[v])});
+-  if(d)t+=blk(`<div class=panel><div class=rows>${d}</div></div>`);
+-  if((r.notes||[]).length)t+=blk(`<div class=panel>${r.notes.map(n=>`<div class=note>${esc(n)}</div>`).join('')}</div>`);
++  const dp=deep(r); if(dp)t+=blk(dp);
++  // Notes are "Source: what happened" — split them onto the same label→value row as everything else
++  // rather than printing a sentence per line.
++  if((r.notes||[]).length)t+=blk(`<div class=panel><div class="rows hint">${r.notes.map(n=>{
++    const i=String(n).indexOf(': ');
++    return i>0?row(n.slice(0,i),n.slice(i+2)):row('Note',n);}).join('')}</div></div>`);
+   out.innerHTML=t;
+ }
+ 
+-// Copy the exit IP (delegated — render() rebuilds the button each time).
++// Copy (delegated — renders rebuild the buttons). Handles the hero .copy (data-ip) and the bulk table .cc
++// (data-copy: a proxy string or an exit IP).
+ out.addEventListener('click',async e=>{
+-  const b=e.target.closest('.copy'); if(!b)return;
+-  try{await navigator.clipboard.writeText(b.dataset.ip);}
+-  catch(err){const ta=document.createElement('textarea');ta.value=b.dataset.ip;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
+-  b.textContent='Copied ✓'; b.classList.add('done');
+-  setTimeout(()=>{b.textContent='Copy'; b.classList.remove('done');},1400);
++  const b=e.target.closest('.copy,.cc'); if(!b)return;
++  const txt=b.dataset.copy!=null?b.dataset.copy:b.dataset.ip; if(!txt)return;
++  try{await navigator.clipboard.writeText(txt);}
++  catch(err){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
++  // Flash the colour, never the label — swapping "Copy" for "Copied ✓" resizes the button and shoves its
++  // neighbours around. Confirmation must not move the layout.
++  b.classList.add('done');
++  setTimeout(()=>b.classList.remove('done'),1100);
+ });
+ 
++// API endpoint — the local server serves /check; build.py rewrites this to /api/check for the Vercel deploy.
++const API='/check';
++const saveKeys=()=>{try{localStorage.setItem('ipqs_key',$('#ipqs').value.trim());
++  localStorage.setItem('abuse_key',$('#abuse').value.trim());}catch(e){}};
++// getipintel_contact is NOT sent — the server supplies it (env var on Vercel, config file locally).
++function checkBody(proxy){return JSON.stringify({proxy:proxy, proxy_scheme:$('#ptype').value,
++  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()});}
++
+ $('#go').onclick=async()=>{
+-  const b=$('#go'); b.disabled=true; b.textContent='Checking…';
++  const b=$('#go'); b.disabled=true; b.textContent='Checking…'; saveKeys();
+   out.innerHTML='<div class="blk panel"><span class=loading>Running lookups</span></div>';
+   try{
+-    const r=await fetch('/check',{method:'POST',body:JSON.stringify({
+-      proxy:$('#proxy').value.trim(), proxy_scheme:$('#ptype').value, ip:$('#ip').value.trim(),
+-      ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim(),
+-      getipintel_contact:$('#gii').value.trim()})});
++    const r=await fetch(API,{method:'POST',body:checkBody($('#proxy').value.trim())});
+     render(await r.json());
+   }catch(e){render({error:String(e)})}
+   b.disabled=false; b.textContent='Run check';
+ };
++
++// Bulk: check many proxies (one per line) and show them in one copyable comparison table.
++const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpperCase())}</span>`;
++// The current bulk run, so the row expander can be registered ONCE — re-registering per run would stack
++// listeners that each redraw a stale table.
++let bulk=null;
++out.addEventListener('click',e=>{const b=e.target.closest('[data-deep]'); if(!b||!bulk)return;
++  const x=bulk.rows[+b.dataset.deep]; if(!x)return; x.open=!x.open; bulk.draw();});
++$('#bulkgo').onclick=async()=>{
++  const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
++  if(!lines.length)return;
++  saveKeys();
++  const b=$('#bulkgo'); b.disabled=true; b.textContent='Checking…';
++  const rows=lines.map(line=>({line, r:null, busy:true}));
++  const cell=(txt,cls)=>`<td class="${cls||''}">${esc(txt)}</td>`;
++  const draw=()=>{
++    const done=rows.filter(x=>!x.busy).length;
++    let h=`<div class="blk panel tablewrap"><table class=bulk><thead><tr><th>Proxy</th><th>Alive</th>`+
++      `<th>Latency</th><th>Exit IP</th>`+
++      `<th>Verdict</th><th>getIPIntel</th><th>Lists</th><th>Type</th><th>Copy</th></tr></thead><tbody>`;
++    rows.forEach((x,i)=>{const r=x.r||{};
++      const ip=r.ip||(x.busy?'…':'—');
++      const g=r.getipintel_score!=null?r.getipintel_score.toFixed(2):'—';
++      const hits=r.ip?String((r.blacklists||[]).length):(x.busy?'':'—');
++      // Never invent "residential" — connection_class returns null when the name heuristic can't tell.
++      const type=r.connection_class||(x.busy?'':'—');
++      // Dead-or-alive is the first thing you want when comparing a list, and latency the second — neither
++      // is a reputation signal, so no source reports them.
++      const alive=x.busy?'<span class="vpill v-unknown-p">…</span>'
++        :r.proxy_alive===false||r.error?'<span class="vpill v-dirty-p">DEAD</span>'
++        :r.ip?'<span class="vpill v-clean-p">UP</span>':'<span class="vpill v-unknown-p">—</span>';
++      const ms=r.proxy_ms!=null?r.proxy_ms+' ms':(x.busy?'':'—');
++      const vd=x.busy?'<span class="vpill v-unknown-p">…</span>':vpill(r.error?'unknown':r.verdict);
++      h+=`<tr>${cell(x.line,'pxcell')}<td>${alive}</td>${cell(ms)}${cell(ip)}<td>${vd}</td>${cell(g)}${cell(hits)}${cell(type)}`+
++        `<td style="white-space:nowrap"><button class=cc data-copy="${esc(x.line)}">proxy</button> `+
++        (r.ip?`<button class=cc data-copy="${esc(r.ip)}">ip</button> `:'')+
++        (r.ip?`<button class=cc data-deep="${i}">${x.open?'hide':'why'}</button>`:'')+`</td></tr>`;
++      // Same per-source breakdown as the single check, inline under its row — a bulk verdict is only
++      // actionable if you can see what produced it.
++      if(x.open&&r.ip)h+=`<tr><td colspan=9 style="padding:0 0 12px">${deep(r)||'<p class=note>no source detail</p>'}</td></tr>`;
++    });
++    h+=`</tbody></table><p class=note style="padding:10px 10px 0">${done}/${rows.length} checked · Proxy/IP copies · Why opens the breakdown</p></div>`;
++    out.innerHTML=h;
++  };
++  bulk={rows, draw};      // hand the current run to the once-registered row expander below
++  draw();
++  let idx=0; const CAP=4;
++  const worker=async()=>{ while(idx<rows.length){const x=rows[idx++];
++    try{const resp=await fetch(API,{method:'POST',body:checkBody(x.line)}); x.r=await resp.json();}
++    catch(e){x.r={error:String(e)};}
++    x.busy=false; draw();
++  }};
++  await Promise.all(Array.from({length:Math.min(CAP,rows.length)},worker));
++  b.disabled=false; b.textContent='Check all';
++};
+ </script>
+ """
+ 
+@@ -1121,11 +1561,17 @@ def serve(port: int, open_browser: bool = True) -> None:
+             cfg.update({k: req[k] for k in ("proxy", "proxy_scheme", "ipqs_key", "abuse_key", "getipintel_contact")
+                         if k in req})
+             save_config(cfg)
++            # The page has no getIPIntel field any more — the server supplies the contact, exactly as the
++            # hosted function does from its env var. Without this fallback getIPIntel silently never runs
++            # in the local UI. (cfg is the post-update copy, so a key the page DID send still wins; it just
++            # never sends this one, which is why the saved value survives here.)
++            contact = (req.get("getipintel_contact") or os.environ.get("GETIPINTEL_CONTACT")
++                       or cfg.get("getipintel_contact") or "")
+             try:
+                 rep = check(req.get("proxy") or None, req.get("ip") or None,
+-                            req.get("ipqs_key", ""), req.get("abuse_key", ""),
+-                            req.get("proxy_scheme") or "http",
+-                            req.get("getipintel_contact", ""))
++                            req.get("ipqs_key") or os.environ.get("IPQS_KEY", ""),
++                            req.get("abuse_key") or os.environ.get("ABUSEIPDB_KEY", ""),
++                            req.get("proxy_scheme") or "http", contact)
+             except Exception as exc:
+                 rep = {"error": str(exc)}
+             self._send(json.dumps(rep).encode(), "application/json")
+@@ -1154,7 +1600,8 @@ def main(argv=None) -> int:
+     ap.add_argument("--ipqs-key", default="", help="IPQualityScore API key")
+     ap.add_argument("--abuse-key", default="", help="AbuseIPDB API key")
+     ap.add_argument("--getipintel-contact", default="",
+-                    help="contact email for getIPIntel proxy/VPN detection (free, no signup)")
++                    help="contact email for getIPIntel proxy/VPN detection (free, no signup). Several, "
++                         "comma-separated, rotate when one is over quota (15/min, 500/day per contact)")
+     ap.add_argument("--json", action="store_true", help="machine-readable output")
+     ap.add_argument("--serve", nargs="?", const=8787, type=int, metavar="PORT",
+                     help="open the local web UI (default port 8787)")

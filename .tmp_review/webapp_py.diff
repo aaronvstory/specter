@@ -1,0 +1,141 @@
+diff --git a/webapp/api/check.py b/webapp/api/check.py
+new file mode 100644
+index 0000000..890b154
+--- /dev/null
++++ b/webapp/api/check.py
+@@ -0,0 +1,52 @@
++"""Vercel serverless function: runs the same check() as the local tool, server-side (so getIPIntel / IPQS /
++AbuseIPDB — which browsers can't call cross-origin — work). Keys arrive per-request from the visitor's
++browser localStorage, or fall back to the project's server-side env vars; they are NEVER returned to the client."""
++from http.server import BaseHTTPRequestHandler
++import json
++import os
++import traceback
++
++
++class handler(BaseHTTPRequestHandler):
++    def _cors(self):
++        self.send_header("Access-Control-Allow-Origin", "*")
++        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
++        self.send_header("Access-Control-Allow-Headers", "Content-Type")
++
++    def do_OPTIONS(self):
++        self.send_response(204)
++        self._cors()
++        self.end_headers()
++
++    def do_POST(self):
++        try:
++            n = int(self.headers.get("Content-Length") or 0)
++            req = json.loads(self.rfile.read(n) or b"{}")
++            assert isinstance(req, dict)
++        except Exception:
++            self._json(400, {"error": "expected a JSON object"})
++            return
++        try:
++            # ipcheck_core sets CONFIG = Path.home()/... at import; Lambda has no HOME → point it at /tmp.
++            os.environ.setdefault("HOME", "/tmp")
++            os.environ.setdefault("USERPROFILE", "/tmp")
++            import sys
++            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # so the sibling module imports
++            from ipcheck_core import check
++            ipqs = req.get("ipqs_key") or os.environ.get("IPQS_KEY", "")
++            abuse = req.get("abuse_key") or os.environ.get("ABUSEIPDB_KEY", "")
++            gii = req.get("getipintel_contact") or os.environ.get("GETIPINTEL_CONTACT", "")
++            rep = check(req.get("proxy") or None, req.get("ip") or None,
++                        ipqs, abuse, req.get("proxy_scheme") or "http", gii)
++        except Exception as exc:
++            rep = {"error": str(exc)}
++        self._json(200, rep)
++
++    def _json(self, code, obj):
++        body = json.dumps(obj).encode()
++        self.send_response(code)
++        self.send_header("Content-Type", "application/json")
++        self.send_header("Content-Length", str(len(body)))
++        self._cors()
++        self.end_headers()
++        self.wfile.write(body)
+diff --git a/webapp/api/config.py b/webapp/api/config.py
+new file mode 100644
+index 0000000..f2a0d38
+--- /dev/null
++++ b/webapp/api/config.py
+@@ -0,0 +1,20 @@
++"""GET /api/config -> which keyed sources the server already has (env vars). Booleans only, never the
++values. Lets the UI show 'shared key active' instead of asking the visitor for a key that's already set."""
++from http.server import BaseHTTPRequestHandler
++import json
++import os
++
++
++class handler(BaseHTTPRequestHandler):
++    def do_GET(self):
++        body = json.dumps({
++            "ipqs": bool(os.environ.get("IPQS_KEY")),
++            "abuse": bool(os.environ.get("ABUSEIPDB_KEY")),
++            "getipintel": bool(os.environ.get("GETIPINTEL_CONTACT")),
++        }).encode()
++        self.send_response(200)
++        self.send_header("Content-Type", "application/json")
++        self.send_header("Access-Control-Allow-Origin", "*")
++        self.send_header("Content-Length", str(len(body)))
++        self.end_headers()
++        self.wfile.write(body)
+diff --git a/webapp/build.py b/webapp/build.py
+new file mode 100644
+index 0000000..743543e
+--- /dev/null
++++ b/webapp/build.py
+@@ -0,0 +1,51 @@
++"""Generate webapp/index.html from specter/ipcheck.py's PAGE, adapted for the Vercel deploy:
++  * keys come from the visitor's browser localStorage (not a server config file), and are saved there;
++  * the check POSTs to /api/check (the serverless function) instead of the local server's /check.
++Re-run after changing PAGE so the hosted UI stays in sync. Usage: python webapp/build.py"""
++import re
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++from specter.ipcheck import PAGE  # noqa: E402
++import shutil  # noqa: E402
++shutil.copyfile(ROOT / 'specter' / 'ipcheck.py', ROOT / 'webapp' / 'api' / 'ipcheck_core.py')  # vendor check()
++
++html = PAGE
++
++# 1) config load: read from localStorage instead of GET /config.
++# Anchored on a `});` that starts a LINE — a bare non-greedy `.*?\}\);` stops at the first `});` INSIDE the
++# block (e.g. `markKeys({});`) and silently replaces half of it, leaving orphan lines that are a JavaScript
++# SyntaxError. A parse error kills the whole <script>, so every button on the deployed page goes inert while
++# the page still looks fine. The boot() assert is the tripwire for that whole class of mis-match.
++old_cfg = re.search(r"fetch\('/config'\)\.then\(r=>r\.json\(\)\)\.then\(c=>\{.*?\n\}\);", html, re.S)
++assert old_cfg, "config-load block not found"
++assert "boot();" in old_cfg.group(0), "config-load match truncated — it must span the whole block"
++new_cfg = (
++    "(function(){const ls=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};\n"
++    "  $('#proxy').value=q.get('proxy')||'';\n"
++    "  $('#ptype').value=q.get('ptype')||'http';\n"
++    "  $('#ipqs').value=ls('ipqs_key'); $('#abuse').value=ls('abuse_key');\n"
++    "  $('#ip').value=q.get('ip')||'';\n"
++    "  markKeys({});\n"
++    "  // Which sources the DEPLOY already has a key for (booleans only, never the values), so a blank\n"
++    "  // field reads 'shared active' instead of looking unconfigured.\n"
++    "  fetch('/api/config').then(r=>r.json()).then(markKeys).catch(()=>{});\n"
++    "  boot();\n"
++    "})();"
++)
++html = html.replace(old_cfg.group(0), new_cfg, 1)
++
++# 2) point the API at the serverless function (both the single check and the bulk table use `API`)
++assert "const API='/check';" in html, "API const not found"
++html = html.replace("const API='/check';", "const API='/api/check';", 1)
++
++# 3) note copy: browser storage, not a local file. Asserted like the others — a silent miss would ship a
++# page telling visitors their keys sit in a file on a machine they don't have.
++OLD_NOTE = "<div class=rw><i>Stored</i><div>~/.specter-ipcheck.json</div></div>"
++assert OLD_NOTE in html, "storage note not found"
++html = html.replace(OLD_NOTE, "<div class=rw><i>Stored</i><div>your browser only (localStorage)</div></div>")
++
++(ROOT / "webapp" / "index.html").write_text(html, "utf-8")
++print("wrote webapp/index.html (%d bytes)" % len(html))

@@ -256,3 +256,14 @@ WebFetch for a single known URL exa can't reach. Reach for exa on the FIRST rese
 Distinguish PROVEN (verified on-device or by test) from HYPOTHESIS (plausible, code-grounded, unconfirmed)
 from ASSUMPTION. Label them as such in docs and reports. A strong hypothesis is still a hypothesis until
 it's confirmed with real evidence (e.g. diffing a flagged vs passed account, or measuring a live flag rate).
+
+## adb: the phones have PINNED wireless ports — never scan for one
+- **Pixel 4 (flame)** `adb connect 192.168.50.144:5556` · USB `9B151FFAZ00FPF`
+- **Pixel 4a (sunfish)** `adb connect 192.168.50.19:5557` · USB `17031JEC204747`
+- 5555 is avoided ON PURPOSE (iMyFone AnyTo probes `192.168.50.19:5555` in a loop and would grab the phone).
+  Setup notes: `C:\platform-tools\README-adb-tools.md`.
+- **Do NOT port-scan for an Android-11 "random wireless debugging port".** That port is the PAIRING port: it
+  accepts TCP but `adb connect` returns `offline` forever without a pairing code. A phone that won't connect
+  is usually just POWERED OFF — check that before anything else.
+- Made reboot-proof 2026-08-05: `su -c 'resetprop persist.adb.tcp.port <port>'` on both, so adbd re-binds the
+  pinned port every boot instead of needing `adb tcpip` over USB after each restart.
