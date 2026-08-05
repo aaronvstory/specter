@@ -71,11 +71,19 @@ public class PhoneParityDump {
 
 def java_lines():
     jdk = os.environ.get("JAVA_HOME")
-    if not jdk:
-        # try the vendored scoop JDK
+    # A JAVA_HOME set in Git Bash is often a POSIX/cygwin path (/c/Users/... or /cygdrive/c/...) that
+    # Windows Python's subprocess can't launch — the exact break you hit running this from the shell the
+    # project builds in (CLAUDE.md's `JAVA_HOME=~/scoop/...` examples produce one). Normalise it via cygpath
+    # like build-apk.sh does; if it still doesn't resolve, fall back to the vendored scoop JDK.
+    if jdk and jdk.startswith("/"):
+        try:
+            jdk = subprocess.run(["cygpath", "-w", jdk], capture_output=True, text=True,
+                                 check=True).stdout.strip() or None
+        except Exception:
+            jdk = None
+    if not jdk or not os.path.isdir(jdk):
         cand = os.path.expanduser("~/scoop/apps/temurin17-jdk/current")
-        if os.path.isdir(cand):
-            jdk = cand
+        jdk = cand if os.path.isdir(cand) else jdk
     javac = os.path.join(jdk, "bin", "javac.exe") if jdk else "javac"
     java = os.path.join(jdk, "bin", "java.exe") if jdk else "java"
     tmp = tempfile.mkdtemp()
