@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.5] - 2026-08-05
+
+### Fixed
+- **Stopping a monitor now leaves a clean, valid-JSON profile.** A read-only audit of the profiles
+  applied across the fleet found one carrying a stale, unquoted `{trace:1,` prefix — written by an
+  older version of the monitor's arm step, and un-removable by the disarm step (which only stripped
+  the quoted form). It never affected spoofing (the profile reader skips to the first quoted field),
+  but it left the file as invalid JSON. Disarm now strips the legacy form too, so a monitor→stop
+  self-heals it; freshly applied profiles were never affected.
+
 ## [0.24.4] - 2026-08-05
 
 ### Changed
