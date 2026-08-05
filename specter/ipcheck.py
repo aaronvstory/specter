@@ -808,7 +808,7 @@ details[open] summary::before{content:"− "}
       <div class=field><label for=proxy>Proxy</label>
         <div class=proxyrow>
           <select id=ptype><option value=http>HTTP</option><option value=socks5>SOCKS5</option><option value=socks4>SOCKS4</option></select>
-          <input id=proxy placeholder="host:port · host:port:user:pass · user:pass@host:port">
+          <input id=proxy placeholder="host:port:user:pass · host:port">
         </div></div>
       <div class=field><label for=ip>IP · optional</label><input id=ip placeholder="check directly"></div>
     </div>
@@ -820,6 +820,7 @@ details[open] summary::before{content:"− "}
       <p class=note>Stored locally in ~/.specter-ipcheck.json. The blacklist count needs no key.</p>
     </details>
     <button class=go id=go>Run check</button>
+    <p class=note style="margin-top:10px">Scored from <b>ipwho.is</b> geo/ISP · <b>~120 DNSBLs</b> blacklists + mail-policy lists — both free, no key. Add a key above for <b>IPQualityScore</b> (0–100 fraud score, proxy/VPN/bot flags) and <b>AbuseIPDB</b> (abuse history). The verdict combines whatever ran.</p>
   </div>
   <div id=out></div>
 </div>
@@ -841,7 +842,9 @@ fetch('/config').then(r=>r.json()).then(c=>{
   $('#ptype').value=q.get('ptype')||c.proxy_scheme||'http';
   $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||'';
   $('#ip').value=q.get('ip')||'';
-  if(q.get('ip')||q.get('proxy'))$('#go').click();   // ?ip=/?proxy= => one-click check from a bookmark
+  // Show the current exit IP + geo/score immediately on open — an empty proxy checks this machine's own
+  // exit. A ?ip=/?proxy= from a bookmark just seeds the fields first, then the same auto-run picks them up.
+  $('#go').click();
 });
 const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
 const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
