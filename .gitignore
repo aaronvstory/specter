@@ -61,3 +61,6 @@ backups/
 
 # Local APK working area (jadx/apktool output; contains Windows-reserved names like aux.java)
 APKs/
+
+# Scratch diffs review agents drop in the tree — never part of the repo.
+.tmp_review/
