@@ -257,18 +257,38 @@ Distinguish PROVEN (verified on-device or by test) from HYPOTHESIS (plausible, c
 from ASSUMPTION. Label them as such in docs and reports. A strong hypothesis is still a hypothesis until
 it's confirmed with real evidence (e.g. diffing a flagged vs passed account, or measuring a live flag rate).
 
-## adb: the phones have PINNED wireless ports — never scan for one
-- **Pixel 4 (flame)** `adb connect 192.168.50.144:5556` · USB `9B151FFAZ00FPF`
-- **Pixel 4a (sunfish)** `adb connect 192.168.50.19:5557` · USB `17031JEC204747`
-- 5555 is avoided ON PURPOSE (iMyFone AnyTo probes `192.168.50.19:5555` in a loop and would grab the phone).
-  Setup notes: `C:\platform-tools\README-adb-tools.md`.
-- **Do NOT port-scan for an Android-11 "random wireless debugging port".** That port is the PAIRING port: it
-  accepts TCP but `adb connect` returns `offline` forever without a pairing code. A phone that won't connect
-  is usually just POWERED OFF — check that before anything else.
-- **It is ALREADY automatic** — a Magisk boot script `/data/adb/service.d/99-adb-tcp-port.sh` on each phone
-  waits for `sys.boot_completed`, sets `service.adb.tcp.port`, and restarts adbd. Set up from
-  `C:\platform-tools` (see its README). PROVEN 2026-08-05: rebooted the P4, wireless was back on 5556 by
-  itself ~30s after boot (uptime 29.7s over the wireless transport), no USB action.
-- So a phone that is not reachable is **powered off**, or off the network — check that FIRST. Don't add a
-  second pinning mechanism; one already exists. (`persist.adb.tcp.port` was also set on both, redundantly.)
+## adb: both phones are reachable over Wi-Fi on PINNED ports (Wireless debugging is OFF, and that's fine)
+
+| Phone | Device | USB serial | Wireless |
+|---|---|---|---|
+| Pixel 4 | `flame` | `9B151FFAZ00FPF` | `adb connect 192.168.50.144:5556` |
+| Pixel 4a | `sunfish` | `17031JEC204747` | `adb connect 192.168.50.19:5557` |
+
+Both work with no USB cable attached, root included (`su -c` gives uid 0 over the wireless transport).
+VERIFIED 2026-08-05 with both cables unplugged.
+
+**The "Wireless debugging" toggle in the quick-settings dropdown is OFF on both — leave it off.** It is not
+what serves adb here, and turning it on would go back to a random port. Measured on both phones:
+
+| Setting | Value | Meaning |
+|---|---|---|
+| `settings get global adb_wifi_enabled` | `0` | Android-11 Wireless debugging: OFF |
+| `getprop service.adb.tls.port` | *(empty)* | no TLS/mDNS wireless-debug listener |
+| `settings get global adb_enabled` | `1` | adb itself: ON |
+| `getprop service.adb.tcp.port` | `5556` / `5557` | **classic adb-over-TCP — this is what we connect to** |
+
+Two independent mechanisms; we use the older one. `service.adb.tcp.port` (the `adb tcpip` mechanism) is
+unrelated to the Android-11 Wireless-debugging feature, needs no pairing code, and never randomises.
+
+**It re-arms itself at every boot.** A Magisk boot script `/data/adb/service.d/99-adb-tcp-port.sh` on each
+phone waits for `sys.boot_completed`, sets `service.adb.tcp.port`, and restarts adbd. Installed from
+`C:\platform-tools` (see its `README-adb-tools.md`). PROVEN: rebooted the P4, wireless was back on 5556
+unaided ~30s after boot (uptime 29.7s read over the wireless transport).
+
 - Quick check on a phone: `getprop service.adb.tcp.port` — a number means the pin is active.
+- 5555 is avoided ON PURPOSE (iMyFone AnyTo probes `192.168.50.19:5555` in a loop and would grab the 4a).
+- **A phone that won't connect is almost certainly POWERED OFF** (or off the network). Check that first.
+- Do NOT add another pinning mechanism — one already exists and works. Do NOT port-scan for an
+  "Android-11 random wireless-debugging port": that feature is off here, so there is no such port to find.
+- `adb mdns services` finds nothing, and never will, because the phones only advertise
+  `_adb-tls-connect._tcp` when Wireless debugging is ON. Not a fault.
