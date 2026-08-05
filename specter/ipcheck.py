@@ -1249,7 +1249,7 @@ PAGE = r"""<!doctype html>
   --bg:#0b0c0f; --grid:#12141a; --panel:#131519; --panel2:#181b21; --line:#242832;
   --ink:#e9ebef; --soft:#a3a8b2; --dim:#666c78;
   --accent:#57e3bf; --accent-ink:#04110d;
-  --clean:#5fd39a; --suspect:#f2c04b; --dirty:#f07070; --info:#63b8ea;
+  --clean:#5fd39a; --suspect:#f2c04b; --warn:#f0954e; --dirty:#f07070; --info:#63b8ea;
   --glow:0 0 0 1px rgba(87,227,191,.14), 0 8px 30px -12px rgba(0,0,0,.7);
   --mono:"Cascadia Code","JetBrains Mono","SFMono-Regular",ui-monospace,"Menlo",Consolas,monospace;
   --sans:-apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;
@@ -1258,14 +1258,14 @@ PAGE = r"""<!doctype html>
   --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
   --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
   --accent:#0e9c81; --accent-ink:#ffffff;
-  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --clean:#1f9d63; --suspect:#b8860a; --warn:#c26a1c; --dirty:#d0483f; --info:#2a7fb8;
   --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
 }
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]){
   --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
   --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
   --accent:#0e9c81; --accent-ink:#ffffff;
-  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --clean:#1f9d63; --suspect:#b8860a; --warn:#c26a1c; --dirty:#d0483f; --info:#2a7fb8;
   --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
 }}
 *{box-sizing:border-box}
@@ -1494,7 +1494,11 @@ table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
 .ipv{font-size:12px}
 .ms{font-variant-numeric:tabular-nums}
 .dim{color:var(--dim)}
-.c-clean{color:var(--clean)} .c-suspect{color:var(--suspect)} .c-dirty{color:var(--dirty)}
+.c-clean{color:var(--clean)} .c-suspect{color:var(--suspect)} .c-warn{color:var(--warn)} .c-dirty{color:var(--dirty)}
+/* A link inside a readout. Underlined on hover only, so a table of values doesn't turn into a page of
+   underlines, but it must LOOK clickable — a bare URL rendered as text is not a link, however valid. */
+a.lnk{color:var(--accent);text-decoration:none;border-bottom:1px dotted color-mix(in srgb,var(--accent) 45%,transparent)}
+a.lnk:hover{border-bottom-style:solid}
 .c-info{color:var(--info)}
 .tag{margin-left:5px;padding:2px 5px;border-radius:4px;font:600 9px/1.4 var(--mono);
   background:color-mix(in srgb,var(--info) 16%,transparent);color:var(--info);vertical-align:1px}
@@ -1639,8 +1643,21 @@ const giiBand=g=>g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':g>=0.50?'mi
 // here once, so adding a class can't leave one of the three painting a Tor exit as clean.
 const ccColour=c=>c==='mobile'?'clean':'dirty';
 const ccCap=c=>c==='mobile'?'real network line':c==='tor'?'Tor exit — denied by most apps':'hosting network';
-// Scamalytics' score is WARN-ONLY, never green: MEASURED, `low` came back for a Tor exit and for 127.0.0.1.
-const scamColour=b=>b==='very high'?'dirty':b==='high'?'suspect':'ink';
+// Scamalytics' OWN four-band scale, in their own colours: low green, medium amber, high orange, very high
+// red. Shown this way at the user's explicit request.
+//
+// It is safe to paint this green ONLY because the score is fenced off from the verdict entirely — it has
+// zero weight at every tier of verdict_factors(), locked in both directions by
+// test_scamalytics_score_never_moves_the_verdict. So a green "8 · low" beside a DIRTY verdict is not a
+// contradiction, it is Scamalytics' opinion next to ours, and the caption says "shown, not scored".
+// That fencing is what makes the colour a report of their number rather than a claim of our own —
+// MEASURED, `low` came back for a Tor exit and for 127.0.0.1, so it must never decide anything.
+const scamColour=b=>b==='very high'?'dirty':b==='high'?'warn':b==='medium'?'suspect':'clean';
+// Anything that is plainly a URL becomes a real link. `scamalytics_url` was rendering as escaped text in
+// the raw card — a valid address nobody could click. (It 403s a bot user-agent and 200s a browser, so it
+// only ever worked from the page; it just was not a link.)
+const linkify=(v)=>/^https?:\/\//i.test(String(v))
+  ?`<a class=lnk href="${esc(v)}" target="_blank" rel="noopener noreferrer">${esc(v)}</a>`:null;
 // Why a blocklist sweep produced nothing, in the words of the state dnsbl_check ACTUALLY reports. The
 // previous version branched on `dnsbl_skipped==='ipv6'`, a value nothing ever emitted — so all three
 // copies of it were dead code telling the reader an IPv6 exit has no coverage, which stopped being true
@@ -1758,9 +1775,9 @@ const WARN_ONLY=new Set(['is_datacenter','is_vpn','is_apple_icloud_private_relay
 function vcolour(k,v){
   if(v===true)return WARN_ONLY.has(k)?'dirty':RISKY.has(k)?'dirty':REASSURING.has(k)?'clean':'';
   if(v===false)return WARN_ONLY.has(k)?'':RISKY.has(k)?'clean':'';
-  // The Scamalytics score is shown, never scored — and warn-only, because `low` was returned for a Tor exit
-  // AND for 127.0.0.1. Green here would be the tool endorsing a number it deliberately gives zero weight.
-  if(k==='risk'||k==='isp_risk')return v==='very high'?'dirty':v==='high'?'suspect':'';
+  // Scamalytics' bands in Scamalytics' own colours — the same scale as the tile and the column, so the
+  // raw card cannot disagree with them about their own number.
+  if(k==='risk'||k==='isp_risk')return scamColour(v);
   if(k==='ip2proxy_type')return 'dirty';
   if(k==='fraud_score')return band(+v);
   if(k==='abuseConfidenceScore')return +v>=50?'dirty':+v>=10?'suspect':'clean';
@@ -1776,7 +1793,8 @@ const kvIcon=(k,v)=>{if(k!=='usageType'&&k!=='connection_type')return '';
 function kv(obj){const ks=Object.keys(obj||{});if(!ks.length)return '';
   return `<div class=kv>${ks.map(k=>{const raw=obj[k], v=fmtv(raw), c=vcolour(k,raw);
     // esc() the value, then prepend our own markup — the img/span tags are ours, the value never is.
-    const disp=(CC_KEYS.has(k)?flagImg(String(raw)):kvIcon(k,v))+esc(v);
+    // A URL becomes a real anchor (linkify escapes it itself); everything else is escaped text.
+    const disp=linkify(v)||((CC_KEYS.has(k)?flagImg(String(raw)):kvIcon(k,v))+esc(v));
     return `<div title="${esc(LBL[k]||k)}: ${esc(v)}"><i>${esc(LBL[k]||k)}</i>`+
       `<b${c?` style="color:var(--${c})"`:''}>${disp}</b></div>`;}).join('')}</div>`;}
 const srcCard=(t,sub,body)=>`<div class=src><h4>${esc(t)}<em>${esc(sub||'')}</em></h4>${body}</div>`;
@@ -2076,6 +2094,8 @@ function bulkDetail(x){
     t+=dRow('Scamalytics flags',sf.length
       ?`<span class=c-suspect>${esc(sf.join(' · '))}</span>`
       :'<span class=dim>none raised</span>');
+    const su=r.scamalytics_raw&&r.scamalytics_raw.url;
+    if(su)t+=dRow('Scamalytics page',linkify(su)||esc(su));
   }
   t+=dRow('Abuse confidence',r.abuse_confidence!=null
     ?`<span class="c-${r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean'}">`+
@@ -2265,8 +2285,17 @@ $('#bulkgo').onclick=async()=>{
     const done=rows.filter(x=>!x.busy).length;
     const view=rows.slice();
     if(sortKey){const c=COLS.find(c=>c.k===sortKey);
+      // ABSENT sorts last in BOTH directions, which is why Infinity is resolved before sortDir is applied.
+      // Multiplying the raw difference by -1 sent every unmeasured row to the TOP on a descending sort —
+      // so clicking a score header twice to find the worst exit put "n/k" and "n/a" above the dirtiest
+      // real result. A row with no measurement is not a ranking position.
       view.sort((a,b)=>{const A=c.get(a),B=c.get(b);
-        return (typeof A==='number'&&typeof B==='number'?A-B:String(A).localeCompare(String(B)))*sortDir;});}
+        if(typeof A==='number'&&typeof B==='number'){
+          if(A===B)return 0;
+          if(A===Infinity)return 1;
+          if(B===Infinity)return -1;
+          return (A-B)*sortDir;}
+        return String(A).localeCompare(String(B))*sortDir;});}
 
     const tally=k=>rows.filter(x=>!x.busy&&x.r&&!x.r.error&&x.r.verdict===k).length;
     const dead=rows.filter(x=>!x.busy&&x.r&&(x.r.proxy_alive===false||x.r.error)).length;

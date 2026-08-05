@@ -472,6 +472,11 @@ final class HealthCheck {
         String ip;
         Integer fraudScore;                     // IPQualityScore 0-100 (null = no key / lookup failed)
         Boolean proxy, vpn, tor, recentAbuse;   // IPQualityScore verdicts
+        /** IPQualityScore's mobile flag. Read because connection_class() in specter/ipcheck.py gives
+         *  `mobile` precedence over the datacenter name regex — without it, a mobile exit whose ISP
+         *  string happens to contain a hosting term classifies as `mobile` on desktop and `datacenter`
+         *  on the phone, for the same IP. */
+        Boolean mobile;
         Integer abuseConfidence, abuseReports;  // AbuseIPDB (null = no key / lookup failed)
         Double getipintel;                       // getIPIntel 0-1 proxy/hosting probability (null = not run)
         boolean getipintelBad;                   // getIPIntel: the IP behaved maliciously
@@ -539,7 +544,9 @@ final class HealthCheck {
         if (r == null) { why.add("unknown"); why.add("no check has run"); return why; }
         int hits = r.blacklists.size();
         boolean tor = Boolean.TRUE.equals(r.scamTor);
-        boolean dc = !tor && (scamDatacenter(r)
+        // `mobile` outranks the datacenter signal here too, or the verdict would call an exit
+        // "datacenter/hosting IP" while the Exit type tile above it reads Mobile.
+        boolean dc = !tor && !Boolean.TRUE.equals(r.mobile) && (scamDatacenter(r)
                 || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host));
         boolean ipqsAbuse = Boolean.TRUE.equals(r.recentAbuse);
 
@@ -623,6 +630,9 @@ final class HealthCheck {
     static String connectionClass(Reputation r, String geoIsp) {
         if (r == null) return null;
         if (Boolean.TRUE.equals(r.scamTor)) return "tor";
+        // mobile BEFORE the datacenter check, exactly as connection_class() orders it. A real mobile line
+        // is a real line whatever its ISP string looks like.
+        if (Boolean.TRUE.equals(r.mobile)) return "mobile";
         if (scamDatacenter(r) || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host))
             return "datacenter";
         return null;
@@ -665,6 +675,7 @@ final class HealthCheck {
                 r.proxy = o.optBoolean("proxy", false) || o.optBoolean("active_vpn", false);
                 r.vpn = o.optBoolean("vpn", false);
                 r.tor = o.optBoolean("tor", false) || o.optBoolean("active_tor", false);
+                r.mobile = o.optBoolean("mobile", false);
                 r.recentAbuse = o.optBoolean("recent_abuse", false)
                         || o.optBoolean("frequent_abuser", false)
                         || o.optBoolean("high_risk_attacks", false)

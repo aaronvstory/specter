@@ -1249,6 +1249,34 @@ def test_scamalytics_raw_is_flat_so_the_detail_card_can_render_it(monkeypatch):
     assert raw["dbip_connection_type"] == "isp" and raw["isp_name"] == "Example Networks"
 
 
+def test_the_android_connection_class_orders_its_branches_like_the_python_one():
+    """`mobile` must be checked BEFORE the datacenter signal, on both sides.
+
+    Android's `connectionClass` was added without it — and `Reputation` never read IPQS's `mobile` flag at
+    all — so a mobile exit whose ISP string happens to contain a hosting term (the regex carries a
+    `google(?!\\s+fiber)` lookahead precisely because such names exist) classified as `mobile` on the
+    desktop and `datacenter` on the phone. Same IP, different verdict, which is the whole reason the two
+    implementations are pinned to each other."""
+    # Python: mobile wins over a datacenter-looking name, and tor wins over mobile.
+    assert ipcheck.connection_class({"mobile": True, "isp": "Cloudy Mobile Hosting"}) == "mobile"
+    assert ipcheck.connection_class({"mobile": True, "scam_proxy_type": "DCH"}) == "mobile"
+    assert ipcheck.connection_class({"mobile": True, "scam_tor": True}) == "tor"
+    assert ipcheck.verdict_factors({"mobile": True, "isp": "Cloudy Mobile Hosting",
+                                    "dnsbl_usable": True})[0] == "clean"
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    assert 'o.optBoolean("mobile"' in java, "Android never reads IPQS's mobile flag"
+    block = re.search(r"static String connectionClass\(.*?\n    \}", java, re.S)
+    assert block, "connectionClass not found in HealthCheck.java"
+    body = block.group(0)
+    assert "r.mobile" in body, "connectionClass has no mobile branch"
+    assert body.index("r.mobile") < body.index("scamDatacenter"), \
+        "mobile must be checked BEFORE the datacenter signal, as connection_class() does"
+    # ...and the verdict must agree with the class it reports, or the tile and the reason contradict.
+    vf = re.search(r"static List<String> verdictFactors\(.*?\n    \}", java, re.S)
+    assert vf and "r.mobile" in vf.group(0), "verdictFactors ignores mobile, so it can contradict the tile"
+
+
 def test_scam_datacenter_types_match_the_android_side():
     # The two implementations must bucket the ip2proxy taxonomy identically, or the same IP classifies as a
     # datacenter on one and unclassified on the other.

@@ -56,6 +56,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - **Reputation was measured on one address and reported as another.** On a dual-stack exit the address was
   switched to IPv4 *after* IPQS/AbuseIPDB/getIPIntel/Scamalytics had already been asked about the IPv6 one.
   The family is now settled before any source is queried.
+- **Scamalytics is coloured in its own four-band scale** — low green, medium amber, high orange, very
+  high red — at the user's request, rather than warn-only. Safe because the score is fenced off from the
+  verdict entirely (zero weight at every tier, locked in both directions by a test), so a green "8 · low"
+  beside a DIRTY verdict is Scamalytics' opinion next to ours, and every row still says "shown, not scored".
+- **The Scamalytics page link is a real link now**, on both web and Android. It was rendering as plain
+  text, so tapping it did nothing. (It 403s a bot user-agent and 200s a browser, so it only ever worked
+  from the page — it just was not clickable.)
+- **Android classified a mobile exit as a datacenter.** `connectionClass()` was added without the
+  `mobile` branch that `connection_class()` has, and `Reputation` never read IPQS's `mobile` flag at all —
+  so a mobile exit whose ISP string contains a hosting term read `mobile` on the desktop and `datacenter`
+  on the phone, for the same IP. Both the class and the verdict now check it first, pinned by a test.
+- **The bulk table sorted unmeasured rows to the TOP on a descending sort.** `Infinity` was multiplied by
+  the sort direction, so clicking a score heading twice to find the worst exit put every `n/k` / `n/a` row
+  above the dirtiest real result. Absent now sorts last in both directions.
 - **A dead proxy crashed the page.** `check()` returned early with no `verdict` key when the exit-IP
   lookup failed, and the page did `r.verdict.toUpperCase()` on it — so an ordinary unreachable proxy read
   "FAILED · TypeError: Cannot read properties of undefined". Every return carries a verdict now, and the

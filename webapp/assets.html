@@ -13,7 +13,7 @@
   --bg:#0b0c0f; --grid:#12141a; --panel:#131519; --panel2:#181b21; --line:#242832;
   --ink:#e9ebef; --soft:#a3a8b2; --dim:#666c78;
   --accent:#57e3bf; --accent-ink:#04110d;
-  --clean:#5fd39a; --suspect:#f2c04b; --dirty:#f07070; --info:#63b8ea;
+  --clean:#5fd39a; --suspect:#f2c04b; --warn:#f0954e; --dirty:#f07070; --info:#63b8ea;
   --glow:0 0 0 1px rgba(87,227,191,.14), 0 8px 30px -12px rgba(0,0,0,.7);
   --mono:"Cascadia Code","JetBrains Mono","SFMono-Regular",ui-monospace,"Menlo",Consolas,monospace;
   --sans:-apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;
@@ -22,14 +22,14 @@
   --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
   --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
   --accent:#0e9c81; --accent-ink:#ffffff;
-  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --clean:#1f9d63; --suspect:#b8860a; --warn:#c26a1c; --dirty:#d0483f; --info:#2a7fb8;
   --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
 }
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]){
   --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
   --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
   --accent:#0e9c81; --accent-ink:#ffffff;
-  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --clean:#1f9d63; --suspect:#b8860a; --warn:#c26a1c; --dirty:#d0483f; --info:#2a7fb8;
   --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
 }}
 *{box-sizing:border-box}
@@ -258,7 +258,11 @@ table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
 .ipv{font-size:12px}
 .ms{font-variant-numeric:tabular-nums}
 .dim{color:var(--dim)}
-.c-clean{color:var(--clean)} .c-suspect{color:var(--suspect)} .c-dirty{color:var(--dirty)}
+.c-clean{color:var(--clean)} .c-suspect{color:var(--suspect)} .c-warn{color:var(--warn)} .c-dirty{color:var(--dirty)}
+/* A link inside a readout. Underlined on hover only, so a table of values doesn't turn into a page of
+   underlines, but it must LOOK clickable — a bare URL rendered as text is not a link, however valid. */
+a.lnk{color:var(--accent);text-decoration:none;border-bottom:1px dotted color-mix(in srgb,var(--accent) 45%,transparent)}
+a.lnk:hover{border-bottom-style:solid}
 .c-info{color:var(--info)}
 .tag{margin-left:5px;padding:2px 5px;border-radius:4px;font:600 9px/1.4 var(--mono);
   background:color-mix(in srgb,var(--info) 16%,transparent);color:var(--info);vertical-align:1px}
@@ -334,8 +338,21 @@ const giiBand=g=>g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':g>=0.50?'mi
 // here once, so adding a class can't leave one of the three painting a Tor exit as clean.
 const ccColour=c=>c==='mobile'?'clean':'dirty';
 const ccCap=c=>c==='mobile'?'real network line':c==='tor'?'Tor exit — denied by most apps':'hosting network';
-// Scamalytics' score is WARN-ONLY, never green: MEASURED, `low` came back for a Tor exit and for 127.0.0.1.
-const scamColour=b=>b==='very high'?'dirty':b==='high'?'suspect':'ink';
+// Scamalytics' OWN four-band scale, in their own colours: low green, medium amber, high orange, very high
+// red. Shown this way at the user's explicit request.
+//
+// It is safe to paint this green ONLY because the score is fenced off from the verdict entirely — it has
+// zero weight at every tier of verdict_factors(), locked in both directions by
+// test_scamalytics_score_never_moves_the_verdict. So a green "8 · low" beside a DIRTY verdict is not a
+// contradiction, it is Scamalytics' opinion next to ours, and the caption says "shown, not scored".
+// That fencing is what makes the colour a report of their number rather than a claim of our own —
+// MEASURED, `low` came back for a Tor exit and for 127.0.0.1, so it must never decide anything.
+const scamColour=b=>b==='very high'?'dirty':b==='high'?'warn':b==='medium'?'suspect':'clean';
+// Anything that is plainly a URL becomes a real link. `scamalytics_url` was rendering as escaped text in
+// the raw card — a valid address nobody could click. (It 403s a bot user-agent and 200s a browser, so it
+// only ever worked from the page; it just was not a link.)
+const linkify=(v)=>/^https?:\/\//i.test(String(v))
+  ?`<a class=lnk href="${esc(v)}" target="_blank" rel="noopener noreferrer">${esc(v)}</a>`:null;
 // Why a blocklist sweep produced nothing, in the words of the state dnsbl_check ACTUALLY reports. The
 // previous version branched on `dnsbl_skipped==='ipv6'`, a value nothing ever emitted — so all three
 // copies of it were dead code telling the reader an IPv6 exit has no coverage, which stopped being true

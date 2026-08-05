@@ -2559,9 +2559,7 @@ public class MainActivity extends Activity {
             // tracks the ISP score rather than this address. What Scamalytics actually contributes is the
             // Exit type tile above. Never SAGE.
             if (rep.scamRisk == null) tiles.add(repTile("n/a", "Scamalytics", Theme.DIM));
-            else tiles.add(repTile(rep.scamScore != null ? String.valueOf(rep.scamScore) : "—", "Scamalytics",
-                    "very high".equals(rep.scamRisk) ? Theme.RED
-                            : "high".equals(rep.scamRisk) ? Theme.AMBER : Theme.INK));
+            else tiles.add(repTile(num(rep.scamScore), "Scamalytics", scamColour(rep.scamRisk)));
             for (View r : tileRows(tiles, 3)) box.addView(r);
 
             // 3) Flags, as their own compact line.
@@ -2863,9 +2861,7 @@ public class MainActivity extends Activity {
                         + (rep.scamIspRisk != null ? "  ·  ISP " + num(rep.scamIspScore) + " " + rep.scamIspRisk : "")
                         + "\nshown, not scored — it tracks the ISP score, not this IP"
                         : "no Scamalytics credentials — not measured",
-                rep.scamRisk == null ? Theme.DIM
-                        : "very high".equals(rep.scamRisk) ? Theme.RED
-                        : "high".equals(rep.scamRisk) ? Theme.AMBER : Theme.INK));
+                rep.scamRisk == null ? Theme.DIM : scamColour(rep.scamRisk)));
 
         if (rep.fraudScore != null) {
             d.addView(detailHead("IPQUALITYSCORE", "strictness " + HealthCheck.IPQS_STRICTNESS));
@@ -2904,8 +2900,7 @@ public class MainActivity extends Activity {
         if (rep.scamRisk != null) {
             d.addView(detailHead("SCAMALYTICS", rep.scamRisk));
             d.addView(networkMetaRow("SCORE", num(rep.scamScore) + " · " + rep.scamRisk,
-                    "very high".equals(rep.scamRisk) ? Theme.RED
-                            : "high".equals(rep.scamRisk) ? Theme.AMBER : Theme.INK));
+                    scamColour(rep.scamRisk)));
             addIfSet(d, "ISP RISK", rep.scamIspRisk == null ? null
                     : num(rep.scamIspScore) + " · " + rep.scamIspRisk);
             // An EMPTY ip2proxy record is "no record", not "clean" — say which, or the absence reassures.
@@ -2922,7 +2917,20 @@ public class MainActivity extends Activity {
             // "nothing found", not "verified clean".
             d.addView(networkMetaRow("FLAGS", sf.isEmpty() ? "none raised"
                     : android.text.TextUtils.join(" · ", sf), sf.isEmpty() ? Theme.DIM : Theme.AMBER));
-            addIfSet(d, "PAGE", rep.scamUrl);
+            // A tappable link, not a printed address. Scamalytics' own page for this IP is genuinely
+            // useful (it 403s a bot user-agent but renders fine in a browser) — and it was rendering as
+            // plain text, so tapping it did nothing.
+            if (rep.scamUrl != null && !rep.scamUrl.isEmpty()) {
+                View row = networkMetaRow("PAGE", rep.scamUrl, Theme.BLUE);
+                final String url = rep.scamUrl;
+                row.setOnClickListener(v -> {
+                    try {
+                        startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+                    } catch (Throwable t) { toast("No browser to open that link."); }
+                });
+                d.addView(row);
+            }
         }
         if (!rep.zoneStatus.isEmpty()) {
             d.addView(detailHead("BLOCKLISTS", rep.dnsblChecked + " of " + rep.zoneStatus.size()
@@ -2959,6 +2967,21 @@ public class MainActivity extends Activity {
                 names.size() + " · " + android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
     }
 
+
+    /** Scamalytics' OWN four-band scale in their own colours: low green, medium amber, high orange, very
+     *  high red. Shown this way at the user's explicit request.
+     *
+     *  <p>Safe to paint green ONLY because the score is fenced off from the verdict entirely — it carries
+     *  zero weight at every tier of {@link HealthCheck#verdictFactors}, so a green "8 · low" beside a DIRTY
+     *  verdict is Scamalytics' opinion next to ours, not a contradiction. Every row that shows it also says
+     *  "shown, not scored". MEASURED: "low" came back for a Tor exit AND for 127.0.0.1, which is exactly
+     *  why it must never decide anything. */
+    private static int scamColour(String band) {
+        if ("very high".equals(band)) return Theme.RED;
+        if ("high".equals(band)) return Theme.ORANGE;
+        if ("medium".equals(band)) return Theme.AMBER;
+        return Theme.SAGE;
+    }
 
     /** An optional number for display: an em dash rather than the literal string "null". */
     private static String num(Integer v) { return v == null ? "—" : String.valueOf(v); }
