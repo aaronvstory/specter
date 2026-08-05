@@ -35,7 +35,7 @@
 > exit-type verdict; measured first (flagged a 31173 VPN exit as proxy the keyless path missed). Found +
 > fixed a silent Android bug: cleartext HTTP is blocked at targetSdk 36, so ip-api (HTTP-only free tier)
 > never ran — added a SCOPED cleartext exception (ip-api.com only), then PROVEN on-device. Version → 0.29.0.
-> P4 restored to a clean 0.29.0 build (30 spoofed / 0 leaks). PR #84 open; the "coherence check" backlog
+> P4 restored to a clean 0.29.0 build (30 spoofed / 0 leaks). PR #84 MERGED (subagent review clean bar 1 typo, fixed); the "coherence check" backlog
 > item turned out to ALREADY exist (Status → Network "Timezone vs IP"). Note: `_direct_baseline_ms` +
 > `_ipapi_lookup` are both module-global-ish; the conftest autouse fixture stubs them for test isolation.
 >
