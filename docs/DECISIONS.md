@@ -947,3 +947,29 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   proxy flag). So a clean residential exit reads CLEAN at IPQS 100; a datacenter exit reads dirty even with a
   spotless blacklist record. The target-app framing is kept out of the UI copy (neutral "high friction" /
   "Exit type"). Also expanded the keyless DNSBL set 12 → 17 to close a coverage gap.
+
+- **2026-08-05 — the detail breakdown renders UNKNOWN API fields generically, not a whitelist.** IPQS
+  documents that new fields appear "occasionally and without notice", so a curated key list would silently
+  drop future signals. The card shows every key a source returned, with friendly labels where we have them
+  and the raw key name where we don't. Only two classes are filtered: premium placeholders (which are
+  paywall notices, not values) and anything carrying a key or the getIPIntel contact.
+- **2026-08-05 — one line per value, everywhere, with the full text on hover.** Values that wrap ragged-end
+  their neighbours and the grid stops lining up, which is the single most common complaint about these
+  readouts. Truncation is only acceptable WITH an escape hatch, so every clipped value carries a `title` and
+  the long form appears in the breakdown. Same rule on Android via maxLines(1) + ellipsize.
+- **2026-08-05 — blocklist zones are grouped by meaning rather than colour-coded in a flat row.** 17 chips in
+  four colours is unreadable and forces the reader to learn a legend; "LISTED · 7 — abuse reports against
+  this IP" explains itself. Zones that refused or never answered are their own group and never counted clean.
+- **2026-08-05 — country flags are IMAGES, not flag emoji.** Windows ships no flag glyphs, so a
+  regional-indicator pair renders as the two letters — beside the country code that reads as "DE DE". A
+  19x14 image from flagcdn works on every platform and removes itself on error, leaving the code alone.
+- **2026-08-05 — proxy latency is one timed HTTPS round trip, not a separate TCP dial.** The geo lookup is
+  already the first request through the tunnel, so timing it costs nothing and measures USABLE latency
+  (connect + TLS + fetch) rather than a raw handshake. It can't separate "proxy slow" from "upstream slow";
+  if that distinction is ever needed, time the CONNECT separately.
+- **2026-08-05 — getIPIntel rotates contacts only on -5/-6.** getIPIntel meters per contact as well as per
+  connecting IP, so a quota refusal is worth one more address. The other codes are verdicts about the QUERY
+  (private range, malformed IP); retrying those would just burn the next contact's budget for the same answer.
+- **2026-08-05 — no auto-run when the page opens.** It prefills the visitor's IP and waits. An auto-run spent
+  an IPQS/AbuseIPDB quota and a getIPIntel rate-limit slot on every page load and every refresh, for a check
+  nobody asked for.

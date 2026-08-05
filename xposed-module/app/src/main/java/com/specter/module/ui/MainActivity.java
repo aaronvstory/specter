@@ -75,6 +75,7 @@ public class MainActivity extends Activity {
     private boolean healthScreen = false;  // showing the Protection Status sub-screen (a Settings sub-view)
     private java.util.List<HealthCheck.Group> healthResults;   // last-computed checks (null = still running)
     private boolean repBusy = false;       // an exit-IP reputation lookup is in flight (guards the button)
+    private boolean repDetailsExpanded = false;   // the per-source reputation breakdown; collapsed by default
     // Exit IPs we've already auto-checked this session, so the Network card runs the reputation lookup
     // ONCE per distinct IP on open (no manual "Check" tap) without re-firing on every render — the
     // process-lifetime cache in HealthCheck holds the result, and the IPQS free tier is only 35/day.
@@ -2547,24 +2548,43 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
 
         if (rep != null) {
-            if (rep.fraudScore != null) {
-                // IPQS scores almost any proxy/VPN 75-100 because "it's a proxy" dominates the number — and
-                // vetting proxies is the point, so a high score alone is EXPECTED, not "high risk". Only IPQS's
-                // ABUSE flag (recent_abuse/bot/frequent_abuser, folded into rep.recentAbuse) makes it red; a bare
-                // proxy detection reads amber "proxy/VPN detected — no abuse history"; a truly low score is clean.
-                boolean ipqsAbuse = Boolean.TRUE.equals(rep.recentAbuse);
-                boolean proxyFlag = Boolean.TRUE.equals(rep.proxy) || Boolean.TRUE.equals(rep.vpn)
-                        || Boolean.TRUE.equals(rep.tor);
-                int c; String word;
-                if (ipqsAbuse) { c = Theme.RED; word = "abuse history"; }
-                else if (proxyFlag) { c = Theme.AMBER; word = "proxy/VPN detected · no abuse history"; }
-                else if (rep.fraudScore >= 85) { c = Theme.RED; word = "high risk"; }
-                else if (rep.fraudScore >= 60) { c = Theme.AMBER; word = "elevated"; }
-                else { c = Theme.SAGE; word = "clean"; }
-                // Naming the strictness is what lets this reconcile with another checker's number for the same IP.
-                box.addView(networkMetaRow("FRAUD RISK", rep.fraudScore + " · " + word
-                        + " · IPQS strictness " + HealthCheck.IPQS_STRICTNESS, c));
+            // 1) The verdict, and the signals that produced it. A bare level says nothing; the factors are
+            //    the whole answer to "what makes this suspect?". Same model as the desktop/web readout.
+            java.util.List<String> vf = HealthCheck.verdictFactors(rep, geoIsp);
+            String level = vf.get(0);
+            int vc = "dirty".equals(level) ? Theme.RED : "suspect".equals(level) ? Theme.AMBER
+                    : "clean".equals(level) ? Theme.SAGE : Theme.DIM;
+            box.addView(verdictHead(level.toUpperCase(java.util.Locale.US),
+                    android.text.TextUtils.join(" · ", vf.subList(1, vf.size())), vc));
+
+            // 2) Tiles: big number over ONE short caption, uniform height. A caption that wraps to three
+            //    lines makes every tile in the row that tall, so the long text lives in the breakdown below.
+            boolean dc = HealthCheck.isDatacenter(rep.organization, rep.isp != null ? rep.isp : geoIsp, rep.host);
+            int n = rep.blacklists.size(), pol = rep.policyLists.size();
+            java.util.List<View> tiles = new java.util.ArrayList<>();
+            tiles.add(repTile(dc ? "Hosting" : "Real line", "Exit type", dc ? Theme.RED : Theme.SAGE));
+            tiles.add(repTile(rep.dnsblUsable || n > 0 ? String.valueOf(n) : "—", "Blacklists",
+                    n >= 2 ? Theme.RED : n > 0 ? Theme.AMBER
+                            : rep.dnsblUsable && rep.dnsblChecked > 0 ? Theme.SAGE : Theme.DIM));
+            if (pol > 0) tiles.add(repTile(String.valueOf(pol), "Policy lists", Theme.BLUE));
+            if (rep.abuseConfidence != null) {
+                tiles.add(repTile(rep.abuseConfidence + "%", "Abuse",
+                        rep.abuseConfidence >= 50 ? Theme.RED : rep.abuseConfidence >= 10 ? Theme.AMBER : Theme.SAGE));
             }
+            if (rep.fraudScore != null) {
+                // Not a headline: IPQS scores almost any proxy 75-100 because "is this a proxy?" dominates it,
+                // and vetting proxies is the point. One tile among the signals.
+                tiles.add(repTile(String.valueOf(rep.fraudScore), "Fraud score",
+                        rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE));
+            }
+            if (rep.getipintel != null) {
+                double g = rep.getipintel;
+                tiles.add(repTile(String.format(java.util.Locale.US, "%.2f", g), "getIPIntel",
+                        g >= 0.99 ? Theme.RED : g >= 0.90 ? Theme.AMBER : Theme.SAGE));
+            }
+            for (View r : tileRows(tiles, 3)) box.addView(r);
+
+            // 3) Flags, as their own compact line.
             if (rep.fraudScore != null) {
                 java.util.List<String> flags = new java.util.ArrayList<>();
                 if (Boolean.TRUE.equals(rep.tor)) flags.add("Tor");
@@ -2575,72 +2595,27 @@ public class MainActivity extends Activity {
                         ? networkMetaRow("FLAGGED AS", "Not flagged as proxy or VPN", Theme.SAGE)
                         : networkMetaRow("FLAGGED AS", android.text.TextUtils.join(" · ", flags), Theme.AMBER));
             }
-            // Exit type is the strongest usability signal — a datacenter/hosting exit draws friction a real
-            // ISP line doesn't. Detected from the ISP/org/host names (IPQS's connection_type is premium-gated).
-            // rep.isp/host are only set when an IPQS key is present, so fall back to the free ipwho.is ISP
-            // (geoIsp) — otherwise this silently never fires on the keyless (DNSBL-only) path.
-            if (HealthCheck.isDatacenter(rep.organization, rep.isp != null ? rep.isp : geoIsp, rep.host)) {
-                box.addView(networkMetaRow("EXIT TYPE",
-                        "Datacenter/hosting · real ISPs pass more easily", Theme.RED));
-            }
-            if (rep.connectionType != null || rep.asn != null) {
-                String conn = rep.connectionType != null ? rep.connectionType : "";
-                if (rep.asn != null) conn = conn.isEmpty() ? rep.asn : conn + " · " + rep.asn;
-                box.addView(networkMetaRow("CONNECTION", conn, Theme.INK));
-            }
-            int n = rep.blacklists.size(), pol = rep.policyLists.size();
-            String bl;
-            if (n > 0) {
-                bl = n + " of " + rep.dnsblChecked + " · " + android.text.TextUtils.join(", ", rep.blacklists);
-            } else if (rep.dnsblUsable && rep.dnsblChecked > 0) {
-                bl = "None of " + rep.dnsblChecked + " lists";
-            } else {
-                // Honest: DNS didn't answer for the known-listed sentinel, so "no hits" proves nothing here.
-                bl = "Unavailable · blocklist DNS unreachable";
-            }
-            // A policy listing is still a listing. A bare "None of 12" beside one reads as a clean IP next to
-            // any checker that counts every hit — the abuse/policy split is the point, hiding it isn't.
-            if (pol > 0) bl += " · plus " + pol + " policy listing" + (pol > 1 ? "s" : "");
-            box.addView(networkMetaRow("BLACKLISTS", bl,
-                    n >= 3 ? Theme.RED : n > 0 ? Theme.AMBER
-                            : rep.dnsblUsable && rep.dnsblChecked > 0 ? Theme.SAGE : Theme.DIM));
-            // Policy listings are shown but never scored: they say "nothing here should be sending mail
-            // directly", which every dynamic consumer address carries by design. Folding them into the
-            // blacklist count would mark every good resi proxy dirty.
-            if (pol > 0) {
-                box.addView(networkMetaRow("POLICY LISTS",
-                        android.text.TextUtils.join(", ", rep.policyLists)
-                                + " · a mail-sending policy listing, not an abuse report",
-                        Theme.BLUE));
-            }
-            if (rep.abuseConfidence != null) {
-                int c = rep.abuseConfidence >= 50 ? Theme.RED : rep.abuseConfidence >= 10 ? Theme.AMBER : Theme.SAGE;
-                int reports = rep.abuseReports == null ? 0 : rep.abuseReports;
-                box.addView(networkMetaRow("ABUSE REPORTS",
-                        reports + " in 90 days · " + rep.abuseConfidence + "% confidence", c));
-            }
-            // getIPIntel: a 0-1 proxy/hosting probability that grades residential-vs-hosting (unlike IPQS's
-            // saturated flag) — near 1 is a hosting/VPN/Tor exit; a bad-IP flag means it behaved maliciously.
-            if (rep.getipintel != null) {
-                double g = rep.getipintel;
-                int c = g >= 0.99 ? Theme.RED : g >= 0.90 ? Theme.AMBER : Theme.SAGE;
-                String band = g >= 0.99 ? "proxy/hosting exit" : g >= 0.90 ? "likely proxy" : "residential-ish";
-                box.addView(networkMetaRow("GETIPINTEL",
-                        String.format(java.util.Locale.US, "%.2f", g) + " · " + band
-                                + (rep.getipintelBad ? " · bad IP" : ""), c));
-            }
+
+            // 4) The per-source breakdown, collapsed by default — every field each source returned, which is
+            //    the only way to audit a verdict rather than take it on faith.
+            box.addView(row(repDetailsExpanded ? "Hide breakdown" : "Detailed breakdown",
+                    "What each source returned", chevronTrailing(repDetailsExpanded),
+                    v -> { repDetailsExpanded = !repDetailsExpanded; render(); }));
+            if (repDetailsExpanded) box.addView(reputationDetail(rep, geoIsp));
+
             // Every source that failed says so, in its own line — one shared line would let whichever
             // failed first hide the others, and "no abuse row" with no reason is the confusing case.
             java.util.List<String> hints = new java.util.ArrayList<>(rep.notes);
             if (rep.fraudScore == null && prefs.getString("ipqs_key", "").isEmpty()) {
-                hints.add("Add an IPQualityScore key in Settings for a fraud score");
+                hints.add("IPQualityScore: add a key in Settings for a fraud score");
             }
+            // "Source: what happened" renders as the same label -> value row as everything else, rather
+            // than a loose sentence per line.
             for (String h : hints) {
-                TextView hint = new TextView(this);
-                hint.setText(h);
-                hint.setTextColor(Theme.DIM); hint.setTextSize(Theme.T_CAPTION);
-                hint.setPadding(0, dp(Theme.S2), 0, 0);
-                box.addView(hint);
+                int sep = h.indexOf(": ");
+                box.addView(sep > 0 ? networkMetaRow(h.substring(0, sep).toUpperCase(java.util.Locale.US),
+                                                     h.substring(sep + 2), Theme.SOFT)
+                                    : networkMetaRow("NOTE", h, Theme.SOFT));
             }
         }
 
@@ -2745,6 +2720,185 @@ public class MainActivity extends Activity {
 
     /** One "LABEL   value" row inside the network card — a fixed-width caption column so LOCATION/TIME ZONE
      *  align without relying on emoji for spacing. */
+    /** The verdict line: the level, big and coloured, with the signals that produced it underneath. A bare
+     *  "SUSPECT" tells a reader nothing they can act on — the factors are the answer. */
+    private View verdictHead(String level, String factors, int colour) {
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        v.setPadding(0, dp(Theme.S3), 0, dp(Theme.S2));
+        TextView big = new TextView(this);
+        big.setText(level);
+        big.setTextColor(colour);
+        big.setTextSize(20);
+        big.setTypeface(big.getTypeface(), android.graphics.Typeface.BOLD);
+        v.addView(big);
+        if (factors != null && !factors.isEmpty()) {
+            TextView sub = new TextView(this);
+            sub.setText(factors);
+            sub.setTextColor(Theme.SOFT);
+            sub.setTextSize(Theme.T_CAPTION);
+            sub.setPadding(0, dp(Theme.S1), 0, 0);
+            v.addView(sub);
+        }
+        return v;
+    }
+
+    /** A compact signal tile: big value over a ONE-LINE caption, on a rounded card. The caption is capped at
+     *  a single line on purpose — tiles share a row, so one that wraps makes every tile in the row that tall.
+     *  The full text lives in the detailed breakdown. */
+    private View repTile(String value, String caption, int valueColour) {
+        LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable tileBg = new GradientDrawable();
+        tileBg.setColor(Theme.CARD2);
+        tileBg.setCornerRadius(dp(9));
+        tileBg.setStroke(dp(1), Theme.LINE);
+        t.setBackground(tileBg);
+        t.setPadding(dp(Theme.S3), dp(Theme.S3), dp(Theme.S3), dp(Theme.S3));
+        TextView num = new TextView(this);
+        num.setText(value);
+        num.setTextColor(valueColour);
+        num.setTextSize(19);
+        num.setTypeface(num.getTypeface(), android.graphics.Typeface.BOLD);
+        num.setMaxLines(1);
+        num.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        t.addView(num);
+        TextView cap = new TextView(this);
+        cap.setText(caption);
+        cap.setTextColor(Theme.DIM);
+        cap.setTextSize(11);
+        cap.setMaxLines(1);
+        cap.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        cap.setPadding(0, dp(Theme.S1), 0, 0);
+        t.addView(cap);
+        return t;
+    }
+
+    /** Lay tiles out {@code perRow} to a row, each taking an equal share. A short final row is padded with
+     *  invisible spacers so its tiles keep the same width as the rows above instead of stretching. */
+    private java.util.List<View> tileRows(java.util.List<View> tiles, int perRow) {
+        java.util.List<View> rows = new java.util.ArrayList<>();
+        for (int i = 0; i < tiles.size(); i += perRow) {
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            rlp.setMargins(0, dp(Theme.S2), 0, 0);
+            r.setLayoutParams(rlp);
+            for (int c = 0; c < perRow; c++) {
+                int idx = i + c;
+                View cell = idx < tiles.size() ? tiles.get(idx) : new View(this);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                if (c < perRow - 1) lp.setMargins(0, 0, dp(Theme.S2), 0);
+                cell.setLayoutParams(lp);
+                r.addView(cell);
+            }
+            rows.add(r);
+        }
+        return rows;
+    }
+
+    /** The per-source breakdown: every field each source returned, grouped by source, plus the blocklist
+     *  zones grouped by WHAT THE ANSWER MEANS — a reader should never have to decode a colour. */
+    private View reputationDetail(HealthCheck.Reputation rep, String geoIsp) {
+        LinearLayout d = new LinearLayout(this);
+        d.setOrientation(LinearLayout.VERTICAL);
+        d.setPadding(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));
+
+        if (rep.fraudScore != null) {
+            d.addView(detailHead("IPQUALITYSCORE", "strictness " + HealthCheck.IPQS_STRICTNESS));
+            d.addView(networkMetaRow("FRAUD SCORE", String.valueOf(rep.fraudScore),
+                    rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE));
+            d.addView(yesNo("PROXY", rep.proxy));
+            d.addView(yesNo("VPN", rep.vpn));
+            d.addView(yesNo("TOR", rep.tor));
+            d.addView(yesNo("ABUSE", rep.recentAbuse));
+            addIfSet(d, "CONNECTION", rep.connectionType);
+            addIfSet(d, "VELOCITY", rep.abuseVelocity);
+            addIfSet(d, "ISP", rep.isp != null ? rep.isp : geoIsp);
+            addIfSet(d, "ORG", rep.organization);
+            addIfSet(d, "ASN", rep.asn);
+            addIfSet(d, "REVERSE DNS", rep.host);
+        }
+        if (rep.getipintel != null) {
+            d.addView(detailHead("GETIPINTEL", HealthCheck.getipintelBand(rep.getipintel)));
+            double g = rep.getipintel;
+            d.addView(networkMetaRow("PROBABILITY", String.format(java.util.Locale.US, "%.3f", g),
+                    g >= 0.99 ? Theme.RED : g >= 0.90 ? Theme.AMBER : Theme.SAGE));
+            d.addView(yesNo("BAD IP", rep.getipintelBad));
+            addIfSet(d, "COUNTRY", rep.getipintelCountry);
+        }
+        if (rep.abuseConfidence != null) {
+            d.addView(detailHead("ABUSEIPDB", "90 days"));
+            d.addView(networkMetaRow("CONFIDENCE", rep.abuseConfidence + "%",
+                    rep.abuseConfidence >= 50 ? Theme.RED : rep.abuseConfidence >= 10 ? Theme.AMBER : Theme.SAGE));
+            addIfSet(d, "REPORTS", rep.abuseReports == null ? null : String.valueOf(rep.abuseReports));
+            addIfSet(d, "REPORTERS", rep.abuseReporters == null ? null : String.valueOf(rep.abuseReporters));
+            addIfSet(d, "LAST REPORT", rep.lastReport);
+            addIfSet(d, "USAGE TYPE", rep.usageType);
+            addIfSet(d, "DOMAIN", rep.domain);
+            addIfSet(d, "COUNTRY", rep.countryCode);
+        }
+        if (!rep.zoneStatus.isEmpty()) {
+            d.addView(detailHead("BLOCKLISTS", rep.zoneStatus.size() + " zones queried"));
+            // Grouped by meaning, and the group label says what the meaning IS.
+            zoneGroup(d, rep, "listed", "LISTED", "abuse reports against this IP", Theme.RED);
+            zoneGroup(d, rep, "policy", "POLICY ONLY", "a mail-sending policy listing, not abuse", Theme.BLUE);
+            zoneGroup(d, rep, "clean", "CLEAN", "answered, not listed", Theme.SAGE);
+            zoneGroupNoAnswer(d, rep);
+        }
+        return d;
+    }
+
+    /** One blocklist group: the zones whose answer meant {@code status}, under a label that spells out what
+     *  that means. */
+    private void zoneGroup(LinearLayout into, HealthCheck.Reputation rep, String status,
+                           String title, String meaning, int colour) {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, String> e : rep.zoneStatus.entrySet()) {
+            if (status.equals(e.getValue())) names.add(e.getKey());
+        }
+        if (names.isEmpty()) return;
+        into.addView(networkMetaRow(title + " · " + names.size(),
+                android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
+    }
+
+    /** Zones that refused or never replied. Kept separate and never folded into "clean": a zone that didn't
+     *  answer proved nothing, and counting it as clear is how a bad IP reads as a good one. */
+    private void zoneGroupNoAnswer(LinearLayout into, HealthCheck.Reputation rep) {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, String> e : rep.zoneStatus.entrySet()) {
+            String v = e.getValue();
+            if ("refused".equals(v) || "no answer".equals(v)) names.add(e.getKey());
+        }
+        if (names.isEmpty()) return;
+        into.addView(networkMetaRow("NO ANSWER · " + names.size(),
+                android.text.TextUtils.join(", ", names) + "\nrefused or never replied — not a clean result",
+                Theme.DIM));
+    }
+
+    private View detailHead(String source, String meta) {
+        TextView t = new TextView(this);
+        t.setText(meta == null || meta.isEmpty() ? source : source + "  ·  " + meta);
+        t.setTextColor(Theme.GOLD);
+        t.setTextSize(Theme.T_CAPTION);
+        t.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
+        t.setPadding(0, dp(Theme.S4), 0, dp(Theme.S1));
+        return t;
+    }
+
+    private void addIfSet(LinearLayout into, String label, String value) {
+        if (value != null && !value.isEmpty()) into.addView(networkMetaRow(label, value, Theme.INK));
+    }
+
+    /** A boolean field as yes/no, coloured only when it says something: a risk flag that is TRUE reads red,
+     *  FALSE reads green. Colouring every field would be as unreadable as colouring none. */
+    private View yesNo(String label, Boolean value) {
+        boolean on = Boolean.TRUE.equals(value);
+        return networkMetaRow(label, on ? "yes" : "no", on ? Theme.RED : Theme.SAGE);
+    }
+
     private View networkMetaRow(String labelText, String valueText) {
         return networkMetaRow(labelText, valueText, Theme.INK);
     }
@@ -2764,7 +2918,10 @@ public class MainActivity extends Activity {
         label.setTypeface(android.graphics.Typeface.create(
                 "sans-serif-medium",
                 android.graphics.Typeface.BOLD));
-        row.addView(label, new LinearLayout.LayoutParams(dp(88), ViewGroup.LayoutParams.WRAP_CONTENT));
+        // A gutter the label can never spend: without it a long caption ("ORGANIZATION") runs straight into
+        // its value with no space between them.
+        label.setPadding(0, 0, dp(Theme.S2), 0);
+        row.addView(label, new LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView value = new TextView(this);
         value.setText(valueText);

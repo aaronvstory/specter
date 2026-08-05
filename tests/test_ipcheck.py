@@ -794,3 +794,40 @@ def test_getipintel_does_not_burn_a_second_contact_on_a_query_level_error(monkey
     assert len(seen) == 1
     assert "unroutable" in out["notes"][0]
     assert "_retry" not in out
+
+
+def test_the_android_verdict_mirrors_the_python_one():
+    # HealthCheck.verdictFactors is a hand-written Java twin of verdict_factors(). If a threshold drifts on
+    # one side, the SAME exit IP reads clean on the phone and suspect on the desktop — the exact confusion
+    # this tool exists to remove. Pin the numbers and the factor wording that carry the judgement.
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    body = java[java.index("static List<String> verdictFactors"):]
+    body = body[:body.index("\n    private static volatile")]
+    for needle in (
+        "hits >= 2",                        # two blacklists corroborate; one doesn't
+        "abuseConfidence >= 50",            # dirty
+        "getipintel >= 0.99",               # dirty
+        "abuseConfidence >= 10",            # suspect
+        "getipintel >= 0.90",               # suspect
+        "fraudScore >= 60",                 # only decides "is it detectable", never the verdict
+        "datacenter/hosting IP", "blacklists", "% abuse confidence",
+        "getIPIntel bad-IP", "getIPIntel proxy/hosting", "1 blacklist", "IPQS abuse flags",
+        "no datacenter signal", "detectable as a proxy/VPN",
+    ):
+        assert needle in body, f"HealthCheck.verdictFactors lost {needle!r} — it has drifted from Python"
+    # ...and no factor the user SEES may claim "residential" from a name heuristic. Comments explaining why
+    # are fine — it's the emitted strings that must not overclaim.
+    emitted = re.findall(r'why\.add\(([^;]*)\);', body)
+    assert not any("residential" in e.lower() for e in emitted), \
+        "a verdict factor claims 'residential', which a name heuristic cannot prove"
+
+
+def test_the_android_getipintel_wording_mirrors_the_python_one():
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    for score in (0.10, 0.70, 0.95, 1.0):
+        assert f'"{ipcheck.getipintel_band(score)}"' in java, \
+            f"Android is missing the getIPIntel band for {score}"
+    assert "oflags=bc" in java, "Android must ask getIPIntel for the country too"
+    assert "over quota from here — this IP wasn't checked" in java
