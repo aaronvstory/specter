@@ -130,6 +130,7 @@ details.deep[open]>summary{border-bottom-left-radius:0;border-bottom-right-radiu
   border-bottom:1px solid var(--line);font:12px/1.5 var(--mono);white-space:nowrap;overflow:hidden}
 .kv i{font-style:normal;color:var(--dim);flex:none}
 .kv b{font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dimnote{color:var(--dim);font-size:11px}
 img.flag{width:14px;height:10px;border-radius:1px;vertical-align:0;margin-right:6px;
   box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 15%,transparent)}
 svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
@@ -159,7 +160,82 @@ svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
 textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
   padding:11px 12px;font:13px/1.5 var(--mono);resize:vertical;margin-top:12px}
 textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+/* A comparison table earns far more width than the form column: the whole point is reading every proxy's
+   signals side by side. Break out of the 760px wrap and centre on the viewport. overflow-x remains as the
+   small-screen fallback, but on a desktop the columns should simply fit. */
+/* The breakout element must NOT also carry `.blk`: that class's rise animation ends on `transform:none`
+   with fill-mode both, which permanently wipes the centring translate and leaves the panel hanging off the
+   right edge of the page. So `.bulkwide` is a plain outer wrapper and `.blk` stays on the inner panel.
+   The 48px gutter is not decoration either — 100vw INCLUDES the vertical scrollbar, so a smaller inset
+   makes the panel wider than the viewport and the whole page picks up a horizontal scrollbar. */
+.bulkwide{width:min(1680px,calc(100vw - 48px));margin-left:50%;transform:translateX(-50%)}
+/* Sortable headers — comparing a batch means reordering it by whichever signal you care about. */
+table.bulk th.s{cursor:pointer;user-select:none;white-space:nowrap}
+table.bulk th.s:hover{color:var(--accent)}
+table.bulk th.s::after{content:"";display:inline-block;width:9px;color:var(--accent)}
+table.bulk th.s[data-dir="1"]::after{content:"▲"}
+table.bulk th.s[data-dir="-1"]::after{content:"▼"}
+/* Batch summary strip: the whole-run answer, above the per-row detail. */
+.bsum{display:flex;flex-wrap:wrap;gap:8px;padding:0 0 12px}
+.bsum span{font:600 10.5px/1 var(--mono);letter-spacing:.05em;padding:7px 10px;border-radius:7px;
+  border:1px solid var(--line);color:var(--soft);background:var(--panel2)}
+.bsum span b{font-weight:700;color:var(--ink)}
+.bsum .s-dirty b{color:var(--dirty)} .bsum .s-suspect b{color:var(--suspect)}
+.bsum .s-clean b{color:var(--clean)} .bsum .s-dead b{color:var(--dirty)}
 .tablewrap{overflow-x:auto}
+/* Copy chip: one click copies, a tick confirms. The tick's slot is ALWAYS reserved, so confirming never
+   changes the chip's width and never nudges the row. */
+.cp{position:relative;display:inline-block;cursor:pointer;border:1px solid var(--line);border-radius:6px;
+  background:var(--panel2);color:var(--soft);font:600 10.5px/1 var(--mono);padding:6px 20px 6px 8px;
+  margin:0 5px 0 0;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.cp:hover{border-color:var(--accent);color:var(--accent)}
+.cp::after{content:"";position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:11px;line-height:1}
+.cp.done{border-color:var(--clean);color:var(--clean);background:color-mix(in srgb,var(--clean) 16%,transparent)}
+.cp.done::after{content:"✓"}
+.cp i{font-style:normal;color:var(--dim);margin-right:5px;font-weight:400}
+.cp:hover i{color:inherit;opacity:.7}
+/* Details chevron: right when collapsed, down when open. One click, no second step. */
+.chev{background:none;border:0;cursor:pointer;padding:6px;line-height:0;color:var(--soft)}
+.chev:hover{color:var(--accent)}
+.chev svg{width:13px;height:13px;transition:transform .15s}
+.chev[aria-expanded=true] svg{transform:rotate(90deg)}
+/* The expanded row: a plain two-column table, same language as the rest of the page. */
+table.det{width:100%;border-collapse:collapse;font:12px/1.5 var(--mono);background:var(--panel2)}
+table.det td{padding:6px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.det tr:last-child td{border-bottom:0}
+table.det td:first-child{width:150px;color:var(--dim);white-space:nowrap;
+  font:600 9.5px/1.6 var(--mono);letter-spacing:.09em;text-transform:uppercase}
+table.det td:last-child{word-break:break-all}
+table.det .grp td{background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--accent);
+  font:600 9.5px/1.6 var(--mono);letter-spacing:.11em;text-transform:uppercase}
+/* Comparison-table cells. Every value is ONE line: the table is for scanning down a column, and a cell
+   that wraps destroys the alignment that makes that possible. Long text truncates with the full string on
+   the title. */
+/* Columns size to their CONTENT (auto layout), they are not rationed out of a fixed budget. Two earlier
+   attempts failed the other way: `max-width:0` made a percentage max-width on a child resolve against ~0
+   and collapsed the proxy host to one character; `table-layout:fixed` then squeezed whatever was left
+   after the declared widths, so ISP read "Spa..." and Location "Lousvil...". Everything is nowrap, so a
+   column is exactly as wide as its widest value, and only the two genuinely unbounded fields are capped
+   (with the full text on the title). If the total still exceeds the panel, the TABLE scrolls — never the
+   page. */
+table.bulk{table-layout:auto;width:100%}
+table.bulk td,table.bulk th{white-space:nowrap}
+table.bulk td.cap{max-width:230px;overflow:hidden;text-overflow:ellipsis}
+table.bulk td .trunc{display:block;overflow:hidden;text-overflow:ellipsis}
+table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
+/* The HOST truncates; the PORT never does. The port is the only thing distinguishing one line from the
+   next, so it must survive whatever the column width is. */
+.pxh{color:var(--ink)}
+.pxp{color:var(--accent);font-weight:700}
+.ipv{font-size:12px}
+.ms{font-variant-numeric:tabular-nums}
+.dim{color:var(--dim)}
+.c-clean{color:var(--clean)} .c-suspect{color:var(--suspect)} .c-dirty{color:var(--dirty)}
+.c-info{color:var(--info)}
+.tag{margin-left:5px;padding:2px 5px;border-radius:4px;font:600 9px/1.4 var(--mono);
+  background:color-mix(in srgb,var(--info) 16%,transparent);color:var(--info);vertical-align:1px}
+.detrow>td{padding:0 0 10px !important;white-space:normal !important;max-width:none !important}
+table.bulk tr.open>td{background:var(--panel2)}
 table.bulk{width:100%;border-collapse:collapse;font:12.5px/1.4 var(--mono)}
 table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
 table.bulk td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -515,48 +591,270 @@ $('#go').onclick=async()=>{
 
 // Bulk: check many proxies (one per line) and show them in one copyable comparison table.
 const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpperCase())}</span>`;
+
+// Split a proxy line into its parts so each one can be copied on its own. Mirrors parse_proxy() in
+// ipcheck.py and accepts the same four shapes; returns nulls rather than throwing, because this only
+// drives the copy chips — the SERVER's parse is the one that decides whether a line is valid.
+function proxyParts(line){
+  let s=(line||'').trim(), scheme=null;
+  const i=s.indexOf('://'); if(i>0){scheme=s.slice(0,i).toLowerCase(); s=s.slice(i+3);}
+  let user=null, pass=null, hostport=s;
+  const at=s.lastIndexOf('@');
+  if(at>=0){const creds=s.slice(0,at); hostport=s.slice(at+1);
+    const c=creds.indexOf(':'); user=c<0?creds:creds.slice(0,c); pass=c<0?null:creds.slice(c+1);}
+  else{const p=s.split(':');
+    if(p.length===4){hostport=p[0]+':'+p[1]; user=p[2]; pass=p[3];}}
+  const col=hostport.lastIndexOf(':');
+  const host=col<0?hostport:hostport.slice(0,col);
+  const port=col<0?null:hostport.slice(col+1);
+  return {scheme,host:host||null,port:port||null,user:user||null,pass:pass||null};
+}
 // The current bulk run, so the row expander can be registered ONCE — re-registering per run would stack
 // listeners that each redraw a stale table.
 let bulk=null;
-out.addEventListener('click',e=>{const b=e.target.closest('[data-deep]'); if(!b||!bulk)return;
-  const x=bulk.rows[+b.dataset.deep]; if(!x)return; x.open=!x.open; bulk.draw();});
+out.addEventListener('click',e=>{
+  if(!bulk)return;
+  const s=e.target.closest('[data-sort]');
+  if(s){bulk.sort(s.dataset.sort);return;}
+  const b=e.target.closest('[data-deep]');
+  if(!b)return;
+  const x=bulk.rows[+b.dataset.deep]; if(!x)return;
+  x.open=!x.open; bulk.draw();});
+// ---- the expanded row: ONE table, grouped, every field we hold for this proxy -----------------
+const dRow=(k,v)=>v==null||v===''?'':`<tr><td>${esc(k)}</td><td>${v}</td></tr>`;
+const dTxt=(k,v)=>dRow(k,v==null||v===''?null:esc(String(v)));
+const dGrp=t=>`<tr class=grp><td colspan=2>${esc(t)}</td></tr>`;
+// A one-click copy chip. The label stays put and a tick appears in a slot that is always reserved,
+// so confirming never changes the chip's width.
+const chip=(label,value)=>value==null||value===''?'<span class=dim>—</span>'
+  :`<button class=cp data-copy="${esc(value)}" title="Copy ${esc(label)}"><i>${esc(label)}</i>${esc(value)}</button>`;
+
+function bulkDetail(x){
+  const r=x.r||{}, p=x.parts||{};
+  if(r.error)return `<table class=det><tbody>${dTxt('Error',r.error)}</tbody></table>`;
+  let t='';
+
+  t+=dGrp('Proxy');
+  // All the credentials on ONE row of chips. One click copies just that part; a tick confirms in a slot
+  // that is always reserved, so nothing moves. The password shows dots but copies its real value.
+  t+=dRow('Copy',
+    chip('host',p.host)+chip('port',p.port)+
+    (p.user?chip('user',p.user):'')+
+    (p.pass?`<button class=cp data-copy="${esc(p.pass)}" title="Copy password"><i>pass</i>`+
+      '\u2022'.repeat(Math.min(p.pass.length,10))+`</button>`:'')+
+    chip('whole line',x.line));
+  t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
+  t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
+  t+=dTxt('Latency',r.proxy_ms!=null
+    ?r.proxy_ms+' ms · '+(r.proxy_ms<400?'fast':r.proxy_ms<1200?'usable':'slow'):null);
+
+  if(r.ip){
+    t+=dGrp('Exit');
+    t+=dRow('Exit IP',chip('ip',r.ip));
+    t+=dTxt('IP version',r.ip.includes(':')?'IPv6':'IPv4');
+    if(r.exit_ipv6)t+=dRow('Also exits at',chip('ipv6',r.exit_ipv6)+
+      '<span class=dimnote> dual-stack — which address a site sees varies per connection</span>');
+    if(r.country_code)t+=dRow('Country',flagImg(r.country_code)+esc(r.country_code));
+    t+=dTxt('Location',r.location);
+    t+=dTxt('Time zone',r.timezone);
+    t+=dTxt('ISP',r.isp);
+    t+=dTxt('Organization',r.organization);
+    t+=dTxt('ASN',r.asn);
+    t+=dTxt('Reverse DNS',r.host);
+  }
+
+  t+=dGrp('Verdict');
+  t+=dRow('Verdict',vpill(r.error?'unknown':r.verdict));
+  (r.verdict_factors||[]).forEach((f,i)=>{t+=dTxt(i?'':'Because',f);});
+  const u=usageOf(r.connection_type||r.usage_type||'');
+  t+=dRow('Exit type',r.connection_class
+    ?`<span class="c-${r.connection_class==='datacenter'?'dirty':'clean'}">${esc(r.connection_class)}</span>`
+    :'<span class=dim>unclassified — no hosting name matched, which is not proof of a real line</span>');
+  if(r.connection_type)t+=dRow('Connection',(u?u[1]:'')+esc(r.connection_type));
+  if(r.usage_type)t+=dRow('Usage type',(u?u[1]:'')+esc(r.usage_type));
+
+  t+=dGrp('Reputation');
+  t+=dRow('Fraud score',r.fraud_score!=null
+    ?`<span class="c-${band(r.fraud_score)}">${r.fraud_score}</span> · ${esc(bandWord(r.fraud_score))}`+
+     (r.ipqs_strictness!=null?` · IPQS strictness ${esc(r.ipqs_strictness)}`:'')
+    :'<span class=dim>no IPQualityScore key — not measured</span>');
+  t+=dRow('Detected as',(r.flags||[]).length
+    ?esc(r.flags.join(' · '))
+    :(r.fraud_score!=null?'<span class=c-clean>no proxy/VPN/Tor flag</span>':'<span class=dim>not measured</span>'));
+  t+=dRow('getIPIntel',r.getipintel_score!=null
+    ?`<span class="c-${r.getipintel_score>=0.99?'dirty':r.getipintel_score>=0.90?'suspect':'clean'}">`+
+     `${r.getipintel_score.toFixed(3)}</span> · ${esc(giiBand(r.getipintel_score))}`+
+     (r.getipintel_bad?' · <span class=c-dirty>bad IP</span>':'')
+    :'<span class=dim>did not answer — not measured</span>');
+  t+=dRow('Abuse confidence',r.abuse_confidence!=null
+    ?`<span class="c-${r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean'}">`+
+     `${r.abuse_confidence}%</span>`+
+     (r.abuse_reports!=null?` · ${esc(r.abuse_reports)} reports in 90d`:'')+
+     (r.abuse_reporters!=null?` · ${esc(r.abuse_reporters)} distinct reporters`:'')
+    :'<span class=dim>no AbuseIPDB key — not measured</span>');
+  t+=dTxt('Last report',r.abuse_last_report);
+  t+=dTxt('Abuse velocity',r.abuse_velocity);
+
+  t+=dGrp('Blocklists');
+  if(!r.dnsbl_usable){
+    t+=dRow('Coverage','<span class=dim>'+esc(r.dnsbl_skipped==='ipv6'
+      ?'not run — this exit is IPv6 and none of the zones queried hold IPv6 data'
+      :'not run — the blocklist DNS did not answer')+'</span>');
+    t+=dRow('','<span class=dim>This is NOT a clean result. Nothing was checked.</span>');
+  }else{
+    const hits=(r.blacklists||[]).length;
+    t+=dTxt('Coverage',`${r.dnsbl_checked} of ${r.dnsbl_zones_total||r.dnsbl_checked} `+
+      `${r.dnsbl_family==='ipv6'?'IPv6 ':''}zones answered`);
+    t+=dRow('Listed by',hits?`<span class=c-dirty>${esc(r.blacklists.join(', '))}</span>`
+      :'<span class=c-clean>none</span>');
+    if((r.policy_lists||[]).length)
+      t+=dRow('Policy listings',`<span class=c-info>${esc(r.policy_lists.join(', '))}</span>`+
+        '<span class=dimnote> mail-sending policy, not abuse</span>');
+    if(r.dnsbl_family==='ipv6')
+      t+=dRow('','<span class=dimnote>IPv6 listings are /64-scoped on Spamhaus, CBL and s5h, so this is '+
+        'weaker evidence in both directions than the IPv4 equivalent.</span>');
+    const d=r.dnsbl_detail||[];
+    if(d.length){
+      const reasons={};(r.policy_lists||[]).forEach(s=>{const i=s.indexOf(' (');if(i>0)reasons[s.slice(0,i)]=s;});
+      t+=`<tr><td>Per zone</td><td>${zoneGroups(d,reasons)}</td></tr>`;
+    }
+  }
+
+  if((r.notes||[]).length){
+    t+=dGrp('Notes');
+    (r.notes||[]).forEach(n=>{const i=String(n).indexOf(': ');
+      t+=dTxt(i>0?n.slice(0,i):'Note',i>0?n.slice(i+2):n);});
+  }
+  return `<table class=det><tbody>${t}</tbody></table>`;
+}
+
 $('#bulkgo').onclick=async()=>{
   const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
   if(!lines.length)return;
   saveKeys();
   const b=$('#bulkgo'); b.disabled=true; b.textContent='Checking…';
-  const rows=lines.map(line=>({line, r:null, busy:true}));
-  const cell=(txt,cls)=>`<td class="${cls||''}">${esc(txt)}</td>`;
+  const rows=lines.map((line,i)=>({line, i, parts:proxyParts(line), r:null, busy:true, open:false}));
+
+  // ---- the comparison columns ---------------------------------------------------------------
+  // Every column answers "which of these do I use?". `get` is the sort key, `cell` the markup. Anything
+  // that is context rather than a comparison lives in the expanded detail instead.
+  const num=v=>v==null?Infinity:v;                 // absent sorts last, in either direction
+  const COLS=[
+    {k:'proxy', h:'Proxy', get:x=>x.line,
+     cell:x=>`<span title="${esc(x.line)}"><span class=pxh>${esc(x.parts.host||x.line)}</span>`+
+             (x.parts.port?`<span class=pxp>:${esc(x.parts.port)}</span>`:'')+`</span>`},
+    {k:'status', h:'Status',
+     get:x=>x.busy?3:((x.r&&x.r.proxy_alive===false)||(x.r&&x.r.error))?0:1,
+     cell:x=>x.busy?'<span class="vpill v-unknown-p">…</span>'
+       :(x.r.proxy_alive===false||x.r.error)?'<span class="vpill v-dirty-p">DEAD</span>'
+       :'<span class="vpill v-clean-p">UP</span>'},
+    {k:'ms', h:'Latency', get:x=>num(x.r&&x.r.proxy_ms),
+     cell:x=>x.r&&x.r.proxy_ms!=null
+       ?`<span class="ms c-${x.r.proxy_ms<400?'clean':x.r.proxy_ms<1200?'suspect':'dirty'}">${x.r.proxy_ms} ms</span>`
+       :'<span class=dim>—</span>'},
+    {k:'verdict', h:'Verdict',
+     get:x=>{const m={dirty:0,suspect:1,unknown:2,clean:3};const v=x.r&&x.r.verdict;
+             return v in m?m[v]:4;},
+     cell:x=>x.busy?'<span class="vpill v-unknown-p">…</span>':vpill(x.r.error?'unknown':x.r.verdict)},
+    {k:'ip', h:'Exit IP', get:x=>(x.r&&x.r.ip)||'',
+     cell:x=>x.r&&x.r.ip
+       ?flagImg(x.r.country_code||'')+`<span class=ipv>${esc(x.r.ip)}</span>`+
+        (x.r.exit_ipv6?'<span class=tag title="Dual-stack — this proxy also exits over IPv6">+v6</span>':'')
+       :'<span class=dim>—</span>'},
+    {k:'lists', h:'Blocklists', get:x=>num(x.r&&(x.r.blacklists||[]).length),
+     cell:x=>listsCell(x.r)},
+    {k:'detected', h:'Detected as', get:x=>num(x.r&&(x.r.flags||[]).length),
+     cell:x=>detectedCell(x.r)},
+    {k:'fraud', h:'Fraud', get:x=>num(x.r&&x.r.fraud_score),
+     cell:x=>x.r&&x.r.fraud_score!=null
+       ?`<span class="c-${band(x.r.fraud_score)}">${x.r.fraud_score}</span>`
+       :'<span class=dim title="No IPQualityScore key — not measured">n/k</span>'},
+    {k:'gii', h:'getIPIntel', get:x=>num(x.r&&x.r.getipintel_score),
+     cell:x=>x.r&&x.r.getipintel_score!=null
+       ?`<span class="c-${x.r.getipintel_score>=0.99?'dirty':x.r.getipintel_score>=0.90?'suspect':'clean'}">`+
+        x.r.getipintel_score.toFixed(2)+`</span>`
+       :'<span class=dim title="getIPIntel did not answer — not measured">n/a</span>'},
+    {k:'abuse', h:'Abuse', get:x=>num(x.r&&x.r.abuse_confidence),
+     cell:x=>x.r&&x.r.abuse_confidence!=null
+       ?`<span class="c-${x.r.abuse_confidence>=50?'dirty':x.r.abuse_confidence>=10?'suspect':'clean'}">`+
+        x.r.abuse_confidence+`%</span>`
+       :'<span class=dim title="No AbuseIPDB key — not measured">n/k</span>'},
+    {k:'type', h:'Exit type', get:x=>(x.r&&x.r.connection_class)||'zz',
+     cell:x=>x.r&&x.r.connection_class
+       ?`<span class="c-${x.r.connection_class==='datacenter'?'dirty':'clean'}">${esc(x.r.connection_class)}</span>`
+       :'<span class=dim title="No hosting name matched — which is not proof of a real line">—</span>'},
+    {k:'isp', h:'ISP', get:x=>(x.r&&(x.r.isp||x.r.organization))||'',
+     cell:x=>{const v=x.r&&(x.r.isp||x.r.organization);
+       return v?`<span class=trunc title="${esc(v)}">${esc(v)}</span>`:'<span class=dim>—</span>';}},
+    {k:'loc', h:'Location', get:x=>(x.r&&x.r.location)||'',
+     cell:x=>{const v=x.r&&x.r.location;
+       return v?`<span class=trunc title="${esc(v)}">${esc(v)}</span>`:'<span class=dim>—</span>';}},
+  ];
+
+  // Blocklists: a real sweep, a partial sweep and "never checked" must never look alike.
+  function listsCell(r){
+    if(!r||!r.ip)return '<span class=dim>—</span>';
+    if(!r.dnsbl_usable){
+      const why=r.dnsbl_skipped==='ipv6'
+        ?'this exit is IPv6 and none of the zones queried hold IPv6 data'
+        :'the blocklist DNS did not answer';
+      return `<span class=dim title="Not checked — ${esc(why)}. This is NOT a clean result.">not run</span>`;}
+    const hits=(r.blacklists||[]).length, pol=(r.policy_lists||[]).length;
+    const total=r.dnsbl_checked, fam=r.dnsbl_family==='ipv6'?' IPv6':'';
+    const t=(hits?'Listed by '+(r.blacklists||[]).join(', ')+'. ':'')+
+      (pol?'Plus '+pol+' policy listing: '+(r.policy_lists||[]).join(', ')+'. ':'')+
+      total+' of '+(r.dnsbl_zones_total||total)+fam+' zones answered.';
+    return `<span class="c-${hits>=2?'dirty':hits?'suspect':'clean'}" title="${esc(t)}">${hits}/${total}</span>`+
+      (pol?`<span class=dimnote title="${esc((r.policy_lists||[]).join(', '))}"> +${pol} policy</span>`:'');
+  }
+
+  // "Is it detectable as a proxy at all" — the question the fraud score can't answer, because it saturates.
+  function detectedCell(r){
+    if(!r||!r.ip)return '<span class=dim>—</span>';
+    if(r.fraud_score==null&&r.getipintel_score==null)
+      return '<span class=dim title="No source that detects proxies answered">n/k</span>';
+    const f=r.flags||[];
+    if(!f.length)return '<span class=c-clean title="IPQualityScore raised no proxy/VPN/Tor flag">none</span>';
+    return `<span class="c-suspect trunc" title="${esc(f.join(' · '))}">`+
+      esc(f.map(s=>s.replace(' (active)','*')).join(' '))+`</span>`;
+  }
+
+  let sortKey='', sortDir=1;
   const draw=()=>{
     const done=rows.filter(x=>!x.busy).length;
-    let h=`<div class="blk panel tablewrap"><table class=bulk><thead><tr><th>Proxy</th><th>Alive</th>`+
-      `<th>Latency</th><th>Exit IP</th>`+
-      `<th>Verdict</th><th>getIPIntel</th><th>Lists</th><th>Type</th><th>Copy</th></tr></thead><tbody>`;
-    rows.forEach((x,i)=>{const r=x.r||{};
-      const ip=r.ip||(x.busy?'…':'—');
-      const g=r.getipintel_score!=null?r.getipintel_score.toFixed(2):'—';
-      const hits=r.ip?String((r.blacklists||[]).length):(x.busy?'':'—');
-      // Never invent "residential" — connection_class returns null when the name heuristic can't tell.
-      const type=r.connection_class||(x.busy?'':'—');
-      // Dead-or-alive is the first thing you want when comparing a list, and latency the second — neither
-      // is a reputation signal, so no source reports them.
-      const alive=x.busy?'<span class="vpill v-unknown-p">…</span>'
-        :r.proxy_alive===false||r.error?'<span class="vpill v-dirty-p">DEAD</span>'
-        :r.ip?'<span class="vpill v-clean-p">UP</span>':'<span class="vpill v-unknown-p">—</span>';
-      const ms=r.proxy_ms!=null?r.proxy_ms+' ms':(x.busy?'':'—');
-      const vd=x.busy?'<span class="vpill v-unknown-p">…</span>':vpill(r.error?'unknown':r.verdict);
-      h+=`<tr>${cell(x.line,'pxcell')}<td>${alive}</td>${cell(ms)}${cell(ip)}<td>${vd}</td>${cell(g)}${cell(hits)}${cell(type)}`+
-        `<td style="white-space:nowrap"><button class=cc data-copy="${esc(x.line)}">proxy</button> `+
-        (r.ip?`<button class=cc data-copy="${esc(r.ip)}">ip</button> `:'')+
-        (r.ip?`<button class=cc data-deep="${i}">${x.open?'hide':'why'}</button>`:'')+`</td></tr>`;
-      // Same per-source breakdown as the single check, inline under its row — a bulk verdict is only
-      // actionable if you can see what produced it.
-      if(x.open&&r.ip)h+=`<tr><td colspan=9 style="padding:0 0 12px">${deep(r)||'<p class=note>no source detail</p>'}</td></tr>`;
-    });
-    h+=`</tbody></table><p class=note style="padding:10px 10px 0">${done}/${rows.length} checked · Proxy/IP copies · Why opens the breakdown</p></div>`;
+    const view=rows.slice();
+    if(sortKey){const c=COLS.find(c=>c.k===sortKey);
+      view.sort((a,b)=>{const A=c.get(a),B=c.get(b);
+        return (typeof A==='number'&&typeof B==='number'?A-B:String(A).localeCompare(String(B)))*sortDir;});}
+
+    const tally=k=>rows.filter(x=>!x.busy&&x.r&&!x.r.error&&x.r.verdict===k).length;
+    const dead=rows.filter(x=>!x.busy&&x.r&&(x.r.proxy_alive===false||x.r.error)).length;
+    const live=rows.filter(x=>x.r&&x.r.proxy_ms!=null).map(x=>x.r.proxy_ms).sort((a,b)=>a-b);
+    let h=`<div class=bulkwide><div class="blk panel"><div class=bsum>`+
+      `<span>Checked <b>${done}/${rows.length}</b></span>`+
+      (tally('clean')?`<span class=s-clean>Clean <b>${tally('clean')}</b></span>`:'')+
+      (tally('suspect')?`<span class=s-suspect>Suspect <b>${tally('suspect')}</b></span>`:'')+
+      (tally('dirty')?`<span class=s-dirty>Dirty <b>${tally('dirty')}</b></span>`:'')+
+      (dead?`<span class=s-dead>Dead <b>${dead}</b></span>`:'')+
+      (live.length?`<span>Median <b>${live[Math.floor(live.length/2)]} ms</b></span>`:'')+
+      `</div><div class=tablewrap><table class=bulk><thead><tr><th class=cw></th>`+
+      COLS.map(c=>`<th class=s data-sort="${c.k}"`+
+        (sortKey===c.k?` data-dir="${sortDir}"`:'')+`>${esc(c.h)}</th>`).join('')+
+      `</tr></thead><tbody>`;
+    for(const x of view){
+      h+=`<tr class="${x.open?'open':''}"><td class=cw><button class=chev data-deep="${x.i}" `+
+        `aria-expanded="${x.open}" title="Show every field for this proxy">`+
+        `<svg viewBox="0 0 16 16" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round `+
+        `stroke-linejoin=round><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></td>`+
+        COLS.map(c=>`<td${c.k==='isp'||c.k==='loc'?' class=cap':''}>${c.cell(x)}</td>`).join('')+`</tr>`;
+      if(x.open)h+=`<tr class=detrow><td colspan="${COLS.length+1}">${bulkDetail(x)}</td></tr>`;
+    }
+    h+=`</tbody></table></div><p class=note style="padding:10px 2px 0">`+
+      `Click a heading to sort · the chevron opens that proxy's full detail · n/k = no key, so not measured`+
+      `</p></div></div>`;
     out.innerHTML=h;
   };
-  bulk={rows, draw};      // hand the current run to the once-registered row expander below
+  bulk={rows, draw, sort:k=>{sortDir=(sortKey===k?-sortDir:1);sortKey=k;draw();}};
   draw();
   let idx=0; const CAP=4;
   const worker=async()=>{ while(idx<rows.length){const x=rows[idx++];
@@ -567,4 +865,5 @@ $('#bulkgo').onclick=async()=>{
   await Promise.all(Array.from({length:Math.min(CAP,rows.length)},worker));
   b.disabled=false; b.textContent='Check all';
 };
+
 </script>
