@@ -1278,6 +1278,49 @@ def test_getipintel_classifies_the_exit_the_other_two_sources_miss():
     assert "giiDatacenter(r)" in java
 
 
+def test_latency_reports_what_the_proxy_ADDS_not_the_raw_round_trip(monkeypatch):
+    """MEASURED 2026-08-06 from this machine (+0800): the same endpoint takes 889 ms direct and 3077 ms
+    through a US residential proxy, and the endpoint barely matters (gstatic 610/3125, cloudflare 608/3172
+    — all within ~100 ms of each other out of ~3100). The hosted check runs from Vercel's iad1 in US-East
+    and still reports ~3400 ms on those proxies, so the number is dominated by the PROXY, not by the
+    observer's distance.
+
+    Timing the same request without the proxy separates the two, and the delta is the figure that is
+    comparable between a laptop in Asia and a function in Virginia."""
+    calls = []
+
+    def fake_geo(opener, ip=None):
+        calls.append(opener)
+        return {"ip": "153.66.193.140", "isp": "SpaceX Starlink"}
+
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": "PROXIED")
+    monkeypatch.setattr(ipcheck, "lookup_geo", fake_geo)
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    rep = ipcheck.check("host:10000")
+    assert calls[0] == "PROXIED", "the first timed request must go through the proxy"
+    assert calls[1] != "PROXIED", "the baseline must NOT go through the proxy"
+    for k in ("proxy_ms", "direct_ms", "proxy_added_ms"):
+        assert k in rep, f"{k} missing — the raw round trip alone is not interpretable"
+    assert rep["proxy_added_ms"] == max(0, rep["proxy_ms"] - rep["direct_ms"])
+    assert rep["proxy_added_ms"] >= 0, "a faster-than-baseline proxy must clamp to 0, never go negative"
+
+
+def test_no_baseline_request_is_made_when_there_is_no_proxy(monkeypatch):
+    # The extra round trip exists only to interpret a PROXY's cost. Spending it on a direct check would
+    # double every keyless lookup for nothing.
+    calls = []
+    monkeypatch.setattr(ipcheck, "lookup_geo",
+                        lambda opener, ip=None: calls.append(opener) or {"ip": "8.8.8.8"})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    rep = ipcheck.check(ip="8.8.8.8")
+    assert len(calls) == 1, f"expected exactly one geo lookup with no proxy, got {len(calls)}"
+    assert "proxy_added_ms" not in rep and "direct_ms" not in rep
+
+
 def test_a_socks_proxy_addressed_as_http_is_retried_not_called_dead(monkeypatch):
     """MEASURED 2026-08-06: an entire vendor's list (SOCKS5 on :1080) reported DEAD when run as HTTP —
     indistinguishable from genuinely down, and a trap for anyone pasting a list they were handed."""

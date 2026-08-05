@@ -1169,6 +1169,22 @@ def check(proxy: str | None = None, ip: str | None = None,
         rep["proxy_alive"] = bool(geo)
         if geo:
             rep["proxy_ms"] = latency_ms
+            # A raw number is not interpretable on its own. MEASURED 2026-08-06 from this machine (+0800):
+            # the SAME endpoint takes 889 ms direct and 3077 ms through a US residential proxy — and the
+            # endpoint barely matters (gstatic 610/3125, cloudflare 608/3172, ipify 686/3203, all within
+            # ~100 ms of each other out of ~3100). So the number is dominated by the PROXY, not by the
+            # observer's distance: the hosted check runs from Vercel's iad1 in US-East and still reports
+            # ~3400 ms on the same proxies.
+            #
+            # Timing the same request WITHOUT the proxy, from wherever the check happens to be running,
+            # separates the two. `proxy_added_ms` is the honest figure — "what this proxy costs on top of
+            # this machine's own path" — and it is comparable between a laptop in Asia and a Lambda in
+            # Virginia, which the raw round trip is not. One extra request, only when a proxy is in play.
+            started = time.monotonic()
+            base = lookup_geo(urllib.request.build_opener(), ip)
+            if base:
+                rep["direct_ms"] = int((time.monotonic() - started) * 1000)
+                rep["proxy_added_ms"] = max(0, latency_ms - rep["direct_ms"])
         elif retried_scheme is None:
             rep["notes"].append("Proxy: no answer as " + proxy_scheme.upper()
                                 + ", and the other transport did not answer either — it is down, "
@@ -1946,9 +1962,15 @@ function render(r){
     `<small>${esc(cap)}</small></div>`;
   // Latency leads when a proxy was used — a proxy that works but takes 4s is a different problem from a
   // dirty one, and neither shows up in any reputation source.
-  if(r.proxy_ms!=null)tiles+=tile('Latency', r.proxy_ms+' ms',
-    r.proxy_ms<400?'fast':r.proxy_ms<1200?'usable':'slow',
-    r.proxy_ms<400?'clean':r.proxy_ms<1200?'suspect':'dirty', true);
+  // The tile grades what the PROXY costs, not the raw round trip — the raw number folds in this machine's
+  // own distance to the internet and is not comparable between a laptop in Asia and a function in
+  // Virginia. MEASURED: the same endpoint is 889 ms direct here and 3077 ms through a US residential
+  // proxy, so 2.2s of that 3.1s is the proxy. The caption shows both halves so the grade is auditable.
+  if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
+    tiles+=tile('Latency', add+' ms',
+      (add<400?'fast':add<1200?'usable':'slow')
+      + (r.direct_ms!=null?` · ${r.proxy_ms} ms total, ${r.direct_ms} ms without it`:''),
+      add<400?'clean':add<1200?'suspect':'dirty', true);}
   if(r.connection_class)
     tiles+=tile('Exit type', r.connection_class==='tor'?'Tor'
         :r.connection_class[0].toUpperCase()+r.connection_class.slice(1),
@@ -1971,7 +1993,7 @@ function render(r){
   // ISP score on every IP measured and mis-ranks (Tor 15, clean Comcast 18, Mullvad 44) — so the caption
   // says so and the colour never goes green. What Scamalytics actually contributes is the Exit type above.
   if(r.scam_risk)tiles+=tile('Scamalytics', r.scam_score!=null?r.scam_score:'—',
-    r.scam_risk+' · shown, not scored', scamColour(r.scam_risk), true);
+    r.scam_risk+' · not scored', scamColour(r.scam_risk), true);
   t+=blk(`<div class=tiles>${tiles}</div>`);
 
   if(r.fraud_score!=null){
@@ -2106,8 +2128,11 @@ function bulkDetail(x){
     chip('whole line',x.line));
   t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
   t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
-  t+=dTxt('Latency',r.proxy_ms!=null
-    ?r.proxy_ms+' ms · '+(r.proxy_ms<400?'fast':r.proxy_ms<1200?'usable':'slow'):null);
+  if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
+    t+=dTxt('Latency',add+' ms added by the proxy · '+(add<400?'fast':add<1200?'usable':'slow'));
+    if(r.direct_ms!=null)
+      t+=dTxt('','of a '+r.proxy_ms+' ms round trip; the same request without the proxy took '
+              +r.direct_ms+' ms from wherever this check ran');}
 
   if(r.ip){
     t+=dGrp('Exit');
@@ -2234,10 +2259,16 @@ $('#bulkgo').onclick=async()=>{
      cell:x=>x.busy?'<span class="vpill v-unknown-p">…</span>'
        :(x.r.proxy_alive===false||x.r.error)?'<span class="vpill v-dirty-p">DEAD</span>'
        :'<span class="vpill v-clean-p">UP</span>'},
-    {k:'ms', h:'Latency', get:x=>num(x.r&&x.r.proxy_ms),
-     cell:x=>x.r&&x.r.proxy_ms!=null
-       ?`<span class="ms c-${x.r.proxy_ms<400?'clean':x.r.proxy_ms<1200?'suspect':'dirty'}">${x.r.proxy_ms} ms</span>`
-       :'<span class=dim>—</span>'},
+    // Grades what the PROXY adds, not the raw round trip — the raw number folds in the checking machine's
+    // own distance and is not comparable across observers. Sub-line carries the total so nothing is hidden.
+    {k:'ms', h:'Latency', ttl:'What the proxy adds over this machine’s own path to the same endpoint',
+     get:x=>num(x.r&&(x.r.proxy_added_ms!=null?x.r.proxy_added_ms:x.r.proxy_ms)),
+     cell:x=>{if(!x.r||x.r.proxy_ms==null)return '<span class=dim>—</span>';
+       const add=x.r.proxy_added_ms!=null?x.r.proxy_added_ms:x.r.proxy_ms;
+       return `<span class="ms c-${add<400?'clean':add<1200?'suspect':'dirty'}" title="${add} ms added by `+
+         `the proxy; ${x.r.proxy_ms} ms total round trip${x.r.direct_ms!=null?`, ${x.r.direct_ms} ms `+
+         `without it`:''}">${add} ms</span>`+
+         (x.r.direct_ms!=null?`<span class=sub>${x.r.proxy_ms} total</span>`:'');}},
     {k:'verdict', h:'Verdict',
      get:x=>{const m={dirty:0,suspect:1,unknown:2,clean:3};const v=x.r&&x.r.verdict;
              return v in m?m[v]:4;},
