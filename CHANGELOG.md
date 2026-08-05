@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.7] - 2026-08-05
+
+### Changed
+- **ipcheck web UI now loads and scores the current exit IP on open** — no need to hit Run first;
+  an empty proxy checks this machine's own exit. The proxy hint is the colons-only `host:port:user:pass`
+  form resi providers hand out (the `user:pass@host:port` and scheme-URL forms still parse). Added a
+  one-line legend under the button naming what each score comes from: **ipwho.is** geo/ISP and
+  **~120 DNSBLs** are free/no-key; **IPQualityScore** and **AbuseIPDB** enrich the verdict when a key is set.
+
 ## [0.24.6] - 2026-08-05
 
 ### Added
