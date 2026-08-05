@@ -1180,3 +1180,33 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
 - **The Android IPQS rejection message is not key-scrubbed** (`HealthCheck.java`, the `!success` branch),
   unlike the Python side. Lower severity — the key is the device owner's own, in local storage, not a
   shared server-side secret — but it is an inconsistency between the two implementations.
+
+- **2026-08-06 — Settings cogwheel + device-bound activation codes.** User's ask: a cogwheel top-right
+  holding settings/API keys, and a person/key icon for authentication so activations can be issued to
+  other people. Two shapes offered: accounts (email+password, "like geergit does it") or generated codes
+  valid 1 day / 1 week / 1 month, paid directly (TG/crypto, no payment gateway), tied to the phone's real
+  android_id or IMEI, with the UI showing until when they are activated and how much time is left.
+  Status: designing. Recommendation is OFFLINE SIGNED CODES over accounts — no backend to run, no password
+  reset, and the operator issues a code after being paid. Ed25519, private key outside the repo, app ships
+  only the public key. The subtle part: the binding must read the REAL device ids, and Specter spoofs
+  android_id/IMEI — its own app is not in its own LSPosed scope so it should see the real values, but that
+  has to be TESTED with a profile applied. Hash the ids so the operator never handles a raw one, and guard
+  the clock against being rolled back. Full plan in
+  `handoffs/2026-08-06_overnight-polish-settings-licensing.md`.
+- **2026-08-06 — What do fintech apps ACTUALLY check for IP reputation/cleanliness?** Open research
+  question, and it should drive the source list rather than the reverse: the tool currently measures what
+  happened to be available, not what the apps that matter actually read. Use exa (project rule: never
+  WebFetch). Worth answering: what Sift / Sardine / Socure / Unit21 / Alloy / Persona and the device
+  vendors (Fingerprint, Iovation, ThreatMetrix, Incognia, SEON) weight for an IP — ASN reputation,
+  hosting/VPN detection, velocity across accounts, IP↔device↔geo consistency, or proxy-piercing
+  (WebRTC, timezone/locale mismatch, TTL/MTU, TCP fingerprinting) — and how much a clean residential IP
+  even matters next to device and behavioural signals. If the answer is "coherence beats reputation",
+  that is a bigger lever than a sixth API. Findings go in `docs/ANTI-FINGERPRINT-STRATEGY.md`, labelled
+  HYPOTHESIS until measured. Status: not started.
+- **2026-08-06 — DONE: latency reports what the PROXY adds.** Everything read 3000+ ms and the assumption
+  was that our own round trip from +0800 was inflating it. Measured, it is not: the same endpoint is
+  889 ms direct here and 3077 ms through a US residential proxy, four different endpoints land within
+  ~100 ms of each other out of ~3100, and the hosted check already runs from Vercel's iad1 in US-East and
+  still saw ~3400 ms. So the proxy IS the cost. The fix was a reference, not a different anchor: time the
+  same request without the proxy and grade `proxy_added_ms`, which is comparable between a laptop in Asia
+  and a function in Virginia. Live on a real Starlink proxy: 3234 total, 844 direct, 2390 added.
