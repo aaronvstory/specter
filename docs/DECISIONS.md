@@ -1017,3 +1017,13 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   like a value that simply has no icon — so the fix is a rule plus `webapp/check-icons.py`, which renders
   each icon at its real 13px and measures ink, spread, interior detail, a max-ink ceiling (catching the
   "solid rectangle at a plausible size" case) and pairwise distinctness.
+- **2026-08-06 — dev API keys are baked in from a GITIGNORED properties file, never from the tree.** The
+  repo is public, so the keys cannot live in it; but retyping five of them after every reinstall is the
+  kind of friction that gets a feature abandoned. `make-dev-keys.py` generates
+  `xposed-module/dev-keys.properties` from `~/.specter-ipcheck.json`, gradle turns it into BuildConfig
+  fields, and a build made WITHOUT the file gets empty strings — so "distributable" is the absence of a
+  file rather than a flag someone has to remember to flip. The build prints which state it is in, because
+  an APK silently carrying someone's keys is the exact failure this arrangement exists to prevent, and
+  both directions are verified by grepping the shipped dex for a live key (present when seeded, absent
+  when not). Seeding is ONE-TIME (a marker pref records which keys were seeded): re-seeding whenever a
+  field is empty would make it impossible to deliberately turn a source off.

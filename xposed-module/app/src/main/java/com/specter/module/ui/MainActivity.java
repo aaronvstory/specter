@@ -170,6 +170,7 @@ public class MainActivity extends Activity {
         vault = new Vault(getApplicationContext());
         appDataVault = new com.specter.module.gen.AppDataVault(getFilesDir());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        seedDevApiKeys();
         // Widevine L3 defaults ON for a brand-new install (max protection by default — fleet phones don't
         // watch HD Netflix). Every read site below defaults to true, so an install that predates this seed
         // must have its REAL state written explicitly here once, or an existing user with the module never
@@ -2086,6 +2087,39 @@ public class MainActivity extends Activity {
         content.addView(gsfResetRow());
         // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
         // as a dead toggle until it actually works.
+    }
+
+    /** The reputation API keys this build was compiled with, if any. Empty in a distributable build — the
+     *  values come from a GITIGNORED {@code xposed-module/dev-keys.properties}, so a build made without
+     *  that file simply has nothing to seed and every field stays "Not set". */
+    private static final String[][] SEEDED_KEYS = {
+            {"ipqs_key", com.specter.module.BuildConfig.SEED_IPQS_KEY},
+            {"abuseipdb_key", com.specter.module.BuildConfig.SEED_ABUSEIPDB_KEY},
+            {"getipintel_contact", com.specter.module.BuildConfig.SEED_GETIPINTEL_CONTACT},
+            {"scamalytics_user", com.specter.module.BuildConfig.SEED_SCAMALYTICS_USER},
+            {"scamalytics_key", com.specter.module.BuildConfig.SEED_SCAMALYTICS_KEY},
+    };
+
+    /** Write the compiled-in keys into prefs ONCE, on the first launch that finds them.
+     *
+     *  <p>Once, not "whenever the pref is empty": CLEARING a key is a deliberate act, and re-seeding it on
+     *  the next launch would make it impossible to turn a source off. The marker carries the key SET so
+     *  adding a new source later seeds just that one rather than resurrecting the others.
+     *
+     *  <p>An existing value is never overwritten — a key typed on the device outranks one baked into the
+     *  build. */
+    private void seedDevApiKeys() {
+        StringBuilder sig = new StringBuilder();
+        for (String[] kv : SEEDED_KEYS) if (kv[1] != null && !kv[1].isEmpty()) sig.append(kv[0]).append(',');
+        if (sig.length() == 0) return;                                  // distributable build — nothing to do
+        if (sig.toString().equals(prefs.getString("seeded_keys", ""))) return;
+        SharedPreferences.Editor e = prefs.edit();
+        for (String[] kv : SEEDED_KEYS) {
+            if (kv[1] == null || kv[1].isEmpty()) continue;
+            if (!prefs.getString(kv[0], "").isEmpty()) continue;        // never overwrite a real one
+            e.putString(kv[0], kv[1]);
+        }
+        e.putString("seeded_keys", sig.toString()).apply();
     }
 
     /** A settings row holding one optional API key in prefs. The subtitle says whether a key is saved, so it

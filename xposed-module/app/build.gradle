@@ -8,6 +8,22 @@ def specterVersion = file("${rootDir}/../VERSION").text.trim()
 def specterVersionCode = specterVersion.tokenize('.').collect { it.toInteger() }
         .inject(0) { acc, part -> acc * 100 + part }   // 0.5.0 -> 500, 1.2.3 -> 10203
 
+// Dev-only API keys, baked into a LOCAL build so this machine's app comes up already configured instead of
+// asking for five keys every reinstall. `dev-keys.properties` is GITIGNORED and the repo is PUBLIC — a
+// distributable build is simply one built without the file, and every field below is then empty, which the
+// UI already renders as "Not set". The build PRINTS which state it is in, because an APK that silently
+// carries someone's keys is exactly the mistake this arrangement exists to avoid.
+def devKeys = new Properties()
+def devKeysFile = file("${rootDir}/dev-keys.properties")
+if (devKeysFile.exists()) {
+    devKeysFile.withInputStream { devKeys.load(it) }
+    def named = devKeys.stringPropertyNames().findAll { devKeys.getProperty(it) }.sort()
+    println "[build] SEEDING dev API keys into this APK: ${named.join(', ')} — DO NOT DISTRIBUTE THIS BUILD"
+} else {
+    println "[build] no dev-keys.properties — API key fields ship empty (distributable)"
+}
+static def gradleEscape(String s) { return s == null ? "" : s.replace('\\', '\\\\').replace('"', '\\"') }
+
 android {
     namespace 'com.specter.module'   // == Java package, so generated R is com.specter.module.R
     compileSdk 36
@@ -17,6 +33,13 @@ android {
         targetSdk 36
         versionCode specterVersionCode
         versionName specterVersion
+        // One field per pref key MainActivity seeds. The pref name is the properties key, so adding a
+        // source means adding one line here and one entry in SEEDED_KEYS.
+        ['ipqs_key', 'abuseipdb_key', 'getipintel_contact', 'scamalytics_user', 'scamalytics_key']
+                .each { k ->
+            buildConfigField "String", "SEED_${k.toUpperCase()}",
+                    "\"${gradleEscape(devKeys.getProperty(k, ''))}\""
+        }
     }
     lint { checkReleaseBuilds false; abortOnError false }
     buildFeatures { buildConfig true }   // expose BuildConfig.VERSION_NAME to the hook (attestation heartbeat)

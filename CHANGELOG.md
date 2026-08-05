@@ -56,6 +56,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - **Reputation was measured on one address and reported as another.** On a dual-stack exit the address was
   switched to IPv4 *after* IPQS/AbuseIPDB/getIPIntel/Scamalytics had already been asked about the IPv6 one.
   The family is now settled before any source is queried.
+- **Dev builds can pre-seed the API keys.** `python xposed-module/make-dev-keys.py` writes a GITIGNORED
+  `dev-keys.properties` from `~/.specter-ipcheck.json`; the build bakes those into `BuildConfig` and the
+  app writes them into prefs once, on the first launch that finds them. A DISTRIBUTABLE build is simply
+  one made without that file — every field is empty and the app shows "Not set", which is already the
+  right UI for a user bringing their own keys. The build prints which of the two states it is in, and an
+  existing on-device value is never overwritten.
 - **Scamalytics is coloured in its own four-band scale** — low green, medium amber, high orange, very
   high red — at the user's request, rather than warn-only. Safe because the score is fenced off from the
   verdict entirely (zero weight at every tier, locked in both directions by a test), so a green "8 · low"

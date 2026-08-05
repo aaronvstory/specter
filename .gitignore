@@ -28,6 +28,9 @@ nul
 /.codex_prompt.txt
 /xposed-module/build4.log
 /xposed-module/local.properties
+# Dev-only API keys baked into a LOCAL build (see xposed-module/app/build.gradle). NEVER committed:
+# the repo is public, and a distributable build is one that simply does not have this file.
+/xposed-module/dev-keys.properties
 /_*.db
 /_*.apk
 /dist/specter-v*.zip
