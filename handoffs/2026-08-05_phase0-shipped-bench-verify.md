@@ -51,3 +51,26 @@ docs/IDEAS.md — the off-tunnel scoring / timezone-fix (steer #15/#16), designe
 gate (local-only signals + an explicit "checks your real IP" opt-in), verifying on-device that the home IP
 is never sent to a fraud API off-tunnel.
 ```
+
+## Read-only LSPosed scope audit (2026-08-05) — fleet config state
+
+Pulled `modules_config.db` read-only from both phones and queried it locally. Findings:
+
+- **No active Specter↔GeerGit co-scoping — the android_id-poisoning risk is ABSENT** (the important one,
+  per memory `geergit-poisons-specter-android-id`). Specter targets Cash / Dasher / DevInfo; GeerGit (P4
+  only, mid 101) targets the FPJS demo + `com.myapp.go2_app`. No shared target app, so GeerGit can't pin a
+  constant android_id on any Specter target.
+- **Specter is scoped to `android` and `system`** (the OS framework) on BOTH phones. Harmless — the native
+  `is_core_os` guard refuses to spoof the framework — but it's scope pollution; worth removing those two
+  entries from Specter's scope in the LSPosed UI when convenient (do NOT touch GeerGit's mid 101).
+- **P4 has orphan scope rows** for modules NOT in the `modules` table: mid 7 → {Cash, geergit, doordash},
+  mid 20 → {settings}. These are leftover rows from uninstalled modules — LSPosed ignores a scope row with
+  no enabled module, so they're inert DB cruft, not active hooks on Cash. Safe to ignore (or clear if you
+  ever rebuild the scope DB).
+- **FPJS-demo ownership differs per phone:** on the **4a** the FPJS Pro demo is in Specter's scope (and no
+  GeerGit is installed); on the **P4** the demo is owned by **GeerGit**, not Specter. So Specter's own
+  FPJS-demo measurement works on the 4a but not the P4 — use the 4a for a Specter-vs-FPJS test, or add the
+  demo to Specter's scope on the P4 (and remove it from GeerGit) if you want to test there.
+
+All read-only; no scope was edited (editing mid 154 needs a reboot, which the boundary blocks on these
+phones). These are observations for a bench session, not changes.
