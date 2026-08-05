@@ -265,5 +265,10 @@ it's confirmed with real evidence (e.g. diffing a flagged vs passed account, or 
 - **Do NOT port-scan for an Android-11 "random wireless debugging port".** That port is the PAIRING port: it
   accepts TCP but `adb connect` returns `offline` forever without a pairing code. A phone that won't connect
   is usually just POWERED OFF — check that before anything else.
-- Made reboot-proof 2026-08-05: `su -c 'resetprop persist.adb.tcp.port <port>'` on both, so adbd re-binds the
-  pinned port every boot instead of needing `adb tcpip` over USB after each restart.
+- **It is ALREADY automatic** — a Magisk boot script `/data/adb/service.d/99-adb-tcp-port.sh` on each phone
+  waits for `sys.boot_completed`, sets `service.adb.tcp.port`, and restarts adbd. Set up from
+  `C:\platform-tools` (see its README). PROVEN 2026-08-05: rebooted the P4, wireless was back on 5556 by
+  itself ~30s after boot (uptime 29.7s over the wireless transport), no USB action.
+- So a phone that is not reachable is **powered off**, or off the network — check that FIRST. Don't add a
+  second pinning mechanism; one already exists. (`persist.adb.tcp.port` was also set on both, redundantly.)
+- Quick check on a phone: `getprop service.adb.tcp.port` — a number means the pin is active.
