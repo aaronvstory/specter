@@ -245,14 +245,21 @@ def policy_label(name: str, zone: str, addrs: list[str]) -> str:
 # ponytail: name-based heuristic with a known ceiling — it catches the major hosts by name, not every hosting
 # ASN. Upgrade path if it matters: a datacenter-ASN dataset. Unknown names stay unclassified, never guessed.
 # GCP and Azure don't self-identify as "cloud" in free WHOIS — they read "Google LLC" / "Microsoft
-# Corporation" — so those exact org strings are matched (and the compute reverse-DNS hosts googleusercontent /
-# cloudapp). `google\s+llc` is used, NOT a bare "google", so Google Fiber ("Google Fiber Inc", residential)
-# stays unmatched. "microsoft" is safe — no residential ISP is named that.
+# Corporation" — so those org strings are matched (and the compute reverse-DNS hosts googleusercontent /
+# cloudapp). "microsoft" is safe — no residential ISP is named that.
+#
+# `google(?!\s+fiber)`, NOT `google\s+llc`: MEASURED 2026-08-06, ipwho.is returns the bare names "Google"
+# and "Cloudflare" where IPQS returns "Google LLC", so 8.8.8.8 and 1.1.1.1 both read verdict CLEAN with
+# "No datacenter signal" — a false all-clear on two of the most obvious datacenter addresses there are.
+# The negative lookahead keeps Google Fiber ("Google Fiber Inc", a real residential ISP) unmatched, which
+# is what the old `google\s+llc` was protecting. cloudflare/fastly added for the same reason: no
+# residential product carries those names, so they cannot cause the Google Fiber problem.
 _DATACENTER_RE = re.compile(
-    r"\b(amazon|aws|ec2|amazonaws|google\s+cloud|google\s+llc|gcp|googleusercontent|azure|microsoft|cloudapp|"
-    r"digitalocean|linode|akamai|vultr|choopa|ovh|hetzner|contabo|leaseweb|m247|datacamp|hostwinds|scaleway|"
-    r"oracle\s+cloud|alibaba|tencent|quadranet|psychz|nforce|serverius|frantech|buyvm|colocrossing|hosting|"
-    r"datacenter|data\s?center|colocation|colo|dedicated\s+server|virtual\s+server|cloud\s+server)\b", re.I)
+    r"\b(amazon|aws|ec2|amazonaws|google(?!\s+fiber)|gcp|googleusercontent|azure|microsoft|cloudapp|"
+    r"cloudflare|fastly|digitalocean|linode|akamai|vultr|choopa|ovh|hetzner|contabo|leaseweb|m247|datacamp|"
+    r"hostwinds|scaleway|oracle\s+cloud|alibaba|tencent|quadranet|psychz|nforce|serverius|frantech|buyvm|"
+    r"colocrossing|hosting|datacenter|data\s?center|colocation|colo|dedicated\s+server|virtual\s+server|"
+    r"cloud\s+server)\b", re.I)
 
 
 def connection_class(rep: dict) -> str | None:

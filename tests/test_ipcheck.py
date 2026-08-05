@@ -395,6 +395,21 @@ def test_verdict_dirty_on_a_datacenter_exit_even_with_no_abuse():
     assert level == "dirty" and "datacenter" in why.lower()
 
 
+
+def test_the_big_dns_providers_are_recognised_as_datacenters():
+    """8.8.8.8 and 1.1.1.1 both returned verdict CLEAN with "No datacenter signal" (measured 2026-08-06).
+
+    Cause: the pattern required `google\s+llc`, but ipwho.is returns the BARE names "Google" and
+    "Cloudflare" where IPQS returns "Google LLC" — so the free/keyless path never matched. A false
+    all-clear on two of the most obvious datacenter addresses in existence.
+    """
+    for isp in ("Google", "Google LLC", "Google Cloud", "Cloudflare", "Fastly", "Amazon.com"):
+        assert ipcheck.is_datacenter({"isp": isp}), f"{isp} must read as a datacenter"
+    # ...and the widening must not swallow the residential ISPs it was narrow to protect.
+    for isp in ("Google Fiber Inc", "Comcast Cable", "Spectrum", "T-Mobile USA", "SpaceX Services",
+                "Windstream Communications"):
+        assert not ipcheck.is_datacenter({"isp": isp}), f"{isp} is a real line, not a datacenter"
+
 def test_datacenter_catches_gcp_azure_by_org_name_but_not_google_fiber():
     # GCP/Azure don't self-identify as "cloud" in free WHOIS — they read "Google LLC" / "Microsoft
     # Corporation" — so those exact strings are matched. Google Fiber ("Google Fiber Inc") is a real

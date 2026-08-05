@@ -569,10 +569,11 @@ final class HealthCheck {
     // premium-gated, so this reads the free ISP/org/host names instead. Mirrors _DATACENTER_RE in
     // specter/ipcheck.py; keep the two in sync (pinned by tests/test_ipcheck.py).
     private static final java.util.regex.Pattern DATACENTER = java.util.regex.Pattern.compile(
-            "\\b(amazon|aws|ec2|amazonaws|google\\s+cloud|google\\s+llc|gcp|googleusercontent|azure|microsoft|cloudapp|"
-            + "digitalocean|linode|akamai|vultr|choopa|ovh|hetzner|contabo|leaseweb|m247|datacamp|hostwinds|scaleway|"
-            + "oracle\\s+cloud|alibaba|tencent|quadranet|psychz|nforce|serverius|frantech|buyvm|colocrossing|hosting|"
-            + "datacenter|data\\s?center|colocation|colo|dedicated\\s+server|virtual\\s+server|cloud\\s+server)\\b",
+            "\\b(amazon|aws|ec2|amazonaws|google(?!\\s+fiber)|gcp|googleusercontent|azure|microsoft|cloudapp|"
+            + "cloudflare|fastly|digitalocean|linode|akamai|vultr|choopa|ovh|hetzner|contabo|leaseweb|m247|datacamp|"
+            + "hostwinds|scaleway|oracle\\s+cloud|alibaba|tencent|quadranet|psychz|nforce|serverius|frantech|buyvm|"
+            + "colocrossing|hosting|datacenter|data\\s?center|colocation|colo|dedicated\\s+server|virtual\\s+server|"
+            + "cloud\\s+server)\\b",
             java.util.regex.Pattern.CASE_INSENSITIVE);
 
     /** True iff the ISP/org/host names look like a datacenter/hosting provider — best-effort, name-based. */
