@@ -1,6 +1,7 @@
 """Pure-logic tests for the exit-IP reputation checker. No network — every function under test
 takes already-fetched data."""
 
+import json
 import re
 from pathlib import Path
 
@@ -422,10 +423,55 @@ def test_getipintel_reports_a_rejected_contact(monkeypatch):
 
 def test_getipintel_a_negative_result_is_an_error_not_a_score(monkeypatch):
     # A negative result is an error code (-1..-6), NOT a 0-probability — must never read as a clean score.
+    # -5 in particular says the MACHINE RUNNING THIS is banned or over quota, which is the opposite of a
+    # clean verdict on the checked IP, so the note has to say which of the two it is.
     monkeypatch.setattr(ipcheck, "_get_json",
                         lambda url, opener: {"status": "success", "result": "-5"})
     out = ipcheck.lookup_getipintel("1.2.3.4", "me@example.com", None)
-    assert "getipintel_score" not in out and out["notes"][0].startswith("getIPIntel error")
+    assert "getipintel_score" not in out
+    assert "over quota" in out["notes"][0]
+    assert "this IP wasn't checked" in out["notes"][0]
+
+
+def test_getipintel_never_echoes_the_contact_address_back_to_the_caller(monkeypatch):
+    # MEASURED 2026-08-05: getIPIntel echoes `contact` in EVERY response, success and error alike. On the
+    # hosted deploy that address is a server-side env var and the report is rendered in a visitor's browser.
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener: {
+        "status": "success", "result": "0.5", "queryIP": "1.2.3.4",
+        "contact": "secret@ops.example", "BadIP": 0, "Country": "US"})
+    out = ipcheck.lookup_getipintel("1.2.3.4", "secret@ops.example", None)
+    assert "secret@ops.example" not in json.dumps(out)
+    assert out["getipintel_raw"]["Country"] == "US"      # ...while still carrying the real detail
+
+
+def test_getipintel_scrubs_the_contact_out_of_a_rejection_message(monkeypatch):
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener: {
+        "status": "error", "message": "the address secret@ops.example is not valid",
+        "contact": "secret@ops.example"})
+    out = ipcheck.lookup_getipintel("1.2.3.4", "secret@ops.example", None)
+    assert "secret@ops.example" not in json.dumps(out)
+
+
+def test_premium_placeholders_never_reach_the_detail_card(monkeypatch):
+    # Two shapes, both measured live on the free plan: the string "Premium required." and abuse_events,
+    # a LIST whose one element is "Enterprise plan required…". A str.startswith check misses the list.
+    assert ipcheck._premium("Premium required.") is True
+    assert ipcheck._premium(["Enterprise plan required to view abuse events"]) is True
+    assert ipcheck._premium("Google") is False
+    assert ipcheck._premium([]) is False                  # an empty list is a real (empty) answer
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener, headers=None: {
+        "success": True, "message": "Success", "request_id": "abc", "fraud_score": 0,
+        "ISP": "Google", "connection_type": "Premium required.",
+        "abuse_events": ["Enterprise plan required to view abuse events"]})
+    out = ipcheck.lookup_ipqs("8.8.8.8", "SECRETKEY", None)
+    assert set(out["ipqs_raw"]) == {"fraud_score", "ISP"}
+
+
+def test_ipqs_raw_never_carries_the_api_key(monkeypatch):
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener, headers=None: {
+        "success": True, "fraud_score": 10, "echoed": "lookup for key SECRETKEY ok"})
+    out = ipcheck.lookup_ipqs("8.8.8.8", "SECRETKEY", None)
+    assert "SECRETKEY" not in json.dumps(out)
 
 
 def test_verdict_getipintel_badip_or_hosting_verdict_is_dirty():
@@ -640,7 +686,8 @@ def test_check_gives_up_with_a_note_when_the_exit_ip_cant_be_found(monkeypatch):
     monkeypatch.setattr(ipcheck, "dnsbl_check", fake_dnsbl)
     rep = ipcheck.check()
     assert not rep.get("ip")
-    assert any("Exit-IP lookup failed" in n for n in rep["notes"])
+    # "Source: what happened" — the UI splits on the colon to render it as a label→value row.
+    assert any(n.startswith("Exit IP: ") and "lookup failed" in n for n in rep["notes"])
     assert called["dnsbl"] is False                  # bailed before spending a blacklist lookup
 
 
@@ -650,3 +697,100 @@ def test_main_exit_code_matches_the_verdict(monkeypatch):
         monkeypatch.setattr(ipcheck, "check",
                             lambda *a, _v=verdict_word, **k: {"verdict": _v, "notes": []})
         assert ipcheck.main(["--ip", "1.2.3.4", "--json"]) == code
+
+
+# ---- the web UI, and the generated Vercel copy of it ----------------------------------------
+
+WEBAPP = Path(__file__).resolve().parents[1] / "webapp" / "index.html"
+
+
+def _script(html: str) -> str:
+    m = re.search(r"<script>(.*)</script>", html, re.S)
+    assert m, "no <script> block"
+    return m.group(1)
+
+
+def _ids_referenced(script: str) -> set[str]:
+    return set(re.findall(r"\$\('#([\w-]+)'\)", script))
+
+
+def _ids_defined(html: str) -> set[str]:
+    return set(re.findall(r"\bid=(?:\"|')?([\w-]+)", html))
+
+
+def test_the_page_never_selects_an_element_it_does_not_define():
+    # The bug this closes: webapp/build.py kept injecting `$('#gii').value=...` after the getIPIntel
+    # email field had been deleted from PAGE. `$('#gii')` is null, the assignment throws inside a
+    # top-level IIFE, and the WHOLE script aborts — the page still renders, every button is dead.
+    missing = _ids_referenced(_script(ipcheck.PAGE)) - _ids_defined(ipcheck.PAGE)
+    assert not missing, f"PAGE selects ids it never defines: {sorted(missing)}"
+
+
+def test_the_generated_vercel_page_is_in_sync_and_self_consistent():
+    # webapp/index.html is GENERATED from PAGE by webapp/build.py. Regenerating is a manual step, so
+    # this asserts the checked-in copy matches what build.py would produce today — and that build.py's
+    # rewrites didn't truncate. A non-greedy regex once stopped at a `});` INSIDE the config block and
+    # left orphan lines: a JavaScript SyntaxError that killed every handler on the deployed page.
+    if not WEBAPP.exists():
+        return
+    html = WEBAPP.read_text("utf-8")
+    script = _script(html)
+    missing = _ids_referenced(script) - _ids_defined(html)
+    assert not missing, f"generated page selects ids it never defines: {sorted(missing)} — re-run webapp/build.py"
+    assert script.count("boot();") == 1, "duplicated boot() — build.py's config rewrite truncated"
+    assert "const API='/api/check';" in script, "generated page must POST to the serverless function"
+    assert "fetch('/config')" not in script, "generated page must not call the local server's /config"
+    assert "fetch('/api/config')" in script, "generated page must ask which shared keys the deploy has"
+
+
+def test_the_page_never_calls_itself_on_open():
+    # Opening the page must PREFILL the visitor's IP and stop there. An auto-run spends an API quota
+    # and a getIPIntel rate-limit slot nobody asked for, on every page load and every refresh.
+    for name, script in (("PAGE", _script(ipcheck.PAGE)),
+                         ("index.html", _script(WEBAPP.read_text("utf-8")) if WEBAPP.exists() else "")):
+        assert "$('#go').click()" not in script, f"{name} auto-runs the check on open"
+
+
+def test_no_surface_calls_a_low_getipintel_score_residential():
+    # A low getIPIntel score means it saw NO proxy evidence — not that it proved a real ISP line.
+    # connection_class refuses to guess "residential" from a name heuristic; the wording must not either.
+    assert ipcheck.getipintel_band(0.10) == "no proxy signal"
+    assert ipcheck.getipintel_band(0.70) == "mixed signals"
+    assert ipcheck.getipintel_band(0.95) == "likely proxy"
+    assert ipcheck.getipintel_band(1.0) == "proxy/hosting exit"
+    for blob in (ipcheck.PAGE, WEBAPP.read_text("utf-8") if WEBAPP.exists() else ""):
+        assert "residential-ish" not in blob
+
+
+def test_getipintel_rotates_to_the_next_contact_when_one_is_over_quota(monkeypatch):
+    # getIPIntel meters per contact AND per connecting IP (15/min, 500/day). A -5/-6 refusal is the one
+    # another address can get past, so several contacts may be configured and are tried in order.
+    seen = []
+
+    def fake(url, opener):
+        c = url.split("contact=")[1].split("&")[0]
+        seen.append(c)
+        return {"status": "success", "result": "-5"} if c == "first@x.io" \
+            else {"status": "success", "result": "0.42", "queryIP": "1.2.3.4"}
+
+    monkeypatch.setattr(ipcheck, "_get_json", fake)
+    out = ipcheck.lookup_getipintel("1.2.3.4", "first@x.io, second@x.io", None)
+    assert seen == ["first@x.io", "second@x.io"]
+    assert out["getipintel_score"] == 0.42
+    assert "_retry" not in out                      # internal control flag, never part of the report
+
+
+def test_getipintel_does_not_burn_a_second_contact_on_a_query_level_error(monkeypatch):
+    # -3 is "that address is unroutable" — a verdict about the QUERY. Rotating would spend the next
+    # contact's quota to be told the same thing.
+    seen = []
+
+    def fake(url, opener):
+        seen.append(url)
+        return {"status": "success", "result": "-3"}
+
+    monkeypatch.setattr(ipcheck, "_get_json", fake)
+    out = ipcheck.lookup_getipintel("10.0.0.1", "first@x.io second@x.io", None)
+    assert len(seen) == 1
+    assert "unroutable" in out["notes"][0]
+    assert "_retry" not in out
