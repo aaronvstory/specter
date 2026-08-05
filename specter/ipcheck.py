@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import struct
 import sys
@@ -58,6 +59,15 @@ DNSBL_ZONES = [
     ("GBUdb", "truncate.gbudb.net"),
     ("InterServer", "rbl.interserver.net"),
     ("s5h", "all.s5h.net"),
+    # Added 2026-08-05 to close a coverage gap (an IP that reads 1 here showed 6 on iper.one). Each verified
+    # live + keyless (lists 127.0.0.2, clean on 8.8.8.8). The first three are per-IP abuse lists; UCEPROTECT
+    # L2/L3 are netblock/ASN listings (a /24 or whole ASN with spam history) — real signal that an IP sits in
+    # a burned network, but broad, so they're POLICY (shown, not folded into the per-IP abuse verdict).
+    ("0SPAM", "bl.0spam.org"),
+    ("SpamEatingMonkey", "bl.spameatingmonkey.net"),
+    ("Backscatterer", "ips.backscatterer.org"),
+    ("UCEPROTECT-L2", "dnsbl-2.uceprotect.net"),
+    ("UCEPROTECT-L3", "dnsbl-3.uceprotect.net"),
 ]
 
 # A DNSBL answers in 127.0.0.0/8 and the LAST OCTET says why. Most of them mean abuse, but a few
@@ -77,6 +87,11 @@ POLICY_CODES = {
         11: "PBL, Spamhaus listed the range",
     },
     "all.spamrats.com": {36: "dynamic reverse DNS", 37: "no reverse DNS"},
+    # UCEPROTECT L2/L3 list a whole /24 or ASN when someone in it spams — a netblock characteristic, not
+    # per-IP abuse (a clean IP inherits the listing from a noisy neighbour). Their listing code is 127.0.0.2,
+    # so it's mapped here to keep it OUT of the per-IP abuse count while still showing WHY.
+    "dnsbl-2.uceprotect.net": {2: "/24 netblock listed, a neighbour spammed"},
+    "dnsbl-3.uceprotect.net": {2: "ASN listed, spam elsewhere in the network"},
 }
 
 # IPQualityScore's own scoring strictness, sent on every lookup. MEASURED on 23.159.216.252 (a
@@ -170,45 +185,90 @@ def policy_label(name: str, zone: str, addrs: list[str]) -> str:
     return f"{name} ({'; '.join(why)})" if why else name
 
 
+# Hosting/datacenter fingerprints in the ISP / org / reverse-DNS host. Whether an exit is a datacenter or a
+# real residential/mobile line is the single strongest signal for whether a proxy survives a strict app's
+# checks — real users don't originate from AWS/OVH, so those exits draw the most friction. It's free to read
+# from the ISP/org/host names ipwho.is + IPQS already return (IPQS's own connection_type is premium-gated).
+# ponytail: name-based heuristic with a known ceiling — it catches the major hosts by name, not every hosting
+# ASN. Upgrade path if it matters: a datacenter-ASN dataset. Unknown names stay unclassified, never guessed.
+_DATACENTER_RE = re.compile(
+    r"\b(amazon|aws|ec2|google\s+cloud|gcp|azure|digitalocean|linode|akamai|vultr|choopa|ovh|hetzner|"
+    r"contabo|leaseweb|m247|datacamp|hostwinds|scaleway|oracle\s+cloud|alibaba|tencent|quadranet|psychz|"
+    r"nforce|serverius|frantech|buyvm|colocrossing|hosting|datacenter|data\s?center|colocation|colo|"
+    r"dedicated\s+server|virtual\s+server|cloud\s+server)\b", re.I)
+
+
+def connection_class(rep: dict) -> str | None:
+    """"mobile" / "datacenter" / None from the ISP/org/host names (IPQS's connection_type is premium-gated).
+    None = couldn't tell — deliberately not guessed "residential", since "not obviously a datacenter" is all a
+    name heuristic can honestly claim."""
+    if rep.get("mobile"):
+        return "mobile"
+    blob = " ".join(str(rep.get(k) or "") for k in ("isp", "organization", "host")).strip()
+    if blob and _DATACENTER_RE.search(blob):
+        return "datacenter"
+    return None
+
+
+def is_datacenter(rep: dict) -> bool:
+    return connection_class(rep) == "datacenter"
+
+
 def flags(rep: dict) -> list[str]:
     """The IPQS verdicts that are true, as display labels."""
     return [label for key, label in IPQS_FLAGS if rep.get(key)]
 
 
 def verdict(rep: dict) -> tuple[str, str]:
-    """(level, one-line reason) from the collected signals. level is clean / suspect / dirty /
-    unknown. Thresholds follow IPQualityScore's own bands (75+ suspicious, 85+ high risk)."""
-    fraud = rep.get("fraud_score")
-    abuse = rep.get("abuse_confidence")
+    """(level, one-line reason) from the collected signals. level is clean / suspect / dirty / unknown.
+
+    The verdict answers "how much friction will this exit draw at a strict app", not "is this a mail spammer".
+    Two facts shape it: (1) a DATACENTER/hosting exit is the strongest negative — strict apps expect real users,
+    who don't originate from AWS/OVH; (2) IPQS's fraud_score is NOT the decider — it scores almost any proxy/VPN
+    75-100 because "is this a proxy?" dominates it, and vetting proxies is the whole point, so the bare proxy
+    flag is EXPECTED, not damning. What actually separates a usable residential exit from a burned one is
+    datacenter-vs-residential plus INDEPENDENT abuse evidence (blacklists, AbuseIPDB, IPQS's ABUSE sub-flags —
+    not the proxy flag). So a clean residential exit reads CLEAN even at fraud_score 100; the proxy flag and the
+    score are shown as their own signals, never folded into the verdict."""
     hits = rep.get("blacklists") or []
+    abuse = rep.get("abuse_confidence")
+    fraud = rep.get("fraud_score")
+    dc = is_datacenter(rep)
+    # IPQS ABUSE history — distinct from the mere proxy/vpn detection, which is expected on every proxy.
+    ipqs_abuse = bool(rep.get("recent_abuse") or rep.get("frequent_abuser")
+                      or rep.get("high_risk_attacks") or rep.get("bot_status"))
     why = []
-    if fraud is not None and fraud >= 85:
-        why.append(f"fraud score {fraud}")
-    if len(hits) >= 3:
+    # DIRTY (high friction): a datacenter exit, or corroborated abuse — two blacklists agreeing, a heavy
+    # AbuseIPDB score, or IPQS's own abuse flags. A single stray listing isn't enough to condemn on its own.
+    if dc:
+        why.append("datacenter/hosting IP")
+    if len(hits) >= 2:
         why.append(f"{len(hits)} blacklists")
     if abuse is not None and abuse >= 50:
         why.append(f"{abuse}% abuse confidence")
-    if rep.get("frequent_abuser") or rep.get("high_risk_attacks") or rep.get("bot_status"):
-        why.append("flagged for abuse by IPQS")
+    if ipqs_abuse:
+        why.append("abuse history")
     if why:
-        return "dirty", "Expect login friction — " + ", ".join(why)
+        return "dirty", "High friction — " + ", ".join(why)
 
-    if fraud is not None and fraud >= 60:
-        why.append(f"fraud score {fraud}")
-    if hits:
-        why.append(f"{len(hits)} blacklist" + ("s" if len(hits) > 1 else ""))
-    if abuse is not None and abuse >= 10:
+    # SUSPECT: a single weaker signal worth knowing about.
+    if len(hits) == 1:
+        why.append("1 blacklist")
+    if abuse is not None and 10 <= abuse < 50:
         why.append(f"{abuse}% abuse confidence")
-    if rep.get("recent_abuse"):
-        why.append("recent abuse reported")
     if rep.get("abuse_velocity") in ("medium", "high"):
         why.append(f"{rep['abuse_velocity']} abuse velocity")
     if why:
-        return "suspect", "Usable but marked — " + ", ".join(why)
+        return "suspect", "Some risk — " + ", ".join(why)
 
     if fraud is None and abuse is None and not rep.get("dnsbl_usable"):
         return "unknown", "No source answered — add an API key, or check the network"
-    return "clean", "No fraud, abuse, or blacklist signal on this IP"
+
+    # CLEAN: not a datacenter, no abuse or blacklist history. Note when IPQS still flags it as a proxy — some
+    # checkers reject ALL detected proxies, so the user should know it's detectable even though it's unburned.
+    if rep.get("proxy") or rep.get("vpn") or rep.get("tor") or (fraud is not None and fraud >= 60):
+        return "clean", "Residential-looking, no abuse history — though it's detectable as a proxy/VPN"
+    return "clean", "Residential-looking, no proxy flag, no abuse or blacklist history"
 
 
 def fraud_band(score: int) -> str:
@@ -224,6 +284,10 @@ def format_report(rep: dict) -> str:
                        ("timezone", "Time zone")):
         if rep.get(key):
             rows.append((label, str(rep[key])))
+    # Exit type is the strongest usability signal — a datacenter exit draws friction real ISPs don't.
+    if rep.get("connection_class"):
+        note = " · real ISPs pass more easily" if rep["connection_class"] == "datacenter" else ""
+        rows.append(("Exit type", rep["connection_class"] + note))
 
     fraud = rep.get("fraud_score")
     if fraud is not None:
@@ -661,6 +725,9 @@ def check(proxy: str | None = None, ip: str | None = None,
     # about that IP either way. (On-device it must go through the tunnel, because there the lookup
     # is also how the IP itself is learned.)
     rep.update(dnsbl_check(rep["ip"]))
+    cc = connection_class(rep)
+    if cc:
+        rep["connection_class"] = cc     # "datacenter" / "mobile" — the strongest usability signal
     rep["verdict"], rep["verdict_reason"] = verdict(rep)
     rep["flags"] = flags(rep)
     return rep
@@ -875,6 +942,10 @@ function render(r){
   // Signal tiles.
   const pol=(r.policy_lists||[]).length, hits=(r.blacklists||[]).length;
   let tiles='';
+  // Exit type leads — a datacenter/hosting exit is the strongest usability signal (real ISPs pass more easily).
+  if(r.connection_class){const dc=r.connection_class==='datacenter';
+    const ct=r.connection_class[0].toUpperCase()+r.connection_class.slice(1);
+    tiles+=`<div class=tile><em>Exit type</em><strong style="font-size:20px;color:var(--${dc?'dirty':'clean'})">${esc(ct)}</strong><small>${dc?'hosting IP — real ISPs pass more easily':'real network line'}</small></div>`;}
   const bl=hits>=3?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
   tiles+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${bl})">${r.dnsbl_usable||hits?hits:'—'}</strong>`+
     `<small>${hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}${pol?` · plus ${pol} policy listing${pol>1?'s':''}`:''}</small></div>`;

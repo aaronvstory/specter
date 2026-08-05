@@ -28,6 +28,15 @@ final class Dnsbl {
             {"GBUdb", "truncate.gbudb.net"},
             {"InterServer", "rbl.interserver.net"},
             {"s5h", "all.s5h.net"},
+            // Added 2026-08-05 to close a coverage gap. Each verified live + keyless. The first three are
+            // per-IP abuse lists; UCEPROTECT L2/L3 are netblock/ASN listings (broad — a /24 or whole ASN with
+            // spam history), classified POLICY so they show but don't inflate the per-IP abuse count. Mirrors
+            // specter/ipcheck.py; keep the two in sync.
+            {"0SPAM", "bl.0spam.org"},
+            {"SpamEatingMonkey", "bl.spameatingmonkey.net"},
+            {"Backscatterer", "ips.backscatterer.org"},
+            {"UCEPROTECT-L2", "dnsbl-2.uceprotect.net"},
+            {"UCEPROTECT-L3", "dnsbl-3.uceprotect.net"},
     };
 
     // ponytail: Spamhaus and CBL refuse queries relayed by large public resolvers (they answer 127.255.255.254),
@@ -94,6 +103,10 @@ final class Dnsbl {
                 : code == 11 ? "PBL, Spamhaus listed the range" : null;
         if ("all.spamrats.com".equals(zone)) return code == 36 ? "dynamic reverse DNS"
                 : code == 37 ? "no reverse DNS" : null;
+        // UCEPROTECT L2/L3 list a whole /24 or ASN when someone in it spams — a netblock characteristic, not
+        // per-IP abuse. Their listing code is 127.0.0.2, mapped here to keep it out of the abuse count.
+        if ("dnsbl-2.uceprotect.net".equals(zone)) return code == 2 ? "/24 netblock listed, a neighbour spammed" : null;
+        if ("dnsbl-3.uceprotect.net".equals(zone)) return code == 2 ? "ASN listed, spam elsewhere in the network" : null;
         return null;
     }
 

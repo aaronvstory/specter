@@ -437,7 +437,7 @@ final class HealthCheck {
         Integer fraudScore;                     // IPQualityScore 0-100 (null = no key / lookup failed)
         Boolean proxy, vpn, tor, recentAbuse;   // IPQualityScore verdicts
         Integer abuseConfidence, abuseReports;  // AbuseIPDB (null = no key / lookup failed)
-        String connectionType, organization, asn, abuseVelocity;   // IPQualityScore context
+        String connectionType, organization, asn, abuseVelocity, isp, host;   // IPQualityScore context
         int dnsblChecked;                       // DNSBL zones that actually answered
         boolean dnsblUsable;                    // the sentinel resolved -> a zero-hit result is trustworthy
         final List<String> blacklists = new ArrayList<>();    // zones listing this IP for ABUSE
@@ -454,6 +454,24 @@ final class HealthCheck {
     static Reputation cachedReputation(String ip) {
         Reputation r = repCache;
         return (r != null && ip != null && ip.equals(r.ip)) ? r : null;
+    }
+
+    // Hosting/datacenter fingerprints in the ISP/org/host names — the strongest signal for whether a proxy
+    // survives a strict app (real users don't originate from AWS/OVH). IPQS's own connection_type is
+    // premium-gated, so this reads the free ISP/org/host names instead. Mirrors _DATACENTER_RE in
+    // specter/ipcheck.py; keep the two in sync (pinned by tests/test_ipcheck.py).
+    private static final java.util.regex.Pattern DATACENTER = java.util.regex.Pattern.compile(
+            "\\b(amazon|aws|ec2|google\\s+cloud|gcp|azure|digitalocean|linode|akamai|vultr|choopa|ovh|hetzner|"
+            + "contabo|leaseweb|m247|datacamp|hostwinds|scaleway|oracle\\s+cloud|alibaba|tencent|quadranet|psychz|"
+            + "nforce|serverius|frantech|buyvm|colocrossing|hosting|datacenter|data\\s?center|colocation|colo|"
+            + "dedicated\\s+server|virtual\\s+server|cloud\\s+server)\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** True iff the ISP/org/host names look like a datacenter/hosting provider — best-effort, name-based. */
+    static boolean isDatacenter(String... parts) {
+        StringBuilder b = new StringBuilder();
+        for (String p : parts) if (p != null) b.append(p).append(' ');
+        return b.length() > 0 && DATACENTER.matcher(b).find();
     }
 
     /** Blocking exit-IP reputation lookup. When {@code net} is a VPN tunnel the request is PINNED to it, so the
@@ -487,6 +505,8 @@ final class HealthCheck {
                 r.connectionType = paidField(o.optString("connection_type"));
                 r.abuseVelocity = paidField(o.optString("abuse_velocity"));
                 r.organization = paidField(o.optString("organization"));
+                r.isp = paidField(o.optString("ISP"));      // not premium-gated — used for datacenter detection
+                r.host = paidField(o.optString("host"));
                 if (o.optInt("ASN", 0) > 0) r.asn = "AS" + o.optInt("ASN");
             }
         }

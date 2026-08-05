@@ -2542,11 +2542,20 @@ public class MainActivity extends Activity {
 
         if (rep != null) {
             if (rep.fraudScore != null) {
-                // IPQualityScore's own bands: 75+ suspicious, 85+ high risk. Below 60 is unremarkable.
-                int c = rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE;
-                String word = rep.fraudScore >= 85 ? "high risk" : rep.fraudScore >= 60 ? "suspicious" : "clean";
-                // Naming the strictness is what lets this reconcile with another checker's number for the
-                // same IP — the same address scores 20 at strictness 0 and 100 at 1.
+                // IPQS scores almost any proxy/VPN 75-100 because "it's a proxy" dominates the number — and
+                // vetting proxies is the point, so a high score alone is EXPECTED, not "high risk". Only IPQS's
+                // ABUSE flag (recent_abuse/bot/frequent_abuser, folded into rep.recentAbuse) makes it red; a bare
+                // proxy detection reads amber "proxy/VPN detected — no abuse history"; a truly low score is clean.
+                boolean ipqsAbuse = Boolean.TRUE.equals(rep.recentAbuse);
+                boolean proxyFlag = Boolean.TRUE.equals(rep.proxy) || Boolean.TRUE.equals(rep.vpn)
+                        || Boolean.TRUE.equals(rep.tor);
+                int c; String word;
+                if (ipqsAbuse) { c = Theme.RED; word = "abuse history"; }
+                else if (proxyFlag) { c = Theme.AMBER; word = "proxy/VPN detected · no abuse history"; }
+                else if (rep.fraudScore >= 85) { c = Theme.RED; word = "high risk"; }
+                else if (rep.fraudScore >= 60) { c = Theme.AMBER; word = "elevated"; }
+                else { c = Theme.SAGE; word = "clean"; }
+                // Naming the strictness is what lets this reconcile with another checker's number for the same IP.
                 box.addView(networkMetaRow("FRAUD RISK", rep.fraudScore + " · " + word
                         + " · IPQS strictness " + HealthCheck.IPQS_STRICTNESS, c));
             }
@@ -2559,6 +2568,12 @@ public class MainActivity extends Activity {
                 box.addView(flags.isEmpty()
                         ? networkMetaRow("FLAGGED AS", "Not flagged as proxy or VPN", Theme.SAGE)
                         : networkMetaRow("FLAGGED AS", android.text.TextUtils.join(" · ", flags), Theme.AMBER));
+            }
+            // Exit type is the strongest usability signal — a datacenter/hosting exit draws friction a real
+            // ISP line doesn't. Detected from the ISP/org/host names (IPQS's connection_type is premium-gated).
+            if (HealthCheck.isDatacenter(rep.organization, rep.isp, rep.host)) {
+                box.addView(networkMetaRow("EXIT TYPE",
+                        "Datacenter/hosting · real ISPs pass more easily", Theme.RED));
             }
             if (rep.connectionType != null || rep.asn != null) {
                 String conn = rep.connectionType != null ? rep.connectionType : "";
