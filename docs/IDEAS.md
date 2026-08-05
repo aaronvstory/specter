@@ -1018,3 +1018,44 @@ honesty pass on the status page. codex "trustworthy go/no-go" items still OPEN (
   no manual launch.
 - **Broad app-polish pass** - status: `idea`. Whole-app UX sweep (consistent copy, no dead controls, clear
   states, fast), building on the B1–B4 work.
+
+## 2026-08-05 - Design: per-target hook READINESS without launching (steer #18)
+
+The user's annoyance: the Status page only shows a target GREEN after you LAUNCH it (the per-app runtime
+heartbeat), so it keeps saying "run the app to see if it's hooked." We can honestly show a target is
+*configured to hook on next launch* WITHOUT launching it — distinct from *proven hooked* — from signals
+already on hand. Grounded in `HealthCheck.java` (the per-target attestation, ~L114-156) and its helpers.
+
+**The three READINESS signals (all read-only, no launch):**
+1. `profileApplied(sh, pkg)` — already exists (`HealthCheck.java:658`): the live profile JSON is present at
+   `/data/local/tmp/specter/<pkg>.json`. The Zygisk layer GATES on this file (memory
+   `zygisk-gates-on-profile-file-not-scope`), so no file ⇒ won't hook natively.
+2. **In Specter's LSPosed scope** — query the scope DB for `(Specter mid, pkg)`. The DB-open + Specter-mid
+   sub-select already exist here (the `queryLong(... module_pkg_name='com.specter')` path ~L640). No scope
+   row ⇒ the Java layer won't be injected into that app.
+3. **Module ran THIS boot** — the boot-wall heartbeat check already computed for the device-level attestation
+   (a module-version heartbeat within `[bootWall-10s, now]`). This is device-wide, not per-app.
+
+**The honest state model (the ONLY safe way — a false-GREEN was already a shipped bug, see
+`status-page-runtime-attestation` + the L132 "must NOT claim GREEN" comment):**
+- **PROVEN (green/OK)** — UNCHANGED: the app's OWN current-boot heartbeat exists (hooks actually fired). This
+  is the only state allowed to be green. Never widen it.
+- **READY (amber/WARN, NEW)** — no current-boot heartbeat, BUT `profileApplied ∧ inScope ∧ moduleLiveThisBoot`.
+  Detail: "Ready — profile applied, in scope, module live. Hooks arm on next launch (not yet verified this
+  boot)." This REPLACES the bare "relaunch app to see" for the configured case: it tells the user setup is
+  correct so they don't have to launch just to check config.
+- **NOT READY (red/ERROR, NEW)** — a signal is missing; say WHICH and offer the Fix: not in scope →
+  "Add to Specter's scope" (LspScope.addTargets + reboot); no profile → "Apply an identity first"; module
+  not live this boot → the existing reboot/enable banner.
+
+**Why it's honest:** READY is amber and its text explicitly says "not yet verified this boot" — it claims
+CONFIGURATION, never that hooks fired. Only a real per-app heartbeat is ever green. The distinction the memory
+protects is preserved.
+
+**Build notes:** the readiness DECISION is a pure function `readiness(hasCurrentBootHb, profileApplied,
+inScope, moduleLiveThisBoot) -> {PROVEN|READY|NOT_READY, reason}` — put it in HealthCheck as a static and
+JVM-test it (all 16 input combos; the key invariant: PROVEN requires the heartbeat, READY never green). The
+signal-gathering (scope query per target) is compile-only. **On-device verify BEFORE trusting**: apply Cash,
+DON'T launch it, confirm the row reads READY (amber) not GREEN; launch it, confirm it flips to PROVEN; remove
+it from scope, confirm NOT READY with the right Fix. This is the false-GREEN-sensitive part that must be seen
+on a real device, which is why it's a design here, not a blind change.
