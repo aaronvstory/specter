@@ -60,9 +60,12 @@ Pulled `modules_config.db` read-only from both phones and queried it locally. Fi
   per memory `geergit-poisons-specter-android-id`). Specter targets Cash / Dasher / DevInfo; GeerGit (P4
   only, mid 101) targets the FPJS demo + `com.myapp.go2_app`. No shared target app, so GeerGit can't pin a
   constant android_id on any Specter target.
-- **Specter is scoped to `android` and `system`** (the OS framework) on BOTH phones. Harmless — the native
-  `is_core_os` guard refuses to spoof the framework — but it's scope pollution; worth removing those two
-  entries from Specter's scope in the LSPosed UI when convenient (do NOT touch GeerGit's mid 101).
+- **Specter is scoped to `android` and `system`** (the OS framework) on BOTH phones — this is INTENTIONAL,
+  do NOT remove it. (Correcting an earlier draft of this note that wrongly called it "pollution": those two
+  dot-less framework keys are the **app-hiding gate**, added on purpose by `LspScope.isFrameworkKey` / the
+  "Set up everything" flow so the raw-binder root/module hiding can hook the framework, not just user apps.
+  The `is_core_os` guard only blocks *spoofing the framework's device identity*; it does NOT mean the
+  framework shouldn't be *scoped*. Removing `android`/`system` from Specter's scope would break app-hiding.)
 - **P4 has orphan scope rows** for modules NOT in the `modules` table: mid 7 → {Cash, geergit, doordash},
   mid 20 → {settings}. These are leftover rows from uninstalled modules — LSPosed ignores a scope row with
   no enabled module, so they're inert DB cruft, not active hooks on Cash. Safe to ignore (or clear if you
