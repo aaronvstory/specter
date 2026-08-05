@@ -2856,9 +2856,11 @@ public class MainActivity extends Activity {
         // Shown ADJACENT to the ISP score on purpose: they are near-identical on every IP measured, and
         // seeing that is what tells a reader the score is an ASN prior, not a judgement about this address.
         // Never SAGE — "low" came back for a Tor exit AND for 127.0.0.1.
+        // scamRisk is the "did it run" sentinel; the SCORES are separately optional, so a response with a
+        // band and no number would render the literal text "null · low". Guarded the same way the tile is.
         d.addView(networkMetaRow("SCAMALYTICS", rep.scamRisk != null
-                        ? rep.scamScore + " · " + rep.scamRisk
-                        + (rep.scamIspRisk != null ? "  ·  ISP " + rep.scamIspScore + " " + rep.scamIspRisk : "")
+                        ? num(rep.scamScore) + " · " + rep.scamRisk
+                        + (rep.scamIspRisk != null ? "  ·  ISP " + num(rep.scamIspScore) + " " + rep.scamIspRisk : "")
                         + "\nshown, not scored — it tracks the ISP score, not this IP"
                         : "no Scamalytics credentials — not measured",
                 rep.scamRisk == null ? Theme.DIM
@@ -2901,11 +2903,11 @@ public class MainActivity extends Activity {
         }
         if (rep.scamRisk != null) {
             d.addView(detailHead("SCAMALYTICS", rep.scamRisk));
-            d.addView(networkMetaRow("SCORE", rep.scamScore + " · " + rep.scamRisk,
+            d.addView(networkMetaRow("SCORE", num(rep.scamScore) + " · " + rep.scamRisk,
                     "very high".equals(rep.scamRisk) ? Theme.RED
                             : "high".equals(rep.scamRisk) ? Theme.AMBER : Theme.INK));
             addIfSet(d, "ISP RISK", rep.scamIspRisk == null ? null
-                    : rep.scamIspScore + " · " + rep.scamIspRisk);
+                    : num(rep.scamIspScore) + " · " + rep.scamIspRisk);
             // An EMPTY ip2proxy record is "no record", not "clean" — say which, or the absence reassures.
             d.addView(networkMetaRow("PROXY TYPE", rep.scamProxyType != null
                             ? scamProxyTypeName(rep.scamProxyType) + " (" + rep.scamProxyType + ")"
@@ -2957,6 +2959,9 @@ public class MainActivity extends Activity {
                 names.size() + " · " + android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
     }
 
+
+    /** An optional number for display: an em dash rather than the literal string "null". */
+    private static String num(Integer v) { return v == null ? "—" : String.valueOf(v); }
 
     /** ip2proxy's code spelled out. The raw code stays beside it — the coarse "datacenter" bucket the
      *  verdict uses must never hide the specific claim that produced it. */

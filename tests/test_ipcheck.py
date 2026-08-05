@@ -1350,8 +1350,15 @@ def test_the_generated_page_runs_without_a_top_level_error():
     assert "data-specter-ready" in r.stdout, (
         "the page's script did not run to completion — a top-level runtime error killed it, so every "
         "control on the page is dead. Open it in a browser and read the console.")
+
+
+def test_the_generated_page_is_in_sync_with_PAGE():
     """A PAGE edit that never had build.py re-run ships an index.html missing it — silently, because both
-    files look fine on their own."""
+    files look fine on their own.
+
+    Deliberately NOT folded into the browser test above: that one returns early when no Chrome is
+    installed, and a staleness check gated on a browser being present is a staleness check that does not
+    run on the machine most likely to be stale."""
     root = Path(__file__).resolve().parents[1]
     html = (root / "webapp" / "index.html").read_text("utf-8")
     # The rewritten bits differ by design; everything else must match line-for-line.

@@ -7,6 +7,10 @@ import re
 
 from specter.ipcheck import PAGE
 
+# How many line icons PAGE is supposed to define. Pinned here so a parser that silently drops one fails
+# loudly instead of reporting "all icons fine" about a subset.
+EXPECTED_ICONS = 6
+
 
 def inline_icons() -> dict[str, str]:
     """{name: <svg…>} for every entry in PAGE's ICON table, with SVG()'s wrapper already applied.
@@ -27,14 +31,26 @@ def inline_icons() -> dict[str, str]:
     # the terminator-based version silently dropped the last icon — which happened to be `ban`, the very
     # one that rendered nothing. The parsed count is checked against the declared count so a parser that
     # quietly skips an icon fails here instead of reporting "all icons fine" about a subset.
-    body = block.group(1)
-    starts = [m for m in re.finditer(r"(\w+):\s*SVG\(", body)]
+    # `//` comment lines are stripped FIRST. An entry's slice runs to the start of the next entry, so it
+    # swallows any comment sitting between them — and a single apostrophe in one ("the vendor's own
+    # label") opens a quote that closes at the next apostrophe, appending prose to the PREVIOUS icon's
+    # markup. The checker would then measure a shape the browser never draws and report a clean result
+    # about it, which is precisely the drift this module exists to prevent.
+    body = "\n".join(re.sub(r"^\s*//.*$", "", ln) for ln in block.group(1).split("\n"))
+    starts = list(re.finditer(r"(\w+):\s*SVG\(", body))
     for i, m in enumerate(starts):
         end = starts[i + 1].start() if i + 1 < len(starts) else len(body)
         parts = re.findall(r"'([^']*)'", body[m.end():end])
         assert parts, f"ICON.{m.group(1)} has no string literal"
         out[m.group(1)] = head.replace("\x00", "".join(parts))
     assert len(out) == len(starts), "duplicate icon name in the ICON table"
+    # An EXPECTED count, not `len(starts)` — both sides of that come from the same parse, so it can only
+    # ever catch a duplicate name. If the block regex terminated early, `body` would be truncated, `starts`
+    # would shrink with it, and the equality above would still hold while icons vanished silently. Bump
+    # this deliberately when an icon is added or removed.
+    assert len(out) == EXPECTED_ICONS, (
+        f"parsed {len(out)} icons, expected {EXPECTED_ICONS} — either the ICON table changed (update "
+        f"EXPECTED_ICONS) or this parser is silently dropping entries")
     return out
 
 

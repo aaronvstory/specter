@@ -32,16 +32,18 @@ self.addEventListener('fetch', e => {
   if (url.origin !== self.location.origin) return;      // flag images etc. — let the network handle them
   if (url.pathname.startsWith('/api/')) return;         // never cache a measurement
 
+  // ONLY an ok response is stored, in both branches. fetch() rejects on a network failure but resolves
+  // normally for a 404 or a 500, so caching unconditionally would (a) let one 500 from the origin
+  // overwrite the good offline shell, which then serves that error page every time the user is offline,
+  // and (b) pin a 404 for an icon permanently, since the cache-first branch never revalidates.
+  const keep = (req, res) => { if (res && res.ok) { const copy = res.clone();
+    caches.open(CACHE).then(c => c.put(req, copy)); } return res; };
+
   const isDoc = req.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html');
   if (isDoc) {
-    e.respondWith(fetch(req)
-      .then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return r; })
+    e.respondWith(fetch(req).then(r => keep(req, r))
       .catch(() => caches.match(req).then(r => r || caches.match('/'))));
     return;
   }
-  e.respondWith(caches.match(req).then(r => r || fetch(req).then(net => {
-    const copy = net.clone();
-    caches.open(CACHE).then(c => c.put(req, copy));
-    return net;
-  })));
+  e.respondWith(caches.match(req).then(r => r || fetch(req).then(net => keep(req, net))));
 });
