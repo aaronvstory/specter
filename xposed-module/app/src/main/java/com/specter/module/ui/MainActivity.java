@@ -2850,7 +2850,14 @@ public class MainActivity extends Activity {
             zoneGroup(d, rep, "listed", "LISTED", "abuse reports against this IP", Theme.RED);
             zoneGroup(d, rep, "policy", "POLICY ONLY", "a mail-sending policy listing, not abuse", Theme.BLUE);
             zoneGroup(d, rep, "clean", "CLEAN", "answered, not listed", Theme.SAGE);
-            zoneGroupNoAnswer(d, rep);
+            // "Refused" and "no answer" are DIFFERENT and were previously merged under one misleading
+            // "NO ANSWER" heading. A refusal is a specific, explainable condition (the zone declined this
+            // resolver); silence is an outage or a timeout. Neither is a clean result, and saying which
+            // one happened is the difference between a fixable problem and a mystery.
+            zoneGroup(d, rep, "refused", "REFUSED", "the zone declined this resolver — not a clean result",
+                    Theme.AMBER);
+            zoneGroup(d, rep, "no answer", "NO ANSWER", "no reply before the timeout — not a clean result",
+                    Theme.DIM);
         }
         return d;
     }
@@ -2868,19 +2875,6 @@ public class MainActivity extends Activity {
                 android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
     }
 
-    /** Zones that refused or never replied. Kept separate and never folded into "clean": a zone that didn't
-     *  answer proved nothing, and counting it as clear is how a bad IP reads as a good one. */
-    private void zoneGroupNoAnswer(LinearLayout into, HealthCheck.Reputation rep) {
-        java.util.List<String> names = new java.util.ArrayList<>();
-        for (java.util.Map.Entry<String, String> e : rep.zoneStatus.entrySet()) {
-            String v = e.getValue();
-            if ("refused".equals(v) || "no answer".equals(v)) names.add(e.getKey());
-        }
-        if (names.isEmpty()) return;
-        into.addView(networkMetaRow("NO ANSWER · " + names.size(),
-                android.text.TextUtils.join(", ", names) + "\nrefused or never replied — not a clean result",
-                Theme.DIM));
-    }
 
     private View detailHead(String source, String meta) {
         TextView t = new TextView(this);

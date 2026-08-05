@@ -912,3 +912,22 @@ def test_reverse_v6_builds_the_rfc5782_nibble_name():
     assert len(ipcheck.reverse_v6("2605:59ca::e798").split(".")) == 32
     for bad in (None, "", "1.2.3.4", "not-an-ip", "2001:db8::gg"):
         assert ipcheck.reverse_v6(bad) is None
+
+
+def test_android_uses_a_resolver_that_does_not_lose_or_fake_blocklist_answers():
+    # MEASURED 2026-08-05 on 185.220.101.45 (seven abuse listings via the system resolver), because the
+    # phone showed three zones with no answer:
+    #   Cloudflare -> Spamhaus/CBL return 127.255.255.254 (explicit refusal) and SpamRATS SERVFAILs.
+    #                 Safe — classify() excludes a refusal — but three zones are silently lost.
+    #   Google     -> Spamhaus/CBL return NXDOMAIN, i.e. "not listed" for a listed IP. A FALSE CLEAN.
+    #   dns.sb     -> true records, agreeing with the system resolver on 17 of 17 zones.
+    # DoH is mandatory on Android (proxy apps hijack DNS with a fake-IP pool), so the resolver CHOICE is
+    # the only lever — and picking Google here would silently invert the tool's answer.
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    assert 'DOH = "https://doh.sb/dns-query' in java
+    assert "dns.google" not in java and "https://dns.google" not in java
+    # A fallback must exist so one provider's outage can't drop every zone...
+    assert 'DOH_FALLBACK = "https://cloudflare-dns.com' in java
+    # ...and it must be the one that degrades safely, never the one that manufactures a clean result.
+    assert "google" not in java[java.index("DOH_FALLBACK"):java.index("DOH_FALLBACK") + 200].lower()

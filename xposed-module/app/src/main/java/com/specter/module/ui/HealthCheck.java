@@ -430,6 +430,31 @@ final class HealthCheck {
      *  checkers and a reader needs to be able to reconcile that. */
     static final int IPQS_STRICTNESS = 1;
 
+    /** The DNS-over-HTTPS resolver the blocklist lookups go through.
+     *
+     *  <p>NOT Cloudflare, and NOT Google. Spamhaus refuses queries relayed by large public resolvers, and
+     *  the two big ones fail that differently — MEASURED 2026-08-05 on 185.220.101.45, an IP the system
+     *  resolver finds on seven abuse lists:
+     *  <ul>
+     *    <li>Cloudflare answers {@code 127.255.255.254} for Spamhaus and CBL (an explicit refusal, which
+     *        {@link Dnsbl#classify} correctly excludes rather than counting clear) and SERVFAILs SpamRATS.
+     *        Safe, but three zones are silently lost — which is what showed up on the phone as zones with
+     *        no answer.</li>
+     *    <li>Google answers NXDOMAIN for Spamhaus and CBL — indistinguishable from "not listed". That is a
+     *        FALSE CLEAN on a listed IP, and is the reason Google is not the fallback.</li>
+     *    <li>dns.sb returns the true records: Spamhaus {@code 127.0.0.11}, and agrees with the system
+     *        resolver on 17 of 17 zones (Cloudflare managed 14).</li>
+     *  </ul>
+     *
+     *  <p>DoH is mandatory here regardless of resolver: the proxy apps this runs behind hijack DNS with a
+     *  fake-IP pool, so a plain lookup can never see a 127.0.0.x listing code through the tunnel. */
+    static final String DOH = "https://doh.sb/dns-query?type=A&name=";
+
+    /** Fallback resolver, tried only when the primary gives no usable answer at all. Cloudflare loses
+     *  Spamhaus/CBL/SpamRATS but never manufactures a clean result, so it degrades safely — which is the
+     *  only property a fallback needs. Without one, a dns.sb outage would silently drop every zone. */
+    static final String DOH_FALLBACK = "https://cloudflare-dns.com/dns-query?type=A&name=";
+
     /** How the exit IP looks to fraud/abuse data sources. Every field is optional — with no API keys set this
      *  still carries the keyless DNSBL blacklist count. */
     static final class Reputation {
@@ -712,8 +737,14 @@ final class HealthCheck {
      *  {@code UnknownHostException} collapses: {@code Status 3} is a definitive "not listed", anything else is
      *  "no answer". Still pinned to {@code net} — the request must leave through the tunnel like every other. */
     private static List<String> resolve(android.net.Network net, String host) {
-        org.json.JSONObject o = getJson(net,
-                "https://cloudflare-dns.com/dns-query?type=A&name=" + enc(host),
+        List<String> r = resolveVia(net, DOH, host);
+        // Only when the primary said NOTHING usable. An answer — including an explicit refusal record —
+        // is a result, and re-asking a second resolver for it would just spend another round trip.
+        return r != null ? r : resolveVia(net, DOH_FALLBACK, host);
+    }
+
+    private static List<String> resolveVia(android.net.Network net, String doh, String host) {
+        org.json.JSONObject o = getJson(net, doh + enc(host),
                 new String[]{"Accept", "application/dns-json"});
         if (o == null) return null;
         int status = o.optInt("Status", -1);
