@@ -842,3 +842,73 @@ def test_ipqs_scrubs_the_key_out_of_a_rejection_message(monkeypatch):
     out = ipcheck.lookup_ipqs("8.8.8.8", "SECRETKEY", None)
     assert "SECRETKEY" not in json.dumps(out)
     assert "Invalid or expired key" in out["notes"][0]     # ...while still saying what went wrong
+
+
+def test_an_ipv6_exit_falls_back_to_ipv4_so_the_blocklists_still_run(monkeypatch):
+    # MEASURED 2026-08-05: every one of the 17 zones answers the 127.0.0.2 test entry and NONE answers the
+    # 2001:db8::2 one — they hold no IPv6 data at all. A dual-stack proxy (Starlink residential, sampled 8x:
+    # 5 IPv4 / 3 IPv6 from one endpoint) can hand back either family, so landing on IPv6 used to mean ZERO
+    # blocklist evidence behind a clean-looking verdict. Ask again over IPv4 instead of giving up.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo",
+                        lambda opener, ip=None: {"ip": "2605:59ca::e798", "isp": "Starlink"})
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    checked = {}
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: checked.setdefault("ip", ip) and {} or
+                        {"blacklists": [], "policy_lists": [], "dnsbl_checked": 17, "dnsbl_usable": True,
+                         "dnsbl_detail": []})
+    rep = ipcheck.check("host:1080")
+    assert checked["ip"] == "153.66.117.15"          # the blocklists ran, on the checkable address
+    assert rep["ip"] == "153.66.117.15"
+    assert rep["exit_ipv6"] == "2605:59ca::e798"     # ...and the v6 exit is still reported, not hidden
+    assert any("dual-stack" in n for n in rep["notes"])
+    assert rep["dnsbl_usable"] is True
+
+
+def test_an_ipv6_only_exit_is_still_checked_against_the_zones_that_have_ipv6_data(monkeypatch):
+    # No IPv4 route: still check, against the four zones that actually hold IPv6 data, and report THAT
+    # denominator — "0 of 4 IPv6 lists" is a real result, "0 of 17" would be a lie.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "2605:59ca::e798"})
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: None)
+    seen = {}
+
+    def fake_dnsbl(ip):
+        seen["ip"] = ip
+        return {"blacklists": [], "policy_lists": [], "dnsbl_checked": 4, "dnsbl_usable": True,
+                "dnsbl_family": "ipv6", "dnsbl_zones_total": 4, "dnsbl_detail": []}
+
+    monkeypatch.setattr(ipcheck, "dnsbl_check", fake_dnsbl)
+    rep = ipcheck.check("host:1080")
+    assert seen["ip"] == "2605:59ca::e798"        # it ran, on the IPv6 address
+    assert rep["dnsbl_family"] == "ipv6" and rep["dnsbl_zones_total"] == 4
+    assert any("IPv6 only" in n for n in rep["notes"])
+
+
+def test_a_verdict_never_claims_a_blocklist_record_it_did_not_obtain():
+    # When another source answered, the verdict may still be clean — but it has to admit the blocklist
+    # half was never obtained rather than claiming a clean blocklist record.
+    level, why = ipcheck.verdict_factors({"fraud_score": 10, "dnsbl_usable": False, "blacklists": []})
+    assert level == "clean"
+    assert "blocklists NOT checked" in why
+    assert not any("no abuse or blacklist history" in w for w in why)
+    # ...and with nothing at all answering, it must read unknown, never clean.
+    assert ipcheck.verdict_factors({"dnsbl_usable": False})[0] == "unknown"
+
+
+def test_the_ipv6_zone_table_is_the_measured_subset_that_actually_holds_ipv6_data():
+    # MEASURED 2026-08-05 against 60 live IPv6 Tor exits: s5h 39 hits, Spamhaus 24, CBL 14, DroneBL 5,
+    # every other zone 0. Querying the rest over IPv6 inflates the denominator and manufactures a clean
+    # sweep from lists that could never have flagged the address.
+    v6 = {n for n, _ in ipcheck.DNSBL_ZONES_V6}
+    assert v6 == {"Spamhaus", "CBL", "s5h", "DroneBL"}
+    assert v6 < {n for n, _ in ipcheck.DNSBL_ZONES}       # a strict subset of the IPv4 table
+
+
+def test_reverse_v6_builds_the_rfc5782_nibble_name():
+    # 32 nibbles, reversed, dot-separated (RFC 5782 s2.4).
+    assert ipcheck.reverse_v6("2001:db8::1") == (
+        "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2")
+    assert len(ipcheck.reverse_v6("2605:59ca::e798").split(".")) == 32
+    for bad in (None, "", "1.2.3.4", "not-an-ip", "2001:db8::gg"):
+        assert ipcheck.reverse_v6(bad) is None

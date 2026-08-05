@@ -147,6 +147,41 @@ IPQS_FLAGS = [
 # ---- pure logic (unit-tested; no network) --------------------------------------------------
 
 
+# The zones that actually hold NATIVE IPv6 data. Only four of the seventeen do — MEASURED 2026-08-05
+# against 60 live IPv6 Tor exit relays: s5h listed 39, Spamhaus 24, CBL 14, DroneBL 5, and every other
+# zone listed ZERO of them. Querying the other thirteen over IPv6 spends thirteen lookups to learn
+# nothing AND inflates the denominator, turning "0 of 17" into a false all-clear on an address no list
+# could ever have flagged.
+#
+# Do NOT probe these with `::ffff:7f00:2` to decide support: rbldnsd's RECOGNIZE_IP4IN6 rewrites a
+# mapped-IPv4 query into the plain IPv4 lookup, so Spamhaus/CBL/DroneBL answer it whether or not they
+# hold any IPv6 data at all. (That aliasing is also why an earlier probe with `2001:db8::2` — a
+# documentation range nothing lists — wrongly read as "no zone supports IPv6".)
+#
+# Listing granularity differs and the verdict is weaker than the IPv4 one: Spamhaus, CBL and s5h list
+# /64 PREFIXES, so a clean address can sit in a listed /64 and a listed address may never have sent
+# anything itself. DroneBL lists exact /128s.
+DNSBL_ZONES_V6 = [
+    ("Spamhaus", "zen.spamhaus.org"),
+    ("CBL", "cbl.abuseat.org"),
+    ("s5h", "all.s5h.net"),
+    ("DroneBL", "dnsbl.dronebl.org"),
+]
+
+
+def reverse_v6(ip: str | None) -> str | None:
+    """``2001:db8::1`` -> the 32-nibble reversed query name RFC 5782 §2.4 requires. None unless it parses
+    as IPv6. Query the full /128 even though zen/CBL/s5h list /64s — DNS resolves the nibble tree from the
+    most significant end, so a /64 listing is matched by any address beneath it for free."""
+    if not ip or ":" not in ip:
+        return None
+    try:
+        packed = socket.inet_pton(socket.AF_INET6, ip)
+    except (OSError, ValueError):
+        return None
+    return ".".join(reversed("".join(f"{b:02x}" for b in packed)))
+
+
 def reverse_v4(ip: str | None) -> str | None:
     """``1.2.3.4`` -> ``4.3.2.1``, the DNSBL query form. None unless it's a dotted-quad IPv4
     address — IPv6 DNSBL needs nibble-format queries and few of these zones serve them."""
@@ -311,9 +346,14 @@ def verdict_factors(rep: dict) -> tuple[str, list[str]]:
     # checkers reject ALL detected proxies, so the user should know it's detectable even though it's unburned.
     # Deliberately NOT called "residential": connection_class refuses to guess that from a name heuristic, so
     # the verdict must not claim it either. "No datacenter signal" is what was actually measured.
+    # ...and never claim a blocklist record that was never obtained. An IPv6 exit gets NO blocklist coverage
+    # at all (the zones are IPv4-only), and a resolver failure gets none either — saying "no blacklist
+    # history" there turns "we didn't look" into "it's clean", which is the worst thing this tool can do.
+    blocklists = "no abuse or blacklist history" if rep.get("dnsbl_usable") else "blocklists NOT checked"
     if rep.get("proxy") or rep.get("vpn") or rep.get("tor") or (fraud is not None and fraud >= 60):
-        return "clean", ["No datacenter signal", "no abuse history", "detectable as a proxy/VPN"]
-    return "clean", ["No datacenter signal", "no proxy flag", "no abuse or blacklist history"]
+        return "clean", ["No datacenter signal", "no abuse history" if rep.get("dnsbl_usable")
+                         else "blocklists NOT checked", "detectable as a proxy/VPN"]
+    return "clean", ["No datacenter signal", "no proxy flag", blocklists]
 
 
 def verdict(rep: dict) -> tuple[str, str]:
@@ -631,6 +671,22 @@ def _get_json(url: str, opener, headers: dict | None = None) -> dict | None:
         return None
 
 
+def lookup_exit_v4(opener) -> str | None:
+    """This connection's exit IP, forced over IPv4.
+
+    A dual-stack proxy answers on whichever family the connection happens to use, so the ordinary exit
+    lookup can return an IPv6 address — MEASURED on a Starlink residential exit: 8 consecutive samples of
+    one endpoint gave ``153.66.117.15`` five times and ``2605:59ca:...:e798`` three times. That matters
+    because every DNSBL zone we query is IPv4-only (measured 2026-08-05: all 17 answer the 127.0.0.2 test
+    entry, none answer the 2001:db8::2 one), so an IPv6 sample means ZERO blocklist evidence.
+
+    Asking an IPv4-only host pins the family, so a checkable address always exists. Returns None when the
+    proxy has no IPv4 route at all — which is itself worth reporting rather than hiding."""
+    o = _get_json("https://api4.ipify.org?format=json", opener)
+    ip = (o or {}).get("ip")
+    return ip if reverse_v4(ip) else None
+
+
 def lookup_geo(opener, ip: str | None = None) -> dict:
     """ISP/location/timezone for ``ip``, or for this connection's own exit IP when ``ip`` is None
     (in which case it also discovers what that exit IP is, as seen through ``opener``'s proxy)."""
@@ -790,23 +846,31 @@ def dnsbl_check(ip: str) -> dict:
     """Query every zone in parallel. Zones that refuse are excluded rather than counted clear, and
     a liveness probe guards the whole result — ``socket.gaierror`` cannot tell "not listed" from
     "resolver is broken", so without it a dead resolver would report a confident "none of 12"."""
+    # Pick the table by address family. IPv6 gets the four zones that actually hold IPv6 data, so the
+    # denominator this reports is the number of lists that could ever have flagged the address.
     rev = reverse_v4(ip)
+    zones, family = DNSBL_ZONES, "ipv4"
+    if not rev:
+        rev, zones, family = reverse_v6(ip), DNSBL_ZONES_V6, "ipv6"
     if not rev:
         return {"blacklists": [], "policy_lists": [], "dnsbl_checked": 0, "dnsbl_usable": False,
-                "dnsbl_detail": []}
+                "dnsbl_detail": [], "dnsbl_skipped": "unparseable", "dnsbl_family": "unknown"}
 
     # Every DNSBL lists 127.0.0.2 by convention, so these MUST resolve. Several zones, not one:
     # gating on a single zone means that zone's outage (or its refusal to answer this resolver)
     # silently reports every IP as "unavailable".
-    probes = [f"2.0.0.127.{z}" for _, z in DNSBL_ZONES[:4]]
+    # The liveness probe stays on the IPv4 test entry even for an IPv6 lookup: every zone lists
+    # 127.0.0.2, and rbldnsd's mapped-IPv4 aliasing means an IPv6-form probe would answer on zones
+    # holding no IPv6 data at all. It proves the RESOLVER works, which is what it is for.
+    probes = [f"2.0.0.127.{z}" for _, z in zones[:4]]
     jobs = [(None, None, p) for p in probes]
-    jobs += [(name, zone, f"{rev}.{zone}") for name, zone in DNSBL_ZONES]
+    jobs += [(name, zone, f"{rev}.{zone}") for name, zone in zones]
 
     abuse, policy, checked, alive = [], [], 0, False
     # Per-zone outcome for the detail card: every zone in the table appears, so "12 clean, 3 refused" is
     # visible instead of only the count of hits. "no answer" is the default — a zone that never returned
     # is not a clean result and must not read as one.
-    detail = {name: "no answer" for name, _ in DNSBL_ZONES}
+    detail = {name: "no answer" for name, _ in zones}
     with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
         futs = {ex.submit(resolve_a, host): (name, zone) for name, zone, host in jobs}
         try:
@@ -835,7 +899,7 @@ def dnsbl_check(ip: str) -> dict:
                 detail[name] = "policy"
             else:
                 detail[name] = "clean"
-    order = [z[0] for z in DNSBL_ZONES]
+    order = [z[0] for z in zones]
     abuse.sort(key=order.index)
     policy = [label for _, label in sorted(policy, key=lambda p: order.index(p[0]))]
     # A real listing — abuse OR policy — is itself proof the resolver works, independent of the
@@ -845,7 +909,8 @@ def dnsbl_check(ip: str) -> dict:
     usable = alive or bool(abuse) or bool(policy)
     return {"blacklists": abuse, "policy_lists": policy,
             "dnsbl_checked": checked if usable else 0, "dnsbl_usable": usable,
-            "dnsbl_detail": [{"name": n, "zone": z, "status": detail[n]} for n, z in DNSBL_ZONES]}
+            "dnsbl_family": family, "dnsbl_zones_total": len(zones),
+            "dnsbl_detail": [{"name": n, "zone": z, "status": detail[n]} for n, z in zones]}
 
 
 def check(proxy: str | None = None, ip: str | None = None,
@@ -892,11 +957,25 @@ def check(proxy: str | None = None, ip: str | None = None,
     if getipintel_contact:
         merge(lookup_getipintel(rep["ip"], getipintel_contact, opener))
 
+    # Blocklists need an IPv4 address — every zone is IPv4-only. If the exit came back IPv6, ask again
+    # over IPv4 so the blocklists still run, and report BOTH: a dual-stack exit is a real property of the
+    # proxy, and hiding either address would misrepresent what a strict app can see.
+    bl_ip = rep["ip"]
+    if not reverse_v4(bl_ip) and not ip:
+        v4 = lookup_exit_v4(opener)
+        if v4:
+            rep["exit_ipv6"], bl_ip = rep["ip"], v4
+            rep["ip"] = v4
+            rep["notes"].append("Exit: dual-stack — also reachable at " + rep["exit_ipv6"]
+                                + "; blocklists checked on the IPv4 address, which 17 zones cover")
+        else:
+            rep["notes"].append("Exit: IPv6 only — checked against the 4 zones that hold IPv6 data")
+
     # ponytail: the blocklist queries go out the LOCAL resolver, not the proxy — an HTTP proxy
     # can't carry DNS. That's fine here: the query names the exit IP explicitly, so the answer is
     # about that IP either way. (On-device it must go through the tunnel, because there the lookup
     # is also how the IP itself is learned.)
-    rep.update(dnsbl_check(rep["ip"]))
+    rep.update(dnsbl_check(bl_ip))
     cc = connection_class(rep)
     if cc:
         rep["connection_class"] = cc     # "datacenter" / "mobile" — the strongest usability signal
@@ -1096,7 +1175,49 @@ svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
 textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
   padding:11px 12px;font:13px/1.5 var(--mono);resize:vertical;margin-top:12px}
 textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+/* A comparison table earns far more width than the form column: the whole point is reading every proxy's
+   signals side by side. Break out of the 760px wrap and centre on the viewport. overflow-x remains as the
+   small-screen fallback, but on a desktop the columns should simply fit. */
+.bulkwide{width:min(1680px,calc(100vw - 28px));margin-left:50%;transform:translateX(-50%)}
+/* Sortable headers — comparing a batch means reordering it by whichever signal you care about. */
+table.bulk th.s{cursor:pointer;user-select:none;white-space:nowrap}
+table.bulk th.s:hover{color:var(--accent)}
+table.bulk th.s::after{content:"";display:inline-block;width:9px;color:var(--accent)}
+table.bulk th.s[data-dir="1"]::after{content:"▲"}
+table.bulk th.s[data-dir="-1"]::after{content:"▼"}
+/* Batch summary strip: the whole-run answer, above the per-row detail. */
+.bsum{display:flex;flex-wrap:wrap;gap:8px;padding:0 0 12px}
+.bsum span{font:600 10.5px/1 var(--mono);letter-spacing:.05em;padding:7px 10px;border-radius:7px;
+  border:1px solid var(--line);color:var(--soft);background:var(--panel2)}
+.bsum span b{font-weight:700;color:var(--ink)}
+.bsum .s-dirty b{color:var(--dirty)} .bsum .s-suspect b{color:var(--suspect)}
+.bsum .s-clean b{color:var(--clean)} .bsum .s-dead b{color:var(--dirty)}
 .tablewrap{overflow-x:auto}
+/* Copy chip: one click copies, a tick confirms. The tick's slot is ALWAYS reserved, so confirming never
+   changes the chip's width and never nudges the row. */
+.cp{position:relative;display:inline-block;cursor:pointer;border:1px solid var(--line);border-radius:6px;
+  background:var(--panel2);color:var(--soft);font:600 10.5px/1 var(--mono);padding:6px 20px 6px 8px;
+  margin:0 5px 0 0;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.cp:hover{border-color:var(--accent);color:var(--accent)}
+.cp::after{content:"";position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:11px;line-height:1}
+.cp.done{border-color:var(--clean);color:var(--clean);background:color-mix(in srgb,var(--clean) 16%,transparent)}
+.cp.done::after{content:"✓"}
+.cp i{font-style:normal;color:var(--dim);margin-right:5px;font-weight:400}
+.cp:hover i{color:inherit;opacity:.7}
+/* Details chevron: right when collapsed, down when open. One click, no second step. */
+.chev{background:none;border:0;cursor:pointer;padding:6px;line-height:0;color:var(--soft)}
+.chev:hover{color:var(--accent)}
+.chev svg{width:13px;height:13px;transition:transform .15s}
+.chev[aria-expanded=true] svg{transform:rotate(90deg)}
+/* The expanded row: a plain two-column table, same language as the rest of the page. */
+table.det{width:100%;border-collapse:collapse;font:12px/1.5 var(--mono);background:var(--panel2)}
+table.det td{padding:6px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.det tr:last-child td{border-bottom:0}
+table.det td:first-child{width:150px;color:var(--dim);white-space:nowrap;
+  font:600 9.5px/1.6 var(--mono);letter-spacing:.09em;text-transform:uppercase}
+table.det td:last-child{word-break:break-all}
+table.det .grp td{background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--accent);
+  font:600 9.5px/1.6 var(--mono);letter-spacing:.11em;text-transform:uppercase}
 table.bulk{width:100%;border-collapse:collapse;font:12.5px/1.4 var(--mono)}
 table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
 table.bulk td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -1449,6 +1570,24 @@ $('#go').onclick=async()=>{
 
 // Bulk: check many proxies (one per line) and show them in one copyable comparison table.
 const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpperCase())}</span>`;
+
+// Split a proxy line into its parts so each one can be copied on its own. Mirrors parse_proxy() in
+// ipcheck.py and accepts the same four shapes; returns nulls rather than throwing, because this only
+// drives the copy chips — the SERVER's parse is the one that decides whether a line is valid.
+function proxyParts(line){
+  let s=(line||'').trim(), scheme=null;
+  const i=s.indexOf('://'); if(i>0){scheme=s.slice(0,i).toLowerCase(); s=s.slice(i+3);}
+  let user=null, pass=null, hostport=s;
+  const at=s.lastIndexOf('@');
+  if(at>=0){const creds=s.slice(0,at); hostport=s.slice(at+1);
+    const c=creds.indexOf(':'); user=c<0?creds:creds.slice(0,c); pass=c<0?null:creds.slice(c+1);}
+  else{const p=s.split(':');
+    if(p.length===4){hostport=p[0]+':'+p[1]; user=p[2]; pass=p[3];}}
+  const col=hostport.lastIndexOf(':');
+  const host=col<0?hostport:hostport.slice(0,col);
+  const port=col<0?null:hostport.slice(col+1);
+  return {scheme,host:host||null,port:port||null,user:user||null,pass:pass||null};
+}
 // The current bulk run, so the row expander can be registered ONCE — re-registering per run would stack
 // listeners that each redraw a stale table.
 let bulk=null;

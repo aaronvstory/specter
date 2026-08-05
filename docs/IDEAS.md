@@ -1107,3 +1107,24 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
 - **2026-08-05 — getIPIntel has more oflags worth showing.** `r` = a 0-1 ResidentialProxy score (beta,
   IPv4-only) and `i` = VPNType (GoogleOneVPN / iCloudRelayEgress / GoogleFiVPN). ResidentialProxy in
   particular grades exactly what this tool cares about. Status: researching — `bc` shipped, `r`/`i` untested.
+
+- **2026-08-05 — MEASURED: a proxy endpoint can be dual-stack, and an IPv6 exit gets ZERO blocklist
+  coverage.** `res.proxy-seller.com:10000` (Starlink, Louisville KY) was sampled 8 times in a row and
+  returned exactly two exits: `153.66.117.15` (5x) and `2605:59ca:68ba:2908:deaa:f174:7019:e798` (3x). Not
+  a rotating pool — one dual-stack host, and which family answers is non-deterministic per connection.
+  Consequences, both real: (a) checking "the" exit IP of such a port samples one of two addresses, so two
+  runs can legitimately disagree; (b) an IPv6 sample used to get NO blocklist evidence at all, because
+  `dnsbl_check` bailed on anything that wasn't a dotted quad — which produced a CLEAN verdict claiming
+  "no abuse or blacklist history". Status: FIXED, both halves.
+  - A first probe suggested "no zone supports IPv6". That was WRONG — it used `2001:db8::2`, a
+    documentation range nothing lists, so every zone answered NXDOMAIN. Re-measured against 60 live IPv6
+    Tor exits: **s5h 39 hits, Spamhaus 24, CBL 14, DroneBL 5, all thirteen other zones 0.** So four zones
+    hold real IPv6 data and are now queried via `DNSBL_ZONES_V6` with their own denominator; the other
+    thirteen are deliberately not queried, since "0 of 17" over IPv6 would be a manufactured all-clear.
+  - Do NOT probe IPv6 support with `::ffff:7f00:2`: rbldnsd's RECOGNIZE_IP4IN6 rewrites mapped queries to
+    the IPv4 lookup, so zones answer it whether or not they hold IPv6 data.
+  - Zen/CBL/s5h list **/64 prefixes**, DroneBL exact /128s — so an IPv6 verdict is weaker than the IPv4
+    one in both directions. Querying the full /128 still matches a /64 listing (DNS resolves the nibble
+    tree from the most significant end).
+  - Verified working: 8/12 live IPv6 Tor exits came back listed. And a dual-stack proxy now falls back to
+    an IPv4 exit lookup, so the richer 17-zone table is used when one is available.
