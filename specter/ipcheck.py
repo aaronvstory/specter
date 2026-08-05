@@ -277,6 +277,26 @@ def _scam_dc(rep: dict) -> bool:
     return bool(rep.get("scam_datacenter")) or rep.get("scam_proxy_type") in _SCAM_DC_TYPES
 
 
+# getIPIntel's near-certain verdict, used as a datacenter signal of LAST resort.
+#
+# MEASURED: getIPIntel grades residential-vs-hosting rather than flagging every proxy — AWS 1.0, Starlink
+# 0.0 — which is exactly the discrimination `connection_class` needs and neither of the other two had.
+# It closes a real gap: Mullvad's exit ISP "Byte Node LLC" matches nothing in _DATACENTER_RE, and
+# Scamalytics reported it `is_datacenter false` with no ip2proxy record, so a known commercial VPN exit
+# rendered "unclassified". getIPIntel called it 1.00.
+#
+# 0.99 and not 0.90: at 0.99 it already earns a DIRTY on its own in verdict_factors (that threshold was
+# chosen from the same measurements), so this adds no new verdict, only the NAME of what the exit is.
+# Anything looser would start classifying residential proxies as hosting on a probability, which is the
+# one direction this tool must not guess in.
+_GII_HOSTING = 0.99
+
+
+def _gii_dc(rep: dict) -> bool:
+    gii = rep.get("getipintel_score")
+    return gii is not None and gii >= _GII_HOSTING
+
+
 def connection_class(rep: dict) -> str | None:
     """"tor" / "mobile" / "datacenter" / None. None = couldn't tell — deliberately not guessed
     "residential", since "not obviously a datacenter" is all a name heuristic can honestly claim.
@@ -290,7 +310,7 @@ def connection_class(rep: dict) -> str | None:
     if rep.get("mobile"):
         return "mobile"
     blob = " ".join(str(rep.get(k) or "") for k in ("isp", "organization", "host")).strip()
-    if _scam_dc(rep) or (blob and _DATACENTER_RE.search(blob)):
+    if _scam_dc(rep) or (blob and _DATACENTER_RE.search(blob)) or _gii_dc(rep):
         return "datacenter"
     return None
 
@@ -350,7 +370,10 @@ def verdict_factors(rep: dict) -> tuple[str, list[str]]:
         # diagnosable at a glance, where a bare factor line would look identical to the name-regex verdict
         # that has been trusted for months.
         why.append("datacenter/hosting IP" +
-                   (f" (Scamalytics {rep.get('scam_proxy_type') or 'is_datacenter'})" if _scam_dc(rep) else ""))
+                   (f" (Scamalytics {rep.get('scam_proxy_type') or 'is_datacenter'})" if _scam_dc(rep)
+                    else " (getIPIntel)" if _gii_dc(rep) and not _DATACENTER_RE.search(
+                        " ".join(str(rep.get(k) or "") for k in ("isp", "organization", "host")))
+                    else ""))
     if len(hits) >= 2:
         why.append(f"{len(hits)} blacklists")
     if abuse is not None and abuse >= 50:
@@ -721,6 +744,13 @@ def _socks_opener(proxy: Proxy):
 
 
 # ---- network -------------------------------------------------------------------------------
+
+
+def default_scheme_is_http(scheme: str) -> bool:
+    """True when the selected transport is the HTTP family, so the retry picks the OTHER one. Named rather
+    than inlined because "not socks" and "is http" stop being the same thing the moment a third family
+    exists."""
+    return _PROXY_SCHEMES.get((scheme or "http").lower(), "http") == "http"
 
 
 def _opener(proxy: str | None, default_scheme: str = "http"):
@@ -1112,11 +1142,37 @@ def check(proxy: str | None = None, ip: str | None = None,
     started = time.monotonic()
     geo = lookup_geo(opener, ip)
     latency_ms = int((time.monotonic() - started) * 1000)
+    # A SOCKS proxy addressed as HTTP just reads DEAD — indistinguishable from one that is genuinely down.
+    # MEASURED 2026-08-06: an entire vendor's list (lightningproxies, SOCKS5 on :1080) reported DEAD until
+    # it was retried as SOCKS5, which is a trap for anyone pasting a list they were handed. So when a proxy
+    # produced NO answer and its transport was only ASSUMED (no explicit `scheme://`), try the other family
+    # once before calling it dead. The retry is silent when it works and named in the report when it does,
+    # because "your proxy is fine, you picked the wrong transport" is the whole point.
+    retried_scheme = None
+    if proxy and not geo and isinstance(proxy, str) and "://" not in proxy:
+        alt = "socks5" if default_scheme_is_http(proxy_scheme) else "http"
+        alt_opener = None
+        try:
+            alt_opener = _opener(proxy, alt)
+            started = time.monotonic()
+            geo = lookup_geo(alt_opener, ip)
+            latency_ms = int((time.monotonic() - started) * 1000)
+        except ValueError:
+            geo = {}                    # the line doesn't even parse as the other family — not a retry case
+        if geo and alt_opener is not None:
+            opener, retried_scheme = alt_opener, alt
+            rep["proxy_scheme_used"] = alt
+            rep["notes"].append(f"Proxy: no answer as {proxy_scheme.upper()} — it responded as "
+                                f"{alt.upper()}. Set the transport to {alt.upper()} to avoid the retry.")
     merge(geo)
     if proxy:
         rep["proxy_alive"] = bool(geo)
         if geo:
             rep["proxy_ms"] = latency_ms
+        elif retried_scheme is None:
+            rep["notes"].append("Proxy: no answer as " + proxy_scheme.upper()
+                                + ", and the other transport did not answer either — it is down, "
+                                  "unreachable, or the credentials are wrong")
     if not rep.get("ip"):
         if not ip:
             # EVERY return carries a verdict. This one used to return a report with no `verdict` key at

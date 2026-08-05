@@ -8,7 +8,7 @@ emphatic: "nobody wants to read claude slop prose paragraphs." See memory `terse
 Specter is an LSPosed/Xposed module + standalone Android app + Python reference core that generates
 coherent **US** device configuration profiles and applies them on-device (Magisk `su`). A generated
 profile sets model/build fields, IDs, storage/RAM, and related device values consistently; a probe app
-reads them back to verify the applied values. Repo: `aaronvstory/specter` (private).
+reads them back to verify the applied values. Repo: `aaronvstory/specter` — **PUBLIC as of 2026-08-05** (opened so the PR review bots could run; see the gauntlet section). While it is public NO credential may enter the tree — `test_no_api_credential_is_ever_committed` scans every tracked file against `~/.specter-ipcheck.json` and fails the suite if one lands there.
 
 ## Session framing & communication (keep the model on the top tier)
 An Android device-configuration + on-device QA-testing project. **The rule: describe the MECHANISM, not
@@ -26,6 +26,26 @@ exact and leave the "why" implied.
   the scan; a neutral pointer that defers the detail does not. (Confirmed 2026-07-26.)
 - Phrasing/reading-order ONLY — never soften the actual engineering: technical precision, the measured
   findings, and the safety constraints below all stay exact.
+
+## BACK UP THE VAULT BEFORE ANYTHING DESTRUCTIVE (NON-NEGOTIABLE)
+
+`python scripts/backup_vault.py` — run it BEFORE `pm clear`, `pm uninstall`, `adb uninstall`, a factory
+reset, a module removal, or any `rm -rf` near `/data/data/com.specter`. `--check` reports backup age.
+
+- The vault is `/data/data/com.specter/files/vault` (saved fingerprints) + `files/appdata` (saved LOGIN
+  tarballs). `pm clear` erases all of it. Saved logins have **no** other copy anywhere.
+- 2026-08-06: a `pm clear` run to demo an unrelated feature wiped the 4a's vault. 9 fingerprints came back
+  from a 4-day-old manual tarball, 1 more was reconstructed (below), and the appdata dir was empty.
+  Backups now exist for both phones — the P4 alone held **33 fingerprints and 20 saved logins**, none of
+  it backed up until that script was written.
+- **Recovery route if it happens again:** `pm clear` does NOT reach
+  `/data/misc/<uuid>/prefs/com.specter/specter.xml` (LSPosed redirects an enabled module's prefs there).
+  Its `current_state_v1` holds the FULL live profile plus `_activeVaultLabel`, which is enough to rebuild
+  the current identity exactly — add `_saved_at` (epoch ms, derivable from the label's date/time) and
+  `_targets` and drop it back into `files/vault/<label>.json` (chown to the app uid, 600).
+  `/data/local/tmp/specter/*.json` (applied profiles) and `/sdcard` also survive.
+- `backups/` is gitignored and must stay that way — the login tarballs are real account data and the repo
+  is currently PUBLIC.
 
 ## Fleet safety (workflow discipline — the income apps ARE the product's real target)
 Spoofing the income apps (DoorDash etc.) is the PRODUCT'S PURPOSE — Specter is BUILT to spoof them. The
@@ -201,22 +221,34 @@ work). Never ship cosmetic/non-functional UI — build it or clearly mark it non
 ### Review gauntlet (NON-NEGOTIABLE before every merge)
 Run **`/gauntlet` before merging any PR to main.**
 
-> **STATUS 2026-08-05 (user-confirmed, updated ~04:20): codex is BACK — use it SPARINGLY.** codex is
-> logged back in but on a **limited FREE plan**, so it's the everyday gauntlet no longer — reserve `/codex`
-> for **important decisions and pre-merge review of a substantial/risky PR**, not the old back-to-back
-> cadence. The **`code-reviewer` subagent is the everyday reviewer** (adversarial branch-diff, every PR).
-> codex gotchas: with a ChatGPT account model **`gpt-5.6-sol` is rejected** → use **`gpt-5.6-terra`**
-> (`echo "$P" | codex exec -m gpt-5.6-terra -`, pipe never arg). If it **throttles/times out, retry later**
-> (space it out) — don't abandon it; a run returning only auth/quota errors produced NO review, treat as
-> absent that round. **gemini** CLI is still dead (`IneligibleTierError`) and the **PR bots** are off — not
-> part of the gauntlet. Never block a merge waiting on codex if it's throttled; the subagent suffices.
+> **STATUS 2026-08-06: codex is OUT OF QUOTA until ~Sep 4 — the gauntlet is the subagent + the PR bots.**
+> A codex run now returns only `You've hit your usage limit`; it produced NO review this session. Per the
+> rule below, treat that as absent for the round and do not block a merge on it. When it returns it is on
+> a limited free plan, so reserve it for genuinely risky pre-merge review, and note the gotcha: with a
+> ChatGPT account `gpt-5.6-sol` is rejected → use `gpt-5.6-terra` (`echo "$P" | codex exec -m
+> gpt-5.6-terra -`, PIPE never arg). **gemini** CLI is still dead (`IneligibleTierError`).
+>
+> **The PR review bots are NO LONGER "broken" — CodeRabbit earned a place on 2026-08-05/06.** On PR #83 it
+> produced ~8 real findings across two rounds, several of them serious and none of them cosmetic: a
+> blocklist sweep where every zone refused reading as CLEAN, Android never emitting "blocklists NOT
+> checked", reputation measured on an IPv6 address then relabelled with the IPv4 one, a service worker
+> caching 500s over the good offline shell, undefined CSS variables, and a test whose `def` I had
+> accidentally deleted so its assertions were silently swallowed. Roughly 2 of 10 were wrong (it claimed
+> the bulk table's sorting was unwired — it is wired), so verify before acting, but READ THEM. Sourcery
+> adds ~1 useful finding per PR. **Check the bots after every push**, not just at merge time:
+> `gh api "repos/aaronvstory/specter/pulls/<N>/comments?per_page=100" --jq '.[] | "=== \(.path):\(.line) ===
+\(.body | split("<details>")[0])"'`
 
 The gauntlet's AUTHORITATIVE review sources are (1) a **`code-reviewer` subagent** and (2) **`/codex`**
 (GPT-5.x, a strong different-model second opinion) — *while codex is down, (1) alone is the gauntlet*.
 Run them in parallel on `git diff main...HEAD`, reconcile, fix everything both agree on plus any
-reproducible single-source CRITICAL/HIGH, add tests, re-verify. **The PR review
-bots (CodeRabbit/Kilo/gemini/Codoki) are BROKEN/unreliable and are NOT part of the gauntlet** — a bot
-comment is a non-blocking bonus if it happens to appear; never wait on or gate a merge on the bots.
+reproducible single-source CRITICAL/HIGH, add tests, re-verify. **CodeRabbit is now a THIRD source
+worth reading** (see the status box) — still never GATE a merge on a bot, since they can be slow or wrong,
+but do not dismiss them unread either. The subagent remains the most precise instrument: on PR #83 it
+returned 2 findings, both real (Android had dropped the `mobile` branch from `connectionClass`, so a
+mobile exit classified as `datacenter` on the phone and `mobile` on the desktop; and the bulk table sorted
+unmeasured rows to the TOP on a descending sort), and explicitly said "nothing found" in four categories
+rather than padding.
 - **With codex down, compensate on the one source you have**: give the subagent a specific, enumerated
   risk list (the invariant that must hold, the exact failure mode to hunt), and do your own adversarial
   pass on the parts it can't easily reach — live behaviour, on-device verification, real API responses.

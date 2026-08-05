@@ -1249,6 +1249,80 @@ def test_scamalytics_raw_is_flat_so_the_detail_card_can_render_it(monkeypatch):
     assert raw["dbip_connection_type"] == "isp" and raw["isp_name"] == "Example Networks"
 
 
+def test_getipintel_classifies_the_exit_the_other_two_sources_miss():
+    """Mullvad's exit ISP "Byte Node LLC" matches nothing in _DATACENTER_RE, and Scamalytics reported it
+    `is_datacenter false` with no ip2proxy record — so a known commercial VPN exit rendered
+    "unclassified". getIPIntel called it 1.00. It grades residential-vs-hosting rather than flagging every
+    proxy (measured: AWS 1.0, Starlink 0.0), which is what makes it usable as the last-resort classifier."""
+    mullvad = {"isp": "Byte Node LLC", "getipintel_score": 1.0, "scam_datacenter": False,
+               "dnsbl_usable": True}
+    assert ipcheck.connection_class(mullvad) == "datacenter"
+    level, why = ipcheck.verdict_factors(mullvad)
+    assert level == "dirty"
+    assert "datacenter/hosting IP (getIPIntel)" in why, "the factor must name which source claimed it"
+    # A real residential exit is NOT swept up: Starlink measured 0.0, and 0.90 stays below the threshold
+    # precisely so a probability never becomes a classification.
+    assert ipcheck.connection_class({"isp": "SpaceX Starlink", "getipintel_score": 0.0}) is None
+    assert ipcheck.connection_class({"isp": "Comcast Cable", "getipintel_score": 0.9}) is None
+    # ...and it never outranks a source that actually knows: mobile and Tor still win.
+    assert ipcheck.connection_class({"mobile": True, "getipintel_score": 1.0}) == "mobile"
+    assert ipcheck.connection_class({"scam_tor": True, "getipintel_score": 1.0}) == "tor"
+    # Scamalytics keeps the attribution when BOTH fire — it is the more specific claim.
+    _, why2 = ipcheck.verdict_factors({"scam_proxy_type": "DCH", "getipintel_score": 1.0})
+    assert "datacenter/hosting IP (Scamalytics DCH)" in why2
+    # The Android side must agree, or the same IP classifies differently on the phone.
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    m = re.search(r"GII_HOSTING\s*=\s*([\d.]+)", java)
+    assert m and float(m.group(1)) == ipcheck._GII_HOSTING
+    assert "giiDatacenter(r)" in java
+
+
+def test_a_socks_proxy_addressed_as_http_is_retried_not_called_dead(monkeypatch):
+    """MEASURED 2026-08-06: an entire vendor's list (SOCKS5 on :1080) reported DEAD when run as HTTP —
+    indistinguishable from genuinely down, and a trap for anyone pasting a list they were handed."""
+    tried = []
+
+    def fake_opener(proxy, scheme="http"):
+        tried.append(scheme)
+        return scheme
+
+    def fake_geo(opener, ip=None):
+        # Only the SOCKS transport answers, exactly as the real proxy behaved.
+        return {"ip": "24.26.39.144", "isp": "Spectrum"} if opener == "socks5" else {}
+
+    monkeypatch.setattr(ipcheck, "_opener", fake_opener)
+    monkeypatch.setattr(ipcheck, "lookup_geo", fake_geo)
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    rep = ipcheck.check("host:1080", proxy_scheme="http")
+    assert tried == ["http", "socks5"], f"expected an http attempt then a socks5 retry, got {tried}"
+    assert rep["proxy_alive"] is True and rep["ip"] == "24.26.39.144"
+    assert rep["proxy_scheme_used"] == "socks5"
+    assert any("responded as SOCKS5" in n for n in rep["notes"]), \
+        "the report must SAY the transport was wrong, not silently paper over it"
+
+
+def test_a_genuinely_dead_proxy_still_reads_dead_and_says_both_were_tried(monkeypatch):
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": scheme)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    rep = ipcheck.check("host:9999", proxy_scheme="http")
+    assert rep["proxy_alive"] is False
+    assert rep["verdict"] == "unknown"                    # and never crashes the page
+    assert any("the other transport did not answer either" in n for n in rep["notes"])
+
+
+def test_an_explicit_scheme_is_never_second_guessed(monkeypatch):
+    # `socks5://…` is a statement, not a guess — retrying it as HTTP would spend a round trip arguing
+    # with the user about what they typed.
+    tried = []
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": tried.append(scheme) or scheme)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    ipcheck.check("socks5://host:1080")
+    assert tried == ["http"], f"an explicit scheme must be tried once, got {tried}"
+
+
 def test_the_android_connection_class_orders_its_branches_like_the_python_one():
     """`mobile` must be checked BEFORE the datacenter signal, on both sides.
 

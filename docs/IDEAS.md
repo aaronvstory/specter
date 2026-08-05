@@ -1132,15 +1132,51 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
 - **2026-08-06 — Scamalytics v3 added as a reputation source.** Credentials are a USER + KEY pair, which is
   a first — every existing source takes a single value, so `resolve_keys`, the CLI flags, the local
   server's config fallback, the Vercel env fallback and `/api/config` all assume one value per source.
-  Stored in `~/.specter-ipcheck.json` and as `SCAMALYTICS_USER` / `SCAMALYTICS_KEY` on Vercel. Status:
-  building. The open question the measurement has to answer is whether its score DISCRIMINATES the way
-  getIPIntel does or SATURATES the way IPQS's fraud_score does — a second saturating score is noise, and
-  in that case it gets shown but never allowed to decide the verdict.
+  Stored in `~/.specter-ipcheck.json` and as `SCAMALYTICS_USER` / `SCAMALYTICS_KEY` on Vercel.
+  **Status: SHIPPED v0.27.0, and the open question is answered.** Its score does neither of the two things
+  expected — it does not saturate like IPQS, it MIS-RANKS: measured over ~200 lookups, a Tor exit scored
+  15 "low", clean Comcast residential 18, and the highest of the whole set was Mullvad at 44, because
+  `scamalytics_score` tracks `scamalytics_isp_score` on every single IP (an ASN prior, not a measurement of
+  the address). So the score is shown — in Scamalytics' own four-band colours, at the user's request — and
+  given ZERO weight in the verdict, locked in both directions by a test. What earned the integration is its
+  CLASSIFIER: `is_datacenter` + ip2proxy's `proxy_type` caught all four hosting IPs the name heuristic
+  missed and stayed quiet on all four real residential exits, so it feeds `connection_class` and `tor`
+  became its own exit type.
 - **2026-08-06 — checker.net (docs.checker.net): PARKED, not built.** Another IP-reputation API. The key is
   held locally in case it is revisited, but on inspection it does not look like it adds anything the five
   existing sources do not already cover. Status: rejected-for-now; revisit only if a measurement shows it
   separating residential proxies from hosting better than getIPIntel.
-- **2026-08-06 — the repo is temporarily PUBLIC** so the review bots (Sourcery/CodeRabbit) can run on PR
-  #83. That makes any committed credential instantly published, so `test_no_api_credential_is_ever_committed`
-  now scans every tracked file for the live values held in `~/.specter-ipcheck.json`. Set the repo back to
-  private once the bots have been evaluated.
+- **2026-08-06 — the repo is PUBLIC** so the review bots (Sourcery/CodeRabbit) can run on PR #83. That
+  makes any committed credential instantly published, so `test_no_api_credential_is_ever_committed` scans
+  every tracked file for the live values held in `~/.specter-ipcheck.json`, and `backups/` +
+  `xposed-module/dev-keys.properties` are gitignored. **Bots evaluated: CodeRabbit is worth keeping** —
+  ~8 real findings over two rounds on #83, several serious (a refused-by-every-zone blocklist sweep
+  reading CLEAN, reputation measured on one address and reported as another, a service worker caching
+  500s over the offline shell, a test whose `def` had been deleted so its assertions were silently
+  swallowed); ~2 of 10 were wrong, so verify before acting. Sourcery adds ~1 useful finding per PR.
+  **Open decision for the user: going back to private may cut CodeRabbit off** (it needs a paid plan for
+  private repos), so the visibility call is now a trade against a reviewer that is demonstrably earning
+  its place. Not flipped unilaterally.
+- **2026-08-06 — DONE, was an open trap: a SOCKS proxy addressed as HTTP read DEAD**, indistinguishable
+  from one that is genuinely down. An entire vendor list (lightningproxies, SOCKS5 on :1080) reported dead
+  until retried by hand. `check()` now retries the other transport once when the line carried no explicit
+  `scheme://`, and SAYS so — "no answer as HTTP — it responded as SOCKS5" — instead of silently papering
+  over it. A genuinely dead proxy still reads DEAD and reports that both were tried.
+- **2026-08-06 — DONE, was an open gap: getIPIntel is now the last-resort datacenter classifier.**
+  Mullvad's exit ISP "Byte Node LLC" matches nothing in `_DATACENTER_RE`, and Scamalytics reported it
+  `is_datacenter false` with no ip2proxy record, so a known commercial VPN exit rendered "unclassified".
+  getIPIntel called it 1.00 — it grades residential-vs-hosting rather than flagging every proxy (AWS 1.0,
+  Starlink 0.0), so `>= 0.99` now names the exit `datacenter`. The threshold is deliberately the one that
+  already earns a DIRTY on its own, so this adds no new verdict, only the NAME of what the exit is; the
+  factor reads `datacenter/hosting IP (getIPIntel)` so a wrong call is attributable.
+
+## Still open
+
+- **Saved logins (AppData) have no backup path of their own.** `scripts/backup_vault.py` now captures
+  them, but there is no in-app export/import for a login the way there is for a fingerprint, and no
+  automatic backup before a destructive action. The P4 holds 20 of them; losing that directory would be
+  unrecoverable. Next lever: have the app itself write a dated archive to `/sdcard/Specter-exports/`
+  before any wipe path, so the safety net does not depend on someone remembering to run a script.
+- **The Android IPQS rejection message is not key-scrubbed** (`HealthCheck.java`, the `!success` branch),
+  unlike the Python side. Lower severity — the key is the device owner's own, in local storage, not a
+  shared server-side secret — but it is an inconsistency between the two implementations.

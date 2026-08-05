@@ -56,6 +56,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - **Reputation was measured on one address and reported as another.** On a dual-stack exit the address was
   switched to IPv4 *after* IPQS/AbuseIPDB/getIPIntel/Scamalytics had already been asked about the IPv6 one.
   The family is now settled before any source is queried.
+- **`scripts/backup_vault.py`** — backs up every connected device's saved fingerprints AND saved logins
+  (plus the LSPosed-redirected prefs) to `backups/`, md5-verified through a shell rather than `adb pull`,
+  which silently no-ops on a rooted device. `--check` reports backup age. Written after a `pm clear` run
+  destroyed a device's vault; the first run found the Pixel 4 holding 33 fingerprints and 20 saved logins
+  with no backup at all.
+- **A SOCKS proxy addressed as HTTP is retried instead of reported DEAD.** An entire vendor list (SOCKS5
+  on :1080) read dead, indistinguishable from genuinely down. When the line carried no explicit
+  `scheme://`, the other transport is tried once and the report SAYS what happened — "no answer as HTTP —
+  it responded as SOCKS5". A genuinely dead proxy still reads DEAD and says both were tried.
+- **getIPIntel is now the last-resort datacenter classifier** (`>= 0.99`). Mullvad's exit ISP "Byte Node
+  LLC" matches no name rule and Scamalytics reported it `is_datacenter false`, so a known commercial VPN
+  exit rendered "unclassified"; getIPIntel called it 1.00. The threshold is the one that already earns a
+  DIRTY on its own, so this adds no new verdict — only the name of what the exit is — and the factor reads
+  `datacenter/hosting IP (getIPIntel)` so a wrong call is attributable.
 - **Dev builds can pre-seed the API keys.** `python xposed-module/make-dev-keys.py` writes a GITIGNORED
   `dev-keys.properties` from `~/.specter-ipcheck.json`; the build bakes those into `BuildConfig` and the
   app writes them into prefs once, on the first launch that finds them. A DISTRIBUTABLE build is simply

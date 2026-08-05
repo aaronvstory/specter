@@ -547,7 +547,8 @@ final class HealthCheck {
         // `mobile` outranks the datacenter signal here too, or the verdict would call an exit
         // "datacenter/hosting IP" while the Exit type tile above it reads Mobile.
         boolean dc = !tor && !Boolean.TRUE.equals(r.mobile) && (scamDatacenter(r)
-                || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host));
+                || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host)
+                || giiDatacenter(r));
         boolean ipqsAbuse = Boolean.TRUE.equals(r.recentAbuse);
 
         // DIRTY: a Tor or datacenter exit, corroborated abuse, or getIPIntel's near-certain hosting verdict.
@@ -618,6 +619,18 @@ final class HealthCheck {
             + "cloud\\s+server)\\b",
             java.util.regex.Pattern.CASE_INSENSITIVE);
 
+    /** getIPIntel's near-certain hosting verdict, as a datacenter signal of LAST resort. MEASURED: it
+     *  grades residential-vs-hosting rather than flagging every proxy (AWS 1.0, Starlink 0.0), which
+     *  closes a real gap — Mullvad's exit ISP "Byte Node LLC" matches nothing in DATACENTER and
+     *  Scamalytics reported it is_datacenter false with no ip2proxy record, so a known commercial VPN exit
+     *  rendered "unclassified". 0.99 because that already earns a DIRTY on its own below, so this adds no
+     *  new verdict, only the NAME of what the exit is. Mirrors _GII_HOSTING in specter/ipcheck.py. */
+    static final double GII_HOSTING = 0.99;
+
+    static boolean giiDatacenter(Reputation r) {
+        return r.getipintel != null && r.getipintel >= GII_HOSTING;
+    }
+
     /** Scamalytics says hosting/proxy. Consulted alongside the name regex because it caught all four
      *  hosting IPs the regex missed (including Mullvad's "Byte Node LLC") and stayed quiet on all four
      *  real residential exits. Mirrors _scam_dc() in specter/ipcheck.py. */
@@ -633,7 +646,8 @@ final class HealthCheck {
         // mobile BEFORE the datacenter check, exactly as connection_class() orders it. A real mobile line
         // is a real line whatever its ISP string looks like.
         if (Boolean.TRUE.equals(r.mobile)) return "mobile";
-        if (scamDatacenter(r) || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host))
+        if (scamDatacenter(r) || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host)
+                || giiDatacenter(r))
             return "datacenter";
         return null;
     }
