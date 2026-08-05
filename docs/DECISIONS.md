@@ -973,3 +973,25 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 - **2026-08-05 — no auto-run when the page opens.** It prefills the visitor's IP and waits. An auto-run spent
   an IPQS/AbuseIPDB quota and a getIPIntel rate-limit slot on every page load and every refresh, for a check
   nobody asked for.
+- **2026-08-06 — Scamalytics' CLASSIFIER decides, its SCORE never does.** Measured over ~200 live v3
+  lookups: `scamalytics_score` ≈ `scamalytics_isp_score` on every single IP, so it is an ISP/ASN reputation
+  prior, not an IP-level abuse measure — constant at 13 across three Starlink IPs with different abuse
+  histories. And no threshold orders the set: catching Mullvad (44) means passing a Tor exit (15) and
+  flagging clean Comcast residential (18). So `verdict_factors()` gives it zero weight at every tier, pinned
+  in both directions by `test_scamalytics_score_never_moves_the_verdict`. It is still SHOWN, because the
+  user asked to see it — warn-only colour, adjacent to the ISP score so the reader can see for themselves
+  that the two are the same number.
+- **2026-08-06 — the Scamalytics dirty factor names its source and the exact code.** `datacenter/hosting IP
+  (Scamalytics DCH)` rather than a bare factor line. Its specificity on residential pools is proven on only
+  four IPs (3 Starlink + T-Mobile, all `proxy_type "0"` / `is_datacenter false`); everywhere else it is a
+  HYPOTHESIS. If it ever calls a working residential proxy a datacenter, the attribution is what makes the
+  false positive visible instead of indistinguishable from the name regex we have trusted for months.
+- **2026-08-06 — `tor` is its own connection class, checked before `datacenter`.** A Tor exit reads
+  `is_datacenter` true as well, and "Tor exit" is both the more useful and the more damning claim.
+  `is_datacenter(rep)` stays `class == "datacenter"`, so `tor` does not satisfy it — the verdict's `elif`
+  covers it, and the exit-type colour helper (`ccColour`) makes green reachable only by `mobile`.
+- **2026-08-06 — no apply-time drift confirm.** Applying a freshly generated identity IS the new-account
+  flow; warning that it "won't match a saved login" asked the user to confirm the thing they just asked for.
+  `applyConfirmed()` force-wipes each target and refuses to write if the wipe fails, so no session survives
+  to be incoherent with. The restore path is already coherent by construction (it re-applies the login's
+  linked fingerprint), so the check had no home there either and was deleted rather than moved.

@@ -102,6 +102,10 @@ POLICY_CODES = {
 # because the same IP scores differently elsewhere and a reader needs to be able to reconcile that.
 IPQS_STRICTNESS = 1
 
+# Scamalytics v3. api11 is the US node; EU accounts answer on api12 — an account is BOUND to the node
+# picked at signup, so this is not a failover pair.
+SCAM_HOST = "api11.scamalytics.com"
+
 # getIPIntel returns a NEGATIVE `result` instead of a 0-1 probability when the query failed, always with
 # HTTP 200 — so the code is the only signal that a "score" isn't one. Spelled out rather than printed raw:
 # a bare "error -5" sends the reader to the docs, and -5 in particular is the one worth acting on (the
@@ -262,14 +266,31 @@ _DATACENTER_RE = re.compile(
     r"cloud\s+server)\b", re.I)
 
 
+# ip2proxy's taxonomy for "this is not a real line". PUB/WEB/SES bucket into `datacenter` because the
+# friction at a strict app is identical; the exact code renders on its own detail row, so the coarse
+# bucket never hides what was actually measured. Mirrored in HealthCheck.SCAM_DC_TYPES (pinned by a test).
+_SCAM_DC_TYPES = {"DCH", "VPN", "PUB", "WEB", "SES"}
+
+
+def _scam_dc(rep: dict) -> bool:
+    """Scamalytics says hosting/proxy — the classifier half of the integration, and the half that earns it."""
+    return bool(rep.get("scam_datacenter")) or rep.get("scam_proxy_type") in _SCAM_DC_TYPES
+
+
 def connection_class(rep: dict) -> str | None:
-    """"mobile" / "datacenter" / None from the ISP/org/host names (IPQS's connection_type is premium-gated).
-    None = couldn't tell — deliberately not guessed "residential", since "not obviously a datacenter" is all a
-    name heuristic can honestly claim."""
+    """"tor" / "mobile" / "datacenter" / None. None = couldn't tell — deliberately not guessed
+    "residential", since "not obviously a datacenter" is all a name heuristic can honestly claim.
+
+    Scamalytics' classifier is consulted BEFORE the name regex: measured, it caught all four hosting IPs
+    the regex missed (including Mullvad's "Byte Node LLC") and stayed quiet on all four real residential
+    exits. Tor is checked first because a Tor exit also reads is_datacenter, and "Tor" is the more useful
+    claim. `mobile` keeps its precedence over the datacenter signal — no measured case conflicts."""
+    if rep.get("scam_tor"):
+        return "tor"
     if rep.get("mobile"):
         return "mobile"
     blob = " ".join(str(rep.get(k) or "") for k in ("isp", "organization", "host")).strip()
-    if blob and _DATACENTER_RE.search(blob):
+    if _scam_dc(rep) or (blob and _DATACENTER_RE.search(blob)):
         return "datacenter"
     return None
 
@@ -301,7 +322,12 @@ def verdict_factors(rep: dict) -> tuple[str, list[str]]:
     flag is EXPECTED, not damning. What actually separates a usable residential exit from a burned one is
     datacenter-vs-residential plus INDEPENDENT abuse evidence (blacklists, AbuseIPDB, IPQS's ABUSE sub-flags —
     not the proxy flag). So a clean residential exit reads CLEAN even at fraud_score 100; the proxy flag and the
-    score are shown as their own signals, never folded into the verdict."""
+    score are shown as their own signals, never folded into the verdict.
+
+    Scamalytics is read the same way, and for the same reason: its CLASSIFIER (datacenter / proxy_type /
+    Tor) feeds ``connection_class`` and so can decide, while its SCORE gets zero weight at every tier. The
+    score tracks ``scamalytics_isp_score`` on every measured IP — an ASN prior — and no threshold orders
+    the set (catching Mullvad at 44 means passing a Tor exit at 15 and flagging clean Comcast at 18)."""
     hits = rep.get("blacklists") or []
     abuse = rep.get("abuse_confidence")
     fraud = rep.get("fraud_score")
@@ -316,8 +342,15 @@ def verdict_factors(rep: dict) -> tuple[str, list[str]]:
     # IPQS's own abuse flags), or a getIPIntel near-certain hosting/VPN verdict / bad-IP flag. getIPIntel earns a
     # dirty on its own here (unlike the raw IPQS proxy flag) because it grades residential-vs-hosting rather than
     # flagging every proxy — proven live (AWS 1.0, Starlink 0.0). A single stray blacklist isn't enough alone.
-    if dc:
-        why.append("datacenter/hosting IP")
+    if rep.get("connection_class") == "tor" or rep.get("scam_tor"):
+        why.append("Tor exit")
+    elif dc:
+        # Name the SOURCE when Scamalytics is what promoted it. Its specificity on residential pools is
+        # proven on only four IPs — if it ever misfires, "datacenter/hosting IP (Scamalytics DCH)" is
+        # diagnosable at a glance, where a bare factor line would look identical to the name-regex verdict
+        # that has been trusted for months.
+        why.append("datacenter/hosting IP" +
+                   (f" (Scamalytics {rep.get('scam_proxy_type') or 'is_datacenter'})" if _scam_dc(rep) else ""))
     if len(hits) >= 2:
         why.append(f"{len(hits)} blacklists")
     if abuse is not None and abuse >= 50:
@@ -391,7 +424,8 @@ def format_report(rep: dict) -> str:
             rows.append((label, str(rep[key])))
     # Exit type is the strongest usability signal — a datacenter exit draws friction real ISPs don't.
     if rep.get("connection_class"):
-        note = " · real ISPs pass more easily" if rep["connection_class"] == "datacenter" else ""
+        note = {"datacenter": " · real ISPs pass more easily",
+                "tor": " · an instant deny at most apps"}.get(rep["connection_class"], "")
         rows.append(("Exit type", rep["connection_class"] + note))
 
     fraud = rep.get("fraud_score")
@@ -408,6 +442,18 @@ def format_report(rep: dict) -> str:
     if gii is not None:
         line = f"{gii:.2f} · {getipintel_band(gii)}" + (" · bad IP" if rep.get("getipintel_bad") else "")
         rows.append(("getIPIntel", line))
+    # Shown next to the ISP score on purpose: the two are near-identical on every IP measured, and seeing
+    # that is what tells a reader the score is an ASN prior rather than a judgement about this address.
+    if rep.get("scam_risk"):
+        line = f"{rep.get('scam_score')} · {rep['scam_risk']}"
+        if rep.get("scam_isp_risk"):
+            line += f" · ISP {rep.get('scam_isp_score')} {rep['scam_isp_risk']}"
+        rows.append(("Scamalytics", line + "  (shown, not scored)"))
+        on = [n for k, n in (("scam_datacenter", "datacenter"), ("scam_vpn", "VPN"), ("scam_tor", "Tor"),
+                             ("scam_blacklisted_external", "external blocklist")) if rep.get(k)]
+        if rep.get("scam_proxy_type"):
+            on.append(f"ip2proxy {rep['scam_proxy_type']}")
+        rows.append(("Scamalytics flags", " · ".join(on) if on else "none raised"))
 
     hits = rep.get("blacklists") or []
     pol = rep.get("policy_lists") or []
@@ -836,6 +882,91 @@ def _getipintel_once(ip: str, contact: str, opener) -> dict:
     return out
 
 
+def _echoes(v, *creds: str) -> bool:
+    """True if a value carries one of our credentials. The Scamalytics key rides in the QUERY STRING, so
+    any string field it echoes back — or any exception carrying the URL — would publish it to the browser."""
+    return isinstance(v, str) and any(c and c in v for c in creds)
+
+
+def lookup_scamalytics(ip: str, user: str, key: str, opener) -> dict:
+    """Scamalytics v3: a datacenter/VPN/Tor classifier, plus a score we deliberately do not act on.
+
+    MEASURED over ~200 live lookups 2026-08-06. The SCORE is noise: it tracks ``scamalytics_isp_score``
+    on every sample, i.e. it is an ISP/ASN reputation prior rather than an IP-level abuse measure, and it
+    MIS-RANKS — a Tor exit scored 15 "low", clean Comcast residential 18, and the highest in the whole set
+    was Mullvad at 44. No threshold orders that set, so the score gets ZERO weight in ``verdict_factors``;
+    it is shown, labelled, warn-only, because seeing it next to the ISP score is what tells a reader it is
+    a prior. The FLAGS are what earn the integration: ``is_datacenter`` + ip2proxy's ``proxy_type`` caught
+    all four hosting IPs the name heuristic missed, and were quiet on all four real residential exits."""
+    o = _get_json(f"https://{SCAM_HOST}/v3/{urllib.parse.quote(user, safe='')}/"
+                  f"?key={urllib.parse.quote(key, safe='')}&ip={urllib.parse.quote(ip, safe='')}", opener)
+    # A rejected key answers HTTP 404 with an Apache HTML body (NOT the 401 + JSON the docs promise), so
+    # _get_json returns None for both "unreachable" and "bad credentials". The note names both rather than
+    # guessing. ponytail: no second request just to read a status code — add one if the ambiguity ever costs
+    # a session.
+    if not o:
+        return {"notes": ["Scamalytics: no answer — unreachable, or the user/key was rejected"]}
+    s = o.get("scamalytics") or {}
+    # HTTP 200 does not mean success, and the guard ORDER is load-bearing: on every error shape
+    # `external_datasources` flips from an object to an empty ARRAY, so reading it first raises.
+    if s.get("status") != "ok":
+        msg = str(s.get("error") or "lookup rejected")
+        return {"notes": ["Scamalytics: " + ("<redacted>" if _echoes(msg, user, key) else msg)]}
+    # Our quota, not the visitor's business — and an exhausted balance must SAY so rather than quietly
+    # degrade every verdict to "no datacenter signal". `remaining` is int-or-str depending on mode.
+    try:
+        left = int(str((o.get("credits") or {}).get("remaining", 1)))
+    except (TypeError, ValueError):
+        left = 1
+    if left <= 0:
+        return {"notes": ["Scamalytics: credits exhausted — not measured"]}
+
+    ext = s.get("external_datasources") or {}
+    prox = s.get("scamalytics_proxy") or {}
+    ip2 = ext.get("ip2proxy") or {}
+    x4b = ext.get("x4bnet") or {}
+    out: dict = {}
+    if isinstance(s.get("scamalytics_score"), int):
+        out["scam_score"] = s["scamalytics_score"]
+    # scam_risk is the "did it run?" sentinel — nothing else is guaranteed present.
+    for src, dst in (("scamalytics_risk", "scam_risk"), ("scamalytics_isp_risk", "scam_isp_risk")):
+        if s.get(src) and not _premium(s[src]):
+            out[dst] = s[src]
+    if isinstance(s.get("scamalytics_isp_score"), int):
+        out["scam_isp_score"] = s["scamalytics_isp_score"]
+    out["scam_datacenter"] = bool(prox.get("is_datacenter"))
+    out["scam_vpn"] = bool(prox.get("is_vpn"))
+    # x4bnet read is_tor FALSE on a real Tor exit that ip2proxy typed "TOR" — union them, don't trust either.
+    ptype = ip2.get("proxy_type")
+    out["scam_tor"] = bool(x4b.get("is_tor")) or ptype == "TOR"
+    # An EMPTY proxy_type is "no ip2proxy record", not "clean" — drop it so the UI can say so.
+    if ptype and ptype != "0" and not _premium(ptype):
+        out["scam_proxy_type"] = ptype
+    out["scam_blacklisted_external"] = bool(s.get("is_blacklisted_external"))
+
+    # FLAT — kv()/fmtv() in PAGE render a nested object as "[object Object]". `ip2proxy_lite` is
+    # deliberately absent: measured empty on all 8 IPs, so rendering it would read as "checked and clean".
+    fh, ips = ext.get("firehol") or {}, ext.get("ipsum") or {}
+    raw = {"score": s.get("scamalytics_score"), "risk": s.get("scamalytics_risk"),
+           "isp_score": s.get("scamalytics_isp_score"), "isp_risk": s.get("scamalytics_isp_risk"),
+           "isp_name": s.get("scamalytics_isp"), "org_name": s.get("scamalytics_org"),
+           "is_datacenter": prox.get("is_datacenter"), "is_vpn": prox.get("is_vpn"),
+           "is_apple_icloud_private_relay": prox.get("is_apple_icloud_private_relay"),
+           "is_amazon_aws": prox.get("is_amazon_aws"), "is_google": prox.get("is_google"),
+           "ip2proxy_type": ptype or None, "x4bnet_tor": x4b.get("is_tor"), "x4bnet_vpn": x4b.get("is_vpn"),
+           "x4bnet_datacenter": x4b.get("is_datacenter"), "x4bnet_spambot": x4b.get("is_spambot"),
+           "firehol_30d": fh.get("is_blacklisted_30d"), "firehol_1day": fh.get("is_blacklisted_1day"),
+           "ipsum_blacklisted": ips.get("is_blacklisted"), "ipsum_blacklists": ips.get("num_blacklists"),
+           "spamhaus_drop": (ext.get("spamhaus_drop") or {}).get("is_blacklisted"),
+           "dbip_connection_type": (ext.get("dbip") or {}).get("connection_type"),
+           "blacklisted_external": s.get("is_blacklisted_external"),
+           "url": s.get("scamalytics_url")}
+    out["scamalytics_raw"] = {k: v for k, v in raw.items()
+                              if v is not None and v != "" and not _premium(v)
+                              and not _echoes(v, user, key)}
+    return out
+
+
 def resolve_a(host: str) -> list[str]:
     """Every A record for ``host``; empty when it doesn't resolve.
 
@@ -922,7 +1053,7 @@ def dnsbl_check(ip: str) -> dict:
 
 def check(proxy: str | None = None, ip: str | None = None,
           ipqs_key: str = "", abuse_key: str = "", proxy_scheme: str = "http",
-          getipintel_contact: str = "") -> dict:
+          getipintel_contact: str = "", scam_user: str = "", scam_key: str = "") -> dict:
     """Run every available source and return one flat report dict. Blocking (network). ``proxy`` is
     parsed leniently (see ``parse_proxy``); ``proxy_scheme`` fills in the transport when ``proxy``
     carries no ``scheme://`` of its own."""
@@ -963,6 +1094,10 @@ def check(proxy: str | None = None, ip: str | None = None,
         merge(lookup_abuseipdb(rep["ip"], abuse_key, opener))
     if getipintel_contact:
         merge(lookup_getipintel(rep["ip"], getipintel_contact, opener))
+    # Must run BEFORE connection_class() below, or its classifier is dead code. No "no key" note (unlike
+    # IPQS): the tool is fully useful without it, and half a pair is a config mistake, not a measurement.
+    if scam_user and scam_key:
+        merge(lookup_scamalytics(rep["ip"], scam_user, scam_key, opener))
 
     # Blocklists need an IPv4 address — every zone is IPv4-only. If the exit came back IPv6, ask again
     # over IPv4 so the blocklists still run, and report BOTH: a dual-stack exit is a real property of the
@@ -995,6 +1130,12 @@ def check(proxy: str | None = None, ip: str | None = None,
 # ---- config --------------------------------------------------------------------------------
 
 
+# What the local UI reads back and writes. ONE tuple, because the same list was duplicated across the
+# GET and the POST and a source added to only one of them saves but never loads.
+CONFIG_KEYS = ("proxy", "proxy_scheme", "ipqs_key", "abuse_key", "getipintel_contact",
+               "scamalytics_user", "scamalytics_key")
+
+
 def load_config() -> dict:
     try:
         return json.loads(CONFIG.read_text("utf-8"))
@@ -1010,13 +1151,19 @@ def save_config(cfg: dict) -> None:
         pass
 
 
-def resolve_keys(args, cfg: dict) -> tuple[str, str, str]:
-    ipqs = args.ipqs_key or os.environ.get("IPQS_KEY") or cfg.get("ipqs_key") or ""
-    abuse = args.abuse_key or os.environ.get("ABUSEIPDB_KEY") or cfg.get("abuse_key") or ""
-    # getIPIntel needs a contact email, not a key — free, no signup. Env GETIPINTEL_CONTACT or the config.
-    contact = (getattr(args, "getipintel_contact", "") or os.environ.get("GETIPINTEL_CONTACT")
-               or cfg.get("getipintel_contact") or "")
-    return ipqs.strip(), abuse.strip(), contact.strip()
+def resolve_keys(args, cfg: dict) -> dict:
+    """flag -> env -> config, for every source. A dict rather than a tuple because Scamalytics is a
+    USER + KEY pair — the first source that isn't one value, and a positional tuple would keep growing."""
+    def pick(flag: str, env: str, key: str) -> str:
+        return (getattr(args, flag, "") or os.environ.get(env) or cfg.get(key) or "").strip()
+    return {
+        "ipqs": pick("ipqs_key", "IPQS_KEY", "ipqs_key"),
+        "abuse": pick("abuse_key", "ABUSEIPDB_KEY", "abuse_key"),
+        # getIPIntel needs a contact email, not a key — free, no signup.
+        "contact": pick("getipintel_contact", "GETIPINTEL_CONTACT", "getipintel_contact"),
+        "scam_user": pick("scamalytics_user", "SCAMALYTICS_USER", "scamalytics_user"),
+        "scam_key": pick("scamalytics_key", "SCAMALYTICS_KEY", "scamalytics_key"),
+    }
 
 
 # ---- local web UI --------------------------------------------------------------------------
@@ -1313,7 +1460,12 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
     <details><summary>API keys — optional, it works without them</summary>
       <div class=field style="margin-top:12px"><label for=ipqs>IPQualityScore <span id=ipqs-st class=kst></span></label><input id=ipqs type=password placeholder="your key · optional"></div>
       <div class=field style="margin-top:11px"><label for=abuse>AbuseIPDB <span id=abuse-st class=kst></span></label><input id=abuse type=password placeholder="your key · optional"></div>
+      <!-- One credential, two fields. The username is type=text so you can see WHICH account is in use;
+           the key is masked. One label and one status badge, because a half-set pair never runs. -->
+      <div class=field style="margin-top:11px"><label for=scamuser>Scamalytics <span id=scam-st class=kst></span></label><input id=scamuser type=text placeholder="username · optional"></div>
+      <div class=field style="margin-top:7px"><input id=scamkey type=password placeholder="API key"></div>
       <div class="rows hint">
+        <div class=rw><i>Scamalytics</i><div>datacenter/VPN/Tor classifier · its score is shown, never scored</div></div>
         <div class=rw><i>No keys</i><div>datacenter · 17 blocklists · getIPIntel still run</div></div>
         <div class=rw><i>Blank field</i><div>use the server's key, if it has one</div></div>
         <div class=rw><i>Your key</i><div>overrides it</div></div>
@@ -1340,6 +1492,7 @@ fetch('/config').then(r=>r.json()).then(c=>{
   $('#proxy').value=q.get('proxy')||c.proxy||'';
   $('#ptype').value=q.get('ptype')||c.proxy_scheme||'http';
   $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||'';
+  $('#scamuser').value=c.scamalytics_user||''; $('#scamkey').value=c.scamalytics_key||'';
   markKeys({});
   $('#ip').value=q.get('ip')||'';
   boot();
@@ -1348,10 +1501,13 @@ fetch('/config').then(r=>r.json()).then(c=>{
 // _kst is initialised INSIDE markKeys, not above it: the config block runs before this line, and the
 // Vercel build rewrites that block into a synchronous IIFE — a bare `window._kst={}` here would leave the
 // first call assigning onto undefined.
+// Field-list driven, because Scamalytics is a USER + KEY pair behind one badge: "your key" only once BOTH
+// are filled, since half a pair never runs.
+const KEYFIELDS=[['ipqs',['ipqs']],['abuse',['abuse']],['scam',['scamuser','scamkey']]];
 function markKeys(st){const s=window._kst=Object.assign(window._kst||{},st||{});
-  [['ipqs',s.ipqs],['abuse',s.abuse]].forEach(([id,on])=>{const e=$('#'+id+'-st'); if(!e)return;
-    e.textContent=$('#'+id).value?'· your key':(on?'· shared active':'');});}
-['ipqs','abuse'].forEach(id=>$('#'+id).addEventListener('input',()=>markKeys()));
+  KEYFIELDS.forEach(([id,fields])=>{const e=$('#'+id+'-st'); if(!e)return;
+    e.textContent=fields.every(f=>$('#'+f).value)?'· your key':(s[id==='scam'?'scamalytics':id]?'· shared active':'');});}
+['ipqs','abuse','scamuser','scamkey'].forEach(id=>$('#'+id).addEventListener('input',()=>markKeys()));
 // On open: PREFILL "check directly" with the visitor's OWN public IP (client-side; ipwho.is is CORS-open),
 // so checking your own IP is one click. Prefill only — the check never runs by itself; opening the page
 // must not spend an API quota or a getIPIntel rate-limit slot the visitor didn't ask for.
@@ -1370,6 +1526,13 @@ const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
 // Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score
 // means getIPIntel saw no proxy evidence, which does not prove a real ISP line.
 const giiBand=g=>g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':g>=0.50?'mixed signals':'no proxy signal';
+// Exit type: only `mobile` is a real line. `datacenter` and `tor` both draw friction, so NEITHER may render
+// green. The same ternary used to be copy-pasted in the tile, the detail row and the bulk column — it lives
+// here once, so adding a class can't leave one of the three painting a Tor exit as clean.
+const ccColour=c=>c==='mobile'?'clean':'dirty';
+const ccCap=c=>c==='mobile'?'real network line':c==='tor'?'Tor exit — denied by most apps':'hosting network';
+// Scamalytics' score is WARN-ONLY, never green: MEASURED, `low` came back for a Tor exit and for 127.0.0.1.
+const scamColour=b=>b==='very high'?'dirty':b==='high'?'suspect':'ink';
 function row(k,v){return `<div class=rw><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
 // A row whose value carries pre-built markup (a flag image, an icon) and an optional colour.
 function richRow(k,html,colour){
@@ -1423,7 +1586,17 @@ const LBL={fraud_score:'Fraud score',country_code:'Country',countryCode:'Country
  result:'Proxy probability',BadIP:'Bad IP',queryIP:'Queried IP',Country:'Country',status:'Status',
  abuseConfidenceScore:'Abuse confidence',totalReports:'Reports (90d)',numDistinctUsers:'Distinct reporters',
  lastReportedAt:'Last report',usageType:'Usage type',domain:'Domain',hostnames:'Host names',isTor:'Tor exit',
- isWhitelisted:'Whitelisted',ipAddress:'IP',isPublic:'Public IP',ipVersion:'IP version'};
+ isWhitelisted:'Whitelisted',ipAddress:'IP',isPublic:'Public IP',ipVersion:'IP version',
+ // Scamalytics. Its raw dict is FLAT (kv() renders a nested object as "[object Object]"), so every leaf
+ // needs its own label or the card prints raw snake_case.
+ score:'Score',risk:'Risk band',isp_score:'ISP score',isp_risk:'ISP risk band',isp_name:'ISP (Scamalytics)',
+ org_name:'Organization (Scamalytics)',is_datacenter:'Datacenter',is_vpn:'VPN',
+ is_apple_icloud_private_relay:'iCloud Private Relay',is_amazon_aws:'Amazon AWS',is_google:'Google',
+ ip2proxy_type:'ip2proxy type',x4bnet_tor:'x4bnet: Tor',x4bnet_vpn:'x4bnet: VPN',
+ x4bnet_datacenter:'x4bnet: datacenter',x4bnet_spambot:'x4bnet: spambot',
+ firehol_30d:'FireHOL (30d)',firehol_1day:'FireHOL (1d)',ipsum_blacklisted:'IPsum listed',
+ ipsum_blacklists:'IPsum lists',spamhaus_drop:'Spamhaus DROP',dbip_connection_type:'db-ip connection',
+ blacklisted_external:'External blocklist',url:'Scamalytics page'};
 const fmtv=v=>v===true?'yes':v===false?'no':Array.isArray(v)?(v.length?v.join(', '):'—')
   :(v===''||v==null?'—':String(v));
 // A two-letter country code gets a real flag icon. NOT the flag emoji: Windows ships no flag glyphs, so a
@@ -1438,9 +1611,19 @@ const flagImg=cc=>/^[A-Za-z]{2}$/.test(cc)
 const RISKY=new Set(['proxy','vpn','tor','active_vpn','active_tor','recent_abuse','bot_status','is_crawler',
   'frequent_abuser','high_risk_attacks','security_scanner','dynamic_connection','isTor','BadIP']);
 const REASSURING=new Set(['isWhitelisted','trusted_network']);
+// WARN-ONLY: red when true, NOTHING when false. Scamalytics' classifier flags go here rather than in RISKY
+// because RISKY paints `false` green — and "Datacenter: no" in green reads as "residential", which is a
+// claim nobody made. A false warning is survivable; a false all-clear is not.
+const WARN_ONLY=new Set(['is_datacenter','is_vpn','is_apple_icloud_private_relay','is_amazon_aws','is_google',
+  'x4bnet_tor','x4bnet_vpn','x4bnet_datacenter','x4bnet_spambot','firehol_30d','firehol_1day',
+  'ipsum_blacklisted','spamhaus_drop','blacklisted_external']);
 function vcolour(k,v){
-  if(v===true)return RISKY.has(k)?'dirty':REASSURING.has(k)?'clean':'';
-  if(v===false)return RISKY.has(k)?'clean':'';
+  if(v===true)return WARN_ONLY.has(k)?'dirty':RISKY.has(k)?'dirty':REASSURING.has(k)?'clean':'';
+  if(v===false)return WARN_ONLY.has(k)?'':RISKY.has(k)?'clean':'';
+  // The Scamalytics score is shown, never scored — and warn-only, because `low` was returned for a Tor exit
+  // AND for 127.0.0.1. Green here would be the tool endorsing a number it deliberately gives zero weight.
+  if(k==='risk'||k==='isp_risk')return v==='very high'?'dirty':v==='high'?'suspect':'';
+  if(k==='ip2proxy_type')return 'dirty';
   if(k==='fraud_score')return band(+v);
   if(k==='abuseConfidenceScore')return +v>=50?'dirty':+v>=10?'suspect':'clean';
   if(k==='result'){const g=+v;return g>=0.99?'dirty':g>=0.90?'suspect':'clean';}
@@ -1485,6 +1668,8 @@ function deep(r){
     `fraud ${esc(r.fraud_score)}${r.ipqs_strictness!=null?' · strictness '+esc(r.ipqs_strictness):''}`,kv(r.ipqs_raw));
   if(r.getipintel_raw)s+=srcCard('getIPIntel',
     `${r.getipintel_score.toFixed(3)} · ${giiBand(r.getipintel_score)}`,kv(r.getipintel_raw));
+  if(r.scamalytics_raw)s+=srcCard('Scamalytics',
+    `${esc(r.scam_score)} · ${esc(r.scam_risk)} — score shown, never scored`,kv(r.scamalytics_raw));
   if(r.abuseipdb_raw)s+=srcCard('AbuseIPDB',
     `${esc(r.abuse_confidence)}% · ${esc(r.abuse_reports||0)} reports in 90d`,kv(r.abuseipdb_raw));
   const d=r.dnsbl_detail||[];
@@ -1544,9 +1729,10 @@ function render(r){
   if(r.proxy_ms!=null)tiles+=tile('Latency', r.proxy_ms+' ms',
     r.proxy_ms<400?'fast':r.proxy_ms<1200?'usable':'slow',
     r.proxy_ms<400?'clean':r.proxy_ms<1200?'suspect':'dirty', true);
-  if(r.connection_class){const dc=r.connection_class==='datacenter';
-    tiles+=tile('Exit type', r.connection_class[0].toUpperCase()+r.connection_class.slice(1),
-      dc?'hosting network':'real network line', dc?'dirty':'clean', true);}
+  if(r.connection_class)
+    tiles+=tile('Exit type', r.connection_class==='tor'?'Tor'
+        :r.connection_class[0].toUpperCase()+r.connection_class.slice(1),
+      ccCap(r.connection_class), ccColour(r.connection_class), true);
   const bl=hits>=2?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
   tiles+=tile('Blacklists', r.dnsbl_usable||hits?hits:'—',
     hits?r.blacklists.join(', '):r.dnsbl_usable?`none of ${r.dnsbl_checked}`:'DNS unreachable', bl);
@@ -1561,6 +1747,11 @@ function render(r){
   if(r.getipintel_score!=null){const g=r.getipintel_score;
     tiles+=tile('getIPIntel', g.toFixed(2), giiBand(g)+(r.getipintel_bad?' · bad IP':''),
       g>=0.99?'dirty':g>=0.90?'suspect':'clean');}
+  // Scamalytics' overall score, labelled as what it is. It gets zero weight in the verdict — it tracks the
+  // ISP score on every IP measured and mis-ranks (Tor 15, clean Comcast 18, Mullvad 44) — so the caption
+  // says so and the colour never goes green. What Scamalytics actually contributes is the Exit type above.
+  if(r.scam_risk)tiles+=tile('Scamalytics', r.scam_score!=null?r.scam_score:'—',
+    r.scam_risk+' · shown, not scored', scamColour(r.scam_risk), true);
   t+=blk(`<div class=tiles>${tiles}</div>`);
 
   if(r.fraud_score!=null){
@@ -1594,10 +1785,13 @@ out.addEventListener('click',async e=>{
 // API endpoint — the local server serves /check; build.py rewrites this to /api/check for the Vercel deploy.
 const API='/check';
 const saveKeys=()=>{try{localStorage.setItem('ipqs_key',$('#ipqs').value.trim());
-  localStorage.setItem('abuse_key',$('#abuse').value.trim());}catch(e){}};
+  localStorage.setItem('abuse_key',$('#abuse').value.trim());
+  localStorage.setItem('scamalytics_user',$('#scamuser').value.trim());
+  localStorage.setItem('scamalytics_key',$('#scamkey').value.trim());}catch(e){}};
 // getipintel_contact is NOT sent — the server supplies it (env var on Vercel, config file locally).
 function checkBody(proxy){return JSON.stringify({proxy:proxy, proxy_scheme:$('#ptype').value,
-  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()});}
+  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim(),
+  scamalytics_user:$('#scamuser').value.trim(), scamalytics_key:$('#scamkey').value.trim()});}
 
 $('#go').onclick=async()=>{
   const b=$('#go'); b.disabled=true; b.textContent='Checking…'; saveKeys();
@@ -1687,9 +1881,12 @@ function bulkDetail(x){
   t+=dRow('Verdict',vpill(r.error?'unknown':r.verdict));
   (r.verdict_factors||[]).forEach((f,i)=>{t+=dTxt(i?'':'Because',f);});
   const u=usageOf(r.connection_type||r.usage_type||'');
+  // "Not classified" is source-aware: whether Scamalytics ran changes how much the absence is worth.
   t+=dRow('Exit type',r.connection_class
-    ?`<span class="c-${r.connection_class==='datacenter'?'dirty':'clean'}">${esc(r.connection_class)}</span>`
-    :'<span class=dim>unclassified — no hosting name matched, which is not proof of a real line</span>');
+    ?`<span class="c-${ccColour(r.connection_class)}">${esc(r.connection_class)}</span>`
+    :'<span class=dim>unclassified — '+(r.scam_risk!=null
+        ?'Scamalytics raised no datacenter or proxy record and no hosting name matched'
+        :'no hosting name matched, and Scamalytics did not run')+', which is not proof of a real line</span>');
   if(r.connection_type)t+=dRow('Connection',(u?u[1]:'')+esc(r.connection_type));
   if(r.usage_type)t+=dRow('Usage type',(u?u[1]:'')+esc(r.usage_type));
 
@@ -1706,6 +1903,28 @@ function bulkDetail(x){
      `${r.getipintel_score.toFixed(3)}</span> · ${esc(giiBand(r.getipintel_score))}`+
      (r.getipintel_bad?' · <span class=c-dirty>bad IP</span>':'')
     :'<span class=dim>did not answer — not measured</span>');
+  // Scamalytics, in decisiveness order. The overall score sits ADJACENT to the ISP score on purpose: they
+  // are near-identical on every IP measured, and seeing that is what tells the reader the score is an ASN
+  // prior rather than a judgement about this address.
+  t+=dRow('Scamalytics',r.scam_risk
+    ?`<span class="c-${scamColour(r.scam_risk)}">${esc(r.scam_score)}</span> · ${esc(r.scam_risk)}`+
+     (r.scam_isp_risk?` · ISP ${esc(r.scam_isp_score)} ${esc(r.scam_isp_risk)}`:'')+
+     '<span class=dimnote> shown, not scored — it tracks the ISP score, not this IP</span>'
+    :'<span class=dim>no Scamalytics credentials — not measured</span>');
+  if(r.scam_risk){
+    const PT={DCH:'datacenter',TOR:'Tor exit',VPN:'VPN',PUB:'public proxy',WEB:'web proxy',
+              SES:'search-engine spider',RES:'residential proxy'};
+    t+=dRow('Proxy type',r.scam_proxy_type
+      ?`<span class="c-dirty" title="ip2proxy code ${esc(r.scam_proxy_type)}">`+
+       `${esc(PT[r.scam_proxy_type]||r.scam_proxy_type)}</span>`+
+       `<span class=dimnote> ip2proxy ${esc(r.scam_proxy_type)}</span>`
+      :'<span class=dim>no ip2proxy record — empty is not a clean result</span>');
+    const sf=[['scam_datacenter','datacenter'],['scam_vpn','VPN'],['scam_tor','Tor'],
+              ['scam_blacklisted_external','external blocklist']].filter(([k])=>r[k]).map(([,n])=>n);
+    t+=dRow('Scamalytics flags',sf.length
+      ?`<span class=c-suspect>${esc(sf.join(' · '))}</span>`
+      :'<span class=dim>none raised</span>');
+  }
   t+=dRow('Abuse confidence',r.abuse_confidence!=null
     ?`<span class="c-${r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean'}">`+
      `${r.abuse_confidence}%</span>`+
@@ -1799,10 +2018,21 @@ $('#bulkgo').onclick=async()=>{
        ?`<span class="c-${x.r.abuse_confidence>=50?'dirty':x.r.abuse_confidence>=10?'suspect':'clean'}">`+
         x.r.abuse_confidence+`%</span>`
        :'<span class=dim title="No AbuseIPDB key — not measured">n/k</span>'},
+    // Scamalytics: the OVERALL score + band, and nothing more. Sorting by it is offered because the user
+    // asked to see it, but the colour never goes green and the header says "shown, not scored" — the score
+    // MIS-RANKS (Tor 15 "low", clean Comcast 18, Mullvad 44 highest), so it must not read as a ranking.
+    {k:'scam', h:'Scamalytics', get:x=>num(x.r&&x.r.scam_score),
+     cell:x=>x.r&&x.r.scam_risk
+       ?`<span class="c-${scamColour(x.r.scam_risk)}" title="Scamalytics ${esc(x.r.scam_score)} · `+
+        `${esc(x.r.scam_risk)}. Shown, not scored: it tracks the ISP score, not this IP.">`+
+        `${esc(x.r.scam_score)}</span><span class=dimnote> ${esc(x.r.scam_risk)}</span>`
+       :'<span class=dim title="No Scamalytics credentials — not measured">n/k</span>'},
     {k:'type', h:'Exit type', get:x=>(x.r&&x.r.connection_class)||'zz',
      cell:x=>x.r&&x.r.connection_class
-       ?`<span class="c-${x.r.connection_class==='datacenter'?'dirty':'clean'}">${esc(x.r.connection_class)}</span>`
-       :'<span class=dim title="No hosting name matched — which is not proof of a real line">—</span>'},
+       ?`<span class="c-${ccColour(x.r.connection_class)}">${esc(x.r.connection_class)}</span>`
+       :`<span class=dim title="${x.r&&x.r.scam_risk!=null
+           ?'Scamalytics raised no datacenter or proxy record, and no hosting name matched — not proof of a real line'
+           :'No hosting name matched, and Scamalytics did not run — not proof of a real line'}">—</span>`},
     {k:'isp', h:'ISP', get:x=>(x.r&&(x.r.isp||x.r.organization))||'',
      cell:x=>{const v=x.r&&(x.r.isp||x.r.organization);
        return v?`<span class=trunc title="${esc(v)}">${esc(v)}</span>`:'<span class=dim>—</span>';}},
@@ -1936,7 +2166,7 @@ def serve(port: int, open_browser: bool = True) -> None:
             if path == "/config":
                 cfg = load_config()
                 self._send(json.dumps({k: cfg.get(k, "") for k in
-                                       ("proxy", "proxy_scheme", "ipqs_key", "abuse_key", "getipintel_contact")}).encode(),
+                                       CONFIG_KEYS}).encode(),
                            "application/json")
             elif path in ("/", "/index.html"):
                 self._send(PAGE.encode("utf-8"), "text/html; charset=utf-8")
@@ -1959,7 +2189,7 @@ def serve(port: int, open_browser: bool = True) -> None:
             # Only fields the request actually carried. Defaulting a missing one to "" would let any
             # partial request erase a saved key — the page always sends all three, but nothing else
             # has to. Sending "" explicitly still clears, which is how the UI clears a key.
-            cfg.update({k: req[k] for k in ("proxy", "proxy_scheme", "ipqs_key", "abuse_key", "getipintel_contact")
+            cfg.update({k: req[k] for k in CONFIG_KEYS
                         if k in req})
             save_config(cfg)
             # The page has no getIPIntel field any more — the server supplies the contact, exactly as the
@@ -1968,11 +2198,17 @@ def serve(port: int, open_browser: bool = True) -> None:
             # never sends this one, which is why the saved value survives here.)
             contact = (req.get("getipintel_contact") or os.environ.get("GETIPINTEL_CONTACT")
                        or cfg.get("getipintel_contact") or "")
+            # Same fallback for the Scamalytics pair, and for the same reason — the page sends whatever the
+            # fields hold, but a saved/env credential must still work when they're blank.
+            scam_user = (req.get("scamalytics_user") or os.environ.get("SCAMALYTICS_USER")
+                         or cfg.get("scamalytics_user") or "")
+            scam_key = (req.get("scamalytics_key") or os.environ.get("SCAMALYTICS_KEY")
+                        or cfg.get("scamalytics_key") or "")
             try:
                 rep = check(req.get("proxy") or None, req.get("ip") or None,
                             req.get("ipqs_key") or os.environ.get("IPQS_KEY", ""),
                             req.get("abuse_key") or os.environ.get("ABUSEIPDB_KEY", ""),
-                            req.get("proxy_scheme") or "http", contact)
+                            req.get("proxy_scheme") or "http", contact, scam_user, scam_key)
             except Exception as exc:
                 rep = {"error": str(exc)}
             self._send(json.dumps(rep).encode(), "application/json")
@@ -2003,6 +2239,9 @@ def main(argv=None) -> int:
     ap.add_argument("--getipintel-contact", default="",
                     help="contact email for getIPIntel proxy/VPN detection (free, no signup). Several, "
                          "comma-separated, rotate when one is over quota (15/min, 500/day per contact)")
+    ap.add_argument("--scamalytics-user", default="", help="Scamalytics account username (pairs with the key)")
+    ap.add_argument("--scamalytics-key", default="", help="Scamalytics API key — its datacenter/VPN/Tor "
+                    "classifier feeds the exit type; its score is shown but never scored")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--serve", nargs="?", const=8787, type=int, metavar="PORT",
                     help="open the local web UI (default port 8787)")
@@ -2012,9 +2251,10 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     cfg = load_config()
-    ipqs, abuse, gii_contact = resolve_keys(args, cfg)
+    k = resolve_keys(args, cfg)
     if args.save_keys:
-        cfg.update({"ipqs_key": ipqs, "abuse_key": abuse, "getipintel_contact": gii_contact})
+        cfg.update({"ipqs_key": k["ipqs"], "abuse_key": k["abuse"], "getipintel_contact": k["contact"],
+                    "scamalytics_user": k["scam_user"], "scamalytics_key": k["scam_key"]})
         save_config(cfg)
         print(f"keys saved to {CONFIG}")
 
@@ -2023,7 +2263,8 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        rep = check(args.proxy or None, args.ip or None, ipqs, abuse, args.proxy_type, gii_contact)
+        rep = check(args.proxy or None, args.ip or None, k["ipqs"], k["abuse"], args.proxy_type,
+                    k["contact"], k["scam_user"], k["scam_key"])
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

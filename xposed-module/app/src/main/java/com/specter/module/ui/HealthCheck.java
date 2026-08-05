@@ -430,6 +430,17 @@ final class HealthCheck {
      *  checkers and a reader needs to be able to reconcile that. */
     static final int IPQS_STRICTNESS = 1;
 
+    /** Scamalytics v3. api11 is the US node; EU accounts answer on api12 — an account is BOUND to the node
+     *  picked at signup, so this is not a failover pair. Mirrors SCAM_HOST in specter/ipcheck.py. */
+    static final String SCAM_HOST = "api11.scamalytics.com";
+
+    /** ip2proxy's taxonomy for "this is not a real line". PUB/WEB/SES bucket into {@code datacenter}
+     *  because the friction at a strict app is identical; the exact code renders on its own detail row, so
+     *  the coarse bucket never hides what was measured. Mirrors _SCAM_DC_TYPES in specter/ipcheck.py
+     *  (pinned by tests/test_ipcheck.py). */
+    static final java.util.Set<String> SCAM_DC_TYPES = new java.util.HashSet<>(
+            java.util.Arrays.asList("DCH", "VPN", "PUB", "WEB", "SES"));
+
     /** The DNS-over-HTTPS resolver the blocklist lookups go through.
      *
      *  <p>NOT Cloudflare, and NOT Google. Spamhaus refuses queries relayed by large public resolvers, and
@@ -468,8 +479,19 @@ final class HealthCheck {
         String usageType, countryCode, domain, lastReport;    // AbuseIPDB context
         Integer abuseReporters;                 // AbuseIPDB: distinct reporters (one loud reporter != real abuse)
         String getipintelCountry;               // getIPIntel oflags=c
+        /** Scamalytics. {@code scamRisk == null} is the "did it run?" sentinel — nothing else is
+         *  guaranteed present. The SCORE is carried for display only and has ZERO weight in
+         *  {@link #verdictFactors}: measured, it tracks scamIspScore on every IP (an ASN prior) and
+         *  mis-ranks — a Tor exit scored 15 "low", clean Comcast 18, Mullvad 44 the highest of the set. */
+        Integer scamScore, scamIspScore;
+        String scamRisk, scamIspRisk, scamProxyType, scamUrl;
+        Boolean scamDatacenter, scamVpn, scamTor, scamBlacklistedExternal;
         int dnsblChecked;                       // DNSBL zones that actually answered
         boolean dnsblUsable;                    // the sentinel resolved -> a zero-hit result is trustworthy
+        /** Which table was queried, and how many zones it holds — the HONEST denominator. An IPv6 exit is
+         *  checked against four zones, not seventeen, and reporting "0 of 17" there would be a lie. */
+        String dnsblFamily;                     // "ipv4" / "ipv6" / null when the address parsed as neither
+        int dnsblZonesTotal;
         final List<String> blacklists = new ArrayList<>();    // zones listing this IP for ABUSE
         final List<String> policyLists = new ArrayList<>();   // dynamic/consumer-range listings (not abuse)
         /** Per-zone outcome for the detail breakdown: zone name -> listed / policy / clean / refused /
@@ -516,11 +538,18 @@ final class HealthCheck {
         List<String> why = new ArrayList<>();
         if (r == null) { why.add("unknown"); why.add("no check has run"); return why; }
         int hits = r.blacklists.size();
-        boolean dc = isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host);
+        boolean tor = Boolean.TRUE.equals(r.scamTor);
+        boolean dc = !tor && (scamDatacenter(r)
+                || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host));
         boolean ipqsAbuse = Boolean.TRUE.equals(r.recentAbuse);
 
-        // DIRTY: a datacenter exit, corroborated abuse, or getIPIntel's near-certain hosting verdict.
-        if (dc) why.add("datacenter/hosting IP");
+        // DIRTY: a Tor or datacenter exit, corroborated abuse, or getIPIntel's near-certain hosting verdict.
+        // Tor first: a Tor exit reads is_datacenter true as well, and "Tor" is the more useful claim.
+        // When Scamalytics is what promoted it, the factor NAMES the source — its specificity on
+        // residential pools is proven on only four IPs, so a wrong call has to be diagnosable at a glance.
+        if (tor) why.add("Tor exit");
+        else if (dc) why.add("datacenter/hosting IP" + (scamDatacenter(r)
+                ? " (Scamalytics " + (r.scamProxyType != null ? r.scamProxyType : "is_datacenter") + ")" : ""));
         if (hits >= 2) why.add(hits + " blacklists");
         if (r.abuseConfidence != null && r.abuseConfidence >= 50) why.add(r.abuseConfidence + "% abuse confidence");
         if (r.getipintelBad) why.add("getIPIntel bad-IP");
@@ -576,6 +605,23 @@ final class HealthCheck {
             + "cloud\\s+server)\\b",
             java.util.regex.Pattern.CASE_INSENSITIVE);
 
+    /** Scamalytics says hosting/proxy. Consulted alongside the name regex because it caught all four
+     *  hosting IPs the regex missed (including Mullvad's "Byte Node LLC") and stayed quiet on all four
+     *  real residential exits. Mirrors _scam_dc() in specter/ipcheck.py. */
+    static boolean scamDatacenter(Reputation r) {
+        return Boolean.TRUE.equals(r.scamDatacenter) || SCAM_DC_TYPES.contains(r.scamProxyType);
+    }
+
+    /** "tor" / "mobile" / "datacenter" / null for the readout. null = couldn't tell — deliberately not
+     *  guessed "residential". Mirrors connection_class() in specter/ipcheck.py. */
+    static String connectionClass(Reputation r, String geoIsp) {
+        if (r == null) return null;
+        if (Boolean.TRUE.equals(r.scamTor)) return "tor";
+        if (scamDatacenter(r) || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host))
+            return "datacenter";
+        return null;
+    }
+
     /** True iff the ISP/org/host names look like a datacenter/hosting provider — best-effort, name-based. */
     static boolean isDatacenter(String... parts) {
         StringBuilder b = new StringBuilder();
@@ -590,6 +636,11 @@ final class HealthCheck {
      *  count. Never throws. Call off the UI thread. */
     static Reputation lookupReputation(android.net.Network net, String ip, String ipqsKey, String abuseKey,
                                        String getipintelContact) {
+        return lookupReputation(net, ip, ipqsKey, abuseKey, getipintelContact, null, null);
+    }
+
+    static Reputation lookupReputation(android.net.Network net, String ip, String ipqsKey, String abuseKey,
+                                       String getipintelContact, String scamUser, String scamKey) {
         Reputation r = new Reputation();
         r.ip = ip;
         if (ip == null) return r;
@@ -672,6 +723,53 @@ final class HealthCheck {
             }
         }
 
+        // Scamalytics — a datacenter/VPN/Tor classifier, plus a score we deliberately do not act on.
+        // Mirrors lookup_scamalytics in specter/ipcheck.py, including its traps: HTTP 200 does not mean
+        // success (read `status` FIRST — on every error shape `external_datasources` is an empty ARRAY, and
+        // optJSONObject returning null is the natural guard for that), and a rejected key answers 404 with
+        // an HTML body, so getJson gives null for both "unreachable" and "bad credentials".
+        if (scamUser != null && !scamUser.isEmpty() && scamKey != null && !scamKey.isEmpty()) {
+            org.json.JSONObject o = getJson(net, "https://" + SCAM_HOST + "/v3/" + enc(scamUser)
+                    + "/?key=" + enc(scamKey) + "&ip=" + enc(ip), null);
+            org.json.JSONObject s = o != null ? o.optJSONObject("scamalytics") : null;
+            org.json.JSONObject credits = o != null ? o.optJSONObject("credits") : null;
+            // remaining is int in live mode, str in test mode.
+            int left = 1;
+            if (credits != null && credits.has("remaining")) {
+                try { left = Integer.parseInt(credits.optString("remaining", "1")); }
+                catch (NumberFormatException ignored) { left = 1; }
+            }
+            if (s == null) {
+                r.notes.add("Scamalytics: no answer — unreachable, or the user/key was rejected");
+            } else if (!"ok".equals(s.optString("status"))) {
+                // Never echo the credential: the key rides in the QUERY STRING, so an error message that
+                // quotes what was rejected would publish it into the readout.
+                String msg = emptyOr(s.optString("error"), "lookup rejected");
+                if (msg.contains(scamKey) || msg.contains(scamUser)) msg = "<redacted>";
+                r.notes.add("Scamalytics: " + msg);
+            } else if (left <= 0) {
+                r.notes.add("Scamalytics: credits exhausted — not measured");
+            } else {
+                org.json.JSONObject prox = s.optJSONObject("scamalytics_proxy");
+                org.json.JSONObject ext = s.optJSONObject("external_datasources");
+                org.json.JSONObject ip2 = ext != null ? ext.optJSONObject("ip2proxy") : null;
+                org.json.JSONObject x4b = ext != null ? ext.optJSONObject("x4bnet") : null;
+                if (s.has("scamalytics_score")) r.scamScore = s.optInt("scamalytics_score");
+                if (s.has("scamalytics_isp_score")) r.scamIspScore = s.optInt("scamalytics_isp_score");
+                r.scamRisk = paidField(s.optString("scamalytics_risk"));
+                r.scamIspRisk = paidField(s.optString("scamalytics_isp_risk"));
+                r.scamUrl = emptyToNull(s.optString("scamalytics_url"));
+                r.scamDatacenter = prox != null && prox.optBoolean("is_datacenter", false);
+                r.scamVpn = prox != null && prox.optBoolean("is_vpn", false);
+                r.scamBlacklistedExternal = s.optBoolean("is_blacklisted_external", false);
+                String ptype = ip2 != null ? paidField(ip2.optString("proxy_type")) : null;
+                // "0"/"" means NO RECORD, not "clean" — drop it so the readout can say so.
+                if (ptype != null && !"0".equals(ptype)) r.scamProxyType = ptype;
+                // x4bnet read is_tor FALSE on a real Tor exit ip2proxy typed "TOR" — union them.
+                r.scamTor = (x4b != null && x4b.optBoolean("is_tor", false)) || "TOR".equals(ptype);
+            }
+        }
+
         checkDnsbl(net, ip, r);
         repCache = r;
         return r;
@@ -682,18 +780,27 @@ final class HealthCheck {
      *  parallel behind a hard 10s cap so one dead zone can't stall the check. Only zones that gave a USABLE
      *  answer are counted, so "none of N" can never be a refusal or a timeout wearing a clean face. */
     private static void checkDnsbl(final android.net.Network net, String ip, Reputation out) {
-        final String rev = Dnsbl.reverseV4(ip);
-        if (rev == null) return;
+        // Pick the table by address family. An IPv6 exit used to return here and read as a clean verdict
+        // backed by ZERO checks; it now gets the four zones that hold IPv6 data, and reports THAT
+        // denominator. Mirrors dnsbl_check() in specter/ipcheck.py.
+        String rev = Dnsbl.reverseV4(ip);
+        final String[][] zones = rev != null ? Dnsbl.ZONES : Dnsbl.ZONES_V6;
+        if (rev == null) rev = Dnsbl.reverseV6(ip);
+        else out.dnsblFamily = "ipv4";
+        if (rev == null) return;                        // parsed as neither family — nothing to query
+        if (out.dnsblFamily == null) out.dnsblFamily = "ipv6";
+        out.dnsblZonesTotal = zones.length;
+        final String rq = rev;
         // "no answer" is the default for every zone in the table: a zone that never replied is not a clean
         // result and must not read as one. Overwritten below by whatever it actually said.
-        for (String[] z : Dnsbl.ZONES) out.zoneStatus.put(z[0], "no answer");
+        for (String[] z : zones) out.zoneStatus.put(z[0], "no answer");
         java.util.concurrent.ExecutorService ex =
-                java.util.concurrent.Executors.newFixedThreadPool(Dnsbl.ZONES.length);
+                java.util.concurrent.Executors.newFixedThreadPool(zones.length);
         try {
             List<java.util.concurrent.Callable<String>> tasks = new ArrayList<>();
             // "" = the zone answered but this IP isn't listed; null = it gave no usable answer.
-            for (final String[] z : Dnsbl.ZONES) tasks.add(() -> {
-                List<String> a = resolve(net, rev + "." + z[1]);
+            for (final String[] z : zones) tasks.add(() -> {
+                List<String> a = resolve(net, rq + "." + z[1]);
                 if (a == null) return null;
                 String kind = Dnsbl.classify(z[1], a);
                 // Policy listings carry WHY (the PBL code spelled out); the label holds no ':' so the
@@ -704,10 +811,10 @@ final class HealthCheck {
 
             List<java.util.concurrent.Future<String>> fs =
                     ex.invokeAll(tasks, 10, java.util.concurrent.TimeUnit.SECONDS);
-            // invokeAll returns futures in submission order, so index i is Dnsbl.ZONES[i] — that's what lets
+            // invokeAll returns futures in submission order, so index i is zones[i] — that's what lets
             // each zone's outcome be recorded by name for the detail breakdown.
             for (int i = 0; i < fs.size(); i++) {
-                String zone = Dnsbl.ZONES[i][0];
+                String zone = zones[i][0];
                 String v;
                 try { v = fs.get(i).get(); } catch (Throwable t) { continue; }   // timed out / cancelled
                 if (v == null) continue;                                  // no usable answer

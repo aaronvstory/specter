@@ -290,7 +290,12 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
     <details><summary>API keys — optional, it works without them</summary>
       <div class=field style="margin-top:12px"><label for=ipqs>IPQualityScore <span id=ipqs-st class=kst></span></label><input id=ipqs type=password placeholder="your key · optional"></div>
       <div class=field style="margin-top:11px"><label for=abuse>AbuseIPDB <span id=abuse-st class=kst></span></label><input id=abuse type=password placeholder="your key · optional"></div>
+      <!-- One credential, two fields. The username is type=text so you can see WHICH account is in use;
+           the key is masked. One label and one status badge, because a half-set pair never runs. -->
+      <div class=field style="margin-top:11px"><label for=scamuser>Scamalytics <span id=scam-st class=kst></span></label><input id=scamuser type=text placeholder="username · optional"></div>
+      <div class=field style="margin-top:7px"><input id=scamkey type=password placeholder="API key"></div>
       <div class="rows hint">
+        <div class=rw><i>Scamalytics</i><div>datacenter/VPN/Tor classifier · its score is shown, never scored</div></div>
         <div class=rw><i>No keys</i><div>datacenter · 17 blocklists · getIPIntel still run</div></div>
         <div class=rw><i>Blank field</i><div>use the server's key, if it has one</div></div>
         <div class=rw><i>Your key</i><div>overrides it</div></div>
@@ -317,6 +322,7 @@ $('#theme').onclick=()=>{
   $('#proxy').value=q.get('proxy')||'';
   $('#ptype').value=q.get('ptype')||'http';
   $('#ipqs').value=ls('ipqs_key'); $('#abuse').value=ls('abuse_key');
+  $('#scamuser').value=ls('scamalytics_user'); $('#scamkey').value=ls('scamalytics_key');
   $('#ip').value=q.get('ip')||'';
   markKeys({});
   // Which sources the DEPLOY already has a key for (booleans only, never the values), so a blank
@@ -328,10 +334,13 @@ $('#theme').onclick=()=>{
 // _kst is initialised INSIDE markKeys, not above it: the config block runs before this line, and the
 // Vercel build rewrites that block into a synchronous IIFE — a bare `window._kst={}` here would leave the
 // first call assigning onto undefined.
+// Field-list driven, because Scamalytics is a USER + KEY pair behind one badge: "your key" only once BOTH
+// are filled, since half a pair never runs.
+const KEYFIELDS=[['ipqs',['ipqs']],['abuse',['abuse']],['scam',['scamuser','scamkey']]];
 function markKeys(st){const s=window._kst=Object.assign(window._kst||{},st||{});
-  [['ipqs',s.ipqs],['abuse',s.abuse]].forEach(([id,on])=>{const e=$('#'+id+'-st'); if(!e)return;
-    e.textContent=$('#'+id).value?'· your key':(on?'· shared active':'');});}
-['ipqs','abuse'].forEach(id=>$('#'+id).addEventListener('input',()=>markKeys()));
+  KEYFIELDS.forEach(([id,fields])=>{const e=$('#'+id+'-st'); if(!e)return;
+    e.textContent=fields.every(f=>$('#'+f).value)?'· your key':(s[id==='scam'?'scamalytics':id]?'· shared active':'');});}
+['ipqs','abuse','scamuser','scamkey'].forEach(id=>$('#'+id).addEventListener('input',()=>markKeys()));
 // On open: PREFILL "check directly" with the visitor's OWN public IP (client-side; ipwho.is is CORS-open),
 // so checking your own IP is one click. Prefill only — the check never runs by itself; opening the page
 // must not spend an API quota or a getIPIntel rate-limit slot the visitor didn't ask for.
@@ -350,6 +359,13 @@ const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
 // Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score
 // means getIPIntel saw no proxy evidence, which does not prove a real ISP line.
 const giiBand=g=>g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':g>=0.50?'mixed signals':'no proxy signal';
+// Exit type: only `mobile` is a real line. `datacenter` and `tor` both draw friction, so NEITHER may render
+// green. The same ternary used to be copy-pasted in the tile, the detail row and the bulk column — it lives
+// here once, so adding a class can't leave one of the three painting a Tor exit as clean.
+const ccColour=c=>c==='mobile'?'clean':'dirty';
+const ccCap=c=>c==='mobile'?'real network line':c==='tor'?'Tor exit — denied by most apps':'hosting network';
+// Scamalytics' score is WARN-ONLY, never green: MEASURED, `low` came back for a Tor exit and for 127.0.0.1.
+const scamColour=b=>b==='very high'?'dirty':b==='high'?'suspect':'ink';
 function row(k,v){return `<div class=rw><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
 // A row whose value carries pre-built markup (a flag image, an icon) and an optional colour.
 function richRow(k,html,colour){
@@ -403,7 +419,17 @@ const LBL={fraud_score:'Fraud score',country_code:'Country',countryCode:'Country
  result:'Proxy probability',BadIP:'Bad IP',queryIP:'Queried IP',Country:'Country',status:'Status',
  abuseConfidenceScore:'Abuse confidence',totalReports:'Reports (90d)',numDistinctUsers:'Distinct reporters',
  lastReportedAt:'Last report',usageType:'Usage type',domain:'Domain',hostnames:'Host names',isTor:'Tor exit',
- isWhitelisted:'Whitelisted',ipAddress:'IP',isPublic:'Public IP',ipVersion:'IP version'};
+ isWhitelisted:'Whitelisted',ipAddress:'IP',isPublic:'Public IP',ipVersion:'IP version',
+ // Scamalytics. Its raw dict is FLAT (kv() renders a nested object as "[object Object]"), so every leaf
+ // needs its own label or the card prints raw snake_case.
+ score:'Score',risk:'Risk band',isp_score:'ISP score',isp_risk:'ISP risk band',isp_name:'ISP (Scamalytics)',
+ org_name:'Organization (Scamalytics)',is_datacenter:'Datacenter',is_vpn:'VPN',
+ is_apple_icloud_private_relay:'iCloud Private Relay',is_amazon_aws:'Amazon AWS',is_google:'Google',
+ ip2proxy_type:'ip2proxy type',x4bnet_tor:'x4bnet: Tor',x4bnet_vpn:'x4bnet: VPN',
+ x4bnet_datacenter:'x4bnet: datacenter',x4bnet_spambot:'x4bnet: spambot',
+ firehol_30d:'FireHOL (30d)',firehol_1day:'FireHOL (1d)',ipsum_blacklisted:'IPsum listed',
+ ipsum_blacklists:'IPsum lists',spamhaus_drop:'Spamhaus DROP',dbip_connection_type:'db-ip connection',
+ blacklisted_external:'External blocklist',url:'Scamalytics page'};
 const fmtv=v=>v===true?'yes':v===false?'no':Array.isArray(v)?(v.length?v.join(', '):'—')
   :(v===''||v==null?'—':String(v));
 // A two-letter country code gets a real flag icon. NOT the flag emoji: Windows ships no flag glyphs, so a
@@ -418,9 +444,19 @@ const flagImg=cc=>/^[A-Za-z]{2}$/.test(cc)
 const RISKY=new Set(['proxy','vpn','tor','active_vpn','active_tor','recent_abuse','bot_status','is_crawler',
   'frequent_abuser','high_risk_attacks','security_scanner','dynamic_connection','isTor','BadIP']);
 const REASSURING=new Set(['isWhitelisted','trusted_network']);
+// WARN-ONLY: red when true, NOTHING when false. Scamalytics' classifier flags go here rather than in RISKY
+// because RISKY paints `false` green — and "Datacenter: no" in green reads as "residential", which is a
+// claim nobody made. A false warning is survivable; a false all-clear is not.
+const WARN_ONLY=new Set(['is_datacenter','is_vpn','is_apple_icloud_private_relay','is_amazon_aws','is_google',
+  'x4bnet_tor','x4bnet_vpn','x4bnet_datacenter','x4bnet_spambot','firehol_30d','firehol_1day',
+  'ipsum_blacklisted','spamhaus_drop','blacklisted_external']);
 function vcolour(k,v){
-  if(v===true)return RISKY.has(k)?'dirty':REASSURING.has(k)?'clean':'';
-  if(v===false)return RISKY.has(k)?'clean':'';
+  if(v===true)return WARN_ONLY.has(k)?'dirty':RISKY.has(k)?'dirty':REASSURING.has(k)?'clean':'';
+  if(v===false)return WARN_ONLY.has(k)?'':RISKY.has(k)?'clean':'';
+  // The Scamalytics score is shown, never scored — and warn-only, because `low` was returned for a Tor exit
+  // AND for 127.0.0.1. Green here would be the tool endorsing a number it deliberately gives zero weight.
+  if(k==='risk'||k==='isp_risk')return v==='very high'?'dirty':v==='high'?'suspect':'';
+  if(k==='ip2proxy_type')return 'dirty';
   if(k==='fraud_score')return band(+v);
   if(k==='abuseConfidenceScore')return +v>=50?'dirty':+v>=10?'suspect':'clean';
   if(k==='result'){const g=+v;return g>=0.99?'dirty':g>=0.90?'suspect':'clean';}
@@ -465,6 +501,8 @@ function deep(r){
     `fraud ${esc(r.fraud_score)}${r.ipqs_strictness!=null?' · strictness '+esc(r.ipqs_strictness):''}`,kv(r.ipqs_raw));
   if(r.getipintel_raw)s+=srcCard('getIPIntel',
     `${r.getipintel_score.toFixed(3)} · ${giiBand(r.getipintel_score)}`,kv(r.getipintel_raw));
+  if(r.scamalytics_raw)s+=srcCard('Scamalytics',
+    `${esc(r.scam_score)} · ${esc(r.scam_risk)} — score shown, never scored`,kv(r.scamalytics_raw));
   if(r.abuseipdb_raw)s+=srcCard('AbuseIPDB',
     `${esc(r.abuse_confidence)}% · ${esc(r.abuse_reports||0)} reports in 90d`,kv(r.abuseipdb_raw));
   const d=r.dnsbl_detail||[];
@@ -524,9 +562,10 @@ function render(r){
   if(r.proxy_ms!=null)tiles+=tile('Latency', r.proxy_ms+' ms',
     r.proxy_ms<400?'fast':r.proxy_ms<1200?'usable':'slow',
     r.proxy_ms<400?'clean':r.proxy_ms<1200?'suspect':'dirty', true);
-  if(r.connection_class){const dc=r.connection_class==='datacenter';
-    tiles+=tile('Exit type', r.connection_class[0].toUpperCase()+r.connection_class.slice(1),
-      dc?'hosting network':'real network line', dc?'dirty':'clean', true);}
+  if(r.connection_class)
+    tiles+=tile('Exit type', r.connection_class==='tor'?'Tor'
+        :r.connection_class[0].toUpperCase()+r.connection_class.slice(1),
+      ccCap(r.connection_class), ccColour(r.connection_class), true);
   const bl=hits>=2?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
   tiles+=tile('Blacklists', r.dnsbl_usable||hits?hits:'—',
     hits?r.blacklists.join(', '):r.dnsbl_usable?`none of ${r.dnsbl_checked}`:'DNS unreachable', bl);
@@ -541,6 +580,11 @@ function render(r){
   if(r.getipintel_score!=null){const g=r.getipintel_score;
     tiles+=tile('getIPIntel', g.toFixed(2), giiBand(g)+(r.getipintel_bad?' · bad IP':''),
       g>=0.99?'dirty':g>=0.90?'suspect':'clean');}
+  // Scamalytics' overall score, labelled as what it is. It gets zero weight in the verdict — it tracks the
+  // ISP score on every IP measured and mis-ranks (Tor 15, clean Comcast 18, Mullvad 44) — so the caption
+  // says so and the colour never goes green. What Scamalytics actually contributes is the Exit type above.
+  if(r.scam_risk)tiles+=tile('Scamalytics', r.scam_score!=null?r.scam_score:'—',
+    r.scam_risk+' · shown, not scored', scamColour(r.scam_risk), true);
   t+=blk(`<div class=tiles>${tiles}</div>`);
 
   if(r.fraud_score!=null){
@@ -574,10 +618,13 @@ out.addEventListener('click',async e=>{
 // API endpoint — the local server serves /check; build.py rewrites this to /api/check for the Vercel deploy.
 const API='/api/check';
 const saveKeys=()=>{try{localStorage.setItem('ipqs_key',$('#ipqs').value.trim());
-  localStorage.setItem('abuse_key',$('#abuse').value.trim());}catch(e){}};
+  localStorage.setItem('abuse_key',$('#abuse').value.trim());
+  localStorage.setItem('scamalytics_user',$('#scamuser').value.trim());
+  localStorage.setItem('scamalytics_key',$('#scamkey').value.trim());}catch(e){}};
 // getipintel_contact is NOT sent — the server supplies it (env var on Vercel, config file locally).
 function checkBody(proxy){return JSON.stringify({proxy:proxy, proxy_scheme:$('#ptype').value,
-  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()});}
+  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim(),
+  scamalytics_user:$('#scamuser').value.trim(), scamalytics_key:$('#scamkey').value.trim()});}
 
 $('#go').onclick=async()=>{
   const b=$('#go'); b.disabled=true; b.textContent='Checking…'; saveKeys();
@@ -667,9 +714,12 @@ function bulkDetail(x){
   t+=dRow('Verdict',vpill(r.error?'unknown':r.verdict));
   (r.verdict_factors||[]).forEach((f,i)=>{t+=dTxt(i?'':'Because',f);});
   const u=usageOf(r.connection_type||r.usage_type||'');
+  // "Not classified" is source-aware: whether Scamalytics ran changes how much the absence is worth.
   t+=dRow('Exit type',r.connection_class
-    ?`<span class="c-${r.connection_class==='datacenter'?'dirty':'clean'}">${esc(r.connection_class)}</span>`
-    :'<span class=dim>unclassified — no hosting name matched, which is not proof of a real line</span>');
+    ?`<span class="c-${ccColour(r.connection_class)}">${esc(r.connection_class)}</span>`
+    :'<span class=dim>unclassified — '+(r.scam_risk!=null
+        ?'Scamalytics raised no datacenter or proxy record and no hosting name matched'
+        :'no hosting name matched, and Scamalytics did not run')+', which is not proof of a real line</span>');
   if(r.connection_type)t+=dRow('Connection',(u?u[1]:'')+esc(r.connection_type));
   if(r.usage_type)t+=dRow('Usage type',(u?u[1]:'')+esc(r.usage_type));
 
@@ -686,6 +736,28 @@ function bulkDetail(x){
      `${r.getipintel_score.toFixed(3)}</span> · ${esc(giiBand(r.getipintel_score))}`+
      (r.getipintel_bad?' · <span class=c-dirty>bad IP</span>':'')
     :'<span class=dim>did not answer — not measured</span>');
+  // Scamalytics, in decisiveness order. The overall score sits ADJACENT to the ISP score on purpose: they
+  // are near-identical on every IP measured, and seeing that is what tells the reader the score is an ASN
+  // prior rather than a judgement about this address.
+  t+=dRow('Scamalytics',r.scam_risk
+    ?`<span class="c-${scamColour(r.scam_risk)}">${esc(r.scam_score)}</span> · ${esc(r.scam_risk)}`+
+     (r.scam_isp_risk?` · ISP ${esc(r.scam_isp_score)} ${esc(r.scam_isp_risk)}`:'')+
+     '<span class=dimnote> shown, not scored — it tracks the ISP score, not this IP</span>'
+    :'<span class=dim>no Scamalytics credentials — not measured</span>');
+  if(r.scam_risk){
+    const PT={DCH:'datacenter',TOR:'Tor exit',VPN:'VPN',PUB:'public proxy',WEB:'web proxy',
+              SES:'search-engine spider',RES:'residential proxy'};
+    t+=dRow('Proxy type',r.scam_proxy_type
+      ?`<span class="c-dirty" title="ip2proxy code ${esc(r.scam_proxy_type)}">`+
+       `${esc(PT[r.scam_proxy_type]||r.scam_proxy_type)}</span>`+
+       `<span class=dimnote> ip2proxy ${esc(r.scam_proxy_type)}</span>`
+      :'<span class=dim>no ip2proxy record — empty is not a clean result</span>');
+    const sf=[['scam_datacenter','datacenter'],['scam_vpn','VPN'],['scam_tor','Tor'],
+              ['scam_blacklisted_external','external blocklist']].filter(([k])=>r[k]).map(([,n])=>n);
+    t+=dRow('Scamalytics flags',sf.length
+      ?`<span class=c-suspect>${esc(sf.join(' · '))}</span>`
+      :'<span class=dim>none raised</span>');
+  }
   t+=dRow('Abuse confidence',r.abuse_confidence!=null
     ?`<span class="c-${r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean'}">`+
      `${r.abuse_confidence}%</span>`+
@@ -779,10 +851,21 @@ $('#bulkgo').onclick=async()=>{
        ?`<span class="c-${x.r.abuse_confidence>=50?'dirty':x.r.abuse_confidence>=10?'suspect':'clean'}">`+
         x.r.abuse_confidence+`%</span>`
        :'<span class=dim title="No AbuseIPDB key — not measured">n/k</span>'},
+    // Scamalytics: the OVERALL score + band, and nothing more. Sorting by it is offered because the user
+    // asked to see it, but the colour never goes green and the header says "shown, not scored" — the score
+    // MIS-RANKS (Tor 15 "low", clean Comcast 18, Mullvad 44 highest), so it must not read as a ranking.
+    {k:'scam', h:'Scamalytics', get:x=>num(x.r&&x.r.scam_score),
+     cell:x=>x.r&&x.r.scam_risk
+       ?`<span class="c-${scamColour(x.r.scam_risk)}" title="Scamalytics ${esc(x.r.scam_score)} · `+
+        `${esc(x.r.scam_risk)}. Shown, not scored: it tracks the ISP score, not this IP.">`+
+        `${esc(x.r.scam_score)}</span><span class=dimnote> ${esc(x.r.scam_risk)}</span>`
+       :'<span class=dim title="No Scamalytics credentials — not measured">n/k</span>'},
     {k:'type', h:'Exit type', get:x=>(x.r&&x.r.connection_class)||'zz',
      cell:x=>x.r&&x.r.connection_class
-       ?`<span class="c-${x.r.connection_class==='datacenter'?'dirty':'clean'}">${esc(x.r.connection_class)}</span>`
-       :'<span class=dim title="No hosting name matched — which is not proof of a real line">—</span>'},
+       ?`<span class="c-${ccColour(x.r.connection_class)}">${esc(x.r.connection_class)}</span>`
+       :`<span class=dim title="${x.r&&x.r.scam_risk!=null
+           ?'Scamalytics raised no datacenter or proxy record, and no hosting name matched — not proof of a real line'
+           :'No hosting name matched, and Scamalytics did not run — not proof of a real line'}">—</span>`},
     {k:'isp', h:'ISP', get:x=>(x.r&&(x.r.isp||x.r.organization))||'',
      cell:x=>{const v=x.r&&(x.r.isp||x.r.organization);
        return v?`<span class=trunc title="${esc(v)}">${esc(v)}</span>`:'<span class=dim>—</span>';}},

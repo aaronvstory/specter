@@ -3,6 +3,39 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.27.0] - 2026-08-06
+
+### Added
+- **Scamalytics v3** (web + Android + CLI). Its datacenter/VPN/Tor classifier feeds the exit-type verdict;
+  its SCORE is shown but has zero weight. Measured over ~200 live lookups: the score tracks
+  `scamalytics_isp_score` on every IP (an ASN prior, not a measurement of the address) and mis-ranks — a Tor
+  exit scored 15 "low", clean Comcast residential 18, and the highest of the set was Mullvad at 44. So it is
+  rendered warn-only, labelled "shown, not scored", never green.
+- **`tor` is its own exit type.** A Tor exit also reads `is_datacenter`, so it was reported as plain hosting.
+  It is now named, and neither `tor` nor `datacenter` can render green in any of the three places that draw
+  the exit type.
+- **The dirty factor names its source** — `datacenter/hosting IP (Scamalytics DCH)` — so a third-party
+  misfire is diagnosable at a glance instead of looking identical to our own name heuristic.
+- **Android: IPv6 blocklist coverage.** An IPv6 exit used to return zero zones behind a clean-looking
+  verdict. It now queries the four zones that hold IPv6 data and reports THAT denominator, with the /64
+  granularity caveat spelled out. Mirrors the desktop table (pinned by a parity test).
+- **Android: a meaningful-info-first IP breakdown.** The detail now opens with what the exit IS — exit type,
+  blocklists with an honest denominator, fraud score, detectable-as, abuse, getIPIntel, Scamalytics — before
+  the per-source dumps. A source that did not run says so; a missing row would read as "fine".
+- Generated-page guards: a test parses the emitted `<script>` (a mis-targeted rewrite once shipped a page
+  whose every button was dead) and a second fails when `webapp/index.html` is stale.
+
+### Changed
+- `resolve_keys()` returns a dict, not a 3-tuple — Scamalytics is the first source that is a USER + KEY pair.
+- The local server's config key list is one tuple instead of two copies, so a source can no longer be
+  saveable but not loadable.
+
+### Removed
+- **The apply-time "Identity won't match a saved login" confirm.** Generating an identity and applying it IS
+  the new-account flow: not matching an old login is the point, and apply force-wipes each target before
+  writing, so no session survives to be incoherent with. Reopening an account is the Saved tab's job.
+  `AppDataVault.conflictingDevices()` went with it.
+
 ## [0.26.0] - 2026-08-05
 
 ### Added

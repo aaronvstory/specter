@@ -121,8 +121,15 @@ def test_zone_table_matches_the_android_side():
     # present on one side only would make the same IP score differently on phone and desktop.
     java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" /
             "java" / "com" / "specter" / "module" / "ui" / "Dnsbl.java").read_text("utf-8")
-    java_zones = re.findall(r'\{"([^"]+)",\s*"([^"]+)"\}', java)
-    assert java_zones == [(n, z) for n, z in ipcheck.DNSBL_ZONES]
+    def table(name, src):
+        m = re.search(r"String\[\]\[\] " + name + r" = \{(.*?)\n    \};", src, re.S)
+        assert m, f"{name} not found in Dnsbl.java"
+        return re.findall(r'\{"([^"]+)",\s*"([^"]+)"\}', m.group(1))
+
+    assert table("ZONES", java) == [(n, z) for n, z in ipcheck.DNSBL_ZONES]
+    # ...and the IPv6 table, whose whole point is an HONEST denominator. A phone querying 17 zones for an
+    # IPv6 address while the desktop queries 4 would report two different "of N" for the same exit.
+    assert table("ZONES_V6", java) == [(n, z) for n, z in ipcheck.DNSBL_ZONES_V6]
     # ...and so do the policy codes that keep residential IPs out of the abuse count — AND the reason
     # string each code maps to. Checking only the code SET would let the two sides disagree on what a
     # code MEANS (a swapped or mistyped reason on one side) while still passing, so the same listing
@@ -946,6 +953,250 @@ def test_android_uses_a_resolver_that_does_not_lose_or_fake_blocklist_answers():
     assert 'DOH_FALLBACK = "https://cloudflare-dns.com' in java
     # ...and it must be the one that degrades safely, never the one that manufactures a clean result.
     assert "google" not in java[java.index("DOH_FALLBACK"):java.index("DOH_FALLBACK") + 200].lower()
+
+
+# ---- Scamalytics ------------------------------------------------------------------------------
+#
+# Shape and every trap below MEASURED live over ~200 v3 lookups on 2026-08-06.
+
+
+def _scam_ok(**over):
+    """A well-formed ok body. Overrides go into the `scamalytics` object."""
+    body = {
+        "scamalytics_score": 15, "scamalytics_risk": "low",
+        "scamalytics_isp_score": 13, "scamalytics_isp_risk": "low",
+        "scamalytics_isp": "Example Networks", "status": "ok", "mode": "live",
+        "scamalytics_url": "https://scamalytics.com/ip/1.2.3.4",
+        "is_blacklisted_external": False,
+        "scamalytics_proxy": {"is_datacenter": False, "is_vpn": False, "is_amazon_aws": False,
+                              "is_google": False, "is_apple_icloud_private_relay": False},
+        "external_datasources": {
+            "ip2proxy": {"proxy_type": "0"}, "ip2proxy_lite": {},
+            "x4bnet": {"is_tor": False, "is_vpn": False, "is_datacenter": False, "is_spambot": False},
+            "firehol": {"is_blacklisted_30d": False, "is_blacklisted_1day": False, "is_proxy": False},
+            "ipsum": {"is_blacklisted": False, "num_blacklists": 0},
+            "spamhaus_drop": {"is_blacklisted": False}, "dbip": {"connection_type": "isp"}},
+    }
+    body.update(over)
+    return {"scamalytics": body, "credits": {"remaining": 2431, "used": 2}}
+
+
+def _patch_scam(monkeypatch, body):
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener, headers=None: body)
+
+
+def test_scamalytics_extracts_score_flags_and_proxy_type(monkeypatch):
+    _patch_scam(monkeypatch, _scam_ok(
+        scamalytics_score=44, scamalytics_risk="medium",
+        scamalytics_proxy={"is_datacenter": True, "is_vpn": True},
+        external_datasources={"ip2proxy": {"proxy_type": "DCH"}, "x4bnet": {"is_tor": False}},
+        is_blacklisted_external=True))
+    out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+    assert out["scam_score"] == 44 and out["scam_risk"] == "medium"
+    assert out["scam_isp_score"] == 13 and out["scam_isp_risk"] == "low"
+    assert out["scam_datacenter"] is True and out["scam_vpn"] is True
+    assert out["scam_proxy_type"] == "DCH"
+    assert out["scam_blacklisted_external"] is True
+    assert out["scam_tor"] is False
+
+
+def test_scamalytics_tor_is_the_union_of_two_sources(monkeypatch):
+    # MEASURED: x4bnet answered is_tor FALSE on a real Tor exit that ip2proxy typed "TOR". Trusting either
+    # one alone silently loses the single most decisive classification this source produces.
+    _patch_scam(monkeypatch, _scam_ok(
+        external_datasources={"ip2proxy": {"proxy_type": "TOR"}, "x4bnet": {"is_tor": False}}))
+    assert ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)["scam_tor"] is True
+    _patch_scam(monkeypatch, _scam_ok(
+        external_datasources={"ip2proxy": {"proxy_type": "0"}, "x4bnet": {"is_tor": True}}))
+    assert ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)["scam_tor"] is True
+
+
+def test_scamalytics_error_body_is_a_note_not_a_score(monkeypatch):
+    # HTTP 200 does NOT mean success — a malformed IP and a missing key both answer 200 with status:"error".
+    # And on every error shape `external_datasources` flips from an object to an empty ARRAY, so a guard
+    # that reads it before checking status raises. This test fails loudly if that order is ever swapped.
+    _patch_scam(monkeypatch, {"scamalytics": {
+        "status": "error", "error": "ip is not a valid IP address", "external_datasources": []}})
+    out = ipcheck.lookup_scamalytics("not-an-ip", "acct", "KEY", None)
+    assert "scam_risk" not in out and "scam_score" not in out
+    assert out["notes"] == ["Scamalytics: ip is not a valid IP address"]
+
+
+def test_scamalytics_no_answer_is_a_note_naming_both_causes(monkeypatch):
+    # A rejected key answers HTTP 404 with an Apache HTML body (the docs claim 401 + JSON; they are wrong),
+    # so _get_json returns None for BOTH unreachable and bad-credentials. The note must not pick one.
+    _patch_scam(monkeypatch, None)
+    out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+    assert "scam_risk" not in out
+    assert "unreachable" in out["notes"][0] and "rejected" in out["notes"][0]
+
+
+def test_scamalytics_credentials_never_reach_the_caller(monkeypatch):
+    # The credential test, run end-to-end through check() rather than the lookup alone, so a future field
+    # that forwards the user or key fails HERE. The key rides in the QUERY STRING, and the hosted deploy
+    # renders this report in a visitor's browser.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "1.2.3.4", "isp": "Example"})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    user, key = "acct-9910", "sk-live-DEADBEEFCAFE"
+    _patch_scam(monkeypatch, _scam_ok(
+        scamalytics_isp=f"Reseller for {user}",
+        scamalytics_url=f"https://scamalytics.com/ip/1.2.3.4?key={key}",
+        some_future_field=f"echoed {key} back"))
+    rep = ipcheck.check(ip="1.2.3.4", scam_user=user, scam_key=key)
+    blob = json.dumps(rep)
+    assert user not in blob and key not in blob
+    assert rep["scam_risk"] == "low"                 # ...while the measurement still lands
+
+
+def test_scamalytics_credits_never_reach_the_report(monkeypatch):
+    # Our quota is operator state, not the visitor's business.
+    _patch_scam(monkeypatch, _scam_ok())
+    out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+    assert "credits" not in out["scamalytics_raw"]
+    assert "remaining" not in json.dumps(out)
+
+
+def test_scamalytics_exhausted_credits_say_so_and_measure_nothing(monkeypatch):
+    # An empty balance must SAY so. Silently returning no fields would degrade every verdict to
+    # "no datacenter signal" with nothing to explain why. `remaining` is int in live mode, str in test mode.
+    for empty in (0, "0"):
+        _patch_scam(monkeypatch, {"scamalytics": _scam_ok()["scamalytics"],
+                                  "credits": {"remaining": empty}})
+        out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+        assert not [k for k in out if k.startswith("scam")], f"remaining={empty!r} still emitted fields"
+        assert "credits exhausted" in out["notes"][0]
+
+
+def test_connection_class_datacenter_from_scamalytics_when_the_name_regex_misses():
+    # "Byte Node LLC" is Mullvad's exit ISP and matches nothing in _DATACENTER_RE — a known commercial VPN
+    # exit that rendered `unclassified`. The factor must NAME the source: its specificity on residential
+    # pools is proven on only four IPs, so a wrong call has to be diagnosable at a glance.
+    rep = {"isp": "Byte Node LLC", "scam_proxy_type": "DCH", "dnsbl_usable": True}
+    assert ipcheck.connection_class(rep) == "datacenter"
+    assert ipcheck.is_datacenter(rep) is True
+    level, why = ipcheck.verdict_factors(rep)
+    assert level == "dirty"
+    assert "datacenter/hosting IP (Scamalytics DCH)" in why
+    # ...and is_datacenter alone (no proxy_type) still names Scamalytics rather than looking like the regex.
+    _, why2 = ipcheck.verdict_factors({"isp": "Byte Node LLC", "scam_datacenter": True})
+    assert "datacenter/hosting IP (Scamalytics is_datacenter)" in why2
+
+
+def test_connection_class_tor_beats_datacenter():
+    # A Tor exit reads is_datacenter true as well, and "Tor exit" is the more useful — and more damning —
+    # claim. It must not be reported as a plain hosting IP.
+    rep = {"scam_tor": True, "scam_datacenter": True, "isp": "Some Hosting"}
+    assert ipcheck.connection_class(rep) == "tor"
+    assert ipcheck.is_datacenter(rep) is False        # `tor` is its own class, not a datacenter
+    level, why = ipcheck.verdict_factors(rep)
+    assert level == "dirty" and "Tor exit" in why
+    assert not any("datacenter/hosting IP" in w for w in why)
+
+
+def test_ip2proxy_lite_and_an_empty_proxy_type_are_not_a_clean_result(monkeypatch):
+    # proxy_type "0"/"" means NO RECORD, not "clean" — dropping the field lets the UI say so. And
+    # ip2proxy_lite measured EMPTY on all 8 IPs, so rendering it would read as "checked and clean".
+    for empty in ("0", "", None):
+        _patch_scam(monkeypatch, _scam_ok(external_datasources={
+            "ip2proxy": {"proxy_type": empty}, "ip2proxy_lite": {"proxy_type": ""}}))
+        out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+        assert "scam_proxy_type" not in out, f"{empty!r} must not read as a proxy type"
+        assert "ip2proxy_lite" not in json.dumps(out)
+        assert ipcheck.connection_class(out) is None
+
+
+def test_scamalytics_score_never_moves_the_verdict():
+    """The behavioural lock, in BOTH directions.
+
+    MEASURED: the score tracks scamalytics_isp_score on every IP — an ASN prior, not a measurement of this
+    address — and it MIS-RANKS: a Tor exit scored 15 "low", clean Comcast residential 18, and the highest
+    in the whole set was Mullvad at 44. No threshold orders that set, so no threshold may exist. A future
+    "let's weight it a little" cannot land without failing here."""
+    worst = {"scam_score": 100, "scam_risk": "very high", "scam_isp_score": 100,
+             "scam_isp_risk": "very high", "scam_datacenter": False, "scam_vpn": False,
+             "scam_tor": False, "scam_blacklisted_external": False,
+             "isp": "Comcast Cable", "dnsbl_usable": True, "fraud_score": 0}
+    assert ipcheck.verdict_factors(worst)[0] == "clean"
+    best = {"scam_score": 0, "scam_risk": "low", "scam_datacenter": True, "dnsbl_usable": True}
+    assert ipcheck.verdict_factors(best)[0] == "dirty"
+
+
+def test_scamalytics_premium_placeholder_is_treated_as_missing(monkeypatch):
+    # On the Essential tier the Premium fields hold the literal "PREMIUM FIELD - upgrade to view".
+    # Rendering that in a detail card would read as data.
+    _patch_scam(monkeypatch, _scam_ok(scamalytics_isp="PREMIUM FIELD - upgrade to view",
+                                      external_datasources={
+                                          "ip2proxy": {"proxy_type": "PREMIUM FIELD - upgrade to view"}}))
+    out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+    assert "PREMIUM" not in json.dumps(out)
+    assert "scam_proxy_type" not in out
+
+
+def test_scamalytics_raw_is_flat_so_the_detail_card_can_render_it(monkeypatch):
+    # kv()/fmtv() in PAGE stringify a nested object as "[object Object]".
+    _patch_scam(monkeypatch, _scam_ok())
+    raw = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)["scamalytics_raw"]
+    for k, v in raw.items():
+        assert not isinstance(v, (dict, list)), f"{k} is nested — kv() would render it [object Object]"
+    assert raw["dbip_connection_type"] == "isp" and raw["isp_name"] == "Example Networks"
+
+
+def test_scam_datacenter_types_match_the_android_side():
+    # The two implementations must bucket the ip2proxy taxonomy identically, or the same IP classifies as a
+    # datacenter on one and unclassified on the other.
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    m = re.search(r"SCAM_DC_TYPES\s*=.*?asList\((.*?)\)\)", java, re.S)
+    assert m, "SCAM_DC_TYPES not found in HealthCheck.java"
+    assert set(re.findall(r'"([A-Z]+)"', m.group(1))) == ipcheck._SCAM_DC_TYPES
+
+
+def test_scamalytics_reserved_addresses_are_not_a_clean_signal(monkeypatch):
+    # MEASURED: 127.0.0.1, 10.0.0.1 and 0.0.0.0 all return ok / score 0 / "low". A "0 low" can mean
+    # "not a real exit", so it must never manufacture a class or a benign reading on its own.
+    _patch_scam(monkeypatch, _scam_ok(scamalytics_score=0, scamalytics_risk="low"))
+    out = ipcheck.lookup_scamalytics("127.0.0.1", "acct", "KEY", None)
+    assert out["scam_score"] == 0 and out["scam_risk"] == "low"
+    assert ipcheck.connection_class(out) is None       # no class invented from a low score
+
+
+# ---- generated page ---------------------------------------------------------------------------
+
+
+def test_the_generated_page_javascript_parses():
+    """webapp/index.html is GENERATED by three regex rewrites. A mis-targeted one once shipped a page whose
+    <script> was a SyntaxError — so every button was dead while the page still rendered perfectly. Nothing
+    failed loudly. Parse the emitted script instead of trusting the rewrites."""
+    import shutil
+    import subprocess
+    import tempfile
+    node = shutil.which("node")
+    if not node:
+        return                                          # no runtime here; the deploy check still applies
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "webapp" / "index.html").read_text("utf-8")
+    m = re.search(r"<script>(.*)</script>", html, re.S)
+    assert m, "webapp/index.html has no <script> — did build.py run?"
+    with tempfile.TemporaryDirectory() as d:
+        js = Path(d) / "page.mjs"
+        js.write_text(m.group(1), "utf-8")
+        r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+    assert r.returncode == 0, "generated page JS does not parse:\n" + (r.stderr or r.stdout)
+
+
+def test_the_generated_page_is_in_sync_with_PAGE():
+    """A PAGE edit that never had build.py re-run ships an index.html missing it — silently, because both
+    files look fine on their own."""
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "webapp" / "index.html").read_text("utf-8")
+    # The rewritten bits differ by design; everything else must match line-for-line.
+    for marker in ("id=scamuser", "id=scamkey", "const KEYFIELDS", "scamalytics_raw",
+                   "h:'Scamalytics'", "ccColour"):
+        assert marker in html, f"webapp/index.html is stale — re-run python webapp/build.py ({marker})"
+    assert "localStorage.getItem" in html and "fetch('/config')" not in html
 
 
 # ---- secrets ---------------------------------------------------------------------------------

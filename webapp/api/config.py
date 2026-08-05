@@ -11,6 +11,9 @@ class handler(BaseHTTPRequestHandler):
             "ipqs": bool(os.environ.get("IPQS_KEY")),
             "abuse": bool(os.environ.get("ABUSEIPDB_KEY")),
             "getipintel": bool(os.environ.get("GETIPINTEL_CONTACT")),
+            # ONE boolean for the pair — a half-set pair is not "shared active", it never runs.
+            "scamalytics": bool(os.environ.get("SCAMALYTICS_USER")
+                                and os.environ.get("SCAMALYTICS_KEY")),
         }).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

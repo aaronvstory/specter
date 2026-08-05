@@ -102,7 +102,23 @@ public class DnsblTest {
         eq(-1, Dnsbl.policyLabel("Spamhaus", "zen.spamhaus.org",
                 Arrays.asList("127.0.0.10", "127.0.0.11")).indexOf(':'), "no colon in a policy label");
 
+        // ---- IPv6 query names (RFC 5782 §2.4: 32 reversed nibbles) ----
+        // An IPv6 exit used to get ZERO blocklist coverage behind a clean-looking verdict. A mangled query
+        // name would resolve to nothing and read exactly the same way, so the form is pinned here.
+        eq("1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2",
+                Dnsbl.reverseV6("2001:db8::1"), "compressed form expands to 32 nibbles");
+        eq("2.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0",
+                Dnsbl.reverseV6("::2"), "the all-zero prefix still emits every nibble");
+        eq(63, Dnsbl.reverseV6("2606:4700:4700::1111").length(), "32 nibbles + 31 dots");
+        eq(null, Dnsbl.reverseV6("1.2.3.4"), "an IPv4 address is not an IPv6 query");
+        eq(null, Dnsbl.reverseV6(null), "null is safe");
+        eq(null, Dnsbl.reverseV6(""), "empty is safe");
+        eq(null, Dnsbl.reverseV6("2001:db8::zz"), "garbage does not become a query name");
+        // A hostname must never be handled here — it would trigger a real DNS resolution.
+        eq(null, Dnsbl.reverseV6("example.com"), "a hostname is refused without resolving it");
+
         // ---- the zone table ----
+        eq(4, Dnsbl.ZONES_V6.length, "the IPv6 table is the honest denominator, not all 17 zones");
         boolean sorbs = false;
         for (String[] z : Dnsbl.ZONES) if (z[1].contains("sorbs")) sorbs = true;
         eq(false, sorbs, "SORBS is gone (shut down 2024; it answers clean for everything)");

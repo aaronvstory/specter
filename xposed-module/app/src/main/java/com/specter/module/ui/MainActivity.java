@@ -571,62 +571,15 @@ public class MainActivity extends Activity {
             toast("Every identifier is toggled off — nothing to spoof. Enable some first.");
             return;
         }
-        // A saved login binds an app to the device it was captured under. Applying a DIFFERENT device over
-        // such an app makes it incoherent — the server still remembers the old model (Cash's "Your devices"
-        // showed Pixel 4a while live reads said SM-G996U). Warn before doing it; the coherent move is to
-        // restore that login from Saved (which re-applies its own device), not to apply a mismatched one.
-        // Base the device on toApply (what will REALLY be written), not the raw profile: if the device
-        // bundle is toggled off, apply leaves the model untouched, so there is no new mismatch to warn about.
-        final String applyingDevice = applyDeviceString(toApply);
-        if (applyingDevice != null) {
-            java.util.List<String> drift = driftWarnings(targets, applyingDevice);
-            if (!drift.isEmpty()) {
-                confirmDriftThenApply(drift, applyingDevice, toApply);
-                return;
-            }
-        }
+        // No "this won't match a saved login" confirm here. Generating an identity and applying it IS the
+        // new-account flow: not matching an old login is the POINT, and applyConfirmed() force-wipes each
+        // target's data before writing, so there is no surviving session left to be incoherent with. The
+        // dialog asked the user to confirm the thing they had just asked for. Reopening an old account is
+        // the Saved tab's job — a restore wipes and puts back the fingerprint+login PAIR.
         applyConfirmed(toApply);
     }
 
-    /** The manufacturer+model that {@code toApply} will actually write, or null when the device bundle is
-     *  toggled OFF (then apply leaves the real model in place, so it can't introduce a device mismatch). The
-     *  build_* fields share one toggle, so both are present together or not at all. */
-    private String applyDeviceString(Map<String, String> toApply) {
-        String mfr = toApply.get("build_manufacturer"), model = toApply.get("build_model");
-        if (mfr == null || model == null) return null;
-        String s = (cap(mfr) + " " + model).trim();
-        return s.isEmpty() ? null : s;
-    }
-
-    /** Per-target lines describing a saved login captured under a device OTHER than {@code applyingDevice}. */
-    private java.util.List<String> driftWarnings(Set<String> targets, String applyingDevice) {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        for (String pkg : targets) {
-            for (String dev : com.specter.module.gen.AppDataVault.conflictingDevices(
-                    appDataVault.list(pkg), applyingDevice)) {
-                out.add(Targets.label(this, pkg) + " has a saved login as " + dev);
-            }
-        }
-        return out;
-    }
-
-    /** Confirm before applying an identity that won't match a saved login's device. Restoring that login
-     *  (from Saved) is the coherent alternative — this dialog just makes the mismatch a deliberate choice. */
-    private void confirmDriftThenApply(java.util.List<String> drift, String applyingDevice,
-                                       final Map<String, String> toApply) {
-        String body = android.text.TextUtils.join("\n", drift)
-                + "\n\nApplying " + applyingDevice + " won't match that login — the app would look like a "
-                + "different phone than the account is registered on. To reuse a saved login, restore it "
-                + "from Saved instead (it re-applies its own device).";
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("Identity won't match a saved login")
-                .setMessage(body)
-                .setPositiveButton("Apply " + applyingDevice + " anyway", (d, w) -> applyConfirmed(toApply))
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    /** The destructive apply itself (wipe + write per target), assumed already confirmed. */
+    /** The destructive apply itself (wipe + write per target). */
     private void applyConfirmed(final Map<String, String> toApply) {
         Set<String> targets = Targets.get(prefs);
         final String sig = applySignature(toApply);
@@ -2115,6 +2068,14 @@ public class MainActivity extends Activity {
         repKeys.addView(hairlineInset());
         repKeys.addView(apiKeyRow("AbuseIPDB key", "abuseipdb_key",
                 "Abuse-report history · 1,000 lookups a day free"));
+        repKeys.addView(hairlineInset());
+        // A USER + KEY pair, so two rows — half a pair never runs. Its score is shown but scores nothing;
+        // what earns it a place is the datacenter/Tor classifier feeding the Exit type.
+        repKeys.addView(apiKeyRow("Scamalytics username", "scamalytics_user",
+                "Account name · pairs with the key below"));
+        repKeys.addView(hairlineInset());
+        repKeys.addView(apiKeyRow("Scamalytics key", "scamalytics_key",
+                "Datacenter and Tor classifier · 5,000 lookups a month free"));
         content.addView(repKeys);
 
         // Advanced (root) — device-wide, persistent Magisk-module actions, NOT per-profile hook gates.
@@ -2559,14 +2520,17 @@ public class MainActivity extends Activity {
 
             // 2) Tiles: big number over ONE short caption, uniform height. A caption that wraps to three
             //    lines makes every tile in the row that tall, so the long text lives in the breakdown below.
-            boolean dc = HealthCheck.isDatacenter(rep.organization, rep.isp != null ? rep.isp : geoIsp, rep.host);
+            String cc = HealthCheck.connectionClass(rep, geoIsp);
             int n = rep.blacklists.size(), pol = rep.policyLists.size();
             java.util.List<View> tiles = new java.util.ArrayList<>();
             // Only shown when it says something. "Not obviously a datacenter" is all a name heuristic can
             // claim, and rendering that as a green "Real line" reassures about exits it simply failed to
             // recognise — measured on a NordVPN-operated Tor exit, which no name rule catches. Mirrors
             // connection_class in ipcheck.py, which returns None rather than guessing "residential".
-            if (dc) tiles.add(repTile("Hosting", "Exit type", Theme.RED));
+            // Tor is called out separately: it also reads is_datacenter, but "Tor" is the more useful claim
+            // and it is an instant deny at most apps. Neither value may ever render green.
+            if ("tor".equals(cc)) tiles.add(repTile("Tor", "Exit type", Theme.RED));
+            else if ("datacenter".equals(cc)) tiles.add(repTile("Hosting", "Exit type", Theme.RED));
             tiles.add(repTile(rep.dnsblUsable || n > 0 ? String.valueOf(n) : "—", "Blacklists",
                     n >= 2 ? Theme.RED : n > 0 ? Theme.AMBER
                             : rep.dnsblUsable && rep.dnsblChecked > 0 ? Theme.SAGE : Theme.DIM));
@@ -2590,6 +2554,14 @@ public class MainActivity extends Activity {
                 tiles.add(repTile(String.format(java.util.Locale.US, "%.2f", g), "getIPIntel",
                         g >= 0.99 ? Theme.RED : g >= 0.90 ? Theme.AMBER : Theme.SAGE));
             }
+            // Scamalytics' score is shown because it is worth seeing, and coloured WARN-ONLY because it does
+            // not decide anything: measured, "low" came back for a Tor exit AND for 127.0.0.1, and the score
+            // tracks the ISP score rather than this address. What Scamalytics actually contributes is the
+            // Exit type tile above. Never SAGE.
+            if (rep.scamRisk == null) tiles.add(repTile("n/a", "Scamalytics", Theme.DIM));
+            else tiles.add(repTile(rep.scamScore != null ? String.valueOf(rep.scamScore) : "—", "Scamalytics",
+                    "very high".equals(rep.scamRisk) ? Theme.RED
+                            : "high".equals(rep.scamRisk) ? Theme.AMBER : Theme.INK));
             for (View r : tileRows(tiles, 3)) box.addView(r);
 
             // 3) Flags, as their own compact line.
@@ -2697,11 +2669,14 @@ public class MainActivity extends Activity {
         final String ipqs = prefs.getString("ipqs_key", "").trim();
         final String abuse = prefs.getString("abuseipdb_key", "").trim();
         final String giiContact = prefs.getString("getipintel_contact", "").trim();
+        final String scamUser = prefs.getString("scamalytics_user", "").trim();
+        final String scamKey = prefs.getString("scamalytics_key", "").trim();
         repBusy = true;
         status.setText("Checking exit-IP reputation…");
         render();   // repaint the button as "Checking…"
         new Thread(() -> {
-            final HealthCheck.Reputation r = HealthCheck.lookupReputation(vpn, ip, ipqs, abuse, giiContact);
+            final HealthCheck.Reputation r = HealthCheck.lookupReputation(vpn, ip, ipqs, abuse, giiContact,
+                    scamUser, scamKey);
             runOnUiThread(() -> {
                 repBusy = false;
                 if (!alive()) return;
@@ -2803,6 +2778,93 @@ public class MainActivity extends Activity {
         d.setOrientation(LinearLayout.VERTICAL);
         d.setPadding(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));
 
+        // WHAT THIS EXIT IS — the answers the use case actually needs, before the per-source dumps. Opening
+        // with IPQUALITYSCORE's raw fields made the reader assemble the verdict themselves out of eight
+        // groups. Every row here states what was MEASURED; a source that did not run says so rather than
+        // being omitted, because a missing row reads as "fine".
+        d.addView(detailHead("WHAT THIS EXIT IS", null));
+
+        String cc = HealthCheck.connectionClass(rep, geoIsp);
+        d.addView(networkMetaRow("EXIT TYPE",
+                "tor".equals(cc) ? "Tor exit — denied by most apps"
+                        : "datacenter".equals(cc) ? "hosting network — real ISPs pass more easily"
+                        : rep.scamRisk != null
+                        ? "unclassified — no datacenter or proxy record, and no hosting name matched"
+                        : "unclassified — no hosting name matched, and Scamalytics did not run",
+                cc != null ? Theme.RED : Theme.DIM));
+
+        // Blocklists with an HONEST denominator. "0 blacklists" and "0 of 17 checked" are different claims,
+        // and an IPv6 exit is checked against FOUR zones, never seventeen.
+        int hits = rep.blacklists.size();
+        int total = rep.dnsblZonesTotal > 0 ? rep.dnsblZonesTotal : rep.dnsblChecked;
+        if (!rep.dnsblUsable) {
+            d.addView(networkMetaRow("BLOCKLISTS",
+                    ("ipv6".equals(rep.dnsblFamily) || rep.dnsblFamily == null
+                            ? "not run — no zone answered for this address"
+                            : "not run — the blocklist DNS did not answer")
+                            + "\nThis is NOT a clean result. Nothing was checked.", Theme.DIM));
+        } else {
+            d.addView(networkMetaRow("BLOCKLISTS",
+                    hits + " of " + rep.dnsblChecked + " answering zones"
+                            + (total > rep.dnsblChecked ? " (" + total
+                            + ("ipv6".equals(rep.dnsblFamily) ? " IPv6" : "") + " queried)" : "")
+                            + (hits > 0 ? "\n" + android.text.TextUtils.join(", ", rep.blacklists) : ""),
+                    hits >= 2 ? Theme.RED : hits > 0 ? Theme.AMBER : Theme.SAGE));
+            if ("ipv6".equals(rep.dnsblFamily)) {
+                // Say what the evidence is WORTH, not just that it exists.
+                d.addView(networkMetaRow("IPV6 CAVEAT",
+                        "Spamhaus, CBL and s5h list /64 prefixes, so this is weaker evidence in both "
+                                + "directions than the IPv4 equivalent", Theme.DIM));
+            }
+        }
+
+        d.addView(networkMetaRow("FRAUD SCORE", rep.fraudScore != null
+                        ? rep.fraudScore + " · " + (rep.fraudScore >= 85 ? "high risk"
+                        : rep.fraudScore >= 60 ? "suspicious" : "clean")
+                        : "no IPQualityScore key — not measured",
+                rep.fraudScore == null ? Theme.DIM
+                        : rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE));
+
+        // "Is it DETECTABLE as a proxy at all" — the question the fraud score can't answer, because it
+        // saturates on every proxy. No flag while a source answered is a real result; no source is not.
+        java.util.List<String> det = new java.util.ArrayList<>();
+        if (Boolean.TRUE.equals(rep.tor)) det.add("Tor");
+        if (Boolean.TRUE.equals(rep.vpn)) det.add("VPN");
+        if (Boolean.TRUE.equals(rep.proxy)) det.add("Proxy");
+        d.addView(networkMetaRow("DETECTED AS", !det.isEmpty()
+                        ? android.text.TextUtils.join(" · ", det)
+                        : rep.fraudScore != null ? "no proxy/VPN/Tor flag" : "not measured",
+                !det.isEmpty() ? Theme.AMBER : rep.fraudScore != null ? Theme.SAGE : Theme.DIM));
+
+        d.addView(networkMetaRow("ABUSE", rep.abuseConfidence != null
+                        ? rep.abuseConfidence + "% confidence · "
+                        + (rep.abuseReports == null ? 0 : rep.abuseReports) + " reports in 90d"
+                        : "no AbuseIPDB key — not measured",
+                rep.abuseConfidence == null ? Theme.DIM
+                        : rep.abuseConfidence >= 50 ? Theme.RED
+                        : rep.abuseConfidence >= 10 ? Theme.AMBER : Theme.SAGE));
+
+        d.addView(networkMetaRow("GETIPINTEL", rep.getipintel != null
+                        ? String.format(java.util.Locale.US, "%.3f", rep.getipintel) + " · "
+                        + HealthCheck.getipintelBand(rep.getipintel)
+                        + (rep.getipintelBad ? " · bad IP" : "")
+                        : "did not answer — not measured",
+                rep.getipintel == null ? Theme.DIM
+                        : rep.getipintel >= 0.99 ? Theme.RED
+                        : rep.getipintel >= 0.90 ? Theme.AMBER : Theme.SAGE));
+
+        // Shown ADJACENT to the ISP score on purpose: they are near-identical on every IP measured, and
+        // seeing that is what tells a reader the score is an ASN prior, not a judgement about this address.
+        // Never SAGE — "low" came back for a Tor exit AND for 127.0.0.1.
+        d.addView(networkMetaRow("SCAMALYTICS", rep.scamRisk != null
+                        ? rep.scamScore + " · " + rep.scamRisk
+                        + (rep.scamIspRisk != null ? "  ·  ISP " + rep.scamIspScore + " " + rep.scamIspRisk : "")
+                        + "\nshown, not scored — it tracks the ISP score, not this IP"
+                        : "no Scamalytics credentials — not measured",
+                rep.scamRisk == null ? Theme.DIM
+                        : "very high".equals(rep.scamRisk) ? Theme.RED
+                        : "high".equals(rep.scamRisk) ? Theme.AMBER : Theme.INK));
+
         if (rep.fraudScore != null) {
             d.addView(detailHead("IPQUALITYSCORE", "strictness " + HealthCheck.IPQS_STRICTNESS));
             d.addView(networkMetaRow("FRAUD SCORE", String.valueOf(rep.fraudScore),
@@ -2837,8 +2899,32 @@ public class MainActivity extends Activity {
             addIfSet(d, "DOMAIN", rep.domain);
             addIfSet(d, "COUNTRY", rep.countryCode);
         }
+        if (rep.scamRisk != null) {
+            d.addView(detailHead("SCAMALYTICS", rep.scamRisk));
+            d.addView(networkMetaRow("SCORE", rep.scamScore + " · " + rep.scamRisk,
+                    "very high".equals(rep.scamRisk) ? Theme.RED
+                            : "high".equals(rep.scamRisk) ? Theme.AMBER : Theme.INK));
+            addIfSet(d, "ISP RISK", rep.scamIspRisk == null ? null
+                    : rep.scamIspScore + " · " + rep.scamIspRisk);
+            // An EMPTY ip2proxy record is "no record", not "clean" — say which, or the absence reassures.
+            d.addView(networkMetaRow("PROXY TYPE", rep.scamProxyType != null
+                            ? scamProxyTypeName(rep.scamProxyType) + " (" + rep.scamProxyType + ")"
+                            : "no ip2proxy record — empty is not a clean result",
+                    rep.scamProxyType != null ? Theme.RED : Theme.DIM));
+            java.util.List<String> sf = new java.util.ArrayList<>();
+            if (Boolean.TRUE.equals(rep.scamDatacenter)) sf.add("datacenter");
+            if (Boolean.TRUE.equals(rep.scamVpn)) sf.add("VPN");
+            if (Boolean.TRUE.equals(rep.scamTor)) sf.add("Tor");
+            if (Boolean.TRUE.equals(rep.scamBlacklistedExternal)) sf.add("external blocklist");
+            // DIM when none are raised, never green: these flags can only ever fire, so their silence is
+            // "nothing found", not "verified clean".
+            d.addView(networkMetaRow("FLAGS", sf.isEmpty() ? "none raised"
+                    : android.text.TextUtils.join(" · ", sf), sf.isEmpty() ? Theme.DIM : Theme.AMBER));
+            addIfSet(d, "PAGE", rep.scamUrl);
+        }
         if (!rep.zoneStatus.isEmpty()) {
-            d.addView(detailHead("BLOCKLISTS", rep.zoneStatus.size() + " zones queried"));
+            d.addView(detailHead("BLOCKLISTS", rep.dnsblChecked + " of " + rep.zoneStatus.size()
+                    + ("ipv6".equals(rep.dnsblFamily) ? " IPv6" : "") + " zones answered"));
             // Grouped by meaning, and the group label says what the meaning IS.
             zoneGroup(d, rep, "listed", "LISTED", "abuse reports against this IP", Theme.RED);
             zoneGroup(d, rep, "policy", "POLICY ONLY", "a mail-sending policy listing, not abuse", Theme.BLUE);
@@ -2868,6 +2954,19 @@ public class MainActivity extends Activity {
                 android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
     }
 
+
+    /** ip2proxy's code spelled out. The raw code stays beside it — the coarse "datacenter" bucket the
+     *  verdict uses must never hide the specific claim that produced it. */
+    private static String scamProxyTypeName(String code) {
+        if ("DCH".equals(code)) return "datacenter";
+        if ("TOR".equals(code)) return "Tor exit";
+        if ("VPN".equals(code)) return "VPN";
+        if ("PUB".equals(code)) return "public proxy";
+        if ("WEB".equals(code)) return "web proxy";
+        if ("SES".equals(code)) return "search-engine spider";
+        if ("RES".equals(code)) return "residential proxy";
+        return code;
+    }
 
     private View detailHead(String source, String meta) {
         TextView t = new TextView(this);

@@ -27,6 +27,7 @@ new_cfg = (
     "  $('#proxy').value=q.get('proxy')||'';\n"
     "  $('#ptype').value=q.get('ptype')||'http';\n"
     "  $('#ipqs').value=ls('ipqs_key'); $('#abuse').value=ls('abuse_key');\n"
+    "  $('#scamuser').value=ls('scamalytics_user'); $('#scamkey').value=ls('scamalytics_key');\n"
     "  $('#ip').value=q.get('ip')||'';\n"
     "  markKeys({});\n"
     "  // Which sources the DEPLOY already has a key for (booleans only, never the values), so a blank\n"
