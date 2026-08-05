@@ -491,6 +491,10 @@ final class HealthCheck {
         Integer scamScore, scamIspScore;
         String scamRisk, scamIspRisk, scamProxyType, scamUrl;
         Boolean scamDatacenter, scamVpn, scamTor, scamBlacklistedExternal;
+        // ip-api.com — KEYLESS hosting/proxy/mobile classifier (mirrors _ipapi_lookup in ipcheck.py). Gives
+        // a no-key user a real exit-type verdict where before only the name regex + getIPIntel could.
+        Boolean ipapiHosting, ipapiProxy, ipapiMobile;
+        String ipapiAsname;
         int dnsblChecked;                       // DNSBL zones that actually answered
         boolean dnsblUsable;                    // the sentinel resolved -> a zero-hit result is trustworthy
         /** Which table was queried, and how many zones it holds — the HONEST denominator. An IPv6 exit is
@@ -548,7 +552,7 @@ final class HealthCheck {
         // "datacenter/hosting IP" while the Exit type tile above it reads Mobile.
         boolean dc = !tor && !Boolean.TRUE.equals(r.mobile) && (scamDatacenter(r)
                 || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host)
-                || giiDatacenter(r));
+                || giiDatacenter(r) || ipapiDatacenter(r));
         boolean ipqsAbuse = Boolean.TRUE.equals(r.recentAbuse);
 
         // DIRTY: a Tor or datacenter exit, corroborated abuse, or getIPIntel's near-certain hosting verdict.
@@ -557,7 +561,9 @@ final class HealthCheck {
         // residential pools is proven on only four IPs, so a wrong call has to be diagnosable at a glance.
         if (tor) why.add("Tor exit");
         else if (dc) why.add("datacenter/hosting IP" + (scamDatacenter(r)
-                ? " (Scamalytics " + (r.scamProxyType != null ? r.scamProxyType : "is_datacenter") + ")" : ""));
+                ? " (Scamalytics " + (r.scamProxyType != null ? r.scamProxyType : "is_datacenter") + ")"
+                : ipapiDatacenter(r) && !isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host)
+                ? " (ip-api)" : ""));
         if (hits >= 2) why.add(hits + " blacklists");
         if (r.abuseConfidence != null && r.abuseConfidence >= 50) why.add(r.abuseConfidence + "% abuse confidence");
         if (r.getipintelBad) why.add("getIPIntel bad-IP");
@@ -631,6 +637,11 @@ final class HealthCheck {
         return r.getipintel != null && r.getipintel >= GII_HOSTING;
     }
 
+    /** ip-api.com's `hosting` boolean — a KEYLESS datacenter signal (mirrors _ipapi_dc in ipcheck.py). */
+    static boolean ipapiDatacenter(Reputation r) {
+        return r != null && Boolean.TRUE.equals(r.ipapiHosting);
+    }
+
     /** Scamalytics says hosting/proxy. Consulted alongside the name regex because it caught all four
      *  hosting IPs the regex missed (including Mullvad's "Byte Node LLC") and stayed quiet on all four
      *  real residential exits. Mirrors _scam_dc() in specter/ipcheck.py. */
@@ -647,7 +658,7 @@ final class HealthCheck {
         // is a real line whatever its ISP string looks like.
         if (Boolean.TRUE.equals(r.mobile)) return "mobile";
         if (scamDatacenter(r) || isDatacenter(r.organization, r.isp != null ? r.isp : geoIsp, r.host)
-                || giiDatacenter(r))
+                || giiDatacenter(r) || ipapiDatacenter(r))
             return "datacenter";
         return null;
     }
@@ -803,6 +814,20 @@ final class HealthCheck {
                 r.scamTor = (x4b != null && x4b.optBoolean("is_tor", false)) || "TOR".equals(ptype);
             }
         }
+
+        // ip-api.com — KEYLESS hosting/proxy/mobile classifier (mirrors _ipapi_lookup in ipcheck.py). HTTP
+        // free tier, through the same Network. A failure/rate-limit is an absent signal, never an error.
+        try {
+            org.json.JSONObject ia = getJson(net, "http://ip-api.com/json/" + enc(ip)
+                    + "?fields=status,proxy,hosting,mobile,asname", null);
+            if (ia != null && "success".equals(ia.optString("status"))) {
+                r.ipapiHosting = ia.optBoolean("hosting", false);
+                r.ipapiProxy = ia.optBoolean("proxy", false);
+                r.ipapiMobile = ia.optBoolean("mobile", false);
+                r.ipapiAsname = emptyOr(ia.optString("asname"), null);
+                if (Boolean.TRUE.equals(r.ipapiMobile)) r.mobile = true;
+            }
+        } catch (Throwable ignored) {}
 
         checkDnsbl(net, ip, r);
         repCache = r;

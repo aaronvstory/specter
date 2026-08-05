@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ip-api.com's free tier is HTTP-only (HTTPS needs a paid key). Allow cleartext ONLY for that one host;
+     every other request in the app stays HTTPS-only under the platform default (targetSdk 28+ blocks
+     cleartext). The ip-api response only feeds the hosting/proxy/mobile CLASSIFICATION display — not a
+     security decision — so a tampered reply is low-impact, and it's the device owner checking their own IPs. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">ip-api.com</domain>
+    </domain-config>
+</network-security-config>

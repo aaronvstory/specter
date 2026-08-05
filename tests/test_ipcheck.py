@@ -1328,6 +1328,36 @@ def test_direct_baseline_is_measured_once_per_run_not_per_row(monkeypatch):
     assert len(direct_calls) == 1, f"the baseline must be measured once for the run, got {len(direct_calls)}"
 
 
+def test_ipapi_hosting_classifies_datacenter_keyless():
+    """ip-api.com's `hosting` boolean is a KEYLESS datacenter signal — a no-key user gets a real exit-type
+    verdict where connection_class would otherwise return None. The verdict factor names the source so a
+    future misfire is diagnosable (as it does for Scamalytics/getIPIntel)."""
+    assert ipcheck.connection_class({"ipapi_hosting": True}) == "datacenter"
+    assert ipcheck.connection_class({"ipapi_hosting": False}) is None
+    assert ipcheck.connection_class({}) is None
+    lvl, why = ipcheck.verdict_factors(
+        {"connection_class": "datacenter", "ipapi_hosting": True, "dnsbl_usable": True})
+    assert lvl == "dirty" and any("ip-api" in f for f in why), why
+
+
+def test_ipapi_mobile_takes_precedence_over_hosting():
+    # A mobile carrier exit reads as mobile even if ip-api also flags hosting (CGNAT gateways often do).
+    assert ipcheck.connection_class({"mobile": True, "ipapi_hosting": True}) == "mobile"
+
+
+def test_ipapi_feeds_check_flow_and_proxy_note(monkeypatch):
+    # End to end: with no keys, ip-api's hosting promotes the exit type to datacenter and proxy=true adds a
+    # note. Override the autouse stub with a real-looking ip-api result.
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "45.83.220.5", "isp": "31173 Services AB"})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True, "dnsbl_detail": []})
+    monkeypatch.setattr(ipcheck, "_ipapi_lookup", lambda ip, opener=None: {
+        "ipapi_hosting": True, "ipapi_proxy": True, "ipapi_mobile": False, "ipapi_asname": "ESAB-AS"})
+    rep = ipcheck.check(ip="45.83.220.5")
+    assert rep["connection_class"] == "datacenter"
+    assert any("proxy" in n.lower() for n in rep["notes"]), rep["notes"]
+
+
 def test_no_baseline_request_is_made_when_there_is_no_proxy(monkeypatch):
     # The extra round trip exists only to interpret a PROXY's cost. Spending it on a direct check would
     # double every keyless lookup for nothing.

@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.0] - 2026-08-06
+
+### Added
+- **Keyless reputation source: ip-api.com** (web + Android). A no-key, no-signup hosting/proxy/mobile
+  classifier + ASN name. It feeds `connection_class`, so a user with NO API keys now gets a real exit-type
+  verdict (hostingâdatacenter, mobileâmobile) where before only the name regex + getIPIntel could decide,
+  and a proxy=true adds a note. Measured before integrating: it flagged a 31173 VPN exit as proxy that the
+  keyless path otherwise missed. The datacenter factor names the source ('(ip-api)') so a misfire is
+  diagnosable. Android needed a scoped cleartext-traffic exception (ip-api's free tier is HTTP-only).
+
 ## [0.28.0] - 2026-08-06
 
 ### Added
