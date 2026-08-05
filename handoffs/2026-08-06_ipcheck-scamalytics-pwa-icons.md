@@ -63,6 +63,29 @@ signup). Docs <https://docs.scamalytics.com/ip-fraud-risk-api/v3/>. Account is *
 - Recommendation to implement: union `is_datacenter` + `ip2proxy` DCH/VPN/PUB/WEB/SES into
   `connection_class()` (which already drives dirty), and add TOR as its own dirty factor.
 
+**UI SPLIT — the user's explicit direction, and it matches what the API actually returns.** Scamalytics
+does have an overall verdict plus the underlying per-datasource checks:
+
+- QUICKVIEW (bulk table + the single-check tiles): **one column/tile — the overall
+  `scamalytics_score` + `scamalytics_risk` band.**
+- DETAIL VIEW: everything underneath it, as its own group:
+  - `scamalytics_score` / `scamalytics_risk` (the overall) and `scamalytics_isp_score` /
+    `scamalytics_isp_risk` (the ISP-wide score) — show them ADJACENT, because they are near-identical on
+    every IP measured and seeing that is what tells the reader the score is an ISP prior.
+  - `scamalytics_proxy`: `is_datacenter`, `is_vpn`, `is_apple_icloud_private_relay`, `is_amazon_aws`,
+    `is_google`
+  - `external_datasources`, the nitty-gritty: `x4bnet` (vpn / datacenter / tor / spambot / bot flags),
+    `ip2proxy.proxy_type` (TOR / DCH / VPN / PUB / WEB / SES), `firehol` (30d / 1day / is_proxy),
+    `ipsum` (blacklisted + count), `spamhaus_drop`, `google` (googlebot / crawler / cloud),
+    `amazon_aws`, `apple_icloud_private_relay`, `dbip.connection_type`
+  - `is_blacklisted_external`, `scamalytics_url` (a link to their page for that IP)
+
+CAVEAT to honour while doing it, because the two pull against each other: the overall score is the part
+that MIS-RANKS (Tor 15 vs clean Comcast 18 vs Mullvad 44). So put it in the quickview as asked, but
+colour it WARN-ONLY — amber/red at high and very high, never green — and label it "Scamalytics" rather
+than anything implying a verdict. The datacenter/Tor flags carry the actual signal and are what feeds
+`connection_class()`; the score is shown because the user wants it visible, not because it decides.
+
 **Bands** (documented + all four observed): `low` `medium` `high` `very high` — lowercase, with a SPACE.
 Thresholds 0-19 / 20-59 / 60-89 / 90-100. NOT the quartiles the website uses.
 
