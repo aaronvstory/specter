@@ -961,3 +961,160 @@ Specter treats them as two distinct actions and never implies one does both.
 - A **DESELECTED** target's profile JSON — an app removed from the target set keeps its last identity until
   its `<pkg>.json` is removed (memory `zygisk-gates-on-profile-file`), because the Zygisk layer gates on the
   file's presence. Switching identities on the *selected* set never touches a deselected app.
+
+---
+
+# What fintech apps actually check — exa research, 2026-08-06
+
+Sourced via exa (fintech/device-intel vendor docs + practitioner write-ups). Labels: PROVEN (vendor
+doc / paper), STRONG (multiple concurring sources), HYPOTHESIS (single anecdote, mechanism sound).
+Drives the reputation-source decision below and the coherence-check backlog in docs/IDEAS.md.
+
+## Fintech IP-reputation signals (research 2026-08-06)
+
+**Three stacked layers, not one score.** Network provenance → abuse history → cross-signal consistency. Weight sits in layer 3.
+
+**Fingerprint publishes literal weights — they settle the argument** (PROVEN, docs.fingerprint.com/docs/suspect-score):
+- Tor exit node 14/16/17 (browser/Android/iOS) · IP blocklist email_spam 14/12/13 · attack_source 13/13/13
+- Datacenter proxy 14/12/15 · **residential proxy only 6/6/6**
+- public_vpn 4/5/5 · relay (Apple Private Relay, Cloudflare WARP) 4/4/4 · timezone_mismatch 3/4/4
+- Read: **abuse history and hosting outrank "is a proxy" by ~2.5x**; "residential" is barely penalized.
+- Weights are set inversely to global trigger probability — rarer signal, heavier.
+
+**Anonymization per se is no longer scored as fraud — WHICH anonymizer is** (PROVEN, geoq.io + Mastercard Identity Insights):
+- GeoQ additive: tor +45, proxy +40, Spamhaus DROP +40, datacenter +35, bogon +30, vpn +30, RPKI-invalid +20.
+- Then **capped at 20** for benign kinds (relay, satellite, public resolver).
+- Mastercard IP Proxy Risk Class: LOW = "OS provider or corporate VPN", HIGH = "confirmed TOR or hosted VPN with TOR-like behavior".
+
+**Structural fields the big vendors expose that a single score hides** (PROVEN):
+- Fingerprint `ip_info`: `asn_type` (isp/hosting), `datacenter_result` + `datacenter_name`, `proxy_details.proxy_type` (residential | data_center | unknown), `proxy_confidence`, `proxy_ml_score`, `last_seen_at`.
+- SEON: five separate proxy booleans (vpn/web/public/data_center/residential), `open_ports[]` (live probe), `spam_urls[]` naming the DNSBL, and `applied_rules[]` with per-rule point values.
+- Socure: `webRtcPublicIp`, `webRtcInternalIp`, `forwardedForIps[]`, `realIp`, `ispType`, **`deviceNetworkTimezoneOffsetDiffMinutes`** (a numeric delta, not a boolean).
+- ThreatMetrik: proxy SUBTYPE assertions (hidden > anonymous > openTransparent) + `link.proxyGeo_TrueGeo`, `link.timeZone_TrueGeo`, "DNS Resolver 1000mi TrueIP", "TrueIP WebRTC ExtIP Mismatch".
+
+**SEON's own worked weights invert the naive intuition** (PROVEN, seon.io):
+- Suspicious SSH port open +5 · DNSBL listing +4 · VPN detected +3 · high-risk country +2 · **residential ISP −1 (negative)**.
+- Cross-field beats self-attribute: HC129 phone-country ≠ IP-country +2, HC111 IP-country ≠ card-country +1, vs harmful-IP +2.
+- SEON states plainly: residential/mobile proxies are **not** caught by IP intelligence — they're caught by device fingerprinting.
+
+**`os_mismatch` is TCP/IP stack fingerprinting sold as VPN detection** (PROVEN, fingerprintjs python-sdk VpnMethods.md):
+- Compares SYN signature (initial TTL 128=Win / 64=Linux-Android-iOS, window + scale, MSS, TCP option ORDER) against the claimed UA OS.
+- p0f additionally names the tunnel by MTU: 1500 Ethernet · 1492/1452 DSL-PPPoE · 1476 IPSec/GRE · 1490 PPTP · **1300–1460 "generic tunnel or VPN"**.
+- `false` also means detection FAILED (10–15% of cases) — never read `false` as a clean stack.
+
+**IP-level 7-day memory is a shared-blast-radius trap** (PROVEN): `os_mismatch` fires if ≥10% of that IP's requests mismatched in 7d; `timezone_mismatch` at ≥50%; blocklist at ≥75% replay-flagged. One careless session poisons the exit for everyone behind it.
+
+**Velocity is scored on the entity graph, not the IP** (STRONG, Sift): documented example signal group "IP: known bad" = *failed transactions per IP last hour/day*. Sift links across Device ID, cookie fingerprint, IP, address; scores recompute in real time from global network labels, so an IP's score moves with zero activity from you.
+
+**Orchestration layers have no first-party IP data** (STRONG): Persona ("Proxy Detected", "Geolocation Language Mismatch"), Alloy (routes to Socure), Unit21 — rule engines over the vendors above. Iovation: no reachable primary doc, device-reputation model, **HYPOTHESIS** on any specific IP weighting.
+
+---
+
+## IP cleanliness vs device/behavioral weight
+
+**Vendors say it themselves: IP is weight, not a verdict.**
+- Sardine (STRONG): IP signals are "shared and noisy, so IP is context that adds weight, not a decision on its own."
+- Cloudflare (STRONG): bot-management v8 ML "identifies residential proxy abuse WITHOUT resorting to IP blocking" — bot operators just move IP space until they blend in.
+- Incognia (PROVEN doc): rebuilds IP geolocation from *observed device GPS* rather than ISP registry, explicitly because registry data is maskable.
+
+**But there are two different questions with two different answers:**
+- **Risk scoring** → IP is a minor weighted input (~6 pts for a clean residential exit).
+- **Account linkage** → linkage is an **OR**: a repeated IP collapses ten profiles into one banned entity even with ten perfect device fingerprints, and vice versa. (HYPOTHESIS — proxy-vendor blog, but consistent with how clustering is built.)
+
+**ASN classification is structurally blind to residential proxies** (STRONG): the exit *is* a real consumer ASN by construction. Anything scoring off ASN reads them clean.
+
+**What actually catches a residential proxy:**
+- Backbone/gateway attribution — matching the vendor's customer-facing gateway IPs (Bright Data, Oxylabs, NetNut, IPRoyal, Smartproxy, Soax). Called "ground-truth proof". (STRONG, Spur)
+- Client concentration on one residential exit — how many distinct devices appear behind it. (STRONG, Spur)
+- Cross-layer RTT misalignment — a proxy desynchronizes transport- vs application-layer RTT; protocol-agnostic. (PROVEN, NDSS 2025 U.Michigan; USENIX Sec '24 CalcuLatency)
+- **Counter-finding: RTT detection is adversarially fragile** — simple traffic scheduling drops recall **99% → 8%**. (PROVEN, NDSS 2026 QCRI/HBKU/NUS)
+- TCP-stack vs UA OS mismatch (see above).
+- Behavioral/ML clustering.
+
+**Coherence is the cheap universal check, and it's CONTINUOUS.**
+- IP geo, JS/system timezone, locale, GPS come from independent sources — a proxy changes only the IP, the rest stay put. Mature impls compare at continent level to survive travel. (STRONG)
+- Practitioner postmortem (HYPOTHESIS, single vendor anecdote, but the mechanism matters): a 4-month-clean profile died overnight because the provider **silently rotated a "sticky" IP** Frankfurt→Munich while the device still reported Europe/Berlin. Nothing was touched by the operator.
+- Implication: re-verify IP-geo vs applied timezone **every session**, not once at profile creation.
+
+**Mobile is the weakest place for IP overall** (STRONG): CGNAT sharing, no browser layer, no WebRTC in native SDKs (Socure confirms WebRTC fields are web-only). Fintech vendors compensate with location intelligence + behavioral biometrics.
+
+**Signals a device-config profile cannot touch at all** (STRONG): accelerometer/gyro stillness, touch geometry, "is the phone moving like a phone in a hand or sitting flat in a rack" (Darwinium), and location plausibility over time (Radar, on gig/courier payout fraud).
+
+**Fingerprints are increasingly used as INCONSISTENCY detectors, not identity anchors** (STRONG, Castle): JA3 groups many clients; `navigator.webdriver` adds no uniqueness but reveals spoofing when combined. → **uniqueness is not the target; internal consistency and absence of tamper artifacts are.**
+
+**IP-type labels are unreliable in both directions** (STRONG, ipinfo community + Predax): reassignment lag mislabels real fixed-line ISP subnets as "Data Center", and hoster ranges as residential. A single vendor's "residential" verdict is a guess with known error bars — query several and expect disagreement.
+
+---
+
+## Android session capture/restore — reliability findings
+
+The established root-backup lineage (Neo Backup / OAndBackupX, Titanium, Swift) converges on one recipe. All PROVEN unless noted.
+
+**The recipe:**
+- **Stop the app first.** `am force-stop` / `kill -STOP` on every pid owned by the app uid *and* every pid holding an open fd under `/data/data/<pkg>/` (webview runs under a different uid but writes the app's cache).
+- Neo Backup **tested and REJECTED `pm suspend`**: 7/638 apps with changed files vs 4/638 without; suspend itself triggers app actions and unsuspend sometimes fails to resume.
+- Never stop system-uid processes (uid < 10000) — deadlock.
+- Enter root through the global mount namespace: `su -c 'nsenter --mount=/proc/1/ns/mnt sh'`, fallbacks `su --mount-master` then bare `su`. (Magisk overlay mounts otherwise hide the real /data.)
+- Tar `files/`, `databases/`, `shared_prefs/`. **Exclude `cache/`, `code_cache/`, `lib/`.**
+- Restore = **wipe target dir first, then untar** — do not merge onto existing files.
+- Then `chown -R <uid>:<uid>` (uid from `dumpsys package <pkg> | grep userId` — a reinstall assigns a NEW uid) and `restorecon -Rv`. Neo reads the uid/gid/context Android assigned to the freshly created dir rather than trusting restorecon alone, which mislabels some paths (`storage_file` instead of `media_rw_data_file`).
+
+**Three landmines:**
+
+1. **SQLite WAL** — with `enableWriteAheadLogging` (Room's default) the live login row can sit in `x.db-wal`, not `x.db`. Copying only `.db` "most of the times does not contain the latest commits". Fix: copy `.db` + `.db-wal` + `.db-shm` as a set, **or** `PRAGMA wal_checkpoint(TRUNCATE)` first. Tarring the whole `databases/` dir gets this for free — **but only if the app was stopped**, else the -wal is mid-write. Mixing a copied `.db-wal` with the target's own stale `-shm` corrupts.
+
+2. **Keystore/TEE-wrapped tokens do not survive a copy — this is the hard ceiling.** Hardware-backed AndroidKeyStore keys are non-exportable; not even the OS reads them. Anything in EncryptedSharedPreferences, Firebase Auth (Tink keyset wrapped by `firebear_main_key_id_for_storage_crypto`), or FIDO/passkeys is ciphertext without its key → `AEADBadTagException` / `KeyStoreException: Signature/MAC verification failed` → logged-out or crash-loop. Real cases: tapsmith #154, zodl #2349 (**+41% crashes on Android 16** after device-to-device transfer, root cause "copies the EncryptedSharedPreferences file but not the Keystore key"), Stripe Terminal #513, Cryptomator #278. AndroidX docs warn against backing these files up at all.
+
+3. **`code_cache/` can trigger total data loss.** Neo #589: back up with cache included → reinstall (uid changes) → restore → `code_cache` keeps the OLD uid while everything else got the new one → **Android wipes the app's entire data on reboot** (Android 13+).
+
+**Login state has three layers, only one of which is a file-copy win:**
+- Layer 1 — plain cookies/JWT/sqlite rows → **copyable**.
+- Layer 2 — Keystore-wrapped secrets → **not copyable** without the device-bound key.
+- Layer 3 — server-side device-bound registration/attestation (FCM push token re-registration, banking device-binding) → **not copyable at all**; needs the spoofed device identity to line up server-side. (Neo #94: restored WhatsApp lost push notifications; android.stackexchange 251065: banking app forced in-person re-auth after Titanium restore.)
+
+**Architectural alternative, noted not recommended** (STRONG): Island / Shelter use the OS Work Profile, and App Cloner rewrites the package name — separate data dirs the OS segregates, each with its **own Keystore namespace**, so nothing is ever re-injected. Not a drop-in for Specter: those give N *concurrent* identities in N slots; Specter rotates *serially* through one package slot, which is exactly why it inherits WAL/Keystore/uid problems they never hit.
+
+**Action items for Specter's vault:** verify the appdata tarball excludes `cache/` + `code_cache/` + `lib/`; confirm `am force-stop` precedes the snapshot; expect per-app variance in restore success and report which layer failed rather than "restore failed".
+
+---
+
+## Reputation sources that discriminate (ranked)
+
+IPQS and AbuseIPDB saturate for one structural reason: both compress to a single score driven by the same two inputs — datacenter/ASN class + abuse-report volume. Four orthogonal axes fix that: **network-level (not per-IP) reputation · proxy TYPE + recency · structural classification · named-operator attribution.**
+
+| # | Source | Free tier | The discriminating field | Conf |
+|---|---|---|---|---|
+| 1 | **ipapi.is** | 1k/day, signup, credits never expire | **`abuser_score` on the COMPANY and the ASN** — network-level, not per-IP; plus `company.type` (hosting/isp/business/education/government), `egress_service`, `is_mobile`, `is_bogon` | STRONG |
+| 2 | **ip-api.com** | 45/min, **no key, no signup** | `mobile` / `proxy` / `hosting` triple + `asname`; batch endpoint; vendor pledge "will never require an API key" | PROVEN |
+| 3 | **proxycheck.io** | 1k/day, signup | proxy **`type`** (SOCKS5 / SOCKS5H / VPN / Compromised Server) + **last-seen timestamp** + `DAY_RESTRICTOR` (match only proxies seen in last N days) + separate `confidence`; 1000 IPs/request | STRONG |
+| 4 | **ipregistry** | **100k one-time credits**, never expire | Best fit for a **bulk comparison sweep**; IP usage type + carrier + VPN at every tier (its 220+ OSINT feeds overlap the 17 DNSBLs already wired) | STRONG |
+| 5 | **vpnapi.io** | 1k/day | **`relay`** boolean — separates iCloud Private Relay from a commercial VPN, a category IPQS collapses | STRONG |
+| 6 | **IPHub** | 1k/day | **Tri-state `block` (0/1/2)** — the "2 = unsure" bucket is itself information; free reverse hostname (rDNS `pool-*.dyn.*` is a real manual tell). Caveat: `residentialProxy` is PRO-only | STRONG |
+| 7 | **IP2Proxy LITE** | free, **offline, unlimited** | Local pre-filter, zero latency/quota. **Trap: LITE ships only open-proxy (PUB) records** — VPN/residential/datacenter are the paid edition. A hit is strong evidence; a **miss means nothing** | STRONG |
+| 8 | **ipgeolocation.io** | credit model | Named VPN/proxy **provider** + confidence + last-seen. Caveat: the Security module **burns extra credits** on top of the base lookup — not free-tier-neutral | STRONG |
+
+**Do not add:**
+- **ipinfo.io** — free Lite tier is country + ASN **only**; every privacy flag is paid (residential-proxy data is the Max tier). Residual use: unlimited unmetered ASN name/domain enrichment. (PROVEN)
+- **ipdata** — free 1,500/day duplicates the existing 17 DNSBLs + AbuseIPDB; `is_vpn` and `scores.vpn_score` are Business ($120/mo). `is_icloud_relay` is a free extra. (STRONG)
+- **GreyNoise** — genuinely orthogonal (scanner behaviour + RIOT false-positive suppression) but **50 lookups/WEEK**, and gmail/proton/icloud accounts get **no API key at all**. Cannot support bulk. (PROVEN)
+- **Spur** — the best data on the market (names the individual residential-proxy brands: `NETNUT_PROXY`, `ABCPROXY_PROXY`; plus `client.concentration` density/skew, `risks: GEO_MISMATCH`, `tunnels[]`). **No free API tier exists**; web lookup is captcha-gated; free "Monocle" is client-side JS, not an IP lookup. Do not plan around it. (PROVEN)
+- **Shodan InternetDB** (`https://internetdb.shodan.io/<ip>`, claimed keyless open-ports/CVEs) — **HYPOTHESIS, endpoint and terms unverified this pass.** If it holds it's a cheap orthogonal axis (an exit listening on 1080/3128/8080/1194 is a proxy regardless of score). Verify before wiring.
+
+**Recommended add order:** ip-api.com (zero friction, try first) → ipapi.is (highest value) → proxycheck.io (tie-breaker) → ipregistry (bulk runs) → vpnapi.io (relay class).
+
+---
+
+## Verdict: is the tool measuring the right things?
+
+**Half right, and it's the cheaper half.**
+
+- ✅ The static layer is correct and well-built: ASN/datacenter, 17 DNSBL zones, AbuseIPDB, IPQS. That maps cleanly onto SEON's `applied_rules` and GeoQ's weight table.
+- ⚠️ **The static layer is roughly the ~35% of the score vendors care least about.** Every HIGH-weight vendor signal is *relational* and cannot be obtained by looking up an IP: device-TZ vs IP-TZ, TCP-stack OS vs UA OS, WebRTC vs connection IP, XFF leakage, DNS-resolver distance, GPS vs IP geo, accounts-per-IP-per-hour.
+- ✅ **Already halfway to a real measurement**: the tool measures proxy-added latency. That is the same family as the academically-validated cross-layer RTT fingerprint — a signal the tool *computes* rather than *buys*. Keep and extend it. (Note the NDSS 2026 fragility result: latency evidence is real but not robust; label it as one input, never a verdict.)
+- ❌ **Saturation is structural, not a config problem.** Residential exits present real consumer ASNs; no amount of extra reputation APIs fixes discrimination if they all key off ASN + report count. Adding ipapi.is `abuser_score` (network-level) and proxycheck.io type+recency is the fix that actually separates two IPs both scoring 75.
+- ❌ **Coherence is currently a one-shot property and should be continuous.** The silently-rotated-sticky-IP failure (HYPOTHESIS-grade anecdote, PROVEN-grade mechanism) means IP-geo vs applied timezone must be re-checked per session, not at profile creation. Specter already ties TZ to the proxy exit IP (v0.19.0) — the gap is *re-verification*, and surfacing a drift warning when the exit moves.
+- ❌ **Missing a cheap high-value check the tool can compute itself**: does the exit's IP-geo timezone match the profile's applied timezone, and does the exit's geo match the profile's carrier/MCC? Both are pure local comparisons, zero API cost, and they map to a real vendor weight (Fingerprint 3-4 pts, Socure returns the delta in minutes, Mastercard likewise).
+
+**UI wording, per the project rule** (and echoed independently by the research): a checker reporting "not a datacenter, not blocklisted" must render as **"no negative signals found"** — never as a clean verdict. Only colour in the warning direction; a false all-clear on a vendor-labelled field is the one failure mode that isn't survivable.
+
+**Out of scope, worth stating plainly so it isn't re-litigated:** behavioral biometrics (accelerometer stillness, touch geometry) and location-plausibility-over-time are the layers a device-config profile cannot address at all. No amount of IP hygiene or Build-field coherence touches them.

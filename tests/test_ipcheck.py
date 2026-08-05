@@ -121,8 +121,15 @@ def test_zone_table_matches_the_android_side():
     # present on one side only would make the same IP score differently on phone and desktop.
     java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" /
             "java" / "com" / "specter" / "module" / "ui" / "Dnsbl.java").read_text("utf-8")
-    java_zones = re.findall(r'\{"([^"]+)",\s*"([^"]+)"\}', java)
-    assert java_zones == [(n, z) for n, z in ipcheck.DNSBL_ZONES]
+    def table(name, src):
+        m = re.search(r"String\[\]\[\] " + name + r" = \{(.*?)\n    \};", src, re.S)
+        assert m, f"{name} not found in Dnsbl.java"
+        return re.findall(r'\{"([^"]+)",\s*"([^"]+)"\}', m.group(1))
+
+    assert table("ZONES", java) == [(n, z) for n, z in ipcheck.DNSBL_ZONES]
+    # ...and the IPv6 table, whose whole point is an HONEST denominator. A phone querying 17 zones for an
+    # IPv6 address while the desktop queries 4 would report two different "of N" for the same exit.
+    assert table("ZONES_V6", java) == [(n, z) for n, z in ipcheck.DNSBL_ZONES_V6]
     # ...and so do the policy codes that keep residential IPs out of the abuse count — AND the reason
     # string each code maps to. Checking only the code SET would let the two sides disagree on what a
     # code MEANS (a swapped or mistyped reason on one side) while still passing, so the same listing
@@ -394,6 +401,21 @@ def test_verdict_dirty_on_a_datacenter_exit_even_with_no_abuse():
     level, why = ipcheck.verdict(rep)
     assert level == "dirty" and "datacenter" in why.lower()
 
+
+
+def test_the_big_dns_providers_are_recognised_as_datacenters():
+    r"""8.8.8.8 and 1.1.1.1 both returned verdict CLEAN with "No datacenter signal" (measured 2026-08-06).
+
+    Cause: the pattern required `google\s+llc`, but ipwho.is returns the BARE names "Google" and
+    "Cloudflare" where IPQS returns "Google LLC" — so the free/keyless path never matched. A false
+    all-clear on two of the most obvious datacenter addresses in existence.
+    """
+    for isp in ("Google", "Google LLC", "Google Cloud", "Cloudflare", "Fastly", "Amazon.com"):
+        assert ipcheck.is_datacenter({"isp": isp}), f"{isp} must read as a datacenter"
+    # ...and the widening must not swallow the residential ISPs it was narrow to protect.
+    for isp in ("Google Fiber Inc", "Comcast Cable", "Spectrum", "T-Mobile USA", "SpaceX Services",
+                "Windstream Communications"):
+        assert not ipcheck.is_datacenter({"isp": isp}), f"{isp} is a real line, not a datacenter"
 
 def test_datacenter_catches_gcp_azure_by_org_name_but_not_google_fiber():
     # GCP/Azure don't self-identify as "cloud" in free WHOIS — they read "Google LLC" / "Microsoft
@@ -842,3 +864,761 @@ def test_ipqs_scrubs_the_key_out_of_a_rejection_message(monkeypatch):
     out = ipcheck.lookup_ipqs("8.8.8.8", "SECRETKEY", None)
     assert "SECRETKEY" not in json.dumps(out)
     assert "Invalid or expired key" in out["notes"][0]     # ...while still saying what went wrong
+
+
+def test_an_ipv6_exit_falls_back_to_ipv4_so_the_blocklists_still_run(monkeypatch):
+    # MEASURED 2026-08-05: every one of the 17 zones answers the 127.0.0.2 test entry and NONE answers the
+    # 2001:db8::2 one — they hold no IPv6 data at all. A dual-stack proxy (Starlink residential, sampled 8x:
+    # 5 IPv4 / 3 IPv6 from one endpoint) can hand back either family, so landing on IPv6 used to mean ZERO
+    # blocklist evidence behind a clean-looking verdict. Ask again over IPv4 instead of giving up.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo",
+                        lambda opener, ip=None: {"ip": "2605:59ca::e798", "isp": "Starlink"})
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    checked = {}
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: checked.setdefault("ip", ip) and {} or
+                        {"blacklists": [], "policy_lists": [], "dnsbl_checked": 17, "dnsbl_usable": True,
+                         "dnsbl_detail": []})
+    rep = ipcheck.check("host:1080")
+    assert checked["ip"] == "153.66.117.15"          # the blocklists ran, on the checkable address
+    assert rep["ip"] == "153.66.117.15"
+    assert rep["exit_ipv6"] == "2605:59ca::e798"     # ...and the v6 exit is still reported, not hidden
+    assert any("dual-stack" in n for n in rep["notes"])
+    assert rep["dnsbl_usable"] is True
+
+
+def test_an_ipv6_only_exit_is_still_checked_against_the_zones_that_have_ipv6_data(monkeypatch):
+    # No IPv4 route: still check, against the four zones that actually hold IPv6 data, and report THAT
+    # denominator — "0 of 4 IPv6 lists" is a real result, "0 of 17" would be a lie.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "2605:59ca::e798"})
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: None)
+    seen = {}
+
+    def fake_dnsbl(ip):
+        seen["ip"] = ip
+        return {"blacklists": [], "policy_lists": [], "dnsbl_checked": 4, "dnsbl_usable": True,
+                "dnsbl_family": "ipv6", "dnsbl_zones_total": 4, "dnsbl_detail": []}
+
+    monkeypatch.setattr(ipcheck, "dnsbl_check", fake_dnsbl)
+    rep = ipcheck.check("host:1080")
+    assert seen["ip"] == "2605:59ca::e798"        # it ran, on the IPv6 address
+    assert rep["dnsbl_family"] == "ipv6" and rep["dnsbl_zones_total"] == 4
+    assert any("IPv6 only" in n for n in rep["notes"])
+
+
+def test_a_verdict_never_claims_a_blocklist_record_it_did_not_obtain():
+    # When another source answered, the verdict may still be clean — but it has to admit the blocklist
+    # half was never obtained rather than claiming a clean blocklist record.
+    level, why = ipcheck.verdict_factors({"fraud_score": 10, "dnsbl_usable": False, "blacklists": []})
+    assert level == "clean"
+    assert "blocklists NOT checked" in why
+    assert not any("no abuse or blacklist history" in w for w in why)
+    # ...and with nothing at all answering, it must read unknown, never clean.
+    assert ipcheck.verdict_factors({"dnsbl_usable": False})[0] == "unknown"
+
+
+def test_the_ipv6_zone_table_is_the_measured_subset_that_actually_holds_ipv6_data():
+    # MEASURED 2026-08-05 against 60 live IPv6 Tor exits: s5h 39 hits, Spamhaus 24, CBL 14, DroneBL 5,
+    # every other zone 0. Querying the rest over IPv6 inflates the denominator and manufactures a clean
+    # sweep from lists that could never have flagged the address.
+    v6 = {n for n, _ in ipcheck.DNSBL_ZONES_V6}
+    assert v6 == {"Spamhaus", "CBL", "s5h", "DroneBL"}
+    assert v6 < {n for n, _ in ipcheck.DNSBL_ZONES}       # a strict subset of the IPv4 table
+
+
+def test_reverse_v6_builds_the_rfc5782_nibble_name():
+    # 32 nibbles, reversed, dot-separated (RFC 5782 s2.4).
+    assert ipcheck.reverse_v6("2001:db8::1") == (
+        "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2")
+    assert len(ipcheck.reverse_v6("2605:59ca::e798").split(".")) == 32
+    for bad in (None, "", "1.2.3.4", "not-an-ip", "2001:db8::gg"):
+        assert ipcheck.reverse_v6(bad) is None
+
+
+def test_android_uses_a_resolver_that_does_not_lose_or_fake_blocklist_answers():
+    # MEASURED 2026-08-05 on 185.220.101.45 (seven abuse listings via the system resolver), because the
+    # phone showed three zones with no answer:
+    #   Cloudflare -> Spamhaus/CBL return 127.255.255.254 (explicit refusal) and SpamRATS SERVFAILs.
+    #                 Safe — classify() excludes a refusal — but three zones are silently lost.
+    #   Google     -> Spamhaus/CBL return NXDOMAIN, i.e. "not listed" for a listed IP. A FALSE CLEAN.
+    #   dns.sb     -> true records, agreeing with the system resolver on 17 of 17 zones.
+    # DoH is mandatory on Android (proxy apps hijack DNS with a fake-IP pool), so the resolver CHOICE is
+    # the only lever — and picking Google here would silently invert the tool's answer.
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    assert 'DOH = "https://doh.sb/dns-query' in java
+    assert "dns.google" not in java and "https://dns.google" not in java
+    # A fallback must exist so one provider's outage can't drop every zone...
+    assert 'DOH_FALLBACK = "https://cloudflare-dns.com' in java
+    # ...and it must be the one that degrades safely, never the one that manufactures a clean result.
+    assert "google" not in java[java.index("DOH_FALLBACK"):java.index("DOH_FALLBACK") + 200].lower()
+
+
+# ---- coverage honesty: "we didn't look" must never render as "it's clean" ----------------------
+
+
+def test_a_sweep_where_every_zone_refused_is_not_a_clean_result(monkeypatch):
+    """Spamhaus and CBL answer 127.255.255.254 — a refusal — to queries relayed by large public resolvers,
+    and ``classify`` correctly declines to count a refusal as checked. So a run where the 127.0.0.2
+    sentinels resolve but every real zone refuses obtained NO evidence.
+
+    That combination used to report ``dnsbl_usable: True`` with ``dnsbl_checked: 0``, and
+    ``verdict_factors`` then said "no abuse or blacklist history" about it — a false all-clear, which is
+    the one output this tool must never produce."""
+    def fake_resolve(host):
+        return ["127.0.0.2"] if host.startswith("2.0.0.127.") else ["127.255.255.254"]
+
+    monkeypatch.setattr(ipcheck, "resolve_a", fake_resolve)
+    out = ipcheck.dnsbl_check("1.2.3.4")
+    assert out["dnsbl_checked"] == 0
+    assert out["dnsbl_usable"] is False, "zero answering zones is not a usable sweep"
+    assert out["dnsbl_skipped"] == "no answer"
+    # With another source having answered, the verdict is CLEAN — and it has to say the blocklists were
+    # not checked rather than reporting a record it never obtained.
+    level, why = ipcheck.verdict_factors({**out, "fraud_score": 0})
+    assert level == "clean"
+    assert "blocklists NOT checked" in why
+    assert not any("no abuse or blacklist history" in w for w in why)
+
+
+def test_a_real_listing_still_counts_when_the_sentinels_fail(monkeypatch):
+    # The other direction: a zone that returns an actual listing proves the resolver works, so the result
+    # must survive even when the sentinel probes get nothing. Tightening `usable` must not break this.
+    def fake_resolve(host):
+        return [] if host.startswith("2.0.0.127.") else ["127.0.0.4"]
+
+    monkeypatch.setattr(ipcheck, "resolve_a", fake_resolve)
+    out = ipcheck.dnsbl_check("1.2.3.4")
+    assert out["dnsbl_usable"] is True and out["dnsbl_checked"] > 0
+    assert out["blacklists"], "a real listing must be reported"
+    assert "dnsbl_skipped" not in out
+
+
+def test_the_clean_verdict_says_the_same_thing_on_both_branches():
+    # The proxy-flagged and unflagged clean branches used to re-derive the coverage decision separately and
+    # word it differently, which lets a difference in MEANING hide as a difference in phrasing.
+    for extra in ({}, {"proxy": True}):
+        _, why = ipcheck.verdict_factors({"dnsbl_usable": False, "dnsbl_checked": 0, "fraud_score": 0, **extra})
+        assert "blocklists NOT checked" in why, f"{extra} branch claims coverage it does not have"
+
+
+def test_the_android_clean_verdict_also_refuses_to_claim_unchecked_blocklists():
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    assert '"blocklists NOT checked"' in java, \
+        "Android's clean verdict must say when no zone answered, exactly as the desktop does"
+
+
+def test_every_reputation_source_is_asked_about_the_address_the_report_names(monkeypatch):
+    """A dual-stack exit answers over either family. The address was being switched to IPv4 AFTER the
+    reputation lookups, so IPQS/AbuseIPDB/getIPIntel/Scamalytics were measured against the IPv6 address and
+    the whole report was then relabelled with the IPv4 one — measurements attributed to an address they
+    were never taken on."""
+    asked = {}
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "2605:59ca::e798"})
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    monkeypatch.setattr(ipcheck, "lookup_ipqs",
+                        lambda ip, key, opener: asked.setdefault("ipqs", ip) and {} or {"fraud_score": 0})
+    monkeypatch.setattr(ipcheck, "lookup_abuseipdb",
+                        lambda ip, key, opener: asked.setdefault("abuse", ip) and {} or {})
+    monkeypatch.setattr(ipcheck, "lookup_getipintel",
+                        lambda ip, contact, opener: asked.setdefault("gii", ip) and {} or {})
+    monkeypatch.setattr(ipcheck, "lookup_scamalytics",
+                        lambda ip, u, k, opener: asked.setdefault("scam", ip) and {} or {})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: asked.setdefault("dnsbl", ip) and {} or
+                        {"blacklists": [], "policy_lists": [], "dnsbl_checked": 17,
+                         "dnsbl_usable": True, "dnsbl_detail": []})
+    rep = ipcheck.check("host:1080", ipqs_key="k", abuse_key="a",
+                        getipintel_contact="me@example.com", scam_user="u", scam_key="s")
+    assert rep["ip"] == "153.66.117.15"
+    assert rep["exit_ipv6"] == "2605:59ca::e798"       # still reported, not hidden
+    for src in ("ipqs", "abuse", "gii", "scam", "dnsbl"):
+        assert asked[src] == rep["ip"], f"{src} was measured on {asked[src]}, not on the reported {rep['ip']}"
+
+
+def test_an_unbracketed_ipv6_proxy_is_refused_rather_than_misparsed():
+    """`rpartition(':')` on `2001:db8::1` yields host `2001:db8:` and port `1`, both of which pass every
+    check — a silent misparse that would dial a nonsense host and report it as the proxy the user typed.
+
+    Refusing is the contract (parse_proxy raises with a readable reason; None means blank), because
+    `host:port` is genuinely ambiguous for IPv6 and a guess here is worse than an error."""
+    import pytest
+    for bad in ("2001:db8::1", "2001:db8::1:8080", "[2001:db8::1", "[2001:db8::1]"):
+        with pytest.raises(ValueError):
+            ipcheck.parse_proxy(bad)
+    # Bracketed and complete is accepted, brackets kept — that is the form urllib wants back.
+    p = ipcheck.parse_proxy("[2001:db8::1]:8080")
+    assert p is not None and p.host == "[2001:db8::1]" and p.port == 8080
+    assert p.http_url() == "http://[2001:db8::1]:8080"
+    # ...and the ordinary IPv4/hostname shapes are untouched.
+    for text, host, port in (("res.example.com:10000", "res.example.com", 10000),
+                             ("1.2.3.4:8080:bob:hunter2", "1.2.3.4", 8080),
+                             ("bob:hunter2@1.2.3.4:8080", "1.2.3.4", 8080)):
+        p = ipcheck.parse_proxy(text)
+        assert p is not None and p.host == host and p.port == port, text
+
+
+# ---- Scamalytics ------------------------------------------------------------------------------
+#
+# Shape and every trap below MEASURED live over ~200 v3 lookups on 2026-08-06.
+
+
+def _scam_ok(**over):
+    """A well-formed ok body. Overrides go into the `scamalytics` object."""
+    body = {
+        "scamalytics_score": 15, "scamalytics_risk": "low",
+        "scamalytics_isp_score": 13, "scamalytics_isp_risk": "low",
+        "scamalytics_isp": "Example Networks", "status": "ok", "mode": "live",
+        "scamalytics_url": "https://scamalytics.com/ip/1.2.3.4",
+        "is_blacklisted_external": False,
+        "scamalytics_proxy": {"is_datacenter": False, "is_vpn": False, "is_amazon_aws": False,
+                              "is_google": False, "is_apple_icloud_private_relay": False},
+        "external_datasources": {
+            "ip2proxy": {"proxy_type": "0"}, "ip2proxy_lite": {},
+            "x4bnet": {"is_tor": False, "is_vpn": False, "is_datacenter": False, "is_spambot": False},
+            "firehol": {"is_blacklisted_30d": False, "is_blacklisted_1day": False, "is_proxy": False},
+            "ipsum": {"is_blacklisted": False, "num_blacklists": 0},
+            "spamhaus_drop": {"is_blacklisted": False}, "dbip": {"connection_type": "isp"}},
+    }
+    body.update(over)
+    return {"scamalytics": body, "credits": {"remaining": 2431, "used": 2}}
+
+
+def _patch_scam(monkeypatch, body):
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener, headers=None: body)
+
+
+def test_scamalytics_extracts_score_flags_and_proxy_type(monkeypatch):
+    _patch_scam(monkeypatch, _scam_ok(
+        scamalytics_score=44, scamalytics_risk="medium",
+        scamalytics_proxy={"is_datacenter": True, "is_vpn": True},
+        external_datasources={"ip2proxy": {"proxy_type": "DCH"}, "x4bnet": {"is_tor": False}},
+        is_blacklisted_external=True))
+    out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+    assert out["scam_score"] == 44 and out["scam_risk"] == "medium"
+    assert out["scam_isp_score"] == 13 and out["scam_isp_risk"] == "low"
+    assert out["scam_datacenter"] is True and out["scam_vpn"] is True
+    assert out["scam_proxy_type"] == "DCH"
+    assert out["scam_blacklisted_external"] is True
+    assert out["scam_tor"] is False
+
+
+def test_scamalytics_tor_is_the_union_of_two_sources(monkeypatch):
+    # MEASURED: x4bnet answered is_tor FALSE on a real Tor exit that ip2proxy typed "TOR". Trusting either
+    # one alone silently loses the single most decisive classification this source produces.
+    _patch_scam(monkeypatch, _scam_ok(
+        external_datasources={"ip2proxy": {"proxy_type": "TOR"}, "x4bnet": {"is_tor": False}}))
+    assert ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)["scam_tor"] is True
+    _patch_scam(monkeypatch, _scam_ok(
+        external_datasources={"ip2proxy": {"proxy_type": "0"}, "x4bnet": {"is_tor": True}}))
+    assert ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)["scam_tor"] is True
+
+
+def test_scamalytics_error_body_is_a_note_not_a_score(monkeypatch):
+    # HTTP 200 does NOT mean success — a malformed IP and a missing key both answer 200 with status:"error".
+    # And on every error shape `external_datasources` flips from an object to an empty ARRAY, so a guard
+    # that reads it before checking status raises. This test fails loudly if that order is ever swapped.
+    _patch_scam(monkeypatch, {"scamalytics": {
+        "status": "error", "error": "ip is not a valid IP address", "external_datasources": []}})
+    out = ipcheck.lookup_scamalytics("not-an-ip", "acct", "KEY", None)
+    assert "scam_risk" not in out and "scam_score" not in out
+    assert out["notes"] == ["Scamalytics: ip is not a valid IP address"]
+
+
+def test_scamalytics_no_answer_is_a_note_naming_both_causes(monkeypatch):
+    # A rejected key answers HTTP 404 with an Apache HTML body (the docs claim 401 + JSON; they are wrong),
+    # so _get_json returns None for BOTH unreachable and bad-credentials. The note must not pick one.
+    _patch_scam(monkeypatch, None)
+    out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+    assert "scam_risk" not in out
+    assert "unreachable" in out["notes"][0] and "rejected" in out["notes"][0]
+
+
+def test_scamalytics_credentials_never_reach_the_caller(monkeypatch):
+    # The credential test, run end-to-end through check() rather than the lookup alone, so a future field
+    # that forwards the user or key fails HERE. The key rides in the QUERY STRING, and the hosted deploy
+    # renders this report in a visitor's browser.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "1.2.3.4", "isp": "Example"})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    user, key = "acct-9910", "sk-live-DEADBEEFCAFE"
+    _patch_scam(monkeypatch, _scam_ok(
+        scamalytics_isp=f"Reseller for {user}",
+        scamalytics_url=f"https://scamalytics.com/ip/1.2.3.4?key={key}",
+        some_future_field=f"echoed {key} back"))
+    rep = ipcheck.check(ip="1.2.3.4", scam_user=user, scam_key=key)
+    blob = json.dumps(rep)
+    assert user not in blob and key not in blob
+    assert rep["scam_risk"] == "low"                 # ...while the measurement still lands
+
+
+def test_scamalytics_credits_never_reach_the_report(monkeypatch):
+    # Our quota is operator state, not the visitor's business.
+    _patch_scam(monkeypatch, _scam_ok())
+    out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+    assert "credits" not in out["scamalytics_raw"]
+    assert "remaining" not in json.dumps(out)
+
+
+def test_scamalytics_exhausted_credits_say_so_and_measure_nothing(monkeypatch):
+    # An empty balance must SAY so. Silently returning no fields would degrade every verdict to
+    # "no datacenter signal" with nothing to explain why. `remaining` is int in live mode, str in test mode.
+    for empty in (0, "0"):
+        _patch_scam(monkeypatch, {"scamalytics": _scam_ok()["scamalytics"],
+                                  "credits": {"remaining": empty}})
+        out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+        assert not [k for k in out if k.startswith("scam")], f"remaining={empty!r} still emitted fields"
+        assert "credits exhausted" in out["notes"][0]
+
+
+def test_connection_class_datacenter_from_scamalytics_when_the_name_regex_misses():
+    # "Byte Node LLC" is Mullvad's exit ISP and matches nothing in _DATACENTER_RE — a known commercial VPN
+    # exit that rendered `unclassified`. The factor must NAME the source: its specificity on residential
+    # pools is proven on only four IPs, so a wrong call has to be diagnosable at a glance.
+    rep = {"isp": "Byte Node LLC", "scam_proxy_type": "DCH", "dnsbl_usable": True}
+    assert ipcheck.connection_class(rep) == "datacenter"
+    assert ipcheck.is_datacenter(rep) is True
+    level, why = ipcheck.verdict_factors(rep)
+    assert level == "dirty"
+    assert "datacenter/hosting IP (Scamalytics DCH)" in why
+    # ...and is_datacenter alone (no proxy_type) still names Scamalytics rather than looking like the regex.
+    _, why2 = ipcheck.verdict_factors({"isp": "Byte Node LLC", "scam_datacenter": True})
+    assert "datacenter/hosting IP (Scamalytics is_datacenter)" in why2
+
+
+def test_connection_class_tor_beats_datacenter():
+    # A Tor exit reads is_datacenter true as well, and "Tor exit" is the more useful — and more damning —
+    # claim. It must not be reported as a plain hosting IP.
+    rep = {"scam_tor": True, "scam_datacenter": True, "isp": "Some Hosting"}
+    assert ipcheck.connection_class(rep) == "tor"
+    assert ipcheck.is_datacenter(rep) is False        # `tor` is its own class, not a datacenter
+    level, why = ipcheck.verdict_factors(rep)
+    assert level == "dirty" and "Tor exit" in why
+    assert not any("datacenter/hosting IP" in w for w in why)
+
+
+def test_ip2proxy_lite_and_an_empty_proxy_type_are_not_a_clean_result(monkeypatch):
+    # proxy_type "0"/"" means NO RECORD, not "clean" — dropping the field lets the UI say so. And
+    # ip2proxy_lite measured EMPTY on all 8 IPs, so rendering it would read as "checked and clean".
+    for empty in ("0", "", None):
+        _patch_scam(monkeypatch, _scam_ok(external_datasources={
+            "ip2proxy": {"proxy_type": empty}, "ip2proxy_lite": {"proxy_type": ""}}))
+        out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+        assert "scam_proxy_type" not in out, f"{empty!r} must not read as a proxy type"
+        assert "ip2proxy_lite" not in json.dumps(out)
+        assert ipcheck.connection_class(out) is None
+
+
+def test_scamalytics_score_never_moves_the_verdict():
+    """The behavioural lock, in BOTH directions.
+
+    MEASURED: the score tracks scamalytics_isp_score on every IP — an ASN prior, not a measurement of this
+    address — and it MIS-RANKS: a Tor exit scored 15 "low", clean Comcast residential 18, and the highest
+    in the whole set was Mullvad at 44. No threshold orders that set, so no threshold may exist. A future
+    "let's weight it a little" cannot land without failing here."""
+    worst = {"scam_score": 100, "scam_risk": "very high", "scam_isp_score": 100,
+             "scam_isp_risk": "very high", "scam_datacenter": False, "scam_vpn": False,
+             "scam_tor": False, "scam_blacklisted_external": False,
+             "isp": "Comcast Cable", "dnsbl_usable": True, "fraud_score": 0}
+    assert ipcheck.verdict_factors(worst)[0] == "clean"
+    best = {"scam_score": 0, "scam_risk": "low", "scam_datacenter": True, "dnsbl_usable": True}
+    assert ipcheck.verdict_factors(best)[0] == "dirty"
+
+
+def test_scamalytics_premium_placeholder_is_treated_as_missing(monkeypatch):
+    # On the Essential tier the Premium fields hold the literal "PREMIUM FIELD - upgrade to view".
+    # Rendering that in a detail card would read as data.
+    _patch_scam(monkeypatch, _scam_ok(scamalytics_isp="PREMIUM FIELD - upgrade to view",
+                                      external_datasources={
+                                          "ip2proxy": {"proxy_type": "PREMIUM FIELD - upgrade to view"}}))
+    out = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)
+    assert "PREMIUM" not in json.dumps(out)
+    assert "scam_proxy_type" not in out
+
+
+def test_scamalytics_raw_is_flat_so_the_detail_card_can_render_it(monkeypatch):
+    # kv()/fmtv() in PAGE stringify a nested object as "[object Object]".
+    _patch_scam(monkeypatch, _scam_ok())
+    raw = ipcheck.lookup_scamalytics("1.2.3.4", "acct", "KEY", None)["scamalytics_raw"]
+    for k, v in raw.items():
+        assert not isinstance(v, (dict, list)), f"{k} is nested — kv() would render it [object Object]"
+    assert raw["dbip_connection_type"] == "isp" and raw["isp_name"] == "Example Networks"
+
+
+def test_getipintel_classifies_the_exit_the_other_two_sources_miss():
+    """Mullvad's exit ISP "Byte Node LLC" matches nothing in _DATACENTER_RE, and Scamalytics reported it
+    `is_datacenter false` with no ip2proxy record — so a known commercial VPN exit rendered
+    "unclassified". getIPIntel called it 1.00. It grades residential-vs-hosting rather than flagging every
+    proxy (measured: AWS 1.0, Starlink 0.0), which is what makes it usable as the last-resort classifier."""
+    mullvad = {"isp": "Byte Node LLC", "getipintel_score": 1.0, "scam_datacenter": False,
+               "dnsbl_usable": True}
+    assert ipcheck.connection_class(mullvad) == "datacenter"
+    level, why = ipcheck.verdict_factors(mullvad)
+    assert level == "dirty"
+    assert "datacenter/hosting IP (getIPIntel)" in why, "the factor must name which source claimed it"
+    # A real residential exit is NOT swept up: Starlink measured 0.0, and 0.90 stays below the threshold
+    # precisely so a probability never becomes a classification.
+    assert ipcheck.connection_class({"isp": "SpaceX Starlink", "getipintel_score": 0.0}) is None
+    assert ipcheck.connection_class({"isp": "Comcast Cable", "getipintel_score": 0.9}) is None
+    # ...and it never outranks a source that actually knows: mobile and Tor still win.
+    assert ipcheck.connection_class({"mobile": True, "getipintel_score": 1.0}) == "mobile"
+    assert ipcheck.connection_class({"scam_tor": True, "getipintel_score": 1.0}) == "tor"
+    # Scamalytics keeps the attribution when BOTH fire — it is the more specific claim.
+    _, why2 = ipcheck.verdict_factors({"scam_proxy_type": "DCH", "getipintel_score": 1.0})
+    assert "datacenter/hosting IP (Scamalytics DCH)" in why2
+    # The Android side must agree, or the same IP classifies differently on the phone.
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    m = re.search(r"GII_HOSTING\s*=\s*([\d.]+)", java)
+    assert m and float(m.group(1)) == ipcheck._GII_HOSTING
+    assert "giiDatacenter(r)" in java
+
+
+def test_latency_reports_what_the_proxy_ADDS_not_the_raw_round_trip(monkeypatch):
+    """MEASURED 2026-08-06 from this machine (+0800): the same endpoint takes 889 ms direct and 3077 ms
+    through a US residential proxy, and the endpoint barely matters (gstatic 610/3125, cloudflare 608/3172
+    — all within ~100 ms of each other out of ~3100). The hosted check runs from Vercel's iad1 in US-East
+    and still reports ~3400 ms on those proxies, so the number is dominated by the PROXY, not by the
+    observer's distance.
+
+    Timing the same request without the proxy separates the two, and the delta is the figure that is
+    comparable between a laptop in Asia and a function in Virginia."""
+    calls = []
+
+    def fake_geo(opener, ip=None):
+        calls.append(opener)
+        return {"ip": "153.66.193.140", "isp": "SpaceX Starlink"}
+
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": "PROXIED")
+    monkeypatch.setattr(ipcheck, "lookup_geo", fake_geo)
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    rep = ipcheck.check("host:10000")
+    assert calls[0] == "PROXIED", "the first timed request must go through the proxy"
+    assert calls[1] != "PROXIED", "the baseline must NOT go through the proxy"
+    for k in ("proxy_ms", "direct_ms", "proxy_added_ms"):
+        assert k in rep, f"{k} missing — the raw round trip alone is not interpretable"
+    assert rep["proxy_added_ms"] == max(0, rep["proxy_ms"] - rep["direct_ms"])
+    assert rep["proxy_added_ms"] >= 0, "a faster-than-baseline proxy must clamp to 0, never go negative"
+
+
+def test_direct_baseline_is_measured_once_per_run_not_per_row(monkeypatch):
+    """The baseline is this MACHINE's latency to the endpoint — constant across a bulk run. Re-measuring it
+    per row doubled the request rate to one shared free endpoint, so a throttled reply rendered a live proxy
+    as DEAD. It must be measured once and cached (the autouse fixture clears the cache before this test)."""
+    direct_calls = []
+
+    def fake_geo(opener, ip=None):
+        if opener != "PROXIED":
+            direct_calls.append(opener)     # only the DIRECT baseline lookups, not the proxied primary ones
+        return {"ip": "1.2.3.4", "isp": "X"}
+
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": "PROXIED")
+    monkeypatch.setattr(ipcheck, "lookup_geo", fake_geo)
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    for host in ("a:1", "b:2", "c:3"):      # a 3-row "bulk run"
+        ipcheck.check(host)
+    assert len(direct_calls) == 1, f"the baseline must be measured once for the run, got {len(direct_calls)}"
+
+
+def test_no_baseline_request_is_made_when_there_is_no_proxy(monkeypatch):
+    # The extra round trip exists only to interpret a PROXY's cost. Spending it on a direct check would
+    # double every keyless lookup for nothing.
+    calls = []
+    monkeypatch.setattr(ipcheck, "lookup_geo",
+                        lambda opener, ip=None: calls.append(opener) or {"ip": "8.8.8.8"})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    rep = ipcheck.check(ip="8.8.8.8")
+    assert len(calls) == 1, f"expected exactly one geo lookup with no proxy, got {len(calls)}"
+    assert "proxy_added_ms" not in rep and "direct_ms" not in rep
+
+
+def test_a_socks_proxy_addressed_as_http_is_retried_not_called_dead(monkeypatch):
+    """MEASURED 2026-08-06: an entire vendor's list (SOCKS5 on :1080) reported DEAD when run as HTTP —
+    indistinguishable from genuinely down, and a trap for anyone pasting a list they were handed."""
+    tried = []
+
+    def fake_opener(proxy, scheme="http"):
+        tried.append(scheme)
+        return scheme
+
+    def fake_geo(opener, ip=None):
+        # Only the SOCKS transport answers, exactly as the real proxy behaved.
+        return {"ip": "24.26.39.144", "isp": "Spectrum"} if opener == "socks5" else {}
+
+    monkeypatch.setattr(ipcheck, "_opener", fake_opener)
+    monkeypatch.setattr(ipcheck, "lookup_geo", fake_geo)
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
+                                                            "dnsbl_checked": 17, "dnsbl_usable": True,
+                                                            "dnsbl_detail": []})
+    rep = ipcheck.check("host:1080", proxy_scheme="http")
+    assert tried == ["http", "socks5"], f"expected an http attempt then a socks5 retry, got {tried}"
+    assert rep["proxy_alive"] is True and rep["ip"] == "24.26.39.144"
+    assert rep["proxy_scheme_used"] == "socks5"
+    assert any("responded as SOCKS5" in n for n in rep["notes"]), \
+        "the report must SAY the transport was wrong, not silently paper over it"
+
+
+def test_a_genuinely_dead_proxy_still_reads_dead_and_says_both_were_tried(monkeypatch):
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": scheme)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    rep = ipcheck.check("host:9999", proxy_scheme="http")
+    assert rep["proxy_alive"] is False
+    assert rep["verdict"] == "unknown"                    # and never crashes the page
+    assert any("the other transport did not answer either" in n for n in rep["notes"])
+
+
+def test_an_explicit_scheme_is_never_second_guessed(monkeypatch):
+    # `socks5://…` is a statement, not a guess — retrying it as HTTP would spend a round trip arguing
+    # with the user about what they typed.
+    tried = []
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": tried.append(scheme) or scheme)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    ipcheck.check("socks5://host:1080")
+    assert tried == ["http"], f"an explicit scheme must be tried once, got {tried}"
+
+
+def test_the_android_connection_class_orders_its_branches_like_the_python_one():
+    """`mobile` must be checked BEFORE the datacenter signal, on both sides.
+
+    Android's `connectionClass` was added without it — and `Reputation` never read IPQS's `mobile` flag at
+    all — so a mobile exit whose ISP string happens to contain a hosting term (the regex carries a
+    `google(?!\\s+fiber)` lookahead precisely because such names exist) classified as `mobile` on the
+    desktop and `datacenter` on the phone. Same IP, different verdict, which is the whole reason the two
+    implementations are pinned to each other."""
+    # Python: mobile wins over a datacenter-looking name, and tor wins over mobile.
+    assert ipcheck.connection_class({"mobile": True, "isp": "Cloudy Mobile Hosting"}) == "mobile"
+    assert ipcheck.connection_class({"mobile": True, "scam_proxy_type": "DCH"}) == "mobile"
+    assert ipcheck.connection_class({"mobile": True, "scam_tor": True}) == "tor"
+    assert ipcheck.verdict_factors({"mobile": True, "isp": "Cloudy Mobile Hosting",
+                                    "dnsbl_usable": True})[0] == "clean"
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    assert 'o.optBoolean("mobile"' in java, "Android never reads IPQS's mobile flag"
+    block = re.search(r"static String connectionClass\(.*?\n    \}", java, re.S)
+    assert block, "connectionClass not found in HealthCheck.java"
+    body = block.group(0)
+    assert "r.mobile" in body, "connectionClass has no mobile branch"
+    assert body.index("r.mobile") < body.index("scamDatacenter"), \
+        "mobile must be checked BEFORE the datacenter signal, as connection_class() does"
+    # ...and the verdict must agree with the class it reports, or the tile and the reason contradict.
+    vf = re.search(r"static List<String> verdictFactors\(.*?\n    \}", java, re.S)
+    assert vf and "r.mobile" in vf.group(0), "verdictFactors ignores mobile, so it can contradict the tile"
+
+
+def test_scam_datacenter_types_match_the_android_side():
+    # The two implementations must bucket the ip2proxy taxonomy identically, or the same IP classifies as a
+    # datacenter on one and unclassified on the other.
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    m = re.search(r"SCAM_DC_TYPES\s*=.*?asList\((.*?)\)\)", java, re.S)
+    assert m, "SCAM_DC_TYPES not found in HealthCheck.java"
+    assert set(re.findall(r'"([A-Z]+)"', m.group(1))) == ipcheck._SCAM_DC_TYPES
+
+
+def test_scamalytics_reserved_addresses_are_not_a_clean_signal(monkeypatch):
+    # MEASURED: 127.0.0.1, 10.0.0.1 and 0.0.0.0 all return ok / score 0 / "low". A "0 low" can mean
+    # "not a real exit", so it must never manufacture a class or a benign reading on its own.
+    _patch_scam(monkeypatch, _scam_ok(scamalytics_score=0, scamalytics_risk="low"))
+    out = ipcheck.lookup_scamalytics("127.0.0.1", "acct", "KEY", None)
+    assert out["scam_score"] == 0 and out["scam_risk"] == "low"
+    assert ipcheck.connection_class(out) is None       # no class invented from a low score
+
+
+# ---- generated page ---------------------------------------------------------------------------
+
+
+def test_every_delegated_selector_matches_something_the_page_emits():
+    """A delegated handler whose selector names a class the markup never produces is a DEAD control that
+    looks completely normal.
+
+    That is not hypothetical: the copy handler read `.copy,.cc` while every credential chip is `.cp`, so
+    clicking host / port / user / password copied nothing and did not even flash — the tool's headline
+    feature, silently inert. `.cc` matched nothing at all, which is the tell this test looks for.
+
+    Both directions matter. A selector with no markup is a dead handler; an interactive class with no
+    handler is a dead button."""
+    from tools.page_assets import PAGE as page  # noqa: F401  (same source the page is built from)
+    handled = set()
+    for sel in re.findall(r"closest\('([^']+)'\)", ipcheck.PAGE):
+        handled |= {s.strip().lstrip(".") for s in sel.split(",") if s.strip().startswith(".")}
+    # Classes the page actually renders onto a <button>.
+    emitted = set(re.findall(r"<button[^>]*\bclass=([A-Za-z][\w-]*)", ipcheck.PAGE))
+    emitted |= set(re.findall(r"<button[^>]*\bclass=\"([^\"]+)\"", ipcheck.PAGE))
+    emitted = {c for grp in emitted for c in grp.split()}
+
+    dead_handlers = handled - emitted
+    assert not dead_handlers, (
+        f"delegated selector(s) {sorted(dead_handlers)} match no <button> the page emits — the handler is "
+        f"dead. Emitted button classes: {sorted(emitted)}")
+    # ...and every clickable chip class must be reachable by some handler.
+    for cls in ("cp", "copy"):
+        assert cls in emitted, f".{cls} is no longer emitted — update this test with the new class"
+        assert cls in handled, f".{cls} buttons are rendered but no delegated handler listens for them"
+
+
+def test_no_inline_svg_attribute_is_unquoted():
+    """`rx=1.2/>` parses as the VALUE `1.2/` with no self-close, so the element swallows its siblings.
+
+    That one character shipped THREE of six line icons dead — `server` lost its second rack unit, `build`
+    and `bot` collapsed to a bare square, and `ban` (a circle followed by a path) drew literally nothing.
+    It survived for weeks because a missing icon is indistinguishable from a value that simply has no
+    icon. Quoting every attribute removes the whole class; this test keeps it removed."""
+    from tools.page_assets import svg_attributes_are_quoted
+    bad = svg_attributes_are_quoted()
+    assert not bad, ("unquoted attribute in inline SVG — quote it, or the next `x=1/>` silently eats the "
+                     "elements after it:\n  " + "\n  ".join(bad))
+
+
+def test_every_line_icon_actually_renders_at_the_size_it_is_drawn():
+    """Render each icon at its real 13px and MEASURE it. Reading the source proves nothing: every one of
+    the dead icons above was valid-looking markup, and eyeballing a screenshot missed them twice.
+
+    Four failure modes, because size alone is not evidence of meaning:
+      * not drawn at all (near-zero ink),
+      * drawn but so heavy the strokes close over the gaps — a "rectangle" at a plausible size,
+      * drawn tiny or flat in one axis,
+      * drawn fine but identical to another icon (`build` and `bot` were both a plain square, each with
+        perfectly healthy ink).
+    """
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parents[1]
+    r = subprocess.run([sys.executable, str(root / "webapp" / "check-icons.py"), "--strict"],
+                       cwd=root, capture_output=True, text=True)
+    if "no Chrome found" in r.stdout:
+        return                                  # no renderer here; the check still runs locally and in review
+    assert r.returncode == 0, "\n" + r.stdout + r.stderr
+
+
+def test_the_generated_page_javascript_parses():
+    """webapp/index.html is GENERATED by three regex rewrites. A mis-targeted one once shipped a page whose
+    <script> was a SyntaxError — so every button was dead while the page still rendered perfectly. Nothing
+    failed loudly. Parse the emitted script instead of trusting the rewrites."""
+    import shutil
+    import subprocess
+    import tempfile
+    node = shutil.which("node")
+    if not node:
+        return                                          # no runtime here; the deploy check still applies
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "webapp" / "index.html").read_text("utf-8")
+    m = re.search(r"<script>(.*)</script>", html, re.S)
+    assert m, "webapp/index.html has no <script> — did build.py run?"
+    with tempfile.TemporaryDirectory() as d:
+        js = Path(d) / "page.mjs"
+        js.write_text(m.group(1), "utf-8")
+        r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+    assert r.returncode == 0, "generated page JS does not parse:\n" + (r.stderr or r.stdout)
+
+
+def test_the_generated_page_runs_without_a_top_level_error():
+    """Load the SHIPPED page in a real browser and check it reached the end of its own script.
+
+    Parsing is not enough. A `const` read from an earlier line — "Cannot access 'KEYFIELDS' before
+    initialization" — parses perfectly, kills the whole <script> at load, and leaves a page that renders
+    its complete markup with every button inert. Nothing fails loudly. The page's last statement stamps
+    `data-specter-ready`, so its ABSENCE in the post-JS DOM is the failure.
+
+    `--virtual-time-budget` runs the timers and promises before dumping, so async work is included; the
+    network calls the page makes just fail and are caught, which is the point of testing the real file."""
+    import shutil
+    import subprocess
+    chrome = next((c for c in (r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                               r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe",
+                               "/usr/bin/google-chrome", "/usr/bin/chromium")
+                   if Path(c).exists()), None) or shutil.which("chrome") or shutil.which("chromium")
+    if not chrome:
+        return                                          # no browser here; it still runs locally
+    page = Path(__file__).resolve().parents[1] / "webapp" / "index.html"
+    r = subprocess.run([chrome, "--headless", "--disable-gpu", "--virtual-time-budget=6000",
+                        "--dump-dom", page.as_uri()], capture_output=True, text=True, timeout=120)
+    assert "data-specter-ready" in r.stdout, (
+        "the page's script did not run to completion — a top-level runtime error killed it, so every "
+        "control on the page is dead. Open it in a browser and read the console.")
+
+
+def test_the_generated_page_is_in_sync_with_PAGE():
+    """A PAGE edit that never had build.py re-run ships an index.html missing it — silently, because both
+    files look fine on their own.
+
+    Deliberately NOT folded into the browser test above: that one returns early when no Chrome is
+    installed, and a staleness check gated on a browser being present is a staleness check that does not
+    run on the machine most likely to be stale."""
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "webapp" / "index.html").read_text("utf-8")
+    # The rewritten bits differ by design; everything else must match line-for-line.
+    for marker in ("id=scamuser", "id=scamkey", "markKeys", "scamalytics_raw",
+                   "k:'scam'", "ccColour", "shortLoc", "scrollbar-color"):
+        assert marker in html, f"webapp/index.html is stale — re-run python webapp/build.py ({marker})"
+    assert "localStorage.getItem" in html and "fetch('/config')" not in html
+
+
+# ---- backup safety ------------------------------------------------------------------------------
+
+
+def test_the_backup_directory_name_cannot_escape_backups():
+    """`ro.product.device` and the adb serial are read FROM the connected device and land in a directory
+    name, so a hostile or malformed value could place an archive of real login data outside `backups/`.
+
+    The second half matters as much: the naming must stay STABLE. Sanitising `.` out of an adb serial
+    renamed every directory, and `--check` then reported "NO BACKUP EVER" for devices that had one — a
+    backup checker that cannot find the backups is worse than no checker."""
+    import importlib.util
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("backup_vault", root / "scripts" / "backup_vault.py")
+    assert spec and spec.loader
+    bv = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bv)
+
+    for hostile in ("../../etc", "/tmp/x", "..", ".", "", "a/b", "..\\..\\x", "  "):
+        got = bv._safe(hostile, "fallback")
+        assert "/" not in got and "\\" not in got, f"{hostile!r} -> {got!r} is not one path component"
+        assert got not in (".", "", ".."), f"{hostile!r} -> {got!r} is a relative-path token"
+    # ...and ordinary values survive intact, in the shape the existing backups already use.
+    assert bv._safe("sunfish", "x") == "sunfish"
+    assert bv._safe("192.168.50.19_5557".replace(".", "_"), "x") == "192_168_50_19_5557"
+
+
+# ---- secrets ---------------------------------------------------------------------------------
+
+
+def test_no_api_credential_is_ever_committed():
+    """No live credential may sit in a tracked file. The repository is PUBLIC, so a committed key is
+    published the moment it is pushed and rotating it is the only remedy.
+
+    This checks the ACTUAL secrets held in ~/.specter-ipcheck.json rather than guessing at key shapes —
+    a shape scan flags uv.lock's package hashes and every UUID in the docs, which trains people to ignore
+    it. Keys belong in that file (outside the repo) or in the deploy's env vars, never in the tree."""
+    import subprocess
+    root = Path(__file__).resolve().parents[1]
+    cfg = Path.home() / ".specter-ipcheck.json"
+    if not cfg.exists():
+        return                                  # no local keys to leak (CI); nothing to assert
+    secrets = {str(v) for k, v in json.loads(cfg.read_text("utf-8")).items()
+               if isinstance(v, str) and len(v) >= 12 and ("key" in k or "user" in k)}
+    if not secrets:
+        return
+    tracked = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True).stdout.split()
+    bad = []
+    for rel in tracked:
+        if rel == "tests/test_ipcheck.py":
+            continue
+        try:
+            text = (root / rel).read_text("utf-8", errors="ignore")
+        except (OSError, IsADirectoryError):
+            continue
+        for sec in secrets:
+            if sec in text:
+                bad.append(f"{rel} contains a live credential ({sec[:8]}…)")
+    joined = chr(10).join("  " + b for b in bad)
+    assert not bad, "SECRET COMMITTED — rotate it, then remove it from history:" + chr(10) + joined

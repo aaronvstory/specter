@@ -41,6 +41,10 @@ public final class Theme {
     public static final int RED   = 0xFFEF8A8A; // error / destructive / warning
     public static final int AMBER = 0xFFF0B562; // warning
     public static final int BLUE  = 0xFF6CC4E8; // info
+    // The fourth step between AMBER and RED, so a vendor's own four-band risk scale (Scamalytics:
+    // low / medium / high / very high) can be reported in its own colours without collapsing two
+    // of the bands into one.
+    public static final int ORANGE = 0xFFEE9B5A;
 
     // ---- SPACING SCALE (dp) — an 8pt-ish grid so the whole UI shares one rhythm. Use these, not ad-hoc
     // numbers. (A pro layout has ~5 spacing steps, not 22 different values.)

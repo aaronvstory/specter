@@ -111,36 +111,6 @@ public class AppDataVaultTest {
         check(AppDataVault.sanitizeName("Bob's Phone!").equals("Bobs_Phone"), "sanitizeName strips punctuation, space->_");
         check(AppDataVault.sanitizeName("").isEmpty(), "sanitizeName empty");
 
-        // ---- drift detection: which saved logins were captured under a different device ----
-        // (fingerprint left "" so parseMeta doesn't reject the synthetic labels — the drift check reads
-        //  only the device string.)
-        String cash = "com.squareup.cash";
-        java.util.List<AppDataVault.Entry> saved = new java.util.ArrayList<>();
-        saved.add(AppDataVault.parseMeta("a", AppDataVault.serializeMeta(cash, 3, 1, "", "Google Pixel 4a (5G)")));
-        saved.add(AppDataVault.parseMeta("b", AppDataVault.serializeMeta(cash, 2, 1, "", "Samsung SM-G996U")));
-        saved.add(AppDataVault.parseMeta("c", AppDataVault.serializeMeta(cash, 1, 1, "", "Google Pixel 4a (5G)")));
-        // Applying SM-G996U: only the Pixel-4a logins disagree, and the duplicate collapses to one.
-        check(AppDataVault.conflictingDevices(saved, "Samsung SM-G996U")
-                .equals(java.util.Collections.singletonList("Google Pixel 4a (5G)")),
-                "drift: SM-G996U conflicts only with the distinct Pixel 4a logins");
-        // Applying the very device a login was captured under: only the OTHER model conflicts.
-        check(AppDataVault.conflictingDevices(saved, "Google Pixel 4a (5G)")
-                .equals(java.util.Collections.singletonList("Samsung SM-G996U")),
-                "drift: applying Pixel 4a conflicts only with the SM-G996U login");
-        // Case/space-insensitive.
-        java.util.List<AppDataVault.Entry> one = java.util.Collections.singletonList(
-                AppDataVault.parseMeta("d", AppDataVault.serializeMeta(cash, 1, 1, "", "  pixel 4A (5g) ")));
-        check(!AppDataVault.conflictingDevices(one, "Something Else").isEmpty(),
-                "drift compares a genuinely different device as a conflict");
-        check(AppDataVault.conflictingDevices(one, "pixel 4a (5g)").isEmpty(),
-                "drift: same device modulo case/space is NOT a conflict");
-        // A login with no recorded device is ignored.
-        java.util.List<AppDataVault.Entry> noDev = java.util.Collections.singletonList(
-                AppDataVault.parseMeta("e", AppDataVault.serializeMeta(cash, 1, 1, "", "")));
-        check(AppDataVault.conflictingDevices(noDev, "anything").isEmpty(),
-                "drift: a login with no device recorded never conflicts");
-        check(AppDataVault.conflictingDevices(null, "x").isEmpty(), "drift: null list is safe");
-
         System.out.println("AppDataVault: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

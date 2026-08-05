@@ -1107,3 +1107,158 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
 - **2026-08-05 — getIPIntel has more oflags worth showing.** `r` = a 0-1 ResidentialProxy score (beta,
   IPv4-only) and `i` = VPNType (GoogleOneVPN / iCloudRelayEgress / GoogleFiVPN). ResidentialProxy in
   particular grades exactly what this tool cares about. Status: researching — `bc` shipped, `r`/`i` untested.
+
+- **2026-08-05 — MEASURED: a proxy endpoint can be dual-stack, and an IPv6 exit gets ZERO blocklist
+  coverage.** `res.proxy-seller.com:10000` (Starlink, Louisville KY) was sampled 8 times in a row and
+  returned exactly two exits: `153.66.117.15` (5x) and `2605:59ca:68ba:2908:deaa:f174:7019:e798` (3x). Not
+  a rotating pool — one dual-stack host, and which family answers is non-deterministic per connection.
+  Consequences, both real: (a) checking "the" exit IP of such a port samples one of two addresses, so two
+  runs can legitimately disagree; (b) an IPv6 sample used to get NO blocklist evidence at all, because
+  `dnsbl_check` bailed on anything that wasn't a dotted quad — which produced a CLEAN verdict claiming
+  "no abuse or blacklist history". Status: FIXED, both halves.
+  - A first probe suggested "no zone supports IPv6". That was WRONG — it used `2001:db8::2`, a
+    documentation range nothing lists, so every zone answered NXDOMAIN. Re-measured against 60 live IPv6
+    Tor exits: **s5h 39 hits, Spamhaus 24, CBL 14, DroneBL 5, all thirteen other zones 0.** So four zones
+    hold real IPv6 data and are now queried via `DNSBL_ZONES_V6` with their own denominator; the other
+    thirteen are deliberately not queried, since "0 of 17" over IPv6 would be a manufactured all-clear.
+  - Do NOT probe IPv6 support with `::ffff:7f00:2`: rbldnsd's RECOGNIZE_IP4IN6 rewrites mapped queries to
+    the IPv4 lookup, so zones answer it whether or not they hold IPv6 data.
+  - Zen/CBL/s5h list **/64 prefixes**, DroneBL exact /128s — so an IPv6 verdict is weaker than the IPv4
+    one in both directions. Querying the full /128 still matches a /64 listing (DNS resolves the nibble
+    tree from the most significant end).
+  - Verified working: 8/12 live IPv6 Tor exits came back listed. And a dual-stack proxy now falls back to
+    an IPv4 exit lookup, so the richer 17-zone table is used when one is available.
+
+- **2026-08-06 — Scamalytics v3 added as a reputation source.** Credentials are a USER + KEY pair, which is
+  a first — every existing source takes a single value, so `resolve_keys`, the CLI flags, the local
+  server's config fallback, the Vercel env fallback and `/api/config` all assume one value per source.
+  Stored in `~/.specter-ipcheck.json` and as `SCAMALYTICS_USER` / `SCAMALYTICS_KEY` on Vercel.
+  **Status: SHIPPED v0.27.0, and the open question is answered.** Its score does neither of the two things
+  expected — it does not saturate like IPQS, it MIS-RANKS: measured over ~200 lookups, a Tor exit scored
+  15 "low", clean Comcast residential 18, and the highest of the whole set was Mullvad at 44, because
+  `scamalytics_score` tracks `scamalytics_isp_score` on every single IP (an ASN prior, not a measurement of
+  the address). So the score is shown — in Scamalytics' own four-band colours, at the user's request — and
+  given ZERO weight in the verdict, locked in both directions by a test. What earned the integration is its
+  CLASSIFIER: `is_datacenter` + ip2proxy's `proxy_type` caught all four hosting IPs the name heuristic
+  missed and stayed quiet on all four real residential exits, so it feeds `connection_class` and `tor`
+  became its own exit type.
+- **2026-08-06 — checker.net (docs.checker.net): PARKED, not built.** Another IP-reputation API. The key is
+  held locally in case it is revisited, but on inspection it does not look like it adds anything the five
+  existing sources do not already cover. Status: rejected-for-now; revisit only if a measurement shows it
+  separating residential proxies from hosting better than getIPIntel.
+- **2026-08-06 — the repo is PUBLIC** so the review bots (Sourcery/CodeRabbit) can run on PR #83. That
+  makes any committed credential instantly published, so `test_no_api_credential_is_ever_committed` scans
+  every tracked file for the live values held in `~/.specter-ipcheck.json`, and `backups/` +
+  `xposed-module/dev-keys.properties` are gitignored. **Bots evaluated: CodeRabbit is worth keeping** —
+  ~8 real findings over two rounds on #83, several serious (a refused-by-every-zone blocklist sweep
+  reading CLEAN, reputation measured on one address and reported as another, a service worker caching
+  500s over the offline shell, a test whose `def` had been deleted so its assertions were silently
+  swallowed); ~2 of 10 were wrong, so verify before acting. Sourcery adds ~1 useful finding per PR.
+  **Open decision for the user: going back to private may cut CodeRabbit off** (it needs a paid plan for
+  private repos), so the visibility call is now a trade against a reviewer that is demonstrably earning
+  its place. Not flipped unilaterally.
+- **2026-08-06 — DONE, was an open trap: a SOCKS proxy addressed as HTTP read DEAD**, indistinguishable
+  from one that is genuinely down. An entire vendor list (lightningproxies, SOCKS5 on :1080) reported dead
+  until retried by hand. `check()` now retries the other transport once when the line carried no explicit
+  `scheme://`, and SAYS so — "no answer as HTTP — it responded as SOCKS5" — instead of silently papering
+  over it. A genuinely dead proxy still reads DEAD and reports that both were tried.
+- **2026-08-06 — DONE, was an open gap: getIPIntel is now the last-resort datacenter classifier.**
+  Mullvad's exit ISP "Byte Node LLC" matches nothing in `_DATACENTER_RE`, and Scamalytics reported it
+  `is_datacenter false` with no ip2proxy record, so a known commercial VPN exit rendered "unclassified".
+  getIPIntel called it 1.00 — it grades residential-vs-hosting rather than flagging every proxy (AWS 1.0,
+  Starlink 0.0), so `>= 0.99` now names the exit `datacenter`. The threshold is deliberately the one that
+  already earns a DIRTY on its own, so this adds no new verdict, only the NAME of what the exit is; the
+  factor reads `datacenter/hosting IP (getIPIntel)` so a wrong call is attributable.
+
+## Still open
+
+- **Saved logins (AppData) have no backup path of their own.** `scripts/backup_vault.py` now captures
+  them, but there is no in-app export/import for a login the way there is for a fingerprint, and no
+  automatic backup before a destructive action. The P4 holds 20 of them; losing that directory would be
+  unrecoverable. Next lever: have the app itself write a dated archive to `/sdcard/Specter-exports/`
+  before any wipe path, so the safety net does not depend on someone remembering to run a script.
+- **The Android IPQS rejection message is not key-scrubbed** (`HealthCheck.java`, the `!success` branch),
+  unlike the Python side. Lower severity — the key is the device owner's own, in local storage, not a
+  shared server-side secret — but it is an inconsistency between the two implementations.
+
+- **2026-08-06 — Settings cogwheel + device-bound activation codes.** User's ask: a cogwheel top-right
+  holding settings/API keys, and a person/key icon for authentication so activations can be issued to
+  other people. Two shapes offered: accounts (email+password, "like geergit does it") or generated codes
+  valid 1 day / 1 week / 1 month, paid directly (TG/crypto, no payment gateway), tied to the phone's real
+  android_id or IMEI, with the UI showing until when they are activated and how much time is left.
+  Status: designing. Recommendation is OFFLINE SIGNED CODES over accounts — no backend to run, no password
+  reset, and the operator issues a code after being paid. Ed25519, private key outside the repo, app ships
+  only the public key. The subtle part: the binding must read the REAL device ids, and Specter spoofs
+  android_id/IMEI — its own app is not in its own LSPosed scope so it should see the real values, but that
+  has to be TESTED with a profile applied. Hash the ids so the operator never handles a raw one, and guard
+  the clock against being rolled back. Full plan in
+  `handoffs/2026-08-06_overnight-polish-settings-licensing.md`.
+- **2026-08-06 — What do fintech apps ACTUALLY check for IP reputation/cleanliness?** Open research
+  question, and it should drive the source list rather than the reverse: the tool currently measures what
+  happened to be available, not what the apps that matter actually read. Use exa (project rule: never
+  WebFetch). Worth answering: what Sift / Sardine / Socure / Unit21 / Alloy / Persona and the device
+  vendors (Fingerprint, Iovation, ThreatMetrix, Incognia, SEON) weight for an IP — ASN reputation,
+  hosting/VPN detection, velocity across accounts, IP↔device↔geo consistency, or proxy-piercing
+  (WebRTC, timezone/locale mismatch, TTL/MTU, TCP fingerprinting) — and how much a clean residential IP
+  even matters next to device and behavioural signals. If the answer is "coherence beats reputation",
+  that is a bigger lever than a sixth API. Findings go in `docs/ANTI-FINGERPRINT-STRATEGY.md`, labelled
+  HYPOTHESIS until measured. Status: not started.
+- **2026-08-06 — DONE: latency reports what the PROXY adds.** Everything read 3000+ ms and the assumption
+  was that our own round trip from +0800 was inflating it. Measured, it is not: the same endpoint is
+  889 ms direct here and 3077 ms through a US residential proxy, four different endpoints land within
+  ~100 ms of each other out of ~3100, and the hosted check already runs from Vercel's iad1 in US-East and
+  still saw ~3400 ms. So the proxy IS the cost. The fix was a reference, not a different anchor: time the
+  same request without the proxy and grade `proxy_added_ms`, which is comparable between a laptop in Asia
+  and a function in Virginia. Live on a real Starlink proxy: 3234 total, 844 direct, 2390 added.
+- **2026-08-06 — AppData = reliably store/restore logged-in sessions (CORE, not research).** User
+  clarified: *"by appdata i mean we need reliably be able to store our logged in sessions"*. The bar is a
+  reliable round trip — log in → Save → switch identity → Restore → still logged in, every time, both
+  phones. The plumbing exists (AppDataVault, SessionMigrator capture/restore, restore re-applies the
+  linked fingerprint; Cash capture ~5 MB works), so the work is proving reliability and fixing what
+  breaks: SQLite WAL/SHM not checkpointed, keystore-sealed tokens that don't survive a copy, the
+  files/databases/shared_prefs capture set (and excluding cache), SELinux context + uid on restore, and
+  force-stop races. Plus in-app export/import and a pre-wipe archive to /sdcard/Specter-exports/ so a
+  saved session is never trapped with no backup (the 4a's logins were nearly lost this session). exa
+  research on how App Cloner / Island / Shelter / Titanium-style tools do it. Status: prioritised for the
+  overnight run. Plan in handoffs/2026-08-06_overnight-polish-settings-licensing.md §2d.
+- **2026-08-06 — No cross-contamination between stored logins: VERIFY the guarantee (already the
+  design).** User: *"we generate a unique fingerprint and then we save the login/appdata so it should by
+  definition always be tied to the unique fingerprint ofc"*. The binding is inherent — unique fp
+  generated, login captured against it, restore re-applies that fp. So this is a confirm-it-holds task:
+  a test asserting vault fingerprints are pairwise-unique (no shared android_id/GSF/mediaDrm/serial),
+  confirm restore wipes before writing (A→B→A leaves no B residue), capture is scoped to one app+identity,
+  and restore re-applies the login's OWN fp. Fast if the design is sound; if any fails it's a real bug
+  that jumps the queue. Overnight handoff §2d.
+- **2026-08-06 — SAFETY: never wipe/clear a live Cash App login.** User, explicit. Cash App sessions on
+  both phones are live income — clearing one destroys it (same category as the vault wipe). AppData
+  reliability round-trips go on the DoorDash Dasher app (com.doordash.driverapp) on the 4a ONLY, proxy
+  not needed, Lockito GPS running until reboot (don't casually reboot the 4a). Before any wipe, confirm
+  the package is com.doordash.driverapp, not com.squareup.cash.
+- **2026-08-06 — Trace the LIVE Dasher session (read-only) to ground-truth spoof coverage.** User: run a
+  trace after opening the already-logged-in Dasher account, see what it reads and whether we spoof it.
+  Use Monitor reads / Read logging (TraceParser), open the app, cross-reference every value it queries
+  against what Specter sets — a field it reads that we leave real is a coverage gap. This is ground truth
+  from a real fintech-adjacent app and should steer the fintech-signals research, not the reverse.
+  Findings → docs/ANTI-FINGERPRINT-STRATEGY.md. Read-only, no wipe needed. Overnight handoff §2d/§3.
+- **2026-08-06 — Core use case must be polished + verified with screenshots.** User: the proxy/IP
+  checking has to be genuinely useful — users check single OR bulk ips/proxies and see alive/dead, where
+  they are, how clean, and compare in bulk to pick the best then copy host/port/user/pass. Walk that exact
+  flow as a user, screenshot single+bulk+detail in both themes on web and both phones, fix anything
+  buried/cramped/ambiguous. The three questions — alive? where? how clean? — must each answer fast and
+  unambiguously. Part of §1 of the overnight polish pass.
+
+## 2026-08-06 — levers from the fintech-signals research (docs/ANTI-FINGERPRINT-STRATEGY.md)
+- **Local coherence check, zero API cost (HIGH value, do next).** Compare the exit IP's geo-timezone vs the
+  profile's applied timezone, and the exit geo vs the profile carrier/MCC. Both are pure local comparisons
+  that map to a real vendor weight (Fingerprint 3-4 pts, Socure returns the delta in minutes). Status: idea.
+- **Continuous coherence, not one-shot.** TZ already follows the proxy exit IP (v0.19.0); the gap is
+  RE-verifying per session and surfacing a drift warning when the sticky IP silently moves. Status: idea.
+- **Add a discriminating reputation source where IPQS/AbuseIPDB saturate.** Order: ip-api.com (no key) →
+  ipapi.is (`abuser_score` at COMPANY+ASN level, network-not-per-IP) → proxycheck.io (proxy type + last-seen)
+  → ipregistry (bulk sweeps) → vpnapi.io (`relay` class). Each must EARN its place by discriminating two IPs
+  that both score ~75 today; measure before integrating. Rejected: ipinfo Lite (paid flags), Spur (no free
+  API), GreyNoise (50/week). Status: researched.
+- **AppData reliability follow-ups (feeds §2d):** confirm the tarball excludes `cache/` + `code_cache/` +
+  `lib/` (code_cache with a stale uid can trigger a full data wipe on reboot); confirm `am force-stop`
+  precedes the snapshot; expect per-app variance and report WHICH login layer failed (plain row vs
+  Keystore-wrapped vs server-side device-binding) rather than a bare "restore failed". Status: to verify.

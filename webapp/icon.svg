@@ -1,0 +1,12 @@
+<!-- Specter's mark: the gold ghost from the Android launcher glyph
+     (xposed-module/app/src/main/res/drawable/ic_launcher_foreground.xml), on the same #16161A.
+     ONE source for every raster below it — webapp/make-icons.py rasterises this file, so the tab icon, the
+     home-screen icon and the app icon cannot drift apart. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#16161A"/>
+  <g transform="translate(32 32) scale(1.23) translate(-24 -23.95)">
+    <path fill="#E7B94E" d="M24,6c-8.3,0 -15,6.7 -15,15v18.5q5,3.2 10,0q5,3.2 10,0q5,3.2 10,0V21C39,12.7 32.3,6 24,6z"/>
+    <circle cx="18.5" cy="20" r="2.6" fill="#16161A"/>
+    <circle cx="29.5" cy="20" r="2.6" fill="#16161A"/>
+  </g>
+</svg>

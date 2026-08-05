@@ -1,0 +1,157 @@
+<!doctype html>
+<!-- TEMPLATE. webapp/build.py substitutes the two placeholder lines below with the real stylesheet and the
+     real icon definitions from PAGE in specter/ipcheck.py, and writes webapp/assets.html — so this page
+     renders the SHIPPING assets, not a copy of them. Editing assets.html directly is pointless; it is
+     regenerated. Do NOT write either placeholder token anywhere else in this file: the substitution
+     replaces the FIRST occurrence, and naming them in this comment is what once ate the whole page. -->
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Specter · asset render test</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+__STYLE__
+<style>
+/* Page-local: the gallery chrome only. Everything being INSPECTED is styled by the sheet above. */
+.at-wrap{max-width:900px;margin:0 auto;padding:22px 18px 70px}
+.at-h{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:0 0 4px}
+.at-h h1{font-size:19px;margin:0}
+.at-note{color:var(--dim);font-size:12.5px;line-height:1.55;margin:0 0 22px}
+.at-sec{margin:30px 0 0}
+.at-sec>h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 3px}
+.at-sec>p{color:var(--dim);font-size:12.5px;margin:0 0 12px}
+.at-grid{display:flex;flex-wrap:wrap;gap:10px}
+.at-card{flex:1 1 190px;border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:var(--panel)}
+.at-card b{display:block;font-size:12px;font-weight:600;margin-bottom:9px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-sizes{display:flex;align-items:center;gap:16px}
+.at-1x,.at-4x{display:flex;align-items:center;justify-content:center;background:var(--bg);
+  border:1px solid var(--line);border-radius:7px}
+.at-1x{width:34px;height:34px;flex:none}
+.at-4x{width:74px;height:74px;flex:none}
+.at-4x svg.ico{width:52px;height:52px;margin:0}
+.at-cap{color:var(--dim);font-size:11px;line-height:1.5}
+.at-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:3px 0}
+.at-px{display:flex;flex-direction:column;align-items:center;gap:6px}
+.at-px img{display:block;background:transparent}
+.at-px span{color:var(--dim);font-size:11px;white-space:nowrap}
+.at-bad{color:var(--dirty);font-weight:600}
+</style>
+<div class=at-wrap>
+  <div class=at-h>
+    <h1>Asset render test</h1>
+    <button class=copy id=at-theme>Toggle theme</button>
+  </div>
+  <p class=at-note>
+    Every asset the page ships, at the size it is actually drawn — plus a 4&times; blow-up beside it.<br>
+    An icon that is not instantly recognisable in the <b>left</b> box is broken, however good it looks on the right.<br>
+    Check this on Windows/Chrome: emoji coverage there is poor, which is why nothing here is an emoji.
+  </p>
+  <div id=at-out></div>
+</div>
+__JS__
+<script>
+const $$=s=>document.querySelector(s);
+const sec=(t,note,body)=>`<div class=at-sec><h2>${t}</h2><p>${note}</p><div class=at-grid>${body}</div></div>`;
+// Real size on the left, 4x on the right. The left box is the verdict.
+const pair=(name,svg,cap)=>`<div class=at-card><b title="${name}">${name}</b><div class=at-sizes>`+
+  `<div class=at-1x>${svg}</div><div class=at-4x>${svg}</div>`+
+  `<div class=at-cap>${cap}</div></div></div>`;
+
+let h='';
+
+// 1) The line-type icons, drawn at the 13px the detail rows and tiles use.
+h+=sec('Line-type icons · 13px',
+  'Drawn inline in currentColor. These sit in front of a Connection / Usage value.',
+  Object.keys(ICON).map(k=>pair(k,ICON[k],'ICON.'+k)).join(''));
+
+// 2) What a real vendor string actually renders as — the icon AND the colour, together, because the
+//    colour is the half that can lie. Only the hosting match is coloured (see USAGE in ipcheck.py).
+const SAMPLES=['Data Center/Web Hosting/Transit','Corporate','Fixed Line ISP','Mobile ISP','University',
+  'Government','Search Engine Spider','Reserved','Content Delivery Network'];
+h+=sec('Usage strings · as they render in a row',
+  'Left column is the vendor’s own words. A string that matches nothing renders with no icon — which is correct, not a bug.',
+  '<div class=at-card style="flex:1 1 100%"><div class=rows>'+
+  SAMPLES.map(s=>{const u=usageOf(s);
+    return richRow(s,(u?u[1]:'')+esc(s),u?u[2]:'');}).join('')+
+  '</div></div>');
+
+// 3) Chevron — the one control glyph, in both states.
+// Quoted, like every other inline SVG here — see the unquoted-attribute rule in tools/page_assets.py.
+const CHEV='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" '+
+  'stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
+h+=sec('Chevron · 13px',
+  'Points right when collapsed, rotates down when open. One click, no second step.',
+  `<div class=at-card><b>collapsed</b><div class=at-sizes>`+
+  `<div class=at-1x><span class=chev style="display:inline-flex">${CHEV}</span></div>`+
+  `<div class=at-4x><span class=chev style="display:inline-flex;width:52px;height:52px">${CHEV}</span></div>`+
+  `<div class=at-cap>aria-expanded=false</div></div></div>`+
+  `<div class=at-card><b>open</b><div class=at-sizes>`+
+  `<div class=at-1x><span class=chev aria-expanded=true style="display:inline-flex">${CHEV}</span></div>`+
+  `<div class=at-4x><span class=chev aria-expanded=true style="display:inline-flex;width:52px;height:52px">${CHEV}</span></div>`+
+  `<div class=at-cap>aria-expanded=true</div></div></div>`);
+
+// 4) Flags. Images, NOT emoji: Windows ships no flag glyphs, so a regional-indicator pair draws the two
+//    letters — which next to the country code reads as "DE DE". A flag that fails to load removes itself.
+const flagImg=cc=>/^[A-Za-z]{2}$/.test(cc)
+  ?`<img class=flag src="https://flagcdn.com/32x24/${cc.toLowerCase()}.png" alt="" onerror="this.remove()">`:'';
+h+=sec('Country flags · &lt;img&gt;, never emoji',
+  'If any of these show as two bare letters, the image did not load — the code beside it is the fallback, by design.',
+  '<div class=at-card style="flex:1 1 100%"><div class=at-row>'+
+  ['US','DE','GB','NL','JP','BR','CA','FR','SE','SG','ZZ'].map(cc=>
+    `<span style="display:inline-flex;align-items:center;gap:5px">${flagImg(cc)}<span class=at-cap>${cc}</span></span>`
+  ).join('')+'</div><div class=at-cap style="margin-top:8px">ZZ is not a country — it must render as bare text with no broken-image box.</div></div>');
+
+// 5) Verdict pills + the tiny status chips.
+const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpperCase())}</span>`;
+h+=sec('Verdict pills + status',
+  'Four levels. UP/DEAD reuse the clean/dirty pill, so they are checked here too.',
+  '<div class=at-card style="flex:1 1 100%"><div class=at-row>'+
+  ['clean','suspect','dirty','unknown'].map(vpill).join('')+
+  '<span class="vpill v-clean-p">UP</span><span class="vpill v-dirty-p">DEAD</span>'+
+  '<span class="vpill v-unknown-p">…</span></div></div>');
+
+// 6) Copy controls. The rule they exist to prove: a button must NOT resize on click.
+h+=sec('Copy controls · the button must not resize',
+  'Click each one. The confirmation is a colour flash — swapping the label for “Copied ✓” would shove its neighbours around.',
+  '<div class=at-card style="flex:1 1 100%"><div class=at-row>'+
+  // `.cp` and `.copy` are the ONLY copy classes the page emits. This gallery previously demoed a `.cc`
+  // that exists nowhere in the product — unstyled here, and no evidence about anything that ships.
+  '<button class=copy data-copy="hero">Copy</button>'+
+  '<button class=cp data-copy="1.2.3.4"><i>ip</i>1.2.3.4</button>'+
+  '<button class=cp data-copy="res.example.com"><i>host</i>res.example.com</button>'+
+  '<button class=cp data-copy="10000"><i>port</i>10000</button>'+
+  '<button class=cp data-copy="hunter2"><i>pass</i>•••••••</button>'+
+  '</div></div>');
+
+// 7) The brand mark at every size it ships in. 1x only — a favicon IS 16px, and blowing it up would hide
+//    exactly the failure this section exists to catch.
+const RASTER=[['favicon-16.png',16,'browser tab'],['favicon-32.png',32,'tab, hi-dpi'],
+  ['apple-touch-icon.png',180,'iOS home screen'],['icon-192.png',192,'PWA'],
+  ['icon-512.png',512,'PWA / splash'],['icon-maskable-512.png',512,'PWA maskable']];
+h+=sec('App icon · every shipped size, 1×',
+  'All rasterised from icon.svg by webapp/make-icons.py. The maskable one is full-bleed on purpose — the launcher applies its own shape.',
+  '<div class=at-card style="flex:1 1 100%"><div class=at-row style="align-items:flex-end;gap:22px">'+
+  '<div class=at-px><img src="/icon.svg" width=64 height=64><span>icon.svg 64</span></div>'+
+  RASTER.map(([f,s,why])=>
+    `<div class=at-px><img src="/${f}" width=${Math.min(s,192)} height=${Math.min(s,192)}>`+
+    `<span>${f}</span><span>${s}px · ${why}</span></div>`).join('')+
+  '</div><div class=at-cap style="margin-top:10px">512s are shown at 192 to fit; they are inspected at full size in the 512 file itself.</div></div>');
+
+$$('#at-out').innerHTML=h;
+
+// Copy behaviour, mirrored from the page so the flash can actually be tried here.
+// Mirrors the page's handler, including the part that matters: the flash reflects whether the copy
+// actually happened. Flashing "done" after a rejected clipboard write tells the reader their password is
+// on the clipboard when it is not — and this page exists to show controls behaving honestly.
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('.copy,.cp'); if(!b||b.id==='at-theme')return;
+  const t=b.dataset.copy; if(!t)return;
+  let ok=false;
+  try{await navigator.clipboard.writeText(t); ok=true;}catch(err){ok=false;}
+  const cls=ok?'done':'failed';
+  b.classList.add(cls); setTimeout(()=>b.classList.remove(cls),1200);
+});
+$$('#at-theme').onclick=()=>{
+  const r=document.documentElement;
+  const dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+  r.dataset.theme=dark?'light':'dark';
+};
+</script>

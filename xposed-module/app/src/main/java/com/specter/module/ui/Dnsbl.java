@@ -39,6 +39,25 @@ final class Dnsbl {
             {"UCEPROTECT-L3", "dnsbl-3.uceprotect.net"},
     };
 
+    /** The zones that actually hold IPv6 data — the denominator for an IPv6 exit.
+     *
+     *  <p>MEASURED against 60 live IPv6 Tor exits 2026-08-06: only these four ever answer; the other
+     *  thirteen returned nothing for any of them. Do NOT probe support with a mapped address like
+     *  {@code ::ffff:7f00:2} — rbldnsd's RECOGNIZE_IP4IN6 rewrites that into the plain IPv4 lookup, so a
+     *  zone with no IPv6 data at all answers it. (That aliasing, plus a probe against the
+     *  {@code 2001:db8::} documentation range nothing lists, is what earlier read as "no zone supports
+     *  IPv6" and left every IPv6 exit with a clean-looking verdict backed by zero checks.)
+     *
+     *  <p>The verdict is WEAKER than the IPv4 one in both directions: Spamhaus, CBL and s5h list /64
+     *  PREFIXES, so a clean address can sit in a listed /64 and a listed one may never have sent anything
+     *  itself. DroneBL lists exact /128s. Mirrors DNSBL_ZONES_V6 in specter/ipcheck.py. */
+    static final String[][] ZONES_V6 = {
+            {"Spamhaus", "zen.spamhaus.org"},
+            {"CBL", "cbl.abuseat.org"},
+            {"s5h", "all.s5h.net"},
+            {"DroneBL", "dnsbl.dronebl.org"},
+    };
+
     // ponytail: Spamhaus and CBL refuse queries relayed by large public resolvers (they answer 127.255.255.254),
     // which is what a DoH lookup looks like to them — so on-device those two report BLOCKED rather than a
     // listing. Upgrade path if their coverage is wanted: a free Spamhaus DQS key and the private
@@ -64,6 +83,33 @@ final class Dnsbl {
             if (Integer.parseInt(s) > 255) return null;
         }
         return p[3] + "." + p[2] + "." + p[1] + "." + p[0];
+    }
+
+    /** {@code 2001:db8::1} -> the 32-nibble reversed query name RFC 5782 §2.4 requires, or null unless it
+     *  parses as IPv6. Query the full /128 even though zen/CBL/s5h list /64s — DNS resolves the nibble tree
+     *  from the most significant end, so a /64 listing is matched by any address beneath it for free.
+     *  Mirrors reverse_v6() in specter/ipcheck.py.
+     *
+     *  <p>{@code getByName} is safe here despite its name: the ':' guard means the input is always an IPv6
+     *  literal, and a literal is parsed rather than resolved — no DNS, no Android API, so this still runs in
+     *  the JVM test harness. */
+    static String reverseV6(String ip) {
+        if (ip == null || ip.indexOf(':') < 0) return null;
+        byte[] packed;
+        try {
+            java.net.InetAddress a = java.net.InetAddress.getByName(ip);
+            if (!(a instanceof java.net.Inet6Address)) return null;
+            packed = a.getAddress();
+        } catch (Throwable t) { return null; }
+        if (packed.length != 16) return null;
+        StringBuilder nib = new StringBuilder(63);
+        for (int i = packed.length - 1; i >= 0; i--) {
+            int b = packed[i] & 0xFF;
+            nib.append(Character.forDigit(b & 0xF, 16)).append('.')
+               .append(Character.forDigit(b >> 4, 16));
+            if (i > 0) nib.append('.');
+        }
+        return nib.toString();
     }
 
     /** True iff a resolved answer is a real listing. Answers live in 127.0.0.0/8 with the last octet >= 2 —

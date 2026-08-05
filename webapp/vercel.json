@@ -6,6 +6,14 @@
       "use": "@vercel/static"
     },
     {
+      "src": "{sw.js,manifest.webmanifest,assets.html}",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "*.{svg,png}",
+      "use": "@vercel/static"
+    },
+    {
       "src": "api/check.py",
       "use": "@vercel/python",
       "config": {
@@ -30,6 +38,10 @@
     {
       "src": "/api/config",
       "dest": "/api/config.py"
+    },
+    {
+      "src": "/(sw\\.js|manifest\\.webmanifest|assets\\.html|[^/]+\\.(?:svg|png))",
+      "dest": "/$1"
     },
     {
       "src": "/",

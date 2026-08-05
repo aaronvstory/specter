@@ -3,6 +3,143 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.28.0] - 2026-08-06
+
+### Added
+- **Device-bound activation (offline).** A cogwheel and a key icon now sit top-right in the app bar. The
+  key opens an Activation screen: it shows a live status (Active until <date>, N days M hours left / Expired
+  / Not activated), this device's binding hash to send for a key, and a paste field. Verifies entirely
+  offline against an EC P-256 public key compiled into the app — no server, no network call.
+- **`scripts/make_activation.py`** — operator-side generator. `setup` mints the keypair (private key kept
+  outside the public repo); `<device-hash> <1d|1w|1m>` signs a code and logs it to a local ledger.
+- Keys bind to the REAL device (android_id hash), not the spoofed one, and a monotonic clock guard stops a
+  rolled-back clock from resurrecting an expired key. Proven end-to-end on-device.
+- **Web: bulk now accepts bare IPs, not just proxies.** A line with no port cannot be a proxy, so bulk
+  checks bare IPv4/IPv6 lines directly (shown as IP in the status column) and everything else as a proxy —
+  so one paste can mix both. Fixes bare IPs coming back DEAD.
+- **Web: a settings cogwheel, top-right.** The API keys moved out of an inline section into a cogwheel that
+  opens a native dialog (ESC / backdrop / â to close). Keys still store in the browser only.
+- **Obfuscated release build (R8).** The release variant now shrinks + obfuscates (minify + resource
+  shrink + proguard-rules.pro), so a decompile reads as a.a(b). The Xposed entry point (HookEntry) and the
+  BuildConfig/version markers are kept; dev API keys are seeded ONLY into the debug build, never release.
+
+### Fixed
+- **Android: scrub the API key from IPQualityScore's rejection message.** IPQS takes the key in the URL
+  path and echoes it in the error body; the Android health check surfaced it verbatim (Python already
+  scrubbed it). Now replaced with `<key>` before display.
+
+## [0.27.0] - 2026-08-06
+
+### Added
+- **Scamalytics v3** (web + Android + CLI). Its datacenter/VPN/Tor classifier feeds the exit-type verdict;
+  its SCORE is shown but has zero weight. Measured over ~200 live lookups: the score tracks
+  `scamalytics_isp_score` on every IP (an ASN prior, not a measurement of the address) and mis-ranks — a Tor
+  exit scored 15 "low", clean Comcast residential 18, and the highest of the set was Mullvad at 44. So it is
+  rendered warn-only, labelled "shown, not scored", never green.
+- **`tor` is its own exit type.** A Tor exit also reads `is_datacenter`, so it was reported as plain hosting.
+  It is now named, and neither `tor` nor `datacenter` can render green in any of the three places that draw
+  the exit type.
+- **The dirty factor names its source** — `datacenter/hosting IP (Scamalytics DCH)` — so a third-party
+  misfire is diagnosable at a glance instead of looking identical to our own name heuristic.
+- **Android: IPv6 blocklist coverage.** An IPv6 exit used to return zero zones behind a clean-looking
+  verdict. It now queries the four zones that hold IPv6 data and reports THAT denominator, with the /64
+  granularity caveat spelled out. Mirrors the desktop table (pinned by a parity test).
+- **Android: a meaningful-info-first IP breakdown.** The detail now opens with what the exit IS — exit type,
+  blocklists with an honest denominator, fraud score, detectable-as, abuse, getIPIntel, Scamalytics — before
+  the per-source dumps. A source that did not run says so; a missing row would read as "fine".
+- **PWA + a full icon set.** Manifest, an offline shell (network-first for the page, so it can never pin a
+  visitor to a stale build; `/api/*` never cached, because a cached measurement is a lie), apple-touch-icon
+  and 16/32/180/192/512 + maskable — all rasterised from one `webapp/icon.svg` by `webapp/make-icons.py`,
+  so the tab icon, the home-screen icon and the app icon cannot drift apart.
+- **An asset render-test page** at `/assets.html`, generated from the real PAGE so it can never show a
+  stale copy: every icon at the size it is actually drawn plus a 4x blow-up, each usage string next to the
+  icon and colour it produces, the chevron in both states, flags, verdict pills and the copy controls.
+- The Specter ghost mark is symmetric now — its body's right wall sat at x=34 while the head's arc sprang
+  from x=39, which is the step that was visible on the right shoulder of the Android launcher icon.
+- Generated-page guards: a test parses the emitted `<script>` (a mis-targeted rewrite once shipped a page
+  whose every button was dead) and a second fails when `webapp/index.html` is stale.
+
+### Changed
+- `resolve_keys()` returns a dict, not a 3-tuple — Scamalytics is the first source that is a USER + KEY pair.
+- The local server's config key list is one tuple instead of two copies, so a source can no longer be
+  saveable but not loadable.
+
+### Removed
+- **The apply-time "Identity won't match a saved login" confirm.** Generating an identity and applying it IS
+  the new-account flow: not matching an old login is the point, and apply force-wipes each target before
+  writing, so no session survives to be incoherent with. Reopening an account is the Saved tab's job.
+  `AppDataVault.conflictingDevices()` went with it.
+
+### Fixed
+- **A blocklist sweep where every zone REFUSED read as clean.** Spamhaus and CBL answer 127.255.255.254 to
+  queries relayed by large public resolvers, and a refusal is correctly not counted as checked — but
+  `dnsbl_usable` was set from the sentinel probes alone, so that run reported "no abuse or blacklist
+  history" having obtained nothing. Coverage now requires at least one zone to have answered, and the
+  report says WHY there is none.
+- **Android said "no abuse history" when no zone answered at all.** The clean verdict now emits
+  "blocklists NOT checked", the same wording the desktop uses, from one shared expression.
+- **Reputation was measured on one address and reported as another.** On a dual-stack exit the address was
+  switched to IPv4 *after* IPQS/AbuseIPDB/getIPIntel/Scamalytics had already been asked about the IPv6 one.
+  The family is now settled before any source is queried.
+- **`scripts/backup_vault.py`** — backs up every connected device's saved fingerprints AND saved logins
+  (plus the LSPosed-redirected prefs) to `backups/`, md5-verified through a shell rather than `adb pull`,
+  which silently no-ops on a rooted device. `--check` reports backup age. Written after a `pm clear` run
+  destroyed a device's vault; the first run found the Pixel 4 holding 33 fingerprints and 20 saved logins
+  with no backup at all.
+- **A SOCKS proxy addressed as HTTP is retried instead of reported DEAD.** An entire vendor list (SOCKS5
+  on :1080) read dead, indistinguishable from genuinely down. When the line carried no explicit
+  `scheme://`, the other transport is tried once and the report SAYS what happened — "no answer as HTTP —
+  it responded as SOCKS5". A genuinely dead proxy still reads DEAD and says both were tried.
+- **getIPIntel is now the last-resort datacenter classifier** (`>= 0.99`). Mullvad's exit ISP "Byte Node
+  LLC" matches no name rule and Scamalytics reported it `is_datacenter false`, so a known commercial VPN
+  exit rendered "unclassified"; getIPIntel called it 1.00. The threshold is the one that already earns a
+  DIRTY on its own, so this adds no new verdict — only the name of what the exit is — and the factor reads
+  `datacenter/hosting IP (getIPIntel)` so a wrong call is attributable.
+- **Dev builds can pre-seed the API keys.** `python xposed-module/make-dev-keys.py` writes a GITIGNORED
+  `dev-keys.properties` from `~/.specter-ipcheck.json`; the build bakes those into `BuildConfig` and the
+  app writes them into prefs once, on the first launch that finds them. A DISTRIBUTABLE build is simply
+  one made without that file — every field is empty and the app shows "Not set", which is already the
+  right UI for a user bringing their own keys. The build prints which of the two states it is in, and an
+  existing on-device value is never overwritten.
+- **Scamalytics is coloured in its own four-band scale** — low green, medium amber, high orange, very
+  high red — at the user's request, rather than warn-only. Safe because the score is fenced off from the
+  verdict entirely (zero weight at every tier, locked in both directions by a test), so a green "8 · low"
+  beside a DIRTY verdict is Scamalytics' opinion next to ours, and every row still says "shown, not scored".
+- **The Scamalytics page link is a real link now**, on both web and Android. It was rendering as plain
+  text, so tapping it did nothing. (It 403s a bot user-agent and 200s a browser, so it only ever worked
+  from the page — it just was not clickable.)
+- **Android classified a mobile exit as a datacenter.** `connectionClass()` was added without the
+  `mobile` branch that `connection_class()` has, and `Reputation` never read IPQS's `mobile` flag at all —
+  so a mobile exit whose ISP string contains a hosting term read `mobile` on the desktop and `datacenter`
+  on the phone, for the same IP. Both the class and the verdict now check it first, pinned by a test.
+- **The bulk table sorted unmeasured rows to the TOP on a descending sort.** `Infinity` was multiplied by
+  the sort direction, so clicking a score heading twice to find the worst exit put every `n/k` / `n/a` row
+  above the dirtiest real result. Absent now sorts last in both directions.
+- **A dead proxy crashed the page.** `check()` returned early with no `verdict` key when the exit-IP
+  lookup failed, and the page did `r.verdict.toUpperCase()` on it — so an ordinary unreachable proxy read
+  "FAILED · TypeError: Cannot read properties of undefined". Every return carries a verdict now, and the
+  renderer defaults rather than assumes.
+- **The bulk table no longer scrolls horizontally** at a normal window width. Column headings name their
+  SOURCE (IPQS · GII · AbuseDB · SCAM · DNSBL) so a bare number is never anonymous; IPQS's flags are
+  three-letter codes with the meaning on hover and a `+N` overflow instead of "VPN Proxy Recent abuse Bot";
+  the policy-listing count moved to a sub-line; locations read "Redmond, US" rather than
+  "Redmond, Washington, United States"; the proxy host truncates while its port never does.
+- **Scrollbars follow the theme.** The default light-grey OS bar under a dark panel read as a rendering
+  fault, on a table that is horizontally scrollable by design.
+- getIPIntel's `n/a` now says WHY — it meters 15 lookups a minute per contact, so a bulk run can genuinely
+  exhaust it mid-batch, and a bare "n/a" left no way to tell that from a failure.
+- **Three of six line icons rendered blank**, and a fourth as a featureless rectangle. `rx=1.2/>` unquoted
+  parses as the value `1.2/` with no self-close, so the element swallowed its siblings — `ban` drew
+  nothing at all. Every inline-SVG attribute is quoted, the shapes are redrawn for 13px, and
+  `webapp/check-icons.py` now measures ink, spread, interior detail and pairwise distinctness so this
+  cannot recur silently.
+- `Corporate` and `Content Delivery Network` matched no usage rule, so they rendered with no icon.
+- An unbracketed IPv6 proxy (`2001:db8::1`) parsed as host `2001:db8:` port `1` and was accepted. Bracketed
+  IPv6 is now supported; unbracketed multi-colon input is refused instead of guessed at.
+- The `dnsbl_skipped==='ipv6'` branch in all three UI copies was unreachable and its message was stale.
+- Android: the blocklist group count sat at the end of a fixed-width label that truncates, so it was the
+  first thing lost. It leads the value now.
+
 ## [0.26.0] - 2026-08-05
 
 ### Added

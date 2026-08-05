@@ -1,0 +1,13 @@
+<!-- The maskable variant. Two differences from icon.svg, both required by the spec:
+     * FULL BLEED background — the launcher applies its own shape (circle, squircle, rounded square), so a
+       pre-rounded corner would show as a dark notch inside the mask.
+     * The glyph sits inside the SAFE ZONE — the centre circle of 80% diameter. Anything outside it may be
+       cropped, so the ghost is drawn smaller here than in icon.svg rather than reusing that scale. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" fill="#16161A"/>
+  <g transform="translate(32 32) scale(0.96) translate(-24 -23.95)">
+    <path fill="#E7B94E" d="M24,6c-8.3,0 -15,6.7 -15,15v18.5q5,3.2 10,0q5,3.2 10,0q5,3.2 10,0V21C39,12.7 32.3,6 24,6z"/>
+    <circle cx="18.5" cy="20" r="2.6" fill="#16161A"/>
+    <circle cx="29.5" cy="20" r="2.6" fill="#16161A"/>
+  </g>
+</svg>

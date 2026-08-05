@@ -36,8 +36,11 @@ class handler(BaseHTTPRequestHandler):
             ipqs = req.get("ipqs_key") or os.environ.get("IPQS_KEY", "")
             abuse = req.get("abuse_key") or os.environ.get("ABUSEIPDB_KEY", "")
             gii = req.get("getipintel_contact") or os.environ.get("GETIPINTEL_CONTACT", "")
+            # Scamalytics is a USER + KEY pair; half of one is a config mistake, so both fall back together.
+            scam_user = req.get("scamalytics_user") or os.environ.get("SCAMALYTICS_USER", "")
+            scam_key = req.get("scamalytics_key") or os.environ.get("SCAMALYTICS_KEY", "")
             rep = check(req.get("proxy") or None, req.get("ip") or None,
-                        ipqs, abuse, req.get("proxy_scheme") or "http", gii)
+                        ipqs, abuse, req.get("proxy_scheme") or "http", gii, scam_user, scam_key)
         except Exception as exc:
             rep = {"error": str(exc)}
         self._json(200, rep)

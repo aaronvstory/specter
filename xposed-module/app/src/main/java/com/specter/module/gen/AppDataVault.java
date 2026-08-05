@@ -404,26 +404,6 @@ public final class AppDataVault {
         return out;
     }
 
-    /** The distinct devices a pkg has a saved login under that DIFFER from {@code applyingDevice} — i.e.
-     *  applying that device would leave the app incoherent with a login already captured for it (the server
-     *  remembers the old model; the live reads would say the new one). Empty when every saved login matches
-     *  the device being applied, or there are none. Comparison is case-insensitive and trims surrounding
-     *  space; a saved entry with no device string recorded is ignored (nothing to disagree with).
-     *
-     *  <p>Pure — callers pass {@code list(pkg)} — so the drift check is unit-testable without a device. */
-    public static java.util.List<String> conflictingDevices(java.util.List<Entry> savedForPkg,
-                                                            String applyingDevice) {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        if (savedForPkg == null || applyingDevice == null) return out;
-        String want = applyingDevice.trim();
-        for (Entry e : savedForPkg) {
-            String dev = e.device == null ? "" : e.device.trim();
-            if (dev.isEmpty() || dev.equalsIgnoreCase(want)) continue;
-            if (!out.contains(dev)) out.add(dev);      // distinct, newest-first (list() is sorted)
-        }
-        return out;
-    }
-
     /** Delete a saved app-data (tarball + meta). Returns true if anything was removed. Note: the tarball may
      *  be root-owned (copied in via su), but it lives in this app-owned dir, so unlink succeeds. */
     public boolean delete(String label) {

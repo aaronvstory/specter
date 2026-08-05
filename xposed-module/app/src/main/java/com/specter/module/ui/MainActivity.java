@@ -81,6 +81,7 @@ public class MainActivity extends Activity {
     // process-lifetime cache in HealthCheck holds the result, and the IPQS free tier is only 35/day.
     private final java.util.Set<String> autoCheckedIps = new java.util.HashSet<>();
     private boolean setupScreen = false;   // showing the guided "Set up everything" sub-screen (Settings sub-view)
+    private boolean activationScreen = false;  // showing the Activation (device-bound licence) sub-screen (Settings sub-view)
     private boolean setupBusy = false;     // a setup run is in flight (guards the button + drives the spinner)
     private java.util.List<com.specter.module.gen.SetupFlow.StepResult> setupResults;  // last run's per-step outcomes (null = not run yet)
     private boolean setupAnySucceeded = false;  // did the last run install ANYTHING? (gates the reboot prompt + "done")
@@ -170,6 +171,7 @@ public class MainActivity extends Activity {
         vault = new Vault(getApplicationContext());
         appDataVault = new com.specter.module.gen.AppDataVault(getFilesDir());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        seedDevApiKeys();
         // Widevine L3 defaults ON for a brand-new install (max protection by default — fleet phones don't
         // watch HD Netflix). Every read site below defaults to true, so an install that predates this seed
         // must have its REAL state written explicitly here once, or an existing user with the module never
@@ -276,7 +278,14 @@ public class MainActivity extends Activity {
         vlp.setMargins(dp(Theme.S2), dp(6), 0, 0);
         ver.setLayoutParams(vlp);
         ver.setGravity(Gravity.BOTTOM);
-        bar.addView(ver);
+        bar.addView(ver);   // weight 1 — eats the middle, pushing the two actions to the far right
+
+        // Top-right actions: a key (Activation) and a cogwheel (Settings). Key is gold when a licence is active.
+        boolean active = new ActivationStore(this).isActive();
+        bar.addView(headerIconBtn(keyIcon(dp(22)), active ? Theme.GOLD : Theme.SOFT, "Activation",
+                () -> { tab = 2; activationScreen = true; healthScreen = false; setupScreen = false; rebuildBottomNav(); render(); }));
+        bar.addView(headerIconBtn(navIcon(2, dp(22)), Theme.SOFT, "Settings",
+                () -> { tab = 2; activationScreen = false; healthScreen = false; setupScreen = false; rebuildBottomNav(); render(); }));
         return bar;
     }
 
@@ -331,7 +340,7 @@ public class MainActivity extends Activity {
             llp.topMargin = dp(3);
             lbl.setLayoutParams(llp);
             item.addView(lbl);
-            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; rebuildBottomNav(); render(); } });
+            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; activationScreen = false; rebuildBottomNav(); render(); } });
             bottomNavBar.addView(item);
         }
     }
@@ -377,6 +386,7 @@ public class MainActivity extends Activity {
         if (tab == 1 && !vaultApp.isEmpty()) { vaultApp = ""; vaultQuery = ""; render(); return; }
         if (tab == 2 && setupScreen) { setupScreen = false; render(); return; }
         if (tab == 2 && healthScreen) { healthScreen = false; render(); return; }
+        if (tab == 2 && activationScreen) { activationScreen = false; render(); return; }
         super.onBackPressed();
     }
 
@@ -417,6 +427,34 @@ public class MainActivity extends Activity {
         return row;
     }
 
+    /** A tappable header icon (44dp touch target, ripple) holding a tinted StrokeIcon. */
+    private View headerIconBtn(StrokeIcon icon, int tint, String desc, Runnable onTap) {
+        ImageView iv = new ImageView(this);
+        iv.setImageDrawable(icon.tint(tint));
+        iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        iv.setContentDescription(desc);
+        iv.setBackground(ripple(dp(Theme.R_PILL)));
+        int pad = dp(9);
+        iv.setPadding(pad, pad, pad, pad);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(42), dp(42));
+        lp.gravity = Gravity.CENTER_VERTICAL;
+        iv.setLayoutParams(lp);
+        iv.setOnClickListener(v -> onTap.run());
+        return iv;
+    }
+
+    /** A simple line "key": a ring (bow) at top-left, a shaft down to the bit, two teeth. */
+    private StrokeIcon keyIcon(final int px) {
+        return new StrokeIcon(px) {
+            @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
+                c.drawCircle(s * 0.34f, s * 0.34f, s * 0.16f, p);        // bow
+                c.drawLine(s * 0.45f, s * 0.45f, s * 0.76f, s * 0.76f, p); // shaft
+                c.drawLine(s * 0.62f, s * 0.68f, s * 0.72f, s * 0.58f, p); // tooth 1
+                c.drawLine(s * 0.72f, s * 0.78f, s * 0.82f, s * 0.68f, p); // tooth 2
+            }
+        };
+    }
+
     private View tabBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -425,7 +463,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
             Button tb = tabButton(names[i], tab == i);
-            tb.setOnClickListener(v -> { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; retintTabs(); render(); });
+            tb.setOnClickListener(v -> { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; activationScreen = false; retintTabs(); render(); });
             tabButtons[i] = tb;
             bar.addView(tb);
         }
@@ -571,62 +609,15 @@ public class MainActivity extends Activity {
             toast("Every identifier is toggled off — nothing to spoof. Enable some first.");
             return;
         }
-        // A saved login binds an app to the device it was captured under. Applying a DIFFERENT device over
-        // such an app makes it incoherent — the server still remembers the old model (Cash's "Your devices"
-        // showed Pixel 4a while live reads said SM-G996U). Warn before doing it; the coherent move is to
-        // restore that login from Saved (which re-applies its own device), not to apply a mismatched one.
-        // Base the device on toApply (what will REALLY be written), not the raw profile: if the device
-        // bundle is toggled off, apply leaves the model untouched, so there is no new mismatch to warn about.
-        final String applyingDevice = applyDeviceString(toApply);
-        if (applyingDevice != null) {
-            java.util.List<String> drift = driftWarnings(targets, applyingDevice);
-            if (!drift.isEmpty()) {
-                confirmDriftThenApply(drift, applyingDevice, toApply);
-                return;
-            }
-        }
+        // No "this won't match a saved login" confirm here. Generating an identity and applying it IS the
+        // new-account flow: not matching an old login is the POINT, and applyConfirmed() force-wipes each
+        // target's data before writing, so there is no surviving session left to be incoherent with. The
+        // dialog asked the user to confirm the thing they had just asked for. Reopening an old account is
+        // the Saved tab's job — a restore wipes and puts back the fingerprint+login PAIR.
         applyConfirmed(toApply);
     }
 
-    /** The manufacturer+model that {@code toApply} will actually write, or null when the device bundle is
-     *  toggled OFF (then apply leaves the real model in place, so it can't introduce a device mismatch). The
-     *  build_* fields share one toggle, so both are present together or not at all. */
-    private String applyDeviceString(Map<String, String> toApply) {
-        String mfr = toApply.get("build_manufacturer"), model = toApply.get("build_model");
-        if (mfr == null || model == null) return null;
-        String s = (cap(mfr) + " " + model).trim();
-        return s.isEmpty() ? null : s;
-    }
-
-    /** Per-target lines describing a saved login captured under a device OTHER than {@code applyingDevice}. */
-    private java.util.List<String> driftWarnings(Set<String> targets, String applyingDevice) {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        for (String pkg : targets) {
-            for (String dev : com.specter.module.gen.AppDataVault.conflictingDevices(
-                    appDataVault.list(pkg), applyingDevice)) {
-                out.add(Targets.label(this, pkg) + " has a saved login as " + dev);
-            }
-        }
-        return out;
-    }
-
-    /** Confirm before applying an identity that won't match a saved login's device. Restoring that login
-     *  (from Saved) is the coherent alternative — this dialog just makes the mismatch a deliberate choice. */
-    private void confirmDriftThenApply(java.util.List<String> drift, String applyingDevice,
-                                       final Map<String, String> toApply) {
-        String body = android.text.TextUtils.join("\n", drift)
-                + "\n\nApplying " + applyingDevice + " won't match that login — the app would look like a "
-                + "different phone than the account is registered on. To reuse a saved login, restore it "
-                + "from Saved instead (it re-applies its own device).";
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("Identity won't match a saved login")
-                .setMessage(body)
-                .setPositiveButton("Apply " + applyingDevice + " anyway", (d, w) -> applyConfirmed(toApply))
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    /** The destructive apply itself (wipe + write per target), assumed already confirmed. */
+    /** The destructive apply itself (wipe + write per target). */
     private void applyConfirmed(final Map<String, String> toApply) {
         Set<String> targets = Targets.get(prefs);
         final String sig = applySignature(toApply);
@@ -2041,6 +2032,7 @@ public class MainActivity extends Activity {
     private void renderSettings() {
         if (setupScreen) { renderSetup(); return; }     // dedicated guided-setup sub-screen
         if (healthScreen) { renderHealth(); return; }   // dedicated status sub-screen
+        if (activationScreen) { renderActivation(); return; }  // dedicated activation sub-screen
 
         // Set up everything: the one-tap first-run install (native layer + LSPosed scope + OTA block +
         // Widevine L3, then a reboot). Always available so it's re-runnable, not just a first-run gate.
@@ -2068,6 +2060,24 @@ public class MainActivity extends Activity {
                 hTrail,
                 v -> { healthScreen = true; render(); }));
         content.addView(statusCard);
+
+        // Activation: the device-bound licence. The subtitle reads the live status so it's visible without
+        // drilling in — "Active · 6 days left" / "Expired" / "Not activated".
+        content.addView(sectionLabel("Account"));
+        LinearLayout actCard = card();
+        ActivationStore actStore = new ActivationStore(this);
+        ActivationStore.Status ast = actStore.status();
+        String actSub;
+        switch (ast.state) {
+            case ACTIVE:  actSub = "Active · " + actStore.remaining(ast.until); break;
+            case EXPIRED: actSub = "Expired — enter a new key"; break;
+            default:      actSub = "Not activated — enter a key"; break;
+        }
+        LinearLayout aTrail = new LinearLayout(this);
+        aTrail.addView(chevronTrailing(false));
+        actCard.addView(row("Activation", actSub, aTrail,
+                v -> { activationScreen = true; render(); }));
+        content.addView(actCard);
 
         // Target apps
         // Same polished per-app cards (icon + name + LSPosed-scope warning + red ✕) as the Identity tab —
@@ -2115,6 +2125,14 @@ public class MainActivity extends Activity {
         repKeys.addView(hairlineInset());
         repKeys.addView(apiKeyRow("AbuseIPDB key", "abuseipdb_key",
                 "Abuse-report history · 1,000 lookups a day free"));
+        repKeys.addView(hairlineInset());
+        // A USER + KEY pair, so two rows — half a pair never runs. Its score is shown but scores nothing;
+        // what earns it a place is the datacenter/Tor classifier feeding the Exit type.
+        repKeys.addView(apiKeyRow("Scamalytics username", "scamalytics_user",
+                "Account name · pairs with the key below"));
+        repKeys.addView(hairlineInset());
+        repKeys.addView(apiKeyRow("Scamalytics key", "scamalytics_key",
+                "Datacenter and Tor classifier · 5,000 lookups a month free"));
         content.addView(repKeys);
 
         // Advanced (root) — device-wide, persistent Magisk-module actions, NOT per-profile hook gates.
@@ -2125,6 +2143,39 @@ public class MainActivity extends Activity {
         content.addView(gsfResetRow());
         // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
         // as a dead toggle until it actually works.
+    }
+
+    /** The reputation API keys this build was compiled with, if any. Empty in a distributable build — the
+     *  values come from a GITIGNORED {@code xposed-module/dev-keys.properties}, so a build made without
+     *  that file simply has nothing to seed and every field stays "Not set". */
+    private static final String[][] SEEDED_KEYS = {
+            {"ipqs_key", com.specter.module.BuildConfig.SEED_IPQS_KEY},
+            {"abuseipdb_key", com.specter.module.BuildConfig.SEED_ABUSEIPDB_KEY},
+            {"getipintel_contact", com.specter.module.BuildConfig.SEED_GETIPINTEL_CONTACT},
+            {"scamalytics_user", com.specter.module.BuildConfig.SEED_SCAMALYTICS_USER},
+            {"scamalytics_key", com.specter.module.BuildConfig.SEED_SCAMALYTICS_KEY},
+    };
+
+    /** Write the compiled-in keys into prefs ONCE, on the first launch that finds them.
+     *
+     *  <p>Once, not "whenever the pref is empty": CLEARING a key is a deliberate act, and re-seeding it on
+     *  the next launch would make it impossible to turn a source off. The marker carries the key SET so
+     *  adding a new source later seeds just that one rather than resurrecting the others.
+     *
+     *  <p>An existing value is never overwritten — a key typed on the device outranks one baked into the
+     *  build. */
+    private void seedDevApiKeys() {
+        StringBuilder sig = new StringBuilder();
+        for (String[] kv : SEEDED_KEYS) if (kv[1] != null && !kv[1].isEmpty()) sig.append(kv[0]).append(',');
+        if (sig.length() == 0) return;                                  // distributable build — nothing to do
+        if (sig.toString().equals(prefs.getString("seeded_keys", ""))) return;
+        SharedPreferences.Editor e = prefs.edit();
+        for (String[] kv : SEEDED_KEYS) {
+            if (kv[1] == null || kv[1].isEmpty()) continue;
+            if (!prefs.getString(kv[0], "").isEmpty()) continue;        // never overwrite a real one
+            e.putString(kv[0], kv[1]);
+        }
+        e.putString("seeded_keys", sig.toString()).apply();
     }
 
     /** A settings row holding one optional API key in prefs. The subtitle says whether a key is saved, so it
@@ -2154,6 +2205,87 @@ public class MainActivity extends Activity {
                     .setNegativeButton("Cancel", null)
                     .show();
         });
+    }
+
+    /** The Activation sub-screen: the device-bound licence. Shows the live status, this device's binding hash
+     *  (to send to the operator for a key), and a paste field to enter a key. All offline — the key is a code
+     *  signed by the operator's private key and verified here against the embedded public key
+     *  ({@link com.specter.module.gen.ActivationVerifier}). */
+    private void renderActivation() {
+        content.addView(Nav.backRow(this, "Activation", () -> { activationScreen = false; render(); }));
+        final ActivationStore store = new ActivationStore(this);
+        ActivationStore.Status st = store.status();
+
+        // Status card — a pill + one plain line. Colour encodes state; nothing to decode.
+        LinearLayout statusCard = cardBox();
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MMM d, yyyy · HH:mm", java.util.Locale.US);
+        if (st.state == ActivationStore.State.ACTIVE) {
+            statusCard.addView(statusPill("Active", Theme.SAGE));
+            TextView until = value("Activated until " + fmt.format(new java.util.Date(st.until * 1000L)));
+            statusCard.addView(until);
+            TextView left = label(store.remaining(st.until) + "  ·  " + st.tier + " key");
+            left.setTextColor(Theme.SOFT); left.setPadding(0, dp(2), 0, 0);
+            statusCard.addView(left);
+        } else if (st.state == ActivationStore.State.EXPIRED) {
+            statusCard.addView(statusPill("Expired", Theme.RED));
+            statusCard.addView(value("Expired " + fmt.format(new java.util.Date(st.until * 1000L))));
+            TextView hint = label("Enter a new key below to reactivate.");
+            hint.setTextColor(Theme.SOFT); hint.setPadding(0, dp(2), 0, 0);
+            statusCard.addView(hint);
+        } else {
+            statusCard.addView(statusPill("Not activated", Theme.DIM));
+            TextView hint = label(st.detail.isEmpty()
+                    ? "Enter a key below to activate this device."
+                    : "Stored key rejected (" + st.detail + "). Enter a valid key.");
+            hint.setTextColor(Theme.SOFT); hint.setPadding(0, dp(2), 0, 0);
+            statusCard.addView(hint);
+        }
+        content.addView(statusCard);
+
+        // This device — the binding hash the operator needs to mint a key. Copyable; the raw id never leaves.
+        content.addView(sectionLabel("This device"));
+        LinearLayout devCard = cardBox();
+        final String dh = st.deviceHash;
+        TextView hashV = value(dh);
+        hashV.setTypeface(android.graphics.Typeface.MONOSPACE);
+        hashV.setTextColor(Theme.GOLD);
+        devCard.addView(hashV);
+        TextView dcap = label("Send this to get a key. It's a hash of the real device id — the id itself never leaves the phone.");
+        dcap.setPadding(0, dp(2), 0, dp(4));
+        devCard.addView(dcap);
+        devCard.addView(textButton("Copy device id", Theme.GOLD, v -> {
+            android.content.ClipboardManager cb = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            cb.setPrimaryClip(android.content.ClipData.newPlainText("Specter device id", dh));
+            toast("Device id copied");
+        }));
+        content.addView(devCard);
+
+        // Enter a key.
+        content.addView(sectionLabel("Enter a key"));
+        LinearLayout enterCard = cardBox();
+        final EditText in = new EditText(this);
+        in.setHint("Paste your activation key");
+        in.setTextColor(Theme.INK);
+        in.setHintTextColor(Theme.DIM);
+        in.setTextSize(13);
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        in.setMinLines(2);
+        in.setGravity(Gravity.TOP | Gravity.START);
+        in.setBackground(pill(Theme.CARD2, Theme.LINE));
+        in.setPadding(dp(Theme.S3), dp(Theme.S2), dp(Theme.S3), dp(Theme.S2));
+        enterCard.addView(in);
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(Theme.S3)));
+        enterCard.addView(spacer);
+        enterCard.addView(primaryButton("Activate", v -> {
+            String code = in.getText().toString();
+            if (code.trim().isEmpty()) { toast("Paste a key first"); return; }
+            com.specter.module.gen.ActivationVerifier.Result r = store.activate(code);
+            if (r.valid) toast("Activated · " + store.remaining(r.until));
+            else toast("Not activated: " + r.reason);
+            render();   // reflect the new status
+        }));
+        content.addView(enterCard);
     }
 
     /** The guided "Set up everything" sub-screen: one tap installs every layer (native + scope + OTA block +
@@ -2559,14 +2691,17 @@ public class MainActivity extends Activity {
 
             // 2) Tiles: big number over ONE short caption, uniform height. A caption that wraps to three
             //    lines makes every tile in the row that tall, so the long text lives in the breakdown below.
-            boolean dc = HealthCheck.isDatacenter(rep.organization, rep.isp != null ? rep.isp : geoIsp, rep.host);
+            String cc = HealthCheck.connectionClass(rep, geoIsp);
             int n = rep.blacklists.size(), pol = rep.policyLists.size();
             java.util.List<View> tiles = new java.util.ArrayList<>();
             // Only shown when it says something. "Not obviously a datacenter" is all a name heuristic can
             // claim, and rendering that as a green "Real line" reassures about exits it simply failed to
             // recognise — measured on a NordVPN-operated Tor exit, which no name rule catches. Mirrors
             // connection_class in ipcheck.py, which returns None rather than guessing "residential".
-            if (dc) tiles.add(repTile("Hosting", "Exit type", Theme.RED));
+            // Tor is called out separately: it also reads is_datacenter, but "Tor" is the more useful claim
+            // and it is an instant deny at most apps. Neither value may ever render green.
+            if ("tor".equals(cc)) tiles.add(repTile("Tor", "Exit type", Theme.RED));
+            else if ("datacenter".equals(cc)) tiles.add(repTile("Hosting", "Exit type", Theme.RED));
             tiles.add(repTile(rep.dnsblUsable || n > 0 ? String.valueOf(n) : "—", "Blacklists",
                     n >= 2 ? Theme.RED : n > 0 ? Theme.AMBER
                             : rep.dnsblUsable && rep.dnsblChecked > 0 ? Theme.SAGE : Theme.DIM));
@@ -2580,12 +2715,22 @@ public class MainActivity extends Activity {
                 // and vetting proxies is the point. One tile among the signals.
                 tiles.add(repTile(String.valueOf(rep.fraudScore), "Fraud score",
                         rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE));
+            } else {
+                tiles.add(repTile("n/a", "Fraud score", Theme.DIM));
             }
+            if (rep.abuseConfidence == null) tiles.add(repTile("n/a", "Abuse", Theme.DIM));
+            if (rep.getipintel == null) tiles.add(repTile("n/a", "getIPIntel", Theme.DIM));
             if (rep.getipintel != null) {
                 double g = rep.getipintel;
                 tiles.add(repTile(String.format(java.util.Locale.US, "%.2f", g), "getIPIntel",
                         g >= 0.99 ? Theme.RED : g >= 0.90 ? Theme.AMBER : Theme.SAGE));
             }
+            // Scamalytics' score is shown because it is worth seeing, and coloured WARN-ONLY because it does
+            // not decide anything: measured, "low" came back for a Tor exit AND for 127.0.0.1, and the score
+            // tracks the ISP score rather than this address. What Scamalytics actually contributes is the
+            // Exit type tile above. Never SAGE.
+            if (rep.scamRisk == null) tiles.add(repTile("n/a", "Scamalytics", Theme.DIM));
+            else tiles.add(repTile(num(rep.scamScore), "Scamalytics", scamColour(rep.scamRisk)));
             for (View r : tileRows(tiles, 3)) box.addView(r);
 
             // 3) Flags, as their own compact line.
@@ -2607,20 +2752,10 @@ public class MainActivity extends Activity {
                     v -> { repDetailsExpanded = !repDetailsExpanded; render(); }));
             if (repDetailsExpanded) box.addView(reputationDetail(rep, geoIsp));
 
-            // Every source that failed says so, in its own line — one shared line would let whichever
-            // failed first hide the others, and "no abuse row" with no reason is the confusing case.
-            java.util.List<String> hints = new java.util.ArrayList<>(rep.notes);
-            if (rep.fraudScore == null && prefs.getString("ipqs_key", "").isEmpty()) {
-                hints.add("IPQualityScore: add a key in Settings for a fraud score");
-            }
-            // "Source: what happened" renders as the same label -> value row as everything else, rather
-            // than a loose sentence per line.
-            for (String h : hints) {
-                int sep = h.indexOf(": ");
-                box.addView(sep > 0 ? networkMetaRow(h.substring(0, sep).toUpperCase(java.util.Locale.US),
-                                                     h.substring(sep + 2), Theme.SOFT)
-                                    : networkMetaRow("NOTE", h, Theme.SOFT));
-            }
+            // A source that could not run gets a TILE reading n/a, not a sentence. Spelling out "add a key
+            // in Settings for a fraud score" on the main card buried the actual result under advice, and a
+            // caption long enough to say it wraps. The tile keeps the source visible so its absence is
+            // obvious, and the reason lives in the breakdown.
         }
 
         // Off-tunnel there's no proxy exit — this IP is the device's REAL public IP. Checking it still works
@@ -2668,6 +2803,7 @@ public class MainActivity extends Activity {
      *  {@code detail} completes the sentence "…uses your device's real public IP by …". This is what lets the
      *  off-tunnel reputation check and timezone fix exist without ever leaking the home IP by accident. */
     private void confirmRealIpAction(String detail, java.util.function.Consumer<Boolean> onDecided) {
+        // `detail` is kept for the call sites to state what they do with the IP; nothing renders it now.
         // The real-IP consent decision is captured HERE, once, and handed to the callback as a boolean. The
         // callback must NOT re-query the VPN state later to decide, or a tunnel that flaps up (skipping this
         // dialog) then down before the worker thread would run a real-IP action with no dialog ever shown.
@@ -2675,13 +2811,11 @@ public class MainActivity extends Activity {
             onDecided.accept(false);   // on a tunnel: the exit is the proxy's — no real-IP consent needed or given
             return;
         }
-        new AlertDialog.Builder(this)
-                .setTitle("Use your real IP?")
-                .setMessage("No VPN/proxy tunnel is active, so this uses your device's real public IP by "
-                        + detail + ".")
-                .setPositiveButton("Continue", (d, w) -> onDecided.accept(true))   // real-IP consent given
-                .setNegativeButton("Cancel", null)
-                .show();
+        // No dialog. The button that reaches this path already SAYS it uses the real IP ("Check this IP
+        // anyway", under a note that spells it out), so a modal asking again is a second click for a
+        // decision the user already made. Consent is still an explicit boolean on this path, and the
+        // auto-check never reaches it — it stays tunnel-only.
+        onDecided.accept(true);
     }
 
     /** Look up an IP's reputation. On a tunnel the lookup is PINNED to it (so the exit IP is provably the proxy's);
@@ -2704,11 +2838,14 @@ public class MainActivity extends Activity {
         final String ipqs = prefs.getString("ipqs_key", "").trim();
         final String abuse = prefs.getString("abuseipdb_key", "").trim();
         final String giiContact = prefs.getString("getipintel_contact", "").trim();
+        final String scamUser = prefs.getString("scamalytics_user", "").trim();
+        final String scamKey = prefs.getString("scamalytics_key", "").trim();
         repBusy = true;
         status.setText("Checking exit-IP reputation…");
         render();   // repaint the button as "Checking…"
         new Thread(() -> {
-            final HealthCheck.Reputation r = HealthCheck.lookupReputation(vpn, ip, ipqs, abuse, giiContact);
+            final HealthCheck.Reputation r = HealthCheck.lookupReputation(vpn, ip, ipqs, abuse, giiContact,
+                    scamUser, scamKey);
             runOnUiThread(() -> {
                 repBusy = false;
                 if (!alive()) return;
@@ -2810,6 +2947,93 @@ public class MainActivity extends Activity {
         d.setOrientation(LinearLayout.VERTICAL);
         d.setPadding(dp(Theme.S4), 0, dp(Theme.S4), dp(Theme.S3));
 
+        // WHAT THIS EXIT IS — the answers the use case actually needs, before the per-source dumps. Opening
+        // with IPQUALITYSCORE's raw fields made the reader assemble the verdict themselves out of eight
+        // groups. Every row here states what was MEASURED; a source that did not run says so rather than
+        // being omitted, because a missing row reads as "fine".
+        d.addView(detailHead("WHAT THIS EXIT IS", null));
+
+        String cc = HealthCheck.connectionClass(rep, geoIsp);
+        d.addView(networkMetaRow("EXIT TYPE",
+                "tor".equals(cc) ? "Tor exit — denied by most apps"
+                        : "datacenter".equals(cc) ? "hosting network — real ISPs pass more easily"
+                        : rep.scamRisk != null
+                        ? "unclassified — no datacenter or proxy record, and no hosting name matched"
+                        : "unclassified — no hosting name matched, and Scamalytics did not run",
+                cc != null ? Theme.RED : Theme.DIM));
+
+        // Blocklists with an HONEST denominator. "0 blacklists" and "0 of 17 checked" are different claims,
+        // and an IPv6 exit is checked against FOUR zones, never seventeen.
+        int hits = rep.blacklists.size();
+        int total = rep.dnsblZonesTotal > 0 ? rep.dnsblZonesTotal : rep.dnsblChecked;
+        if (!rep.dnsblUsable) {
+            d.addView(networkMetaRow("BLOCKLISTS",
+                    ("ipv6".equals(rep.dnsblFamily) || rep.dnsblFamily == null
+                            ? "not run — no zone answered for this address"
+                            : "not run — the blocklist DNS did not answer")
+                            + "\nThis is NOT a clean result. Nothing was checked.", Theme.DIM));
+        } else {
+            d.addView(networkMetaRow("BLOCKLISTS",
+                    hits + " of " + rep.dnsblChecked + " answering zones"
+                            + (total > rep.dnsblChecked ? " (" + total
+                            + ("ipv6".equals(rep.dnsblFamily) ? " IPv6" : "") + " queried)" : "")
+                            + (hits > 0 ? "\n" + android.text.TextUtils.join(", ", rep.blacklists) : ""),
+                    hits >= 2 ? Theme.RED : hits > 0 ? Theme.AMBER : Theme.SAGE));
+            if ("ipv6".equals(rep.dnsblFamily)) {
+                // Say what the evidence is WORTH, not just that it exists.
+                d.addView(networkMetaRow("IPV6 CAVEAT",
+                        "Spamhaus, CBL and s5h list /64 prefixes, so this is weaker evidence in both "
+                                + "directions than the IPv4 equivalent", Theme.DIM));
+            }
+        }
+
+        d.addView(networkMetaRow("FRAUD SCORE", rep.fraudScore != null
+                        ? rep.fraudScore + " · " + (rep.fraudScore >= 85 ? "high risk"
+                        : rep.fraudScore >= 60 ? "suspicious" : "clean")
+                        : "no IPQualityScore key — not measured",
+                rep.fraudScore == null ? Theme.DIM
+                        : rep.fraudScore >= 85 ? Theme.RED : rep.fraudScore >= 60 ? Theme.AMBER : Theme.SAGE));
+
+        // "Is it DETECTABLE as a proxy at all" — the question the fraud score can't answer, because it
+        // saturates on every proxy. No flag while a source answered is a real result; no source is not.
+        java.util.List<String> det = new java.util.ArrayList<>();
+        if (Boolean.TRUE.equals(rep.tor)) det.add("Tor");
+        if (Boolean.TRUE.equals(rep.vpn)) det.add("VPN");
+        if (Boolean.TRUE.equals(rep.proxy)) det.add("Proxy");
+        d.addView(networkMetaRow("DETECTED AS", !det.isEmpty()
+                        ? android.text.TextUtils.join(" · ", det)
+                        : rep.fraudScore != null ? "no proxy/VPN/Tor flag" : "not measured",
+                !det.isEmpty() ? Theme.AMBER : rep.fraudScore != null ? Theme.SAGE : Theme.DIM));
+
+        d.addView(networkMetaRow("ABUSE", rep.abuseConfidence != null
+                        ? rep.abuseConfidence + "% confidence · "
+                        + (rep.abuseReports == null ? 0 : rep.abuseReports) + " reports in 90d"
+                        : "no AbuseIPDB key — not measured",
+                rep.abuseConfidence == null ? Theme.DIM
+                        : rep.abuseConfidence >= 50 ? Theme.RED
+                        : rep.abuseConfidence >= 10 ? Theme.AMBER : Theme.SAGE));
+
+        d.addView(networkMetaRow("GETIPINTEL", rep.getipintel != null
+                        ? String.format(java.util.Locale.US, "%.3f", rep.getipintel) + " · "
+                        + HealthCheck.getipintelBand(rep.getipintel)
+                        + (rep.getipintelBad ? " · bad IP" : "")
+                        : "did not answer — not measured",
+                rep.getipintel == null ? Theme.DIM
+                        : rep.getipintel >= 0.99 ? Theme.RED
+                        : rep.getipintel >= 0.90 ? Theme.AMBER : Theme.SAGE));
+
+        // Shown ADJACENT to the ISP score on purpose: they are near-identical on every IP measured, and
+        // seeing that is what tells a reader the score is an ASN prior, not a judgement about this address.
+        // Never SAGE — "low" came back for a Tor exit AND for 127.0.0.1.
+        // scamRisk is the "did it run" sentinel; the SCORES are separately optional, so a response with a
+        // band and no number would render the literal text "null · low". Guarded the same way the tile is.
+        d.addView(networkMetaRow("SCAMALYTICS", rep.scamRisk != null
+                        ? num(rep.scamScore) + " · " + rep.scamRisk
+                        + (rep.scamIspRisk != null ? "  ·  ISP " + num(rep.scamIspScore) + " " + rep.scamIspRisk : "")
+                        + "\nshown, not scored — it tracks the ISP score, not this IP"
+                        : "no Scamalytics credentials — not measured",
+                rep.scamRisk == null ? Theme.DIM : scamColour(rep.scamRisk)));
+
         if (rep.fraudScore != null) {
             d.addView(detailHead("IPQUALITYSCORE", "strictness " + HealthCheck.IPQS_STRICTNESS));
             d.addView(networkMetaRow("FRAUD SCORE", String.valueOf(rep.fraudScore),
@@ -2844,13 +3068,56 @@ public class MainActivity extends Activity {
             addIfSet(d, "DOMAIN", rep.domain);
             addIfSet(d, "COUNTRY", rep.countryCode);
         }
+        if (rep.scamRisk != null) {
+            d.addView(detailHead("SCAMALYTICS", rep.scamRisk));
+            d.addView(networkMetaRow("SCORE", num(rep.scamScore) + " · " + rep.scamRisk,
+                    scamColour(rep.scamRisk)));
+            addIfSet(d, "ISP RISK", rep.scamIspRisk == null ? null
+                    : num(rep.scamIspScore) + " · " + rep.scamIspRisk);
+            // An EMPTY ip2proxy record is "no record", not "clean" — say which, or the absence reassures.
+            d.addView(networkMetaRow("PROXY TYPE", rep.scamProxyType != null
+                            ? scamProxyTypeName(rep.scamProxyType) + " (" + rep.scamProxyType + ")"
+                            : "no ip2proxy record — empty is not a clean result",
+                    rep.scamProxyType != null ? Theme.RED : Theme.DIM));
+            java.util.List<String> sf = new java.util.ArrayList<>();
+            if (Boolean.TRUE.equals(rep.scamDatacenter)) sf.add("datacenter");
+            if (Boolean.TRUE.equals(rep.scamVpn)) sf.add("VPN");
+            if (Boolean.TRUE.equals(rep.scamTor)) sf.add("Tor");
+            if (Boolean.TRUE.equals(rep.scamBlacklistedExternal)) sf.add("external blocklist");
+            // DIM when none are raised, never green: these flags can only ever fire, so their silence is
+            // "nothing found", not "verified clean".
+            d.addView(networkMetaRow("FLAGS", sf.isEmpty() ? "none raised"
+                    : android.text.TextUtils.join(" · ", sf), sf.isEmpty() ? Theme.DIM : Theme.AMBER));
+            // A tappable link, not a printed address. Scamalytics' own page for this IP is genuinely
+            // useful (it 403s a bot user-agent but renders fine in a browser) — and it was rendering as
+            // plain text, so tapping it did nothing.
+            if (rep.scamUrl != null && !rep.scamUrl.isEmpty()) {
+                View row = networkMetaRow("PAGE", rep.scamUrl, Theme.BLUE);
+                final String url = rep.scamUrl;
+                row.setOnClickListener(v -> {
+                    try {
+                        startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+                    } catch (Throwable t) { toast("No browser to open that link."); }
+                });
+                d.addView(row);
+            }
+        }
         if (!rep.zoneStatus.isEmpty()) {
-            d.addView(detailHead("BLOCKLISTS", rep.zoneStatus.size() + " zones queried"));
+            d.addView(detailHead("BLOCKLISTS", rep.dnsblChecked + " of " + rep.zoneStatus.size()
+                    + ("ipv6".equals(rep.dnsblFamily) ? " IPv6" : "") + " zones answered"));
             // Grouped by meaning, and the group label says what the meaning IS.
             zoneGroup(d, rep, "listed", "LISTED", "abuse reports against this IP", Theme.RED);
             zoneGroup(d, rep, "policy", "POLICY ONLY", "a mail-sending policy listing, not abuse", Theme.BLUE);
             zoneGroup(d, rep, "clean", "CLEAN", "answered, not listed", Theme.SAGE);
-            zoneGroupNoAnswer(d, rep);
+            // "Refused" and "no answer" are DIFFERENT and were previously merged under one misleading
+            // "NO ANSWER" heading. A refusal is a specific, explainable condition (the zone declined this
+            // resolver); silence is an outage or a timeout. Neither is a clean result, and saying which
+            // one happened is the difference between a fixable problem and a mystery.
+            zoneGroup(d, rep, "refused", "REFUSED", "the zone declined this resolver — not a clean result",
+                    Theme.AMBER);
+            zoneGroup(d, rep, "no answer", "NO ANSWER", "no reply before the timeout — not a clean result",
+                    Theme.DIM);
         }
         return d;
     }
@@ -2864,22 +3131,43 @@ public class MainActivity extends Activity {
             if (status.equals(e.getValue())) names.add(e.getKey());
         }
         if (names.isEmpty()) return;
-        into.addView(networkMetaRow(title + " · " + names.size(),
-                android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
+        // The COUNT leads the value, not the label. The label column is a fixed dp(96) and now truncates
+        // at the end rather than wrapping — so a count appended to the title ("NO ANSWER · 3") lost the
+        // digit first, which is the one actionable part of the row.
+        into.addView(networkMetaRow(title,
+                names.size() + " · " + android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
     }
 
-    /** Zones that refused or never replied. Kept separate and never folded into "clean": a zone that didn't
-     *  answer proved nothing, and counting it as clear is how a bad IP reads as a good one. */
-    private void zoneGroupNoAnswer(LinearLayout into, HealthCheck.Reputation rep) {
-        java.util.List<String> names = new java.util.ArrayList<>();
-        for (java.util.Map.Entry<String, String> e : rep.zoneStatus.entrySet()) {
-            String v = e.getValue();
-            if ("refused".equals(v) || "no answer".equals(v)) names.add(e.getKey());
-        }
-        if (names.isEmpty()) return;
-        into.addView(networkMetaRow("NO ANSWER · " + names.size(),
-                android.text.TextUtils.join(", ", names) + "\nrefused or never replied — not a clean result",
-                Theme.DIM));
+
+    /** Scamalytics' OWN four-band scale in their own colours: low green, medium amber, high orange, very
+     *  high red. Shown this way at the user's explicit request.
+     *
+     *  <p>Safe to paint green ONLY because the score is fenced off from the verdict entirely — it carries
+     *  zero weight at every tier of {@link HealthCheck#verdictFactors}, so a green "8 · low" beside a DIRTY
+     *  verdict is Scamalytics' opinion next to ours, not a contradiction. Every row that shows it also says
+     *  "shown, not scored". MEASURED: "low" came back for a Tor exit AND for 127.0.0.1, which is exactly
+     *  why it must never decide anything. */
+    private static int scamColour(String band) {
+        if ("very high".equals(band)) return Theme.RED;
+        if ("high".equals(band)) return Theme.ORANGE;
+        if ("medium".equals(band)) return Theme.AMBER;
+        return Theme.SAGE;
+    }
+
+    /** An optional number for display: an em dash rather than the literal string "null". */
+    private static String num(Integer v) { return v == null ? "—" : String.valueOf(v); }
+
+    /** ip2proxy's code spelled out. The raw code stays beside it — the coarse "datacenter" bucket the
+     *  verdict uses must never hide the specific claim that produced it. */
+    private static String scamProxyTypeName(String code) {
+        if ("DCH".equals(code)) return "datacenter";
+        if ("TOR".equals(code)) return "Tor exit";
+        if ("VPN".equals(code)) return "VPN";
+        if ("PUB".equals(code)) return "public proxy";
+        if ("WEB".equals(code)) return "web proxy";
+        if ("SES".equals(code)) return "search-engine spider";
+        if ("RES".equals(code)) return "residential proxy";
+        return code;
     }
 
     private View detailHead(String source, String meta) {
@@ -2925,6 +3213,10 @@ public class MainActivity extends Activity {
         // A gutter the label can never spend: without it a long caption ("ORGANIZATION") runs straight into
         // its value with no space between them.
         label.setPadding(0, 0, dp(Theme.S2), 0);
+        // One line, ellipsised. Without this a caption longer than the column breaks MID-WORD
+        // ("IPQUALITYSCO / RE"), which is unreadable and ragged. Keep captions short as well.
+        label.setSingleLine(true);
+        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         row.addView(label, new LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView value = new TextView(this);

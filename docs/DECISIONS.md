@@ -2,6 +2,30 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-06 — AppData capture/restore design CONFIRMED correct against the research recipe (not
+  re-architected).** `SessionMigrator` already does everything the Neo/Titanium root-backup lineage
+  converges on: excludes `cache/code_cache/oat/app_textures/lib` (a stale `code_cache` with the old uid can
+  trigger a full data wipe on reboot — Android 13+), force-stops the app BEFORE the snapshot AND before
+  restore (aborting if it won't stop, so nothing is swapped under a live writer), tars the WHOLE
+  `databases/` incl `-wal/-shm` (the live login row sits in the WAL), restores by atomic mv-aside + swap
+  with rollback, then re-`chown`s to THIS install's uid and `restorecon`s. So §2d's "no cross-contamination
+  / does it hold" is a CONFIRM, and it holds. No code change was needed.
+- **2026-08-06 — the Keystore ceiling is a documented boundary, not a bug to fix.** Hardware/TEE-wrapped
+  session tokens (EncryptedSharedPreferences, Firebase Auth Tink keyset, FIDO/passkeys) are non-exportable
+  by construction — no file copy can carry them to another identity, and a restore that copies the
+  ciphertext without the device-bound key yields `AEADBadTagException`/logged-out. Plain cookie/JWT/sqlite
+  logins DO survive a copy; keystore-wrapped ones do not; server-side device-binding needs the spoofed
+  identity to line up server-side. Restore should report WHICH layer failed rather than a bare "restore
+  failed" (backlog in IDEAS.md). See the research in docs/ANTI-FINGERPRINT-STRATEGY.md.
+- **2026-08-06 — no-cross-contamination is guaranteed by generation uniqueness, already test-guarded.** A
+  saved vault entry IS a generated profile, and `test_ledger_enforces_uniqueness` +
+  `test_used_store_persists_and_blocks_reuse` prove no `android_id`/`gsf`/`serial`/`imei` ever repeats
+  across gens (the ledger's retry-on-collision is the guarantee). So two vault entries cannot share an
+  identifying field; a separate "hash the vault tuple" test would be redundant (YAGNI). The live on-device
+  round-trip (log into Dasher on the 4a → save → apply identity B → restore → still logged in) still needs
+  a fresh Dasher login to exercise and was NOT run this session (no credentials; rule zero keeps it off
+  Cash App). Comprehensive spoof COVERAGE is separately proven by the probe (every Build.*/id field ✅).
+
 - **2026-08-05: the 6-device pool is CORRECT for the A11 fleet — do NOT lower `MIN_ANDROID_MAJOR` to grow
   it.** WHY: the pool looks small (only ~6 models survive `MIN==MAX_ANDROID_MAJOR==11` + phones-only + US),
   and lowering the floor to 10 to add Android-10 devices is tempting for identity diversity. It's a
@@ -973,3 +997,85 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 - **2026-08-05 — no auto-run when the page opens.** It prefills the visitor's IP and waits. An auto-run spent
   an IPQS/AbuseIPDB quota and a getIPIntel rate-limit slot on every page load and every refresh, for a check
   nobody asked for.
+- **2026-08-06 — Scamalytics' CLASSIFIER decides, its SCORE never does.** Measured over ~200 live v3
+  lookups: `scamalytics_score` ≈ `scamalytics_isp_score` on every single IP, so it is an ISP/ASN reputation
+  prior, not an IP-level abuse measure — constant at 13 across three Starlink IPs with different abuse
+  histories. And no threshold orders the set: catching Mullvad (44) means passing a Tor exit (15) and
+  flagging clean Comcast residential (18). So `verdict_factors()` gives it zero weight at every tier, pinned
+  in both directions by `test_scamalytics_score_never_moves_the_verdict`. It is still SHOWN, because the
+  user asked to see it — warn-only colour, adjacent to the ISP score so the reader can see for themselves
+  that the two are the same number.
+- **2026-08-06 — the Scamalytics dirty factor names its source and the exact code.** `datacenter/hosting IP
+  (Scamalytics DCH)` rather than a bare factor line. Its specificity on residential pools is proven on only
+  four IPs (3 Starlink + T-Mobile, all `proxy_type "0"` / `is_datacenter false`); everywhere else it is a
+  HYPOTHESIS. If it ever calls a working residential proxy a datacenter, the attribution is what makes the
+  false positive visible instead of indistinguishable from the name regex we have trusted for months.
+- **2026-08-06 — `tor` is its own connection class, checked before `datacenter`.** A Tor exit reads
+  `is_datacenter` true as well, and "Tor exit" is both the more useful and the more damning claim.
+  `is_datacenter(rep)` stays `class == "datacenter"`, so `tor` does not satisfy it — the verdict's `elif`
+  covers it, and the exit-type colour helper (`ccColour`) makes green reachable only by `mobile`.
+- **2026-08-06 — no apply-time drift confirm.** Applying a freshly generated identity IS the new-account
+  flow; warning that it "won't match a saved login" asked the user to confirm the thing they just asked for.
+  `applyConfirmed()` force-wipes each target and refuses to write if the wipe fails, so no session survives
+  to be incoherent with. The restore path is already coherent by construction (it re-applies the login's
+  linked fingerprint), so the check had no home there either and was deleted rather than moved.
+- **2026-08-06 — `dnsbl_usable` means "evidence was obtained", not "the resolver works".** The two were
+  conflated: `usable` came from the 127.0.0.2 sentinel probes alone, so a run where the sentinels resolved
+  but every real zone answered 127.255.255.254 (Spamhaus/CBL's refusal to public resolvers) reported
+  usable=True with checked=0 — and the clean verdict then claimed "no abuse or blacklist history" about a
+  sweep that measured nothing. `usable` is now `checked > 0 and (alive or a real listing)`: the sentinel
+  still guards against a dead resolver making every zone look clean, and the count guards against
+  reporting a record that was never obtained.
+- **2026-08-06 — the exit address is settled BEFORE any reputation source is asked.** On a dual-stack exit
+  the report switched to the IPv4 address after IPQS/AbuseIPDB/getIPIntel/Scamalytics had already been
+  queried about the IPv6 one, so a set of measurements was attributed to an address they were never taken
+  on. Moving the family selection above the lookups was a smaller change than carrying two labelled result
+  sets, and there is only one address a user acts on anyway.
+- **2026-08-06 — an unbracketed IPv6 proxy is REFUSED, not guessed.** `host:port` is genuinely ambiguous
+  for IPv6, and `rpartition(':')` resolved the ambiguity silently and wrongly — `2001:db8::1` became host
+  `2001:db8:` port `1`, which passes every validity check and dials nonsense. Brackets are the RFC 3986
+  answer; anything else is an error with a readable reason.
+- **2026-08-06 — every inline-SVG attribute is quoted, enforced by a test.** `rx=1.2/>` parses as the value
+  `1.2/` with NO self-close, so the element swallows its siblings: three of six line icons shipped blank
+  for weeks and `ban` (circle + path) drew nothing at all. A missing icon is invisible as a bug — it looks
+  like a value that simply has no icon — so the fix is a rule plus `webapp/check-icons.py`, which renders
+  each icon at its real 13px and measures ink, spread, interior detail, a max-ink ceiling (catching the
+  "solid rectangle at a plausible size" case) and pairwise distinctness.
+- **2026-08-06 — dev API keys are baked in from a GITIGNORED properties file, never from the tree.** The
+  repo is public, so the keys cannot live in it; but retyping five of them after every reinstall is the
+  kind of friction that gets a feature abandoned. `make-dev-keys.py` generates
+  `xposed-module/dev-keys.properties` from `~/.specter-ipcheck.json`, gradle turns it into BuildConfig
+  fields, and a build made WITHOUT the file gets empty strings — so "distributable" is the absence of a
+  file rather than a flag someone has to remember to flip. The build prints which state it is in, because
+  an APK silently carrying someone's keys is the exact failure this arrangement exists to prevent, and
+  both directions are verified by grepping the shipped dex for a live key (present when seeded, absent
+  when not). Seeding is ONE-TIME (a marker pref records which keys were seeded): re-seeding whenever a
+  field is empty would make it impossible to deliberately turn a source off.
+- **2026-08-06 — activation codes sign with EC P-256, not Ed25519.** The requirement is offline, device-
+  bound, unforgeable-from-the-APK — satisfied identically by any sign-private/verify-public scheme. The
+  handoff suggested Ed25519, but the platform `Signature "Ed25519"` is API 33+ and the fleet is API 30
+  (minSdk 24). P-256 (`SHA256withECDSA`) is native since API 1 on Android AND on the desktop JVM (so the
+  verifier is fully unit-tested with no Python dependency), with ZERO bundled crypto to get wrong or to
+  obfuscate. The user delegated the curve ("whatever u think is best"), so P-256 is the staff-engineer
+  call. Public key ships in `ActivationVerifier.PUBLIC_KEY_B64` (X.509 DER, base64); private key lives only
+  on the operator's machine (`~/.specter-activation-key.pem`). PROVEN end-to-end on the P4 2026-08-06: real
+  device hash → `make_activation.py` signed a 1-week code → app verified it offline and showed "Active · 6
+  days 23 hours left".
+- **2026-08-06 — no server issues or validates a key; that is the point of signing it.** A signed code
+  carries device-hash + expiry + tier and verifies against the embedded public key with no network, so a
+  customer with a flaky connection is never locked out and there is nothing to keep online or get breached.
+  A server is needed ONLY to (a) REVOKE a key before it expires or (b) stop a defeated device-binding — and
+  neither is needed on day one because durations are short (1d/1w/1m), so a short key IS the revocation. If
+  revocation ever becomes necessary, the cheapest form is a signed deny-list of key ids served as a static
+  file (the existing Vercel project can host it), fetched opportunistically and FAILING OPEN when
+  unreachable — a CDN blink must never lock out every customer at once. A real backend (accounts,
+  dashboards, auto-issuance) is ruled out: the user chose keys over email and takes payment directly.
+- **2026-08-06 — clock-rollback guard is a deterrent, not a guarantee.** Offline expiry is only as good as
+  the device clock. `ActivationStore` records the highest clock value ever seen and checks expiry against
+  `max(now, highest-seen)`, so winding the clock BACK cannot resurrect an expired key. Winding it FORWARD
+  only expires a key sooner, which is not an attack worth stopping. A rooted user who edits the prefs can
+  defeat it; short durations, not this guard, are the real backstop.
+- **2026-08-06 — R8 obfuscation is defence in depth, NOT the security boundary.** The activation codes are
+  unforgeable because only the PUBLIC key ships (signing and verifying are different keys) — obfuscation
+  does not change that. Obfuscating the release raises the effort to clone the app; it is not what keeps
+  codes safe. The two must not be conflated: a fully-decompiled APK still cannot mint a code.
