@@ -61,6 +61,34 @@ public class RootWriterTest {
         catch (RootWriter.WriteException e) { surfaced = e.getMessage().contains("root"); }
         check(surfaced, "su-absent surfaces as WriteException mentioning root");
 
+        // ---- serialize <-> parse ROUND-TRIP: toFlatJson (the writer) must be losslessly readable by
+        //      SpoofLogic.parseFlatJson (the reader the hooks use). This is the historically-buggy area
+        //      (the 0.22.10 `\/`-unescape fix): a value with a quote/backslash/newline/CR/tab or a JSON
+        //      structural char must survive the write->read trip unchanged, or an applied profile silently
+        //      corrupts. esc() escapes " \ \n \r \t; readJsonString must decode every one.
+        java.util.Map<String, String> orig = new java.util.LinkedHashMap<>();
+        orig.put("android_id", "e117a7fba7f255ab");
+        orig.put("build_fingerprint", "lge/mh2lm/mh2lm:11/RKQ1/abc:user/release-keys");  // slashes, colons
+        orig.put("q", "he said \"hi\"");            // embedded quotes
+        orig.put("bs", "a\\b\\c");                  // backslashes
+        orig.put("ctl", "line1\nline2\r\tX");        // newline, CR, tab
+        orig.put("json", "{\"nested\":1},x");        // JSON structural chars inside a value
+        orig.put("empty", "");
+        String flat = com.specter.module.gen.RootWriter.toFlatJson(orig);
+        java.util.Map<String, String> back = new java.util.HashMap<>();
+        com.specter.module.SpoofLogic.parseFlatJson(flat, back);
+        boolean roundTrip = true;
+        for (java.util.Map.Entry<String, String> e : orig.entrySet()) {
+            if (!e.getValue().equals(back.get(e.getKey()))) {
+                roundTrip = false;
+                System.out.println("  round-trip lost " + e.getKey() + ": wrote " + e.getValue()
+                        + " read " + back.get(e.getKey()));
+            }
+        }
+        check(roundTrip, "toFlatJson -> parseFlatJson is lossless (quotes/backslash/newline/CR/tab/slash/JSON-chars)");
+        // The android_id shadow key is mirrored on read (the true-value capture), so the map gains exactly one.
+        check(back.size() == orig.size() + 1, "parse round-trip keeps every key (+1 android_id shadow)");
+
         System.out.println("RootWriter: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }
