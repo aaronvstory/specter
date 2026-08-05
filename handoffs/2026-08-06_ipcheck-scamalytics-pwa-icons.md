@@ -81,6 +81,40 @@ restoring, so one identity's data can never attach to another.
 Also: that dialog is prose slop. Rewrite any surviving copy terse — short labelled lines, one idea per
 line, never a paragraph. Check sibling dialogs for the same.
 
+### 2b. Small Android UI items already FIXED (verified on the 4a) — do not redo
+
+The "Use your real IP?" confirm is gone, `networkMetaRow`'s caption is single-line (it was breaking
+mid-word into "IPQUALITYSCO / RE"), and a source that could not run now shows an `n/a` TILE instead of a
+sentence of advice. Apply the same `n/a` treatment to any source added later, Scamalytics included.
+
+### 2c. Test proxies and what they showed
+
+`~/.specter-testproxies.txt` (OUTSIDE the repo — live credentials, and the repo is public). Three tiers:
+proxy-seller (Starlink, sticky per port), lightningproxies (rotating, **SOCKS5 on :1080**), and the host
+machine's own Mullvad exit.
+
+Measured 2026-08-06:
+
+| Vendor | Exit | Verdict | Blocklists | ISP |
+|---|---|---|---|---|
+| proxy-seller :10000 | 153.66.193.140 | clean | 0/17 | SpaceX Starlink |
+| proxy-seller :10001 | 153.66.195.55 | clean | 0/17 | SpaceX Starlink |
+| proxy-seller :10002 | 153.66.193.3 | suspect | 0/17 | SpaceX Starlink |
+| lightning :1080 | 24.26.39.144 | dirty | 2/17 | Spectrum |
+| lightning :1080 | 69.40.189.83 | dirty | 3/17 | Windstream |
+| lightning :1080 | 23.252.131.181 | dirty | 2/17 | Barbourville Utility |
+| mullvad (host) | 23.159.216.252 | suspect | 0/17 | Byte Node |
+
+Two things to act on:
+
+- **A SOCKS proxy run as HTTP just reads DEAD**, indistinguishable from a genuinely dead one. Lightning is
+  :1080 and silently failed until retried as SOCKS5. Either auto-retry the other transport on a
+  connect failure, or say "no response as HTTP — try SOCKS5" rather than DEAD. This is a trap for anyone
+  pasting a vendor list.
+- **The datacenter heuristic misses Mullvad.** "Byte Node LLC" is not in `_DATACENTER_RE`, so a known
+  commercial VPN exit renders Exit type `—` (unclassified). Worth widening, or leaning on getIPIntel /
+  Scamalytics for that call instead of the name regex.
+
 ### 3. PWA + favicons
 
 Manifest, service worker for the offline shell, apple-touch-icon, full favicon set (16/32/180/192/512 +
