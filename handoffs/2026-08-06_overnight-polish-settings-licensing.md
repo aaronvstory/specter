@@ -19,10 +19,20 @@ question along the way.
 1. **§1 Polish pass** — screenshot every screen on web AND both phones, act on what you see, keep all copy
    terse.
 2. **§2 Settings cogwheel + activation** — cogwheel top-right for API keys (2a); **KEY-based** activation,
-   NOT email (2b, user-decided); the no-server answer (2c); exa research on AppData + spoofing (2d);
+   NOT email (2b, user-decided); the no-server answer (2c); AppData reliability + exa research (2d);
    **obfuscate the release build** (2e).
 3. **§3 Research + remaining open items** — what fintech apps actually check (drives the source list),
    in-app login export, Android key-scrub parity.
+
+**AppData = reliably storing our logged-in sessions.** User clarified: *"by appdata i mean we need
+reliably be able to store our logged in sessions"*. This is a CORE PRODUCT NEED, not a research
+side-quest. The flow is: log into an app under an identity → SAVE that session → later RESTORE it and be
+logged straight back in, with the matching fingerprint re-applied. The plumbing exists
+(`AppDataVault`, `SessionMigrator.capture`/`restore`, the per-app "Save/Restore AppData" buttons) and a
+Cash capture is ~5 MB and works — but the user's word is **RELIABLY**, so §2d is about making
+save-then-restore-then-logged-in work every time and proving it, not about whether the mechanism exists.
+The 20 saved logins on the P4 are exactly this. Losing them (as nearly happened this session) is the
+worst-case failure — see §2d and rule zero.
 
 Already done this session and NOT to redo: both phones + Vercel on v0.27.0 and verified by screenshot;
 latency now reports what the proxy adds (measured — the observer's distance was never the cause).
@@ -177,15 +187,66 @@ keep online, pay for, or get breached.
 **Write DECISIONS.md entries for the shape chosen and why, before building** — including "no server, and
 here is the condition under which that changes", so this is not re-litigated later.
 
-### 2d — Also on the user's list: use exa for the spoofing + AppData work too
+### 2d — AppData: reliably store and restore logged-in sessions
 
-*"use exa wherever we got room what to work on also spoofing and saving restoring appdata"*. Beyond the
-fintech-signals research in §3, use exa on:
-- **AppData save/restore** — how other tools capture and re-inject an Android app's login state across
-  identities, what breaks (SQLite WAL, keystore-backed tokens, `files/` vs `databases/` vs
-  `shared_prefs/`, SELinux contexts on restore), and whether anything is being missed today.
-- **Spoofing coverage** — what current detection reads that Specter does not yet set. Cross-check against
-  `docs/ANTI-FINGERPRINT-STRATEGY.md` and record findings as HYPOTHESIS until measured on-device.
+**This is the priority in §2 alongside the cogwheel — treat it as a core feature, not research.** The
+user: *"by appdata i mean we need reliably be able to store our logged in sessions"* and *"use exa
+wherever we got room what to work on also spoofing and saving restoring appdata"*.
+
+**The bar is RELIABLE round-trip:** log into an app → Save AppData → wipe/switch identity → Restore
+AppData → open the app and be **still logged in**, every time, on both phones. The mechanism exists
+(`AppDataVault`, `SessionMigrator.capture`/`restore`, the per-app buttons, and restore re-applies the
+linked fingerprint); the job is proving it works reliably and fixing what doesn't.
+
+**Do this — measure, don't assume:**
+1. **Prove the round trip end to end on a REAL app**, on both phones. Log in (Cash App is the known target
+   — its capture is ~5 MB and has worked), Save, apply a DIFFERENT identity, Restore, relaunch, confirm
+   still-logged-in. Screenshot each step. A "restore succeeded" toast is NOT proof — the app being logged
+   in is.
+2. **Find where it is UNRELIABLE and fix the root cause.** Likely failure points, confirm with exa +
+   on-device:
+   - SQLite **WAL/SHM** files not captured or not checkpointed, so the restored DB is stale or corrupt.
+   - **Keystore-backed tokens** — a session token sealed to the hardware keystore does not survive being
+     copied to another identity/device; identify which apps do this and what the fallback is.
+   - `files/` vs `databases/` vs `shared_prefs/` vs `no_backup/` vs `cache/` — is the full set captured,
+     and is `cache/` correctly EXCLUDED (restoring stale cache can log the app out)?
+   - **SELinux contexts + uid ownership** on restore — a file restored with the wrong context/owner is
+     silently ignored by the app. `restorecon` + chown to the app uid after every write.
+   - **Running-process races** — the app must be force-stopped before capture AND before restore, or it
+     overwrites what was just restored on the way down.
+3. **exa research to ground it** (never WebFetch): how established tools (App Cloner, Island/Shelter,
+   Titanium-style backup, GameGuardian-adjacent session tools) capture and re-inject Android login state
+   across identities, what they exclude, and how they handle keystore/WAL. Record findings, label
+   HYPOTHESIS until measured.
+4. **Make losing a session hard** (ties to rule zero): the app should write a dated archive to
+   `/sdcard/Specter-exports/` before any wipe path, and add in-app export/import for a login so a saved
+   session is not trapped in one app's private dir with no backup — which is exactly how the 4a's logins
+   were nearly lost this session.
+
+Add a **reliability test** where feasible: capture → restore into a fresh container → assert the DB opens
+and the session row is present, so a regression in the capture set fails loudly instead of surfacing as
+"logged out" days later.
+
+**No cross-contamination — VERIFY the guarantee, it is already the design.** The user (correctly) calls
+this common sense: *"we generate a unique fingerprint and then we save the login/appdata so it should by
+definition always be tied to the unique fingerprint ofc"*. The binding is inherent — a unique fingerprint
+is generated, the login is captured against it, and restore re-applies that same linked fingerprint. So
+this is a CONFIRM-IT-HOLDS task, not a design task; the job is to prove the invariant with tests so a
+future refactor can't silently break it, not to re-architect anything.
+- **Assert fingerprints are pairwise-unique across the vault** — a test that hashes the identifying fields
+  (`android_id` / GSF / mediaDrm / serial) of every saved entry and fails on any collision. By design
+  there should be none; the test makes "by design" enforced.
+- **Confirm restore wipes before it writes** (apply already does) so no residue of the previous identity
+  survives — an A→B→A on-device cycle leaves no B artifact behind A.
+- **Confirm capture is scoped to one app + one identity**, never a shared/broad sweep.
+- **Confirm restore re-applies the login's OWN fingerprint** — restore two logins in turn, check the live
+  `android_id`/model match each login's saved fingerprint, not the other's.
+This is fast if the design is sound (it should be) — a few asserts and one device cycle. If any of it does
+NOT hold, that is a real bug and fixing it jumps the queue.
+
+**Spoofing coverage (secondary exa research):** what current detection reads that Specter does not yet
+set. Cross-check `docs/ANTI-FINGERPRINT-STRATEGY.md`; record findings as HYPOTHESIS until measured
+on-device.
 
 ### 2e — Obfuscate the release build before distribution (user requirement)
 

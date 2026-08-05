@@ -1210,3 +1210,22 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   still saw ~3400 ms. So the proxy IS the cost. The fix was a reference, not a different anchor: time the
   same request without the proxy and grade `proxy_added_ms`, which is comparable between a laptop in Asia
   and a function in Virginia. Live on a real Starlink proxy: 3234 total, 844 direct, 2390 added.
+- **2026-08-06 — AppData = reliably store/restore logged-in sessions (CORE, not research).** User
+  clarified: *"by appdata i mean we need reliably be able to store our logged in sessions"*. The bar is a
+  reliable round trip — log in → Save → switch identity → Restore → still logged in, every time, both
+  phones. The plumbing exists (AppDataVault, SessionMigrator capture/restore, restore re-applies the
+  linked fingerprint; Cash capture ~5 MB works), so the work is proving reliability and fixing what
+  breaks: SQLite WAL/SHM not checkpointed, keystore-sealed tokens that don't survive a copy, the
+  files/databases/shared_prefs capture set (and excluding cache), SELinux context + uid on restore, and
+  force-stop races. Plus in-app export/import and a pre-wipe archive to /sdcard/Specter-exports/ so a
+  saved session is never trapped with no backup (the 4a's logins were nearly lost this session). exa
+  research on how App Cloner / Island / Shelter / Titanium-style tools do it. Status: prioritised for the
+  overnight run. Plan in handoffs/2026-08-06_overnight-polish-settings-licensing.md §2d.
+- **2026-08-06 — No cross-contamination between stored logins: VERIFY the guarantee (already the
+  design).** User: *"we generate a unique fingerprint and then we save the login/appdata so it should by
+  definition always be tied to the unique fingerprint ofc"*. The binding is inherent — unique fp
+  generated, login captured against it, restore re-applies that fp. So this is a confirm-it-holds task:
+  a test asserting vault fingerprints are pairwise-unique (no shared android_id/GSF/mediaDrm/serial),
+  confirm restore wipes before writing (A→B→A leaves no B residue), capture is scoped to one app+identity,
+  and restore re-applies the login's OWN fp. Fast if the design is sound; if any fails it's a real bug
+  that jumps the queue. Overnight handoff §2d.
