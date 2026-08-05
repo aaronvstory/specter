@@ -6,6 +6,13 @@ Everything below is committed and pushed; Vercel and both phones are on the curr
 **Work autonomously through the night. Do not stop to ask which item is next.** Commit each unit as it
 completes. A cron fires this handoff every 30 minutes to keep the run going.
 
+**FIRST THING each fire: confirm the cron is still scheduled.** The user runs `/clear` before leaving.
+`/clear` wipes context but does NOT exit the process, so the in-memory cron (`a75c76d9`, every 30 min)
+SHOULD survive — it only dies if the terminal is CLOSED or the process exits. If for any reason the
+schedule is gone (CronList returns empty), re-create it with CronCreate using this same prompt so the run
+does not silently stall. The laptop stays on with the screen off and sleep disabled; if it sleeps the
+process suspends and nothing fires.
+
 **Use ULTRACODE.** The user asked for it explicitly for this overnight run: author and run workflows for
 substantive work, fan out and adversarially verify, and do not treat token cost as the constraint — the
 goal is the most thorough, correct result. Solo only for trivial edits and conversational turns.
@@ -38,6 +45,21 @@ Already done this session and NOT to redo: both phones + Vercel on v0.27.0 and v
 latency now reports what the proxy adds (measured — the observer's distance was never the cause).
 
 ---
+
+## Rule zero — three things that must never happen
+
+0. **NEVER wipe, clear, or restore-over a live Cash App login.** User, explicit:
+   *"dont wipe current logins... i dont wanna risk u messing with currently logged in cashapps... dont
+   mess with wiping clearing cashapp current appdata."* The Cash App sessions on BOTH phones are live and
+   tied to income — clearing one destroys it, same category as the vault wipe. So:
+   - **Do the AppData reliability round-trips on the DoorDash DASHER app (`com.doordash.driverapp`) on the
+     Pixel 4a ONLY.** That is the sanctioned experiment target. Never on `com.squareup.cash`.
+   - Proxy is NOT needed for the Dasher work. **Lockito (GPS spoof) is running on the 4a and stays running
+     until the phone is rebooted** — so do NOT casually reboot the 4a during this; a reboot drops Lockito
+     (no boot receiver, memory `reboot-drops-lockito-gps`). AppData capture/restore needs only the app +
+     su and does NOT require a reboot, so there is no reason to.
+   - Before ANY `pm clear` / `SessionMigrator` wipe on any package, confirm the package is
+     `com.doordash.driverapp` on the 4a. If it is `com.squareup.cash` — STOP.
 
 ## Rule zero — two things that must never happen again
 
@@ -77,7 +99,20 @@ Scamalytics tile said "low · shown, not …" until it was shortened to "low · 
 
 ## §1 — Polish pass (do this first)
 
-Go through the whole tool as a user would and fix what is rough. Specific known items:
+**The core use case must be genuinely useful and polished — verify it with screenshots.** User: *"make
+sure the proxy/ip checking is actually useful well put together polished now for users... users wanna be
+able to check single or bulk ips/proxies and see if the proxies are alive or dead, where they are, and
+overall how clean they are and be able to compare them when doing bulk ofc. verify that's all polished
+w screenshots too."* Walk this exact flow as a user and prove each part on screen:
+- **Single** IP or proxy → alive/dead, where it is, how clean, at a glance.
+- **Bulk** paste of many proxies → a comparison table where alive/dead, location, and cleanliness are
+  scannable down a column, and the best one is obvious to pick, then copy its host/port/user/pass.
+- The three questions a user actually has — **is it alive? where is it? how clean is it?** — must each be
+  answered fast and unambiguously, single and bulk. If any is buried, cramped, or ambiguous, fix it.
+- Screenshot single + bulk + the expanded detail, in BOTH themes, and act on what you see. The copy chips
+  must actually copy (they were dead this session — a test now guards it, but confirm on screen).
+
+Then go through the whole tool as a user would and fix what is rough. Specific known items:
 
 - **Screenshot every screen, web and Android, and act on what you see.** Single check, bulk table, the
   expanded detail row, the keys panel, `/assets.html`; Android Identity / Vault / Settings / Status +
@@ -199,10 +234,11 @@ AppData → open the app and be **still logged in**, every time, on both phones.
 linked fingerprint); the job is proving it works reliably and fixing what doesn't.
 
 **Do this — measure, don't assume:**
-1. **Prove the round trip end to end on a REAL app**, on both phones. Log in (Cash App is the known target
-   — its capture is ~5 MB and has worked), Save, apply a DIFFERENT identity, Restore, relaunch, confirm
+1. **Prove the round trip end to end on the DASHER app, 4a only** (see rule zero — NOT Cash App). Log into
+   `com.doordash.driverapp`, Save AppData, apply a DIFFERENT identity, Restore, relaunch, confirm
    still-logged-in. Screenshot each step. A "restore succeeded" toast is NOT proof — the app being logged
-   in is.
+   in is. If Dasher is not currently logged in on the 4a, that is fine — log in fresh to establish the
+   session, then test the round trip on it. Cash App is strictly off-limits for any wipe/restore.
 2. **Find where it is UNRELIABLE and fix the root cause.** Likely failure points, confirm with exa +
    on-device:
    - SQLite **WAL/SHM** files not captured or not checkpointed, so the restored DB is stale or corrupt.
@@ -243,6 +279,22 @@ future refactor can't silently break it, not to re-architect anything.
   `android_id`/model match each login's saved fingerprint, not the other's.
 This is fast if the design is sound (it should be) — a few asserts and one device cycle. If any of it does
 NOT hold, that is a real bug and fixing it jumps the queue.
+
+**TRACE THE LIVE DASHER SESSION — what does it actually read, and are we spoofing it?** User: *"for the
+logged in dasher app, would be worth for u to run a trace after u open the already logged in currently
+dasher account and check what it checks for and whether we are spoofing it."* This is READ-ONLY and safe —
+opening the already-logged-in Dasher and watching what it queries, no wipe.
+- Use Specter's **Monitor reads / Read logging** (per-app trace → `TraceParser`; memory
+  `monitor-reads-two-level`). Arm it for `com.doordash.driverapp`, open the app, let it settle, stop.
+- **Cross-reference every value Dasher reads against what Specter spoofs.** For each read: is it a field we
+  set (and is the returned value the SPOOFED one, not the real one), or a signal we don't touch? A field
+  Dasher reads that we leave real is a coverage gap — the exact thing to feed into
+  `docs/ANTI-FINGERPRINT-STRATEGY.md`.
+- This is the highest-value single task for "are we actually spoofing what matters": it is ground truth
+  from a real fintech-adjacent app, not a vendor's marketing about what they claim to check. Do it early,
+  and let what it finds steer the §3 fintech-signals research rather than the reverse.
+- Keep it read-only. Do NOT wipe/restore Cash App (rule zero); Dasher wipe/restore is fine but the TRACE
+  itself needs no wipe — just open the live session and watch.
 
 **Spoofing coverage (secondary exa research):** what current detection reads that Specter does not yet
 set. Cross-check `docs/ANTI-FINGERPRINT-STRATEGY.md`; record findings as HYPOTHESIS until measured

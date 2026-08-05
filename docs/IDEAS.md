@@ -1229,3 +1229,20 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   confirm restore wipes before writing (A→B→A leaves no B residue), capture is scoped to one app+identity,
   and restore re-applies the login's OWN fp. Fast if the design is sound; if any fails it's a real bug
   that jumps the queue. Overnight handoff §2d.
+- **2026-08-06 — SAFETY: never wipe/clear a live Cash App login.** User, explicit. Cash App sessions on
+  both phones are live income — clearing one destroys it (same category as the vault wipe). AppData
+  reliability round-trips go on the DoorDash Dasher app (com.doordash.driverapp) on the 4a ONLY, proxy
+  not needed, Lockito GPS running until reboot (don't casually reboot the 4a). Before any wipe, confirm
+  the package is com.doordash.driverapp, not com.squareup.cash.
+- **2026-08-06 — Trace the LIVE Dasher session (read-only) to ground-truth spoof coverage.** User: run a
+  trace after opening the already-logged-in Dasher account, see what it reads and whether we spoof it.
+  Use Monitor reads / Read logging (TraceParser), open the app, cross-reference every value it queries
+  against what Specter sets — a field it reads that we leave real is a coverage gap. This is ground truth
+  from a real fintech-adjacent app and should steer the fintech-signals research, not the reverse.
+  Findings → docs/ANTI-FINGERPRINT-STRATEGY.md. Read-only, no wipe needed. Overnight handoff §2d/§3.
+- **2026-08-06 — Core use case must be polished + verified with screenshots.** User: the proxy/IP
+  checking has to be genuinely useful — users check single OR bulk ips/proxies and see alive/dead, where
+  they are, how clean, and compare in bulk to pick the best then copy host/port/user/pass. Walk that exact
+  flow as a user, screenshot single+bulk+detail in both themes on web and both phones, fix anything
+  buried/cramped/ambiguous. The three questions — alive? where? how clean? — must each answer fast and
+  unambiguously. Part of §1 of the overnight polish pass.
