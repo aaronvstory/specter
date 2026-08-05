@@ -1246,3 +1246,19 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   flow as a user, screenshot single+bulk+detail in both themes on web and both phones, fix anything
   buried/cramped/ambiguous. The three questions — alive? where? how clean? — must each answer fast and
   unambiguously. Part of §1 of the overnight polish pass.
+
+## 2026-08-06 — levers from the fintech-signals research (docs/ANTI-FINGERPRINT-STRATEGY.md)
+- **Local coherence check, zero API cost (HIGH value, do next).** Compare the exit IP's geo-timezone vs the
+  profile's applied timezone, and the exit geo vs the profile carrier/MCC. Both are pure local comparisons
+  that map to a real vendor weight (Fingerprint 3-4 pts, Socure returns the delta in minutes). Status: idea.
+- **Continuous coherence, not one-shot.** TZ already follows the proxy exit IP (v0.19.0); the gap is
+  RE-verifying per session and surfacing a drift warning when the sticky IP silently moves. Status: idea.
+- **Add a discriminating reputation source where IPQS/AbuseIPDB saturate.** Order: ip-api.com (no key) →
+  ipapi.is (`abuser_score` at COMPANY+ASN level, network-not-per-IP) → proxycheck.io (proxy type + last-seen)
+  → ipregistry (bulk sweeps) → vpnapi.io (`relay` class). Each must EARN its place by discriminating two IPs
+  that both score ~75 today; measure before integrating. Rejected: ipinfo Lite (paid flags), Spur (no free
+  API), GreyNoise (50/week). Status: researched.
+- **AppData reliability follow-ups (feeds §2d):** confirm the tarball excludes `cache/` + `code_cache/` +
+  `lib/` (code_cache with a stale uid can trigger a full data wipe on reboot); confirm `am force-stop`
+  precedes the snapshot; expect per-app variance and report WHICH login layer failed (plain row vs
+  Keystore-wrapped vs server-side device-binding) rather than a bare "restore failed". Status: to verify.
