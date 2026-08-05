@@ -77,6 +77,20 @@ code block:
   stale `.class` files (once shipped a broken APK). Verify a new symbol is in the APK dex (multidex —
   check classes2/3/4.dex, not just classes.dex). Xposed stub only has `setStaticObjectField`; set
   instance fields via plain reflection (`clazz.getField(n).setLong(obj,v)`), NOT `setLongField`.
+- **R8 release build (obfuscated distributable) — the ONE keep rule that matters.** `release` runs
+  `minifyEnabled true` + `shrinkResources true` + `proguard-rules.pro`. `-keep class HookEntry {*;}` is NOT
+  enough: the hook callbacks are ANONYMOUS inner classes (`HookEntry$1`…, separate classes) and R8 merges/
+  renames them, which SILENTLY kills every Java hook while the module still loads. The fix (proven on-device
+  2026-08-06): `-keep class * extends de.robv.android.xposed.XC_MethodHook { *; }` + `-keep class
+  HookEntry$* { *; }`. Dev keys seed ONLY into `debug`; release ships empty. Verify a release build by the
+  log line `[specter] active for <pkg> (N fields)` on an IN-SCOPE app — string markers survive (R8 doesn't
+  encrypt strings), so the dex marker checks still work.
+- **Native (Zygisk) and Java (LSPosed) are SEPARATE injection layers.** Zygisk gates on the profile file
+  (`/data/local/tmp/specter/<pkg>.json`); LSPosed gates on the module's SCOPE DB. So "native fields spoofed,
+  Java `Build.*` fields REAL" on the probe = **the app fell out of Specter's LSPosed scope**, NOT a hook or
+  R8 bug. Check with `strings /data/adb/lspd/config/modules_config.db | grep <pkg>`; re-add with
+  `scripts/scope_probe.py` (now base64-transport — `adb pull` of that root DB silently reads the wrong
+  overlay via the adbd mount namespace, which is why the old version failed "no such table: modules").
 
 ## Xposed hook gotcha
 `XposedHelpers.findAndHookMethod(cls, "name", callback)` with NO explicit param types throws

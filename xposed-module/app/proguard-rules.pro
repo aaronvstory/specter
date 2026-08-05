@@ -3,12 +3,24 @@
 
 # --- Xposed / LSPosed entry point ---------------------------------------------------------------------
 # assets/xposed_init names this class as a STRING; LSPosed loads it by that name. Renaming it produces an
-# APK that installs and silently hooks NOTHING (verified class of bug). Keep the class + all its members.
+# APK that installs and silently hooks NOTHING (verified class of bug). Keep the class, its members, AND
+# its nested classes (HookEntry$1 …) — the anonymous hook callbacks live there and are SEPARATE classes.
 -keep class com.specter.module.HookEntry { *; }
+-keep class com.specter.module.HookEntry$* { *; }
 # Any hook callback the framework invokes by name (load-package / zygote-init / resources).
 -keep class * implements de.robv.android.xposed.IXposedHookLoadPackage { *; }
 -keep class * implements de.robv.android.xposed.IXposedHookZygoteInit { *; }
 -keep class * implements de.robv.android.xposed.IXposedHookInitPackageResources { *; }
+# THE critical rule: every XC_MethodHook subclass (all the anonymous before/afterHookedMethod callbacks,
+# wherever they live) must keep its class identity AND method names — LSPosed's XposedBridge dispatches to
+# beforeHookedMethod/afterHookedMethod by override, and R8 merging/renaming them silently kills every hook
+# while the module still loads (native layer keeps working, so only the Java-side fields leak — the exact
+# failure this rule fixes). Proven on-device: without it, build_model/fingerprint/board leak REAL.
+-keep class * extends de.robv.android.xposed.XC_MethodHook { *; }
+-keepclassmembers class * extends de.robv.android.xposed.XC_MethodHook {
+    public protected void beforeHookedMethod(...);
+    public protected void afterHookedMethod(...);
+}
 # The Xposed API is provided at runtime (compileOnly stub), never packaged — just don't warn about it.
 -dontwarn de.robv.android.xposed.**
 -dontwarn android.**
