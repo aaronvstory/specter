@@ -28,6 +28,17 @@
 > - Not run: the live Dasher AppData round-trip (needs a fresh Dasher login; the capture/restore DESIGN is
 >   confirmed correct — see `docs/DECISIONS.md`).
 >
+> ### ✅ UPDATE 2 ~07:35 — ip-api.com keyless source shipped (PR #84, on branch above)
+> After the polish sweep confirmed the app is clean (Settings/Status/Network all polished, activation shows
+> "Active", reputation parity holds), picked up the top backlog lever: **added ip-api.com as a keyless
+> reputation source** (web + Android, kept in parity). Feeds `connection_class` so a NO-KEY user gets a real
+> exit-type verdict; measured first (flagged a 31173 VPN exit as proxy the keyless path missed). Found +
+> fixed a silent Android bug: cleartext HTTP is blocked at targetSdk 36, so ip-api (HTTP-only free tier)
+> never ran — added a SCOPED cleartext exception (ip-api.com only), then PROVEN on-device. Version → 0.29.0.
+> P4 restored to a clean 0.29.0 build (30 spoofed / 0 leaks). PR #84 open; the "coherence check" backlog
+> item turned out to ALREADY exist (Status → Network "Timezone vs IP"). Note: `_direct_baseline_ms` +
+> `_ipapi_lookup` are both module-global-ish; the conftest autouse fixture stubs them for test isolation.
+>
 > **Highest-value NEXT items (in `docs/IDEAS.md`, 2026-08-06 entry):** (1) local coherence check — exit-IP
 > timezone vs the profile's applied timezone + exit geo vs carrier/MCC (zero API cost, real vendor weight);
 > (2) add a discriminating reputation source where IPQS/AbuseIPDB saturate (ip-api.com → ipapi.is); (3)
