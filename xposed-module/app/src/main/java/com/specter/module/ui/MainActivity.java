@@ -2516,7 +2516,7 @@ public class MainActivity extends Activity {
         // same card as the IP. Read from the process cache; a lookup only happens when the button is tapped
         // (IPQualityScore's free tier is 35/day).
         card.addView(hairlineInset());
-        card.addView(reputationRows(g.ip, HealthCheck.cachedReputation(g.ip), vpnRouting));
+        card.addView(reputationRows(g.ip, g.isp, HealthCheck.cachedReputation(g.ip), vpnRouting));
 
         card.addView(hairlineInset());
         TextView support = new TextView(this);
@@ -2536,7 +2536,8 @@ public class MainActivity extends Activity {
     /** The reputation block of the network card: the fraud/blacklist/abuse rows once a check has run, plus the
      *  button that runs one. Kept out of the automatic check list on purpose — the lookups cost API quota, so
      *  they are user-triggered and the result is cached per IP for the process lifetime. */
-    private View reputationRows(final String ip, HealthCheck.Reputation rep, boolean vpnRouting) {
+    private View reputationRows(final String ip, final String geoIsp, HealthCheck.Reputation rep,
+                                boolean vpnRouting) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
 
@@ -2571,7 +2572,9 @@ public class MainActivity extends Activity {
             }
             // Exit type is the strongest usability signal — a datacenter/hosting exit draws friction a real
             // ISP line doesn't. Detected from the ISP/org/host names (IPQS's connection_type is premium-gated).
-            if (HealthCheck.isDatacenter(rep.organization, rep.isp, rep.host)) {
+            // rep.isp/host are only set when an IPQS key is present, so fall back to the free ipwho.is ISP
+            // (geoIsp) — otherwise this silently never fires on the keyless (DNSBL-only) path.
+            if (HealthCheck.isDatacenter(rep.organization, rep.isp != null ? rep.isp : geoIsp, rep.host)) {
                 box.addView(networkMetaRow("EXIT TYPE",
                         "Datacenter/hosting · real ISPs pass more easily", Theme.RED));
             }
@@ -2638,7 +2641,7 @@ public class MainActivity extends Activity {
             View anyway = textButton(repBusy ? "Checking…" : rep == null ? "Check this IP anyway" : "Re-check this IP",
                     repBusy ? Theme.DIM : Theme.GOLD,
                     v -> confirmRealIpAction("sending it to IPQualityScore, AbuseIPDB and the blocklists",
-                            () -> checkIpReputation(ip, true)));
+                            confirmed -> checkIpReputation(ip, confirmed)));
             LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             alp.setMargins(0, dp(Theme.S2), 0, 0);
@@ -2670,13 +2673,19 @@ public class MainActivity extends Activity {
      *  is masking it. On a tunnel the exit IP is the proxy's, not the home IP, so the action runs straight through.
      *  {@code detail} completes the sentence "…uses your device's real public IP by …". This is what lets the
      *  off-tunnel reputation check and timezone fix exist without ever leaking the home IP by accident. */
-    private void confirmRealIpAction(String detail, Runnable onConfirm) {
-        if (HealthCheck.activeVpnNetwork(getApplicationContext()) != null) { onConfirm.run(); return; }
+    private void confirmRealIpAction(String detail, java.util.function.Consumer<Boolean> onDecided) {
+        // The real-IP consent decision is captured HERE, once, and handed to the callback as a boolean. The
+        // callback must NOT re-query the VPN state later to decide, or a tunnel that flaps up (skipping this
+        // dialog) then down before the worker thread would run a real-IP action with no dialog ever shown.
+        if (HealthCheck.activeVpnNetwork(getApplicationContext()) != null) {
+            onDecided.accept(false);   // on a tunnel: the exit is the proxy's — no real-IP consent needed or given
+            return;
+        }
         new AlertDialog.Builder(this)
                 .setTitle("Use your real IP?")
                 .setMessage("No VPN/proxy tunnel is active, so this uses your device's real public IP by "
                         + detail + ".")
-                .setPositiveButton("Continue", (d, w) -> onConfirm.run())
+                .setPositiveButton("Continue", (d, w) -> onDecided.accept(true))   // real-IP consent given
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -2825,12 +2834,10 @@ public class MainActivity extends Activity {
                 status.setText("Apply an identity to " + Targets.label(this, ch.fixArg) + " here.");
                 return;
             case MATCH_TZ:
-                // allowRealIp = "the user consented to real-IP use" — true iff we're off-tunnel at confirm time
-                // (confirmRealIpAction shows the dialog only then). On-tunnel it's false, so a tunnel that flaps
-                // before the worker thread runs aborts instead of silently aligning to the real IP.
+                // The confirm decides real-IP consent once; matchTimezoneToIp gets that boolean and never
+                // re-queries the VPN to decide, so a tunnel flap can't run it on the real IP without the dialog.
                 confirmRealIpAction("reading its timezone and setting it on your applied profiles",
-                        () -> matchTimezoneToIp(
-                                HealthCheck.activeVpnNetwork(getApplicationContext()) == null));
+                        confirmed -> matchTimezoneToIp(confirmed));
                 return;
             default:
         }

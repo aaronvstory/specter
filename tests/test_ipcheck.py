@@ -394,6 +394,18 @@ def test_verdict_dirty_on_a_datacenter_exit_even_with_no_abuse():
     assert level == "dirty" and "datacenter" in why.lower()
 
 
+def test_datacenter_catches_gcp_azure_by_org_name_but_not_google_fiber():
+    # GCP/Azure don't self-identify as "cloud" in free WHOIS — they read "Google LLC" / "Microsoft
+    # Corporation" — so those exact strings are matched. Google Fiber ("Google Fiber Inc") is a real
+    # residential ISP and must NOT be flagged (this is why we match `google llc`, not a bare "google").
+    assert ipcheck.is_datacenter({"isp": "Google LLC"}) is True
+    assert ipcheck.is_datacenter({"isp": "Microsoft Corporation"}) is True
+    assert ipcheck.is_datacenter({"host": "1.2.3.4.bc.googleusercontent.com"}) is True
+    assert ipcheck.is_datacenter({"host": "myvm.cloudapp.azure.com"}) is True
+    assert ipcheck.is_datacenter({"isp": "Google Fiber Inc"}) is False
+    assert ipcheck.is_datacenter({"isp": "Comcast Cable"}) is False
+
+
 def test_verdict_clean_on_a_residential_proxy_despite_ipqs_100():
     # A real ISP exit (no datacenter name, no abuse) is usable even though IPQS flags proxy at score 100.
     rep = {"isp": "Comcast Cable", "organization": "Comcast", "fraud_score": 100, "proxy": True,

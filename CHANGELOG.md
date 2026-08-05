@@ -17,6 +17,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   spotless blacklist record. The raw IPQS score and proxy flag are still shown as their own signals, and a
   new **Exit type** appears on the web UI, terminal, and the Android network card.
 
+### Fixed
+- **Datacenter detection works with no API key** — it reads the free ipwho.is ISP name, so an AWS/OVH/GCP/
+  Azure exit is flagged even without an IPQualityScore key. GCP/Azure are matched by their “Google LLC” /
+  “Microsoft Corporation” WHOIS names (which don't contain “cloud”); Google Fiber stays unflagged.
+- **The off-tunnel “use your real IP” confirm can't be bypassed by a tunnel flap** — the consent decision is
+  captured in the dialog and passed through, never re-inferred from later VPN state, so a tunnel flapping
+  up-then-down can't run a reputation check or timezone-align on the real IP without the dialog showing.
+
 ### Added
 - **Five more blacklist zones** (0SPAM, SpamEatingMonkey, Backscatterer, UCEPROTECT L2/L3) — 12 → 17,
   closing a coverage gap (an IP reading 1 here matched 6 on other tools). UCEPROTECT L2/L3 are netblock/ASN

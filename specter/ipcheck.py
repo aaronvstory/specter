@@ -191,11 +191,15 @@ def policy_label(name: str, zone: str, addrs: list[str]) -> str:
 # from the ISP/org/host names ipwho.is + IPQS already return (IPQS's own connection_type is premium-gated).
 # ponytail: name-based heuristic with a known ceiling — it catches the major hosts by name, not every hosting
 # ASN. Upgrade path if it matters: a datacenter-ASN dataset. Unknown names stay unclassified, never guessed.
+# GCP and Azure don't self-identify as "cloud" in free WHOIS — they read "Google LLC" / "Microsoft
+# Corporation" — so those exact org strings are matched (and the compute reverse-DNS hosts googleusercontent /
+# cloudapp). `google\s+llc` is used, NOT a bare "google", so Google Fiber ("Google Fiber Inc", residential)
+# stays unmatched. "microsoft" is safe — no residential ISP is named that.
 _DATACENTER_RE = re.compile(
-    r"\b(amazon|aws|ec2|google\s+cloud|gcp|azure|digitalocean|linode|akamai|vultr|choopa|ovh|hetzner|"
-    r"contabo|leaseweb|m247|datacamp|hostwinds|scaleway|oracle\s+cloud|alibaba|tencent|quadranet|psychz|"
-    r"nforce|serverius|frantech|buyvm|colocrossing|hosting|datacenter|data\s?center|colocation|colo|"
-    r"dedicated\s+server|virtual\s+server|cloud\s+server)\b", re.I)
+    r"\b(amazon|aws|ec2|amazonaws|google\s+cloud|google\s+llc|gcp|googleusercontent|azure|microsoft|cloudapp|"
+    r"digitalocean|linode|akamai|vultr|choopa|ovh|hetzner|contabo|leaseweb|m247|datacamp|hostwinds|scaleway|"
+    r"oracle\s+cloud|alibaba|tencent|quadranet|psychz|nforce|serverius|frantech|buyvm|colocrossing|hosting|"
+    r"datacenter|data\s?center|colocation|colo|dedicated\s+server|virtual\s+server|cloud\s+server)\b", re.I)
 
 
 def connection_class(rep: dict) -> str | None:
