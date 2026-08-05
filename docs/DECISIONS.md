@@ -2,6 +2,18 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-05: the 6-device pool is CORRECT for the A11 fleet — do NOT lower `MIN_ANDROID_MAJOR` to grow
+  it.** WHY: the pool looks small (only ~6 models survive `MIN==MAX_ANDROID_MAJOR==11` + phones-only + US),
+  and lowering the floor to 10 to add Android-10 devices is tempting for identity diversity. It's a
+  REGRESSION: claiming Android 10 (SDK 29) on the real Android-11 (SDK 30) host is detectable, because
+  `ro.build.version.sdk` / `ro.product.first_api_level` leak the REAL host SDK during the ~1.5s startup
+  window before the native late-map arms (the SIGSEGV-sensitive path can't be spoofed early — see the
+  `g_prop_spoof_late` note in CLAUDE.md and the Cash App failure investigation). A claimed SDK 29 vs a real
+  30 early-read is a self-contradiction — the same reason the CEILING exists. The ONLY safe way to grow the
+  pool is more real dumped **A11 US** build.props in devices.json (a fabricated device row is a worse tell
+  than a smaller pool — see the 2026-08-01 "4 devices, not 12" entry). Both floor and ceiling move only when
+  the physical host OS is upgraded, and Python + Java must move in lockstep or byte-parity breaks.
+
 - **2026-08-05 (v0.24.6): the coherence sweep (Phase 2.2) is enforced as EXTRA checks in `validate()`, not a
   separate validator, and every check is proven false-positive-free over 500 generated profiles before it
   ships.** WHY: `validate()` already ran on generated profiles and is tested, so adding the SoC↔GPU-vendor,
