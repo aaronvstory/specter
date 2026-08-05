@@ -995,3 +995,25 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   `applyConfirmed()` force-wipes each target and refuses to write if the wipe fails, so no session survives
   to be incoherent with. The restore path is already coherent by construction (it re-applies the login's
   linked fingerprint), so the check had no home there either and was deleted rather than moved.
+- **2026-08-06 — `dnsbl_usable` means "evidence was obtained", not "the resolver works".** The two were
+  conflated: `usable` came from the 127.0.0.2 sentinel probes alone, so a run where the sentinels resolved
+  but every real zone answered 127.255.255.254 (Spamhaus/CBL's refusal to public resolvers) reported
+  usable=True with checked=0 — and the clean verdict then claimed "no abuse or blacklist history" about a
+  sweep that measured nothing. `usable` is now `checked > 0 and (alive or a real listing)`: the sentinel
+  still guards against a dead resolver making every zone look clean, and the count guards against
+  reporting a record that was never obtained.
+- **2026-08-06 — the exit address is settled BEFORE any reputation source is asked.** On a dual-stack exit
+  the report switched to the IPv4 address after IPQS/AbuseIPDB/getIPIntel/Scamalytics had already been
+  queried about the IPv6 one, so a set of measurements was attributed to an address they were never taken
+  on. Moving the family selection above the lookups was a smaller change than carrying two labelled result
+  sets, and there is only one address a user acts on anyway.
+- **2026-08-06 — an unbracketed IPv6 proxy is REFUSED, not guessed.** `host:port` is genuinely ambiguous
+  for IPv6, and `rpartition(':')` resolved the ambiguity silently and wrongly — `2001:db8::1` became host
+  `2001:db8:` port `1`, which passes every validity check and dials nonsense. Brackets are the RFC 3986
+  answer; anything else is an error with a readable reason.
+- **2026-08-06 — every inline-SVG attribute is quoted, enforced by a test.** `rx=1.2/>` parses as the value
+  `1.2/` with NO self-close, so the element swallows its siblings: three of six line icons shipped blank
+  for weeks and `ban` (circle + path) drew nothing at all. A missing icon is invisible as a bug — it looks
+  like a value that simply has no icon — so the fix is a rule plus `webapp/check-icons.py`, which renders
+  each icon at its real 13px and measures ink, spread, interior detail, a max-ink ceiling (catching the
+  "solid rectangle at a plausible size" case) and pairwise distinctness.

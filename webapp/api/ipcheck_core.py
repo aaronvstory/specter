@@ -386,13 +386,17 @@ def verdict_factors(rep: dict) -> tuple[str, list[str]]:
     # checkers reject ALL detected proxies, so the user should know it's detectable even though it's unburned.
     # Deliberately NOT called "residential": connection_class refuses to guess that from a name heuristic, so
     # the verdict must not claim it either. "No datacenter signal" is what was actually measured.
-    # ...and never claim a blocklist record that was never obtained. An IPv6 exit gets NO blocklist coverage
-    # at all (the zones are IPv4-only), and a resolver failure gets none either — saying "no blacklist
-    # history" there turns "we didn't look" into "it's clean", which is the worst thing this tool can do.
+    # ...and never claim a blocklist record that was never obtained. Coverage is missing when NO zone
+    # answered — a dead resolver, or every zone refusing this resolver — or when the address parsed as
+    # neither family. Saying "no blacklist history" there turns "we didn't look" into "it's clean", which
+    # is the worst thing this tool can do. An IPv6 exit is no longer one of those cases: it is checked
+    # against the four zones that hold IPv6 data.
+    #
+    # ONE expression, read by both branches. They used to re-derive the same decision separately and
+    # disagree on the wording, which is how a difference in MEANING hides as a difference in phrasing.
     blocklists = "no abuse or blacklist history" if rep.get("dnsbl_usable") else "blocklists NOT checked"
     if rep.get("proxy") or rep.get("vpn") or rep.get("tor") or (fraud is not None and fraud >= 60):
-        return "clean", ["No datacenter signal", "no abuse history" if rep.get("dnsbl_usable")
-                         else "blocklists NOT checked", "detectable as a proxy/VPN"]
+        return "clean", ["No datacenter signal", blocklists, "detectable as a proxy/VPN"]
     return "clean", ["No datacenter signal", "no proxy flag", blocklists]
 
 
@@ -515,9 +519,25 @@ class Proxy(NamedTuple):
 
 
 def _host_port(text: str) -> tuple[str, int]:
-    host, sep, port = text.rpartition(":")
-    if not sep or not host:
-        raise ValueError(f"proxy needs host:port — got {text!r}")
+    # An IPv6 endpoint has to be BRACKETED, and unbracketed multi-colon input is refused rather than
+    # guessed at. `rpartition(':')` on a bare `2001:db8::1` yields host `2001:db8:` and port `1`, both of
+    # which pass every check below — a silent misparse that dials a nonsense host and reports it as the
+    # proxy the user typed. Refusing is the only honest answer: `host:port` is ambiguous for IPv6 and
+    # RFC 3986 brackets exist precisely to resolve it.
+    if text.startswith("["):
+        close = text.find("]")
+        if close < 0:
+            raise ValueError(f"unclosed [ in IPv6 proxy address — got {text!r}")
+        host, rest = text[:close + 1], text[close + 1:]
+        if not rest.startswith(":"):
+            raise ValueError(f"proxy needs host:port — got {text!r}")
+        port = rest[1:]
+    else:
+        host, sep, port = text.rpartition(":")
+        if not sep or not host:
+            raise ValueError(f"proxy needs host:port — got {text!r}")
+        if ":" in host:
+            raise ValueError(f"IPv6 proxy address must be bracketed, as [{host}:{port}]:port")
     if not port.isdigit() or not (0 < int(port) <= 65535):
         raise ValueError(f"proxy port must be 1–65535 — got {port!r}")
     return host, int(port)
@@ -550,6 +570,11 @@ def parse_proxy(text: str, default_scheme: str = "http") -> Proxy | None:
         creds, _, hostport = text.rpartition("@")
         user, _, password = creds.partition(":")
         host, port = _host_port(hostport)
+    elif text.startswith("["):
+        # A bracketed IPv6 endpoint has to be recognised BEFORE the colon count below, which would see
+        # `[2001:db8::1]:8080` as five parts and reject it as an unknown shape. Brackets make the
+        # host/port boundary unambiguous, which is exactly why they exist.
+        host, port = _host_port(text)
     else:
         parts = text.split(":")
         if len(parts) == 2:
@@ -1040,14 +1065,26 @@ def dnsbl_check(ip: str) -> dict:
     order = [z[0] for z in zones]
     abuse.sort(key=order.index)
     policy = [label for _, label in sorted(policy, key=lambda p: order.index(p[0]))]
-    # A real listing — abuse OR policy — is itself proof the resolver works, independent of the
-    # sentinel probe. Without this, a run where the 4 probe zones all fail but another zone returns a
-    # listing would report the result as "unavailable" AND carry that listing, a contradiction. (This
-    # also aligns the desktop with the Android side, whose usable flag is "any zone answered".)
-    usable = alive or bool(abuse) or bool(policy)
+    # `dnsbl_usable` means "this sweep produced EVIDENCE", and that needs both halves:
+    #
+    #  * the resolver has to be working — `alive`, or a real listing, which proves it independently. (A
+    #    dead resolver makes every zone look like a clean NXDOMAIN, which is the whole reason the sentinel
+    #    probes exist; a run where the probes fail but another zone returns a listing would otherwise
+    #    report "unavailable" AND carry that listing, a contradiction.)
+    #  * and at least ONE zone has to have actually answered.
+    #
+    # The second half was missing, and it is not hypothetical: Spamhaus and CBL answer 127.255.255.254 —
+    # a refusal — to queries relayed by large public resolvers, and `classify` correctly declines to count
+    # a refusal. A run where the sentinels resolve but every real zone refuses gave usable=True with
+    # checked=0, and `verdict_factors` then said "no abuse or blacklist history" about a sweep that
+    # obtained nothing. A false all-clear is the one thing this tool must never produce.
+    usable = checked > 0 and (alive or bool(abuse) or bool(policy))
     return {"blacklists": abuse, "policy_lists": policy,
             "dnsbl_checked": checked if usable else 0, "dnsbl_usable": usable,
             "dnsbl_family": family, "dnsbl_zones_total": len(zones),
+            # WHY there is no coverage, so the UI can say which — a resolver that never answered and an
+            # address no zone can be asked about are different problems. Absent when the sweep worked.
+            **({} if usable else {"dnsbl_skipped": "no answer" if rev else "unparseable"}),
             "dnsbl_detail": [{"name": n, "zone": z, "status": detail[n]} for n, z in zones]}
 
 
@@ -1086,6 +1123,21 @@ def check(proxy: str | None = None, ip: str | None = None,
             return rep
         rep["ip"] = ip      # geo failed, but we were told which IP to check — carry on without it
 
+    # Settle WHICH address this report is about BEFORE any source is asked about it. A dual-stack exit can
+    # answer over either family, and the IPv4 one is the address 17 blocklist zones can speak to (the IPv6
+    # table holds four), so it is the one we report. Doing this after the reputation lookups — as it was —
+    # measured IPQS/AbuseIPDB/getIPIntel/Scamalytics against the IPv6 address and then relabelled the whole
+    # report with the IPv4 one: a set of measurements attributed to an address they were never taken on.
+    if not reverse_v4(rep["ip"]) and not ip:
+        v4 = lookup_exit_v4(opener)
+        if v4:
+            rep["exit_ipv6"] = rep["ip"]
+            rep["ip"] = v4
+            rep["notes"].append("Exit: dual-stack — also reachable at " + rep["exit_ipv6"]
+                                + "; every check ran on the IPv4 address, which 17 blocklist zones cover")
+        else:
+            rep["notes"].append("Exit: IPv6 only — checked against the 4 zones that hold IPv6 data")
+
     if ipqs_key:
         merge(lookup_ipqs(rep["ip"], ipqs_key, opener))
     else:
@@ -1098,20 +1150,7 @@ def check(proxy: str | None = None, ip: str | None = None,
     # IPQS): the tool is fully useful without it, and half a pair is a config mistake, not a measurement.
     if scam_user and scam_key:
         merge(lookup_scamalytics(rep["ip"], scam_user, scam_key, opener))
-
-    # Blocklists need an IPv4 address — every zone is IPv4-only. If the exit came back IPv6, ask again
-    # over IPv4 so the blocklists still run, and report BOTH: a dual-stack exit is a real property of the
-    # proxy, and hiding either address would misrepresent what a strict app can see.
     bl_ip = rep["ip"]
-    if not reverse_v4(bl_ip) and not ip:
-        v4 = lookup_exit_v4(opener)
-        if v4:
-            rep["exit_ipv6"], bl_ip = rep["ip"], v4
-            rep["ip"] = v4
-            rep["notes"].append("Exit: dual-stack — also reachable at " + rep["exit_ipv6"]
-                                + "; blocklists checked on the IPv4 address, which 17 zones cover")
-        else:
-            rep["notes"].append("Exit: IPv6 only — checked against the 4 zones that hold IPv6 data")
 
     # ponytail: the blocklist queries go out the LOCAL resolver, not the proxy — an HTTP proxy
     # can't carry DNS. That's fine here: the query names the exit IP explicitly, so the answer is
@@ -1168,9 +1207,34 @@ def resolve_keys(args, cfg: dict) -> dict:
 
 # ---- local web UI --------------------------------------------------------------------------
 
+# Static assets the page's <head> links to. Served from the repo checkout by the LOCAL server only; on
+# Vercel they are ordinary static files (see webapp/vercel.json). sw.js is deliberately NOT here — an
+# offline shell for a localhost dev server would just cache a stale page over the one being edited.
+WEBAPP = Path(__file__).resolve().parent.parent / "webapp"
+STATIC = {
+    "icon.svg": "image/svg+xml",
+    "icon-maskable.svg": "image/svg+xml",
+    "favicon-16.png": "image/png",
+    "favicon-32.png": "image/png",
+    "apple-touch-icon.png": "image/png",
+    "icon-192.png": "image/png",
+    "icon-512.png": "image/png",
+    "icon-maskable-512.png": "image/png",
+    "manifest.webmanifest": "application/manifest+json",
+}
+
 PAGE = r"""<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Specter · exit-IP signal desk</title>
+<!-- Icons + install metadata. The SVG is the master and every browser worth counting takes it; the PNGs
+     exist because iOS ignores an SVG favicon entirely and the manifest needs raster sizes. All of them are
+     rasterised from webapp/icon.svg by webapp/make-icons.py, so they cannot drift apart. -->
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#16161A">
 <style>
 /* "Signal desk": a monospace network instrument. One accent, semantic bands, works light + dark. */
 :root{
@@ -1479,6 +1543,12 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
 const $=s=>document.querySelector(s), out=$('#out');
 const q=new URLSearchParams(location.search);
 
+// Install the offline shell. Failure is silent ON PURPOSE — a service worker is a convenience here (the
+// tool needs the network to measure anything), so a registration error must never surface as a scary
+// banner on a page that works fine. The LOCAL server serves no /sw.js, so this simply no-ops there.
+if('serviceWorker' in navigator)
+  addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+
 // Theme: follow the OS, remember an explicit toggle.
 const root=document.documentElement;
 try{const sv=localStorage.getItem('specter-theme'); if(sv)root.dataset.theme=sv;}catch(e){}
@@ -1533,6 +1603,13 @@ const ccColour=c=>c==='mobile'?'clean':'dirty';
 const ccCap=c=>c==='mobile'?'real network line':c==='tor'?'Tor exit — denied by most apps':'hosting network';
 // Scamalytics' score is WARN-ONLY, never green: MEASURED, `low` came back for a Tor exit and for 127.0.0.1.
 const scamColour=b=>b==='very high'?'dirty':b==='high'?'suspect':'ink';
+// Why a blocklist sweep produced nothing, in the words of the state dnsbl_check ACTUALLY reports. The
+// previous version branched on `dnsbl_skipped==='ipv6'`, a value nothing ever emitted — so all three
+// copies of it were dead code telling the reader an IPv6 exit has no coverage, which stopped being true
+// when the IPv6 zone table landed. One function, so a fourth copy can't drift off on its own.
+const noCoverage=r=>r.dnsbl_skipped==='unparseable'
+  ?'not run — this address parsed as neither IPv4 nor IPv6, so no zone could be asked'
+  :'not run — no blocklist zone answered (the resolver is down, or every zone refused it)';
 function row(k,v){return `<div class=rw><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
 // A row whose value carries pre-built markup (a flag image, an icon) and an optional colour.
 function richRow(k,html,colour){
@@ -1540,16 +1617,35 @@ function richRow(k,html,colour){
 
 // Line-type icons. Drawn inline in currentColor, NOT emoji: emoji render differently on every platform,
 // carry their own colour, and look out of place next to monospace readouts.
-const SVG=p=>`<svg class=ico viewBox="0 0 16 16" fill=none stroke=currentColor stroke-width=1.3 `+
-  `stroke-linecap=round stroke-linejoin=round aria-hidden=true>${p}</svg>`;
+const SVG=p=>`<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" `+
+  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+//
+// EVERY attribute value is QUOTED, and that is not style. Unquoted, `rx=1.2/>` parses as the VALUE
+// `1.2/` with no self-close, so the element swallows its siblings: `server` lost its second rack unit,
+// `build` and `bot` rendered as a bare square, and `ban` — a circle followed by a path — drew NOTHING at
+// all. Three of six icons were dead in the shipped page and it took the render-test page to see it, since
+// a missing icon looks like a value that simply has no icon. Keep the quotes.
+//
+// Shapes are also drawn for THIRTEEN PIXELS, not for the 4x view: no detail smaller than ~2 units of the
+// 16 viewBox survives, which is why there are no window dots, no LED dots, and wide gaps between parts.
 const ICON={
-  server: SVG('<rect x=2.2 y=2.6 width=11.6 height=4.2 rx=1.2/><rect x=2.2 y=9.2 width=11.6 height=4.2 rx=1.2/>'+
-              '<path d="M4.8 4.7h.01M4.8 11.3h.01"/>'),
+  // ONE cabinet, TWO bays. The arithmetic is the whole point: at 13px a 1.3-unit stroke covers ~1.06px,
+  // so the 10.8 units of height are 8.8px, of which the outline eats 2.1 and the shelf another 1.1 —
+  // leaving 2.8px per bay. Three bays leave 1.5px each and the strokes close over them, which is how this
+  // icon spent weeks as "a WEIRD rectangle". Two stacked boxes fail the same way, for the same reason.
+  server: SVG('<rect x="2.4" y="2.8" width="11.2" height="10.4" rx="1.4"/>'+
+              '<path d="M2.4 8h11.2"/>'),
   signal: SVG('<path d="M3 13.4v-3M6.3 13.4V8.2M9.6 13.4V5.6M12.9 13.4V3"/>'),
   home:   SVG('<path d="M2.4 7.4 8 2.7l5.6 4.7"/><path d="M3.9 6.9v6.4h8.2V6.9"/>'),
-  build:  SVG('<rect x=3.2 y=2.6 width=9.6 height=10.8 rx=1.1/><path d="M5.9 5.6h1M9.1 5.6h1M5.9 8h1M9.1 8h1M5.9 10.4h1M9.1 10.4h1"/>'),
-  bot:    SVG('<rect x=2.8 y=5.2 width=10.4 height=7.6 rx=2.2/><path d="M6.3 8.8h.01M9.7 8.8h.01M8 5.2V2.8"/>'),
-  ban:    SVG('<circle cx=8 cy=8 r=5.4/><path d="M4.2 11.8 11.8 4.2"/>'),
+  // An institution: pediment, three columns, a base. The old version was a rectangle with six 1-unit
+  // window dashes — at 13px the dashes vanish and it was indistinguishable from `bot`.
+  build:  SVG('<path d="M1.9 6.2 8 2.6l6.1 3.6"/><path d="M4.2 7.6v4.6M8 7.6v4.6M11.8 7.6v4.6"/>'+
+              '<path d="M2.4 13.4h11.2"/>'),
+  // A head with two eyes and an antenna. The eyes are 1.6-wide strokes, not `h.01` dots — a zero-length
+  // segment with round caps is one stroke-width across, i.e. gone at this size.
+  bot:    SVG('<rect x="2.8" y="5.4" width="10.4" height="7.4" rx="2.2"/>'+
+              '<path d="M5.9 8.9h1.2M8.9 8.9h1.2M8 5.4V2.9"/>'),
+  ban:    SVG('<circle cx="8" cy="8" r="5.4"/><path d="M4.2 11.8 11.8 4.2"/>'),
 };
 // What kind of line an exit sits on, from the free-text IPQS connection_type or AbuseIPDB usageType.
 //
@@ -1561,14 +1657,18 @@ const ICON={
 // Whether an exit is really a datacenter is answered by connection_class + the verdict, from our own
 // name heuristic, not by trusting this field.
 // Order matters: "Data Center/Web Hosting/Transit" must match before the generic ISP rule.
+// Gaps found by the asset render test, which shows what a real vendor string maps to: "Corporate" (the
+// literal AbuseIPDB value) matched NOTHING, and "Content Delivery Network" matched nothing either — a CDN
+// edge is hosting infrastructure, so it belongs with the datacenter rule, and colouring it is in the
+// warning direction, which is the only direction a vendor's own label may be coloured.
 const USAGE=[
-  [/data ?cent|hosting|transit|colo/i,           ICON.server,'dirty'],
+  [/data ?cent|hosting|transit|colo|content delivery|\bcdn\b/i, ICON.server,'dirty'],
   [/mobile|cellular|wireless/i,                  ICON.signal,''],
   [/fixed line|residential|cable|dsl|fiber|isp/i,ICON.home,  ''],
   [/university|college|school|library/i,          ICON.build, ''],
   [/government|military/i,                        ICON.build, ''],
   [/search engine|spider|crawler/i,               ICON.bot,   'dirty'],
-  [/commercial|organization|business/i,           ICON.build, ''],
+  [/commercial|corporate|organization|business/i, ICON.build, ''],
   [/reserved/i,                                   ICON.ban,   ''],
 ];
 const usageOf=v=>USAGE.find(([re])=>re.test(String(v||'')))||null;
@@ -1818,9 +1918,20 @@ function proxyParts(line){
     const c=creds.indexOf(':'); user=c<0?creds:creds.slice(0,c); pass=c<0?null:creds.slice(c+1);}
   else{const p=s.split(':');
     if(p.length===4){hostport=p[0]+':'+p[1]; user=p[2]; pass=p[3];}}
-  const col=hostport.lastIndexOf(':');
-  const host=col<0?hostport:hostport.slice(0,col);
-  const port=col<0?null:hostport.slice(col+1);
+  // IPv6 needs its own case, matching _host_port() on the server: a BRACKETED address keeps its brackets
+  // and any `:port` after the `]`; an unbracketed multi-colon value is host-only, never split on its last
+  // colon. Splitting `2001:db8::1` there would show the user a "host" of `2001:db8:` and a "port" of `1`
+  // in the copy chips — and those chips exist to be pasted somewhere else.
+  let host=hostport, port=null;
+  if(hostport.startsWith('[')){
+    const rb=hostport.indexOf(']');
+    if(rb>0){host=hostport.slice(0,rb+1);
+      const rest=hostport.slice(rb+1);
+      if(rest.startsWith(':'))port=rest.slice(1);}
+  }else{
+    const col=hostport.lastIndexOf(':');
+    if(col>=0&&col===hostport.indexOf(':')){host=hostport.slice(0,col); port=hostport.slice(col+1);}
+  }
   return {scheme,host:host||null,port:port||null,user:user||null,pass:pass||null};
 }
 // The current bulk run, so the row expander can be registered ONCE — re-registering per run would stack
@@ -1936,9 +2047,7 @@ function bulkDetail(x){
 
   t+=dGrp('Blocklists');
   if(!r.dnsbl_usable){
-    t+=dRow('Coverage','<span class=dim>'+esc(r.dnsbl_skipped==='ipv6'
-      ?'not run — this exit is IPv6 and none of the zones queried hold IPv6 data'
-      :'not run — the blocklist DNS did not answer')+'</span>');
+    t+=dRow('Coverage','<span class=dim>'+esc(noCoverage(r))+'</span>');
     t+=dRow('','<span class=dim>This is NOT a clean result. Nothing was checked.</span>');
   }else{
     const hits=(r.blacklists||[]).length;
@@ -2045,10 +2154,7 @@ $('#bulkgo').onclick=async()=>{
   function listsCell(r){
     if(!r||!r.ip)return '<span class=dim>—</span>';
     if(!r.dnsbl_usable){
-      const why=r.dnsbl_skipped==='ipv6'
-        ?'this exit is IPv6 and none of the zones queried hold IPv6 data'
-        :'the blocklist DNS did not answer';
-      return `<span class=dim title="Not checked — ${esc(why)}. This is NOT a clean result.">not run</span>`;}
+      return `<span class=dim title="${esc(noCoverage(r))}. This is NOT a clean result.">not run</span>`;}
     const hits=(r.blacklists||[]).length, pol=(r.policy_lists||[]).length;
     const total=r.dnsbl_checked, fam=r.dnsbl_family==='ipv6'?' IPv6':'';
     const t=(hits?'Listed by '+(r.blacklists||[]).join(', ')+'. ':'')+
@@ -2094,8 +2200,8 @@ $('#bulkgo').onclick=async()=>{
     for(const x of view){
       h+=`<tr class="${x.open?'open':''}"><td class=cw><button class=chev data-deep="${x.i}" `+
         `aria-expanded="${x.open}" title="Show every field for this proxy">`+
-        `<svg viewBox="0 0 16 16" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round `+
-        `stroke-linejoin=round><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></td>`+
+        `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" `+
+        `stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></td>`+
         COLS.map(c=>`<td${c.k==='isp'||c.k==='loc'?' class=cap':''}>${c.cell(x)}</td>`).join('')+`</tr>`;
       if(x.open)h+=`<tr class=detrow><td colspan="${COLS.length+1}">${bulkDetail(x)}</td></tr>`;
     }
@@ -2170,6 +2276,13 @@ def serve(port: int, open_browser: bool = True) -> None:
                            "application/json")
             elif path in ("/", "/index.html"):
                 self._send(PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            elif path.lstrip("/") in STATIC and (WEBAPP / path.lstrip("/")).is_file():
+                # The icons + manifest the <head> links to, straight off disk in a dev checkout. Without
+                # this the local UI shows a blank tab icon and four 404s in the console — enough to send
+                # someone debugging the deploy for a problem that only exists locally. The name is checked
+                # against a fixed set, never joined from the request, so the path cannot escape webapp/.
+                name = path.lstrip("/")
+                self._send((WEBAPP / name).read_bytes(), STATIC[name])
             else:
                 self.send_error(404)
 

@@ -50,3 +50,27 @@ html = html.replace(OLD_NOTE, "<div class=rw><i>Stored</i><div>your browser only
 
 (ROOT / "webapp" / "index.html").write_text(html, "utf-8")
 print("wrote webapp/index.html (%d bytes)" % len(html))
+
+# 4) the asset render-test page. It fills a template with the REAL stylesheet and the REAL icon
+# definitions lifted out of PAGE, so it can never show a stale copy of an icon that has since changed —
+# which would make it worse than useless (a gallery that says "fine" about markup nobody ships).
+style = re.search(r"<style>.*?</style>", PAGE, re.S)
+assert style, "stylesheet not found in PAGE"
+# esc() through usageOf() is one contiguous run holding esc/band/giiBand/ccColour/row/richRow/SVG/ICON/
+# USAGE/usageOf — everything the gallery draws with. Anchored on both ends and length-checked, because a
+# short match would silently produce a page missing half the icons.
+js = re.search(r"const esc=.*?^const usageOf=.*?$", PAGE, re.S | re.M)
+assert js, "icon/helper block not found in PAGE"
+assert "const ICON={" in js.group(0) and "const USAGE=[" in js.group(0), \
+    "icon block match truncated — it must span esc() through usageOf()"
+tpl = (ROOT / "webapp" / "assets-template.html").read_text("utf-8")
+assert "__STYLE__" in tpl and "__JS__" in tpl, "assets template lost its placeholders"
+assets = tpl.replace("__STYLE__", style.group(0), 1).replace(
+    "__JS__", "<script>\n" + js.group(0) + "\n</script>", 1)
+# The post-condition, not just the pre-condition. The first version of this substituted into the
+# template's own COMMENT (which named both tokens) and shipped a page printing "__STYLE__" as text —
+# the pre-check passed happily. Every placeholder must be gone.
+assert "__STYLE__" not in assets and "__JS__" not in assets, \
+    "a placeholder survived — it is named more than once in assets-template.html"
+(ROOT / "webapp" / "assets.html").write_text(assets, "utf-8")
+print("wrote webapp/assets.html (%d bytes)" % len(assets))

@@ -404,7 +404,7 @@ def test_verdict_dirty_on_a_datacenter_exit_even_with_no_abuse():
 
 
 def test_the_big_dns_providers_are_recognised_as_datacenters():
-    """8.8.8.8 and 1.1.1.1 both returned verdict CLEAN with "No datacenter signal" (measured 2026-08-06).
+    r"""8.8.8.8 and 1.1.1.1 both returned verdict CLEAN with "No datacenter signal" (measured 2026-08-06).
 
     Cause: the pattern required `google\s+llc`, but ipwho.is returns the BARE names "Google" and
     "Cloudflare" where IPQS returns "Google LLC" — so the free/keyless path never matched. A false
@@ -955,6 +955,111 @@ def test_android_uses_a_resolver_that_does_not_lose_or_fake_blocklist_answers():
     assert "google" not in java[java.index("DOH_FALLBACK"):java.index("DOH_FALLBACK") + 200].lower()
 
 
+# ---- coverage honesty: "we didn't look" must never render as "it's clean" ----------------------
+
+
+def test_a_sweep_where_every_zone_refused_is_not_a_clean_result(monkeypatch):
+    """Spamhaus and CBL answer 127.255.255.254 — a refusal — to queries relayed by large public resolvers,
+    and ``classify`` correctly declines to count a refusal as checked. So a run where the 127.0.0.2
+    sentinels resolve but every real zone refuses obtained NO evidence.
+
+    That combination used to report ``dnsbl_usable: True`` with ``dnsbl_checked: 0``, and
+    ``verdict_factors`` then said "no abuse or blacklist history" about it — a false all-clear, which is
+    the one output this tool must never produce."""
+    def fake_resolve(host):
+        return ["127.0.0.2"] if host.startswith("2.0.0.127.") else ["127.255.255.254"]
+
+    monkeypatch.setattr(ipcheck, "resolve_a", fake_resolve)
+    out = ipcheck.dnsbl_check("1.2.3.4")
+    assert out["dnsbl_checked"] == 0
+    assert out["dnsbl_usable"] is False, "zero answering zones is not a usable sweep"
+    assert out["dnsbl_skipped"] == "no answer"
+    # With another source having answered, the verdict is CLEAN — and it has to say the blocklists were
+    # not checked rather than reporting a record it never obtained.
+    level, why = ipcheck.verdict_factors({**out, "fraud_score": 0})
+    assert level == "clean"
+    assert "blocklists NOT checked" in why
+    assert not any("no abuse or blacklist history" in w for w in why)
+
+
+def test_a_real_listing_still_counts_when_the_sentinels_fail(monkeypatch):
+    # The other direction: a zone that returns an actual listing proves the resolver works, so the result
+    # must survive even when the sentinel probes get nothing. Tightening `usable` must not break this.
+    def fake_resolve(host):
+        return [] if host.startswith("2.0.0.127.") else ["127.0.0.4"]
+
+    monkeypatch.setattr(ipcheck, "resolve_a", fake_resolve)
+    out = ipcheck.dnsbl_check("1.2.3.4")
+    assert out["dnsbl_usable"] is True and out["dnsbl_checked"] > 0
+    assert out["blacklists"], "a real listing must be reported"
+    assert "dnsbl_skipped" not in out
+
+
+def test_the_clean_verdict_says_the_same_thing_on_both_branches():
+    # The proxy-flagged and unflagged clean branches used to re-derive the coverage decision separately and
+    # word it differently, which lets a difference in MEANING hide as a difference in phrasing.
+    for extra in ({}, {"proxy": True}):
+        _, why = ipcheck.verdict_factors({"dnsbl_usable": False, "dnsbl_checked": 0, "fraud_score": 0, **extra})
+        assert "blocklists NOT checked" in why, f"{extra} branch claims coverage it does not have"
+
+
+def test_the_android_clean_verdict_also_refuses_to_claim_unchecked_blocklists():
+    java = (Path(__file__).resolve().parents[1] / "xposed-module" / "app" / "src" / "main" / "java" /
+            "com" / "specter" / "module" / "ui" / "HealthCheck.java").read_text("utf-8")
+    assert '"blocklists NOT checked"' in java, \
+        "Android's clean verdict must say when no zone answered, exactly as the desktop does"
+
+
+def test_every_reputation_source_is_asked_about_the_address_the_report_names(monkeypatch):
+    """A dual-stack exit answers over either family. The address was being switched to IPv4 AFTER the
+    reputation lookups, so IPQS/AbuseIPDB/getIPIntel/Scamalytics were measured against the IPv6 address and
+    the whole report was then relabelled with the IPv4 one — measurements attributed to an address they
+    were never taken on."""
+    asked = {}
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "2605:59ca::e798"})
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    monkeypatch.setattr(ipcheck, "lookup_ipqs",
+                        lambda ip, key, opener: asked.setdefault("ipqs", ip) and {} or {"fraud_score": 0})
+    monkeypatch.setattr(ipcheck, "lookup_abuseipdb",
+                        lambda ip, key, opener: asked.setdefault("abuse", ip) and {} or {})
+    monkeypatch.setattr(ipcheck, "lookup_getipintel",
+                        lambda ip, contact, opener: asked.setdefault("gii", ip) and {} or {})
+    monkeypatch.setattr(ipcheck, "lookup_scamalytics",
+                        lambda ip, u, k, opener: asked.setdefault("scam", ip) and {} or {})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: asked.setdefault("dnsbl", ip) and {} or
+                        {"blacklists": [], "policy_lists": [], "dnsbl_checked": 17,
+                         "dnsbl_usable": True, "dnsbl_detail": []})
+    rep = ipcheck.check("host:1080", ipqs_key="k", abuse_key="a",
+                        getipintel_contact="me@example.com", scam_user="u", scam_key="s")
+    assert rep["ip"] == "153.66.117.15"
+    assert rep["exit_ipv6"] == "2605:59ca::e798"       # still reported, not hidden
+    for src in ("ipqs", "abuse", "gii", "scam", "dnsbl"):
+        assert asked[src] == rep["ip"], f"{src} was measured on {asked[src]}, not on the reported {rep['ip']}"
+
+
+def test_an_unbracketed_ipv6_proxy_is_refused_rather_than_misparsed():
+    """`rpartition(':')` on `2001:db8::1` yields host `2001:db8:` and port `1`, both of which pass every
+    check — a silent misparse that would dial a nonsense host and report it as the proxy the user typed.
+
+    Refusing is the contract (parse_proxy raises with a readable reason; None means blank), because
+    `host:port` is genuinely ambiguous for IPv6 and a guess here is worse than an error."""
+    import pytest
+    for bad in ("2001:db8::1", "2001:db8::1:8080", "[2001:db8::1", "[2001:db8::1]"):
+        with pytest.raises(ValueError):
+            ipcheck.parse_proxy(bad)
+    # Bracketed and complete is accepted, brackets kept — that is the form urllib wants back.
+    p = ipcheck.parse_proxy("[2001:db8::1]:8080")
+    assert p is not None and p.host == "[2001:db8::1]" and p.port == 8080
+    assert p.http_url() == "http://[2001:db8::1]:8080"
+    # ...and the ordinary IPv4/hostname shapes are untouched.
+    for text, host, port in (("res.example.com:10000", "res.example.com", 10000),
+                             ("1.2.3.4:8080:bob:hunter2", "1.2.3.4", 8080),
+                             ("bob:hunter2@1.2.3.4:8080", "1.2.3.4", 8080)):
+        p = ipcheck.parse_proxy(text)
+        assert p is not None and p.host == host and p.port == port, text
+
+
 # ---- Scamalytics ------------------------------------------------------------------------------
 #
 # Shape and every trap below MEASURED live over ~200 v3 lookups on 2026-08-06.
@@ -1164,6 +1269,40 @@ def test_scamalytics_reserved_addresses_are_not_a_clean_signal(monkeypatch):
 
 
 # ---- generated page ---------------------------------------------------------------------------
+
+
+def test_no_inline_svg_attribute_is_unquoted():
+    """`rx=1.2/>` parses as the VALUE `1.2/` with no self-close, so the element swallows its siblings.
+
+    That one character shipped THREE of six line icons dead — `server` lost its second rack unit, `build`
+    and `bot` collapsed to a bare square, and `ban` (a circle followed by a path) drew literally nothing.
+    It survived for weeks because a missing icon is indistinguishable from a value that simply has no
+    icon. Quoting every attribute removes the whole class; this test keeps it removed."""
+    from tools.page_assets import svg_attributes_are_quoted
+    bad = svg_attributes_are_quoted()
+    assert not bad, ("unquoted attribute in inline SVG — quote it, or the next `x=1/>` silently eats the "
+                     "elements after it:\n  " + "\n  ".join(bad))
+
+
+def test_every_line_icon_actually_renders_at_the_size_it_is_drawn():
+    """Render each icon at its real 13px and MEASURE it. Reading the source proves nothing: every one of
+    the dead icons above was valid-looking markup, and eyeballing a screenshot missed them twice.
+
+    Four failure modes, because size alone is not evidence of meaning:
+      * not drawn at all (near-zero ink),
+      * drawn but so heavy the strokes close over the gaps — a "rectangle" at a plausible size,
+      * drawn tiny or flat in one axis,
+      * drawn fine but identical to another icon (`build` and `bot` were both a plain square, each with
+        perfectly healthy ink).
+    """
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parents[1]
+    r = subprocess.run([sys.executable, str(root / "webapp" / "check-icons.py"), "--strict"],
+                       cwd=root, capture_output=True, text=True)
+    if "no Chrome found" in r.stdout:
+        return                                  # no renderer here; the check still runs locally and in review
+    assert r.returncode == 0, "\n" + r.stdout + r.stderr
 
 
 def test_the_generated_page_javascript_parses():

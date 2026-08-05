@@ -1,0 +1,483 @@
+<!doctype html>
+<!-- TEMPLATE. webapp/build.py substitutes the two placeholder lines below with the real stylesheet and the
+     real icon definitions from PAGE in specter/ipcheck.py, and writes webapp/assets.html — so this page
+     renders the SHIPPING assets, not a copy of them. Editing assets.html directly is pointless; it is
+     regenerated. Do NOT write either placeholder token anywhere else in this file: the substitution
+     replaces the FIRST occurrence, and naming them in this comment is what once ate the whole page. -->
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Specter · asset render test</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<style>
+/* "Signal desk": a monospace network instrument. One accent, semantic bands, works light + dark. */
+:root{
+  --bg:#0b0c0f; --grid:#12141a; --panel:#131519; --panel2:#181b21; --line:#242832;
+  --ink:#e9ebef; --soft:#a3a8b2; --dim:#666c78;
+  --accent:#57e3bf; --accent-ink:#04110d;
+  --clean:#5fd39a; --suspect:#f2c04b; --dirty:#f07070; --info:#63b8ea;
+  --glow:0 0 0 1px rgba(87,227,191,.14), 0 8px 30px -12px rgba(0,0,0,.7);
+  --mono:"Cascadia Code","JetBrains Mono","SFMono-Regular",ui-monospace,"Menlo",Consolas,monospace;
+  --sans:-apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;
+}
+:root[data-theme=light]{
+  --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
+  --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
+  --accent:#0e9c81; --accent-ink:#ffffff;
+  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
+}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]){
+  --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
+  --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
+  --accent:#0e9c81; --accent-ink:#ffffff;
+  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
+}}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
+  background:
+    linear-gradient(var(--grid) 1px,transparent 1px) 0 0/100% 46px,
+    radial-gradient(1200px 500px at 78% -8%, color-mix(in srgb,var(--accent) 8%,transparent), transparent 70%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased;}
+.wrap{max-width:760px;margin:0 auto;padding:30px 20px 72px}
+.top{display:flex;align-items:center;justify-content:space-between;margin:0 0 20px}
+.brand{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--soft)}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.theme{background:none;border:1px solid var(--line);color:var(--soft);border-radius:8px;width:34px;height:30px;cursor:pointer;font-size:14px;padding:0}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.field label{display:block;font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
+.kst{font:600 9px/1 var(--mono);letter-spacing:.04em;text-transform:none;color:var(--clean)}
+input,select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  color:var(--ink);padding:11px 12px;font:14px/1.2 var(--mono)}
+input::placeholder{color:var(--dim)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.grid{display:grid;grid-template-columns:1fr 210px;gap:12px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.proxyrow{display:flex;gap:8px}.proxyrow select{width:108px;flex:none;cursor:pointer}
+details{margin-top:13px}summary{cursor:pointer;color:var(--soft);font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;list-style:none}
+summary::-webkit-details-marker{display:none}summary::before{content:"+ ";color:var(--accent)}
+details[open] summary::before{content:"− "}
+.go{width:100%;margin-top:16px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:9px;
+  padding:14px;font:600 13px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:transform .08s,filter .15s}
+.go:hover{filter:brightness(1.06)}.go:active{transform:translateY(1px)}
+.go:disabled{background:var(--panel2);color:var(--dim);cursor:default;filter:none}
+#out{margin-top:16px;display:flex;flex-direction:column;gap:13px}
+.blk{animation:rise .42s cubic-bezier(.2,.7,.2,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.verdict{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px 18px 17px 22px;box-shadow:var(--glow)}
+.verdict::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--vc,var(--dim))}
+.verdict .v{display:flex;align-items:baseline;gap:11px}
+.verdict b{font:700 20px/1 var(--mono);letter-spacing:.06em;color:var(--vc,var(--ink))}
+.verdict .dot{width:9px;height:9px;border-radius:50%;background:var(--vc);align-self:center}
+.verdict span{display:block;color:var(--soft);font-size:13px;margin-top:6px}
+.v-dirty{--vc:var(--dirty)}.v-suspect{--vc:var(--suspect)}.v-clean{--vc:var(--clean)}.v-unknown{--vc:var(--dim)}
+.iprow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ip{font:600 30px/1.1 var(--mono);letter-spacing:-.02em;word-break:break-all}
+.copy{background:var(--panel2);border:1px solid var(--line);color:var(--soft);border-radius:7px;padding:6px 10px;
+  font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:.15s}
+.copy:hover{border-color:var(--accent);color:var(--accent)}
+/* Copy confirmation is a colour flash, never a label swap — a wider "Copied ✓" resizes the button. */
+.copy.done,.cc.done{border-color:var(--clean);color:var(--clean);
+  background:color-mix(in srgb,var(--clean) 18%,transparent)}
+.sub{color:var(--soft);font:13px/1.5 var(--mono);margin-top:8px}
+.meter{margin-top:16px}
+.meter .head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px}
+.meter .score{font:700 34px/1 var(--mono);color:var(--mc)}
+.meter .cap{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:right}
+.track{position:relative;height:9px;border-radius:6px;background:
+  linear-gradient(90deg,color-mix(in srgb,var(--clean) 30%,transparent) 0 60%,
+  color-mix(in srgb,var(--suspect) 32%,transparent) 60% 85%,
+  color-mix(in srgb,var(--dirty) 34%,transparent) 85% 100%)}
+.track .mk{position:absolute;top:-4px;width:3px;height:17px;border-radius:2px;background:var(--mc);
+  box-shadow:0 0 8px var(--mc);transform:translateX(-50%);transition:left .5s cubic-bezier(.2,.7,.2,1)}
+.scale{display:flex;justify-content:space-between;margin-top:6px;font:10px/1 var(--mono);color:var(--dim)}
+/* Flex, not grid: a grid column count is fixed per row, so a 5th tile lands alone in column 1 with three
+   dead columns beside it. Flex lets the last row's tiles grow into the space instead of stranding one. */
+.tiles{display:flex;flex-wrap:wrap;gap:12px}
+/* Basis 120px so the realistic tile counts (4-5) all fit ONE row at the 760px page width and grow to fill
+   it; anything left over on a final row grows too, rather than sitting at a quarter width beside dead
+   space. min-width:0 is required — a flex item otherwise floors at its CONTENT width, which both widens
+   the tile with the longest caption and stops that caption's ellipsis from ever engaging. */
+.tile{flex:1 1 120px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+.tile em{font-style:normal;display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.tile strong{display:block;font:700 27px/1 var(--mono);margin:9px 0 5px}
+/* One line, always. Tiles share a grid row, so a caption that wraps to three lines makes EVERY tile that
+   tall — the caption is clipped instead, and the full text lives in the detail breakdown below. */
+.tile small{display:block;color:var(--soft);font-size:12px;line-height:1.4;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{font:600 11px/1 var(--mono);letter-spacing:.04em;padding:6px 11px;border-radius:7px;
+  background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect);border:1px solid color-mix(in srgb,var(--suspect) 30%,transparent)}
+.chip.ok{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean);border-color:color-mix(in srgb,var(--clean) 28%,transparent)}
+.lbl{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:11px}
+/* Flags read as an unfinished box when a label sits above three small chips in a full-width panel.
+   Inline the label instead, so the row fills its width by construction. */
+.flagbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.flagbar .lbl{margin:0;flex:none}
+.vfx{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.vfx span{font:600 10px/1 var(--mono);letter-spacing:.04em;padding:5px 9px;border-radius:6px;
+  background:color-mix(in srgb,var(--vc) 14%,transparent);color:var(--vc);
+  border:1px solid color-mix(in srgb,var(--vc) 28%,transparent)}
+/* Detail breakdown: collapsed by default — every field every source returned, for when a verdict needs auditing. */
+details.deep{margin-top:0}
+details.deep>summary{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 16px}
+details.deep[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0}
+.src{background:var(--panel);border:1px solid var(--line);border-top:0;padding:14px 16px}
+.src:last-child{border-radius:0 0 11px 11px}
+.src h4{margin:0 0 11px;display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  font:600 11px/1.3 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.src h4 em{font-style:normal;font-weight:400;letter-spacing:.02em;text-transform:none;color:var(--soft);text-align:right}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:0 22px}
+/* ONE LINE per field, no exceptions. A value that wraps mid-word ragged-ends its neighbours and the whole
+   grid stops lining up; the full text is on the element's title and survives a copy. */
+.kv>div{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:7px 0;
+  border-bottom:1px solid var(--line);font:12px/1.5 var(--mono);white-space:nowrap;overflow:hidden}
+.kv i{font-style:normal;color:var(--dim);flex:none}
+.kv b{font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dimnote{color:var(--dim);font-size:11px}
+img.flag{width:14px;height:10px;border-radius:1px;vertical-align:0;margin-right:6px;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 15%,transparent)}
+svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
+/* Blocklists GROUPED by what the answer means — the group label carries the meaning, so a colour never has
+   to be decoded. A flat rainbow of 17 chips is unreadable. */
+.zgrp{padding:9px 0;border-bottom:1px solid var(--line)}
+.zgrp:last-child{border-bottom:0}
+.zgrp em{font-style:normal;display:block;margin-bottom:7px;font:600 10px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.zgrp em span{letter-spacing:.02em;text-transform:none;font-weight:400;color:var(--dim)}
+.zones{display:flex;flex-wrap:wrap;gap:6px}
+.z{font:600 10px/1 var(--mono);padding:6px 9px;border-radius:6px;border:1px solid var(--line);color:var(--soft)}
+.g-listed em{color:var(--dirty)} .g-listed .z{background:color-mix(in srgb,var(--dirty) 15%,transparent);color:var(--dirty);border-color:color-mix(in srgb,var(--dirty) 30%,transparent)}
+.g-policy em{color:var(--info)} .g-policy .z{background:color-mix(in srgb,var(--info) 14%,transparent);color:var(--info);border-color:color-mix(in srgb,var(--info) 28%,transparent)}
+.g-clean em{color:var(--clean)} .g-clean .z{color:var(--clean);border-color:color-mix(in srgb,var(--clean) 26%,transparent)}
+.g-none em{color:var(--dim)} .g-none .z{opacity:.6}
+/* Form hints reuse the label→meaning row: scannable in one pass, never a paragraph to decipher. */
+.hint{margin-top:12px}
+.hint .rw{padding:7px 0;font-size:12.5px}
+.hint .rw i{width:84px}
+.hint .rw div{color:var(--soft)}
+.rows{display:flex;flex-direction:column}
+.rw{display:flex;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+.rw:first-child{border-top:0}
+.rw i{font-style:normal;color:var(--dim);width:118px;flex:none;font:600 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
+.rw div{font-family:var(--mono);word-break:break-all}
+.note{color:var(--soft);font-size:12.5px;padding:4px 0}.note+.note{border-top:1px solid var(--line);margin-top:2px;padding-top:8px}
+textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
+  padding:11px 12px;font:13px/1.5 var(--mono);resize:vertical;margin-top:12px}
+textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+/* A comparison table earns far more width than the form column: the whole point is reading every proxy's
+   signals side by side. Break out of the 760px wrap and centre on the viewport. overflow-x remains as the
+   small-screen fallback, but on a desktop the columns should simply fit. */
+/* The breakout element must NOT also carry `.blk`: that class's rise animation ends on `transform:none`
+   with fill-mode both, which permanently wipes the centring translate and leaves the panel hanging off the
+   right edge of the page. So `.bulkwide` is a plain outer wrapper and `.blk` stays on the inner panel.
+   The 48px gutter is not decoration either — 100vw INCLUDES the vertical scrollbar, so a smaller inset
+   makes the panel wider than the viewport and the whole page picks up a horizontal scrollbar. */
+.bulkwide{width:min(1680px,calc(100vw - 48px));margin-left:50%;transform:translateX(-50%)}
+/* Sortable headers — comparing a batch means reordering it by whichever signal you care about. */
+table.bulk th.s{cursor:pointer;user-select:none;white-space:nowrap}
+table.bulk th.s:hover{color:var(--accent)}
+table.bulk th.s::after{content:"";display:inline-block;width:9px;color:var(--accent)}
+table.bulk th.s[data-dir="1"]::after{content:"▲"}
+table.bulk th.s[data-dir="-1"]::after{content:"▼"}
+/* Batch summary strip: the whole-run answer, above the per-row detail. */
+.bsum{display:flex;flex-wrap:wrap;gap:8px;padding:0 0 12px}
+.bsum span{font:600 10.5px/1 var(--mono);letter-spacing:.05em;padding:7px 10px;border-radius:7px;
+  border:1px solid var(--line);color:var(--soft);background:var(--panel2)}
+.bsum span b{font-weight:700;color:var(--ink)}
+.bsum .s-dirty b{color:var(--dirty)} .bsum .s-suspect b{color:var(--suspect)}
+.bsum .s-clean b{color:var(--clean)} .bsum .s-dead b{color:var(--dirty)}
+.tablewrap{overflow-x:auto}
+/* Copy chip: one click copies, a tick confirms. The tick's slot is ALWAYS reserved, so confirming never
+   changes the chip's width and never nudges the row. */
+.cp{position:relative;display:inline-block;cursor:pointer;border:1px solid var(--line);border-radius:6px;
+  background:var(--panel2);color:var(--soft);font:600 10.5px/1 var(--mono);padding:6px 20px 6px 8px;
+  margin:0 5px 0 0;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.cp:hover{border-color:var(--accent);color:var(--accent)}
+.cp::after{content:"";position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:11px;line-height:1}
+.cp.done{border-color:var(--clean);color:var(--clean);background:color-mix(in srgb,var(--clean) 16%,transparent)}
+.cp.done::after{content:"✓"}
+.cp i{font-style:normal;color:var(--dim);margin-right:5px;font-weight:400}
+.cp:hover i{color:inherit;opacity:.7}
+/* Details chevron: right when collapsed, down when open. One click, no second step. */
+.chev{background:none;border:0;cursor:pointer;padding:6px;line-height:0;color:var(--soft)}
+.chev:hover{color:var(--accent)}
+.chev svg{width:13px;height:13px;transition:transform .15s}
+.chev[aria-expanded=true] svg{transform:rotate(90deg)}
+/* The expanded row: a plain two-column table, same language as the rest of the page. */
+table.det{width:100%;border-collapse:collapse;font:12px/1.5 var(--mono);background:var(--panel2)}
+table.det td{padding:6px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.det tr:last-child td{border-bottom:0}
+table.det td:first-child{width:150px;color:var(--dim);white-space:nowrap;
+  font:600 9.5px/1.6 var(--mono);letter-spacing:.09em;text-transform:uppercase}
+table.det td:last-child{word-break:break-all}
+table.det .grp td{background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--accent);
+  font:600 9.5px/1.6 var(--mono);letter-spacing:.11em;text-transform:uppercase}
+/* Comparison-table cells. Every value is ONE line: the table is for scanning down a column, and a cell
+   that wraps destroys the alignment that makes that possible. Long text truncates with the full string on
+   the title. */
+/* Columns size to their CONTENT (auto layout), they are not rationed out of a fixed budget. Two earlier
+   attempts failed the other way: `max-width:0` made a percentage max-width on a child resolve against ~0
+   and collapsed the proxy host to one character; `table-layout:fixed` then squeezed whatever was left
+   after the declared widths, so ISP read "Spa..." and Location "Lousvil...". Everything is nowrap, so a
+   column is exactly as wide as its widest value, and only the two genuinely unbounded fields are capped
+   (with the full text on the title). If the total still exceeds the panel, the TABLE scrolls — never the
+   page. */
+table.bulk{table-layout:auto;width:100%}
+table.bulk td,table.bulk th{white-space:nowrap}
+table.bulk td.cap{max-width:230px;overflow:hidden;text-overflow:ellipsis}
+table.bulk td .trunc{display:block;overflow:hidden;text-overflow:ellipsis}
+table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
+/* The HOST truncates; the PORT never does. The port is the only thing distinguishing one line from the
+   next, so it must survive whatever the column width is. */
+.pxh{color:var(--ink)}
+.pxp{color:var(--accent);font-weight:700}
+.ipv{font-size:12px}
+.ms{font-variant-numeric:tabular-nums}
+.dim{color:var(--dim)}
+.c-clean{color:var(--clean)} .c-suspect{color:var(--suspect)} .c-dirty{color:var(--dirty)}
+.c-info{color:var(--info)}
+.tag{margin-left:5px;padding:2px 5px;border-radius:4px;font:600 9px/1.4 var(--mono);
+  background:color-mix(in srgb,var(--info) 16%,transparent);color:var(--info);vertical-align:1px}
+.detrow>td{padding:0 0 10px !important;white-space:normal !important;max-width:none !important}
+table.bulk tr.open>td{background:var(--panel2)}
+table.bulk{width:100%;border-collapse:collapse;font:12.5px/1.4 var(--mono)}
+table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bulk td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.bulk tr:last-child td{border-bottom:0}
+table.bulk tbody tr:hover td{background:var(--panel2)}
+.vpill{display:inline-block;padding:3px 9px;border-radius:6px;font:600 10px/1.5 var(--mono);letter-spacing:.04em}
+.v-dirty-p{background:color-mix(in srgb,var(--dirty) 16%,transparent);color:var(--dirty)}
+.v-suspect-p{background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect)}
+.v-clean-p{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean)}
+.v-unknown-p{background:color-mix(in srgb,var(--dim) 16%,transparent);color:var(--soft)}
+.cc{cursor:pointer;color:var(--soft);border:1px solid var(--line);border-radius:6px;padding:4px 8px;
+  font:600 9px/1 var(--mono);background:none;letter-spacing:.06em;text-transform:uppercase}
+.cc:hover{border-color:var(--accent);color:var(--accent)} .cc.done{border-color:var(--clean);color:var(--clean)}
+.pxcell{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft)}
+.loading{color:var(--soft);font:13px/1 var(--mono);letter-spacing:.06em}
+.loading::after{content:"";animation:dots 1.4s steps(4,end) infinite}
+@keyframes dots{0%{content:""}25%{content:"·"}50%{content:"··"}75%{content:"···"}}
+</style>
+<style>
+/* Page-local: the gallery chrome only. Everything being INSPECTED is styled by the sheet above. */
+.at-wrap{max-width:900px;margin:0 auto;padding:22px 18px 70px}
+.at-h{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:0 0 4px}
+.at-h h1{font-size:19px;margin:0}
+.at-note{color:var(--dim);font-size:12.5px;line-height:1.55;margin:0 0 22px}
+.at-sec{margin:30px 0 0}
+.at-sec>h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:0 0 3px}
+.at-sec>p{color:var(--dim);font-size:12.5px;margin:0 0 12px}
+.at-grid{display:flex;flex-wrap:wrap;gap:10px}
+.at-card{flex:1 1 190px;border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:var(--card)}
+.at-card b{display:block;font-size:12px;font-weight:600;margin-bottom:9px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-sizes{display:flex;align-items:center;gap:16px}
+.at-1x,.at-4x{display:flex;align-items:center;justify-content:center;background:var(--bg);
+  border:1px solid var(--line);border-radius:7px}
+.at-1x{width:34px;height:34px;flex:none}
+.at-4x{width:74px;height:74px;flex:none}
+.at-4x svg.ico{width:52px;height:52px;margin:0}
+.at-cap{color:var(--dim);font-size:11px;line-height:1.5}
+.at-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:3px 0}
+.at-px{display:flex;flex-direction:column;align-items:center;gap:6px}
+.at-px img{display:block;background:transparent}
+.at-px span{color:var(--dim);font-size:11px;white-space:nowrap}
+.at-bad{color:var(--dirty);font-weight:600}
+</style>
+<div class=at-wrap>
+  <div class=at-h>
+    <h1>Asset render test</h1>
+    <button class=copy id=at-theme>Toggle theme</button>
+  </div>
+  <p class=at-note>
+    Every asset the page ships, at the size it is actually drawn — plus a 4&times; blow-up beside it.<br>
+    An icon that is not instantly recognisable in the <b>left</b> box is broken, however good it looks on the right.<br>
+    Check this on Windows/Chrome: emoji coverage there is poor, which is why nothing here is an emoji.
+  </p>
+  <div id=at-out></div>
+</div>
+<script>
+const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
+const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
+// Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score
+// means getIPIntel saw no proxy evidence, which does not prove a real ISP line.
+const giiBand=g=>g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':g>=0.50?'mixed signals':'no proxy signal';
+// Exit type: only `mobile` is a real line. `datacenter` and `tor` both draw friction, so NEITHER may render
+// green. The same ternary used to be copy-pasted in the tile, the detail row and the bulk column — it lives
+// here once, so adding a class can't leave one of the three painting a Tor exit as clean.
+const ccColour=c=>c==='mobile'?'clean':'dirty';
+const ccCap=c=>c==='mobile'?'real network line':c==='tor'?'Tor exit — denied by most apps':'hosting network';
+// Scamalytics' score is WARN-ONLY, never green: MEASURED, `low` came back for a Tor exit and for 127.0.0.1.
+const scamColour=b=>b==='very high'?'dirty':b==='high'?'suspect':'ink';
+// Why a blocklist sweep produced nothing, in the words of the state dnsbl_check ACTUALLY reports. The
+// previous version branched on `dnsbl_skipped==='ipv6'`, a value nothing ever emitted — so all three
+// copies of it were dead code telling the reader an IPv6 exit has no coverage, which stopped being true
+// when the IPv6 zone table landed. One function, so a fourth copy can't drift off on its own.
+const noCoverage=r=>r.dnsbl_skipped==='unparseable'
+  ?'not run — this address parsed as neither IPv4 nor IPv6, so no zone could be asked'
+  :'not run — no blocklist zone answered (the resolver is down, or every zone refused it)';
+function row(k,v){return `<div class=rw><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
+// A row whose value carries pre-built markup (a flag image, an icon) and an optional colour.
+function richRow(k,html,colour){
+  return `<div class=rw><i>${esc(k)}</i><div${colour?` style="color:var(--${colour})"`:''}>${html}</div></div>`}
+
+// Line-type icons. Drawn inline in currentColor, NOT emoji: emoji render differently on every platform,
+// carry their own colour, and look out of place next to monospace readouts.
+const SVG=p=>`<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" `+
+  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+//
+// EVERY attribute value is QUOTED, and that is not style. Unquoted, `rx=1.2/>` parses as the VALUE
+// `1.2/` with no self-close, so the element swallows its siblings: `server` lost its second rack unit,
+// `build` and `bot` rendered as a bare square, and `ban` — a circle followed by a path — drew NOTHING at
+// all. Three of six icons were dead in the shipped page and it took the render-test page to see it, since
+// a missing icon looks like a value that simply has no icon. Keep the quotes.
+//
+// Shapes are also drawn for THIRTEEN PIXELS, not for the 4x view: no detail smaller than ~2 units of the
+// 16 viewBox survives, which is why there are no window dots, no LED dots, and wide gaps between parts.
+const ICON={
+  // ONE cabinet, TWO bays. The arithmetic is the whole point: at 13px a 1.3-unit stroke covers ~1.06px,
+  // so the 10.8 units of height are 8.8px, of which the outline eats 2.1 and the shelf another 1.1 —
+  // leaving 2.8px per bay. Three bays leave 1.5px each and the strokes close over them, which is how this
+  // icon spent weeks as "a WEIRD rectangle". Two stacked boxes fail the same way, for the same reason.
+  server: SVG('<rect x="2.4" y="2.8" width="11.2" height="10.4" rx="1.4"/>'+
+              '<path d="M2.4 8h11.2"/>'),
+  signal: SVG('<path d="M3 13.4v-3M6.3 13.4V8.2M9.6 13.4V5.6M12.9 13.4V3"/>'),
+  home:   SVG('<path d="M2.4 7.4 8 2.7l5.6 4.7"/><path d="M3.9 6.9v6.4h8.2V6.9"/>'),
+  // An institution: pediment, three columns, a base. The old version was a rectangle with six 1-unit
+  // window dashes — at 13px the dashes vanish and it was indistinguishable from `bot`.
+  build:  SVG('<path d="M1.9 6.2 8 2.6l6.1 3.6"/><path d="M4.2 7.6v4.6M8 7.6v4.6M11.8 7.6v4.6"/>'+
+              '<path d="M2.4 13.4h11.2"/>'),
+  // A head with two eyes and an antenna. The eyes are 1.6-wide strokes, not `h.01` dots — a zero-length
+  // segment with round caps is one stroke-width across, i.e. gone at this size.
+  bot:    SVG('<rect x="2.8" y="5.4" width="10.4" height="7.4" rx="2.2"/>'+
+              '<path d="M5.9 8.9h1.2M8.9 8.9h1.2M8 5.4V2.9"/>'),
+  ban:    SVG('<circle cx="8" cy="8" r="5.4"/><path d="M4.2 11.8 11.8 4.2"/>'),
+};
+// What kind of line an exit sits on, from the free-text IPQS connection_type or AbuseIPDB usageType.
+//
+// The icon is for scanning; the COLOUR is deliberately one-directional. These are the vendor's own labels
+// and they are not reliable in the reassuring direction — measured on 185.220.101.45, a NordVPN-operated
+// Tor exit (`tor-exit-45.for-privacy.net`): AbuseIPDB calls it "Fixed Line ISP". Painting that green said
+// "consumer line" about an IP with 100% abuse confidence and seven proxy flags. So only the HOSTING match
+// is coloured, because a warning that turns out to be wrong is survivable and a false all-clear is not.
+// Whether an exit is really a datacenter is answered by connection_class + the verdict, from our own
+// name heuristic, not by trusting this field.
+// Order matters: "Data Center/Web Hosting/Transit" must match before the generic ISP rule.
+// Gaps found by the asset render test, which shows what a real vendor string maps to: "Corporate" (the
+// literal AbuseIPDB value) matched NOTHING, and "Content Delivery Network" matched nothing either — a CDN
+// edge is hosting infrastructure, so it belongs with the datacenter rule, and colouring it is in the
+// warning direction, which is the only direction a vendor's own label may be coloured.
+const USAGE=[
+  [/data ?cent|hosting|transit|colo|content delivery|\bcdn\b/i, ICON.server,'dirty'],
+  [/mobile|cellular|wireless/i,                  ICON.signal,''],
+  [/fixed line|residential|cable|dsl|fiber|isp/i,ICON.home,  ''],
+  [/university|college|school|library/i,          ICON.build, ''],
+  [/government|military/i,                        ICON.build, ''],
+  [/search engine|spider|crawler/i,               ICON.bot,   'dirty'],
+  [/commercial|corporate|organization|business/i, ICON.build, ''],
+  [/reserved/i,                                   ICON.ban,   ''],
+];
+const usageOf=v=>USAGE.find(([re])=>re.test(String(v||'')))||null;
+</script>
+<script>
+const $$=s=>document.querySelector(s);
+const sec=(t,note,body)=>`<div class=at-sec><h2>${t}</h2><p>${note}</p><div class=at-grid>${body}</div></div>`;
+// Real size on the left, 4x on the right. The left box is the verdict.
+const pair=(name,svg,cap)=>`<div class=at-card><b title="${name}">${name}</b><div class=at-sizes>`+
+  `<div class=at-1x>${svg}</div><div class=at-4x>${svg}</div>`+
+  `<div class=at-cap>${cap}</div></div></div>`;
+
+let h='';
+
+// 1) The line-type icons, drawn at the 13px the detail rows and tiles use.
+h+=sec('Line-type icons · 13px',
+  'Drawn inline in currentColor. These sit in front of a Connection / Usage value.',
+  Object.keys(ICON).map(k=>pair(k,ICON[k],'ICON.'+k)).join(''));
+
+// 2) What a real vendor string actually renders as — the icon AND the colour, together, because the
+//    colour is the half that can lie. Only the hosting match is coloured (see USAGE in ipcheck.py).
+const SAMPLES=['Data Center/Web Hosting/Transit','Corporate','Fixed Line ISP','Mobile ISP','University',
+  'Government','Search Engine Spider','Reserved','Content Delivery Network'];
+h+=sec('Usage strings · as they render in a row',
+  'Left column is the vendor’s own words. A string that matches nothing renders with no icon — which is correct, not a bug.',
+  '<div class=at-card style="flex:1 1 100%"><div class=rows>'+
+  SAMPLES.map(s=>{const u=usageOf(s);
+    return richRow(s,(u?u[1]:'')+esc(s),u?u[2]:'');}).join('')+
+  '</div></div>');
+
+// 3) Chevron — the one control glyph, in both states.
+const CHEV='<svg viewBox="0 0 16 16" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round '+
+  'stroke-linejoin=round><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
+h+=sec('Chevron · 13px',
+  'Points right when collapsed, rotates down when open. One click, no second step.',
+  `<div class=at-card><b>collapsed</b><div class=at-sizes>`+
+  `<div class=at-1x><span class=chev style="display:inline-flex">${CHEV}</span></div>`+
+  `<div class=at-4x><span class=chev style="display:inline-flex;width:52px;height:52px">${CHEV}</span></div>`+
+  `<div class=at-cap>aria-expanded=false</div></div></div>`+
+  `<div class=at-card><b>open</b><div class=at-sizes>`+
+  `<div class=at-1x><span class=chev aria-expanded=true style="display:inline-flex">${CHEV}</span></div>`+
+  `<div class=at-4x><span class=chev aria-expanded=true style="display:inline-flex;width:52px;height:52px">${CHEV}</span></div>`+
+  `<div class=at-cap>aria-expanded=true</div></div></div>`);
+
+// 4) Flags. Images, NOT emoji: Windows ships no flag glyphs, so a regional-indicator pair draws the two
+//    letters — which next to the country code reads as "DE DE". A flag that fails to load removes itself.
+const flagImg=cc=>/^[A-Za-z]{2}$/.test(cc)
+  ?`<img class=flag src="https://flagcdn.com/32x24/${cc.toLowerCase()}.png" alt="" onerror="this.remove()">`:'';
+h+=sec('Country flags · &lt;img&gt;, never emoji',
+  'If any of these show as two bare letters, the image did not load — the code beside it is the fallback, by design.',
+  '<div class=at-card style="flex:1 1 100%"><div class=at-row>'+
+  ['US','DE','GB','NL','JP','BR','CA','FR','SE','SG','ZZ'].map(cc=>
+    `<span style="display:inline-flex;align-items:center;gap:5px">${flagImg(cc)}<span class=at-cap>${cc}</span></span>`
+  ).join('')+'</div><div class=at-cap style="margin-top:8px">ZZ is not a country — it must render as bare text with no broken-image box.</div></div>');
+
+// 5) Verdict pills + the tiny status chips.
+const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpperCase())}</span>`;
+h+=sec('Verdict pills + status',
+  'Four levels. UP/DEAD reuse the clean/dirty pill, so they are checked here too.',
+  '<div class=at-card style="flex:1 1 100%"><div class=at-row>'+
+  ['clean','suspect','dirty','unknown'].map(vpill).join('')+
+  '<span class="vpill v-clean-p">UP</span><span class="vpill v-dirty-p">DEAD</span>'+
+  '<span class="vpill v-unknown-p">…</span></div></div>');
+
+// 6) Copy controls. The rule they exist to prove: a button must NOT resize on click.
+h+=sec('Copy controls · the button must not resize',
+  'Click each one. The confirmation is a colour flash — swapping the label for “Copied ✓” would shove its neighbours around.',
+  '<div class=at-card style="flex:1 1 100%"><div class=at-row>'+
+  '<button class=copy data-copy="hero">Copy</button>'+
+  '<button class=cc data-copy="1.2.3.4"><i>ip</i>1.2.3.4</button>'+
+  '<button class=cc data-copy="res.example.com"><i>host</i>res.example.com</button>'+
+  '<button class=cc data-copy="10000"><i>port</i>10000</button>'+
+  '<button class=cp data-copy="hunter2"><i>pass</i>•••••••</button>'+
+  '</div></div>');
+
+// 7) The brand mark at every size it ships in. 1x only — a favicon IS 16px, and blowing it up would hide
+//    exactly the failure this section exists to catch.
+const RASTER=[['favicon-16.png',16,'browser tab'],['favicon-32.png',32,'tab, hi-dpi'],
+  ['apple-touch-icon.png',180,'iOS home screen'],['icon-192.png',192,'PWA'],
+  ['icon-512.png',512,'PWA / splash'],['icon-maskable-512.png',512,'PWA maskable']];
+h+=sec('App icon · every shipped size, 1×',
+  'All rasterised from icon.svg by webapp/make-icons.py. The maskable one is full-bleed on purpose — the launcher applies its own shape.',
+  '<div class=at-card style="flex:1 1 100%"><div class=at-row style="align-items:flex-end;gap:22px">'+
+  '<div class=at-px><img src="/icon.svg" width=64 height=64><span>icon.svg 64</span></div>'+
+  RASTER.map(([f,s,why])=>
+    `<div class=at-px><img src="/${f}" width=${Math.min(s,192)} height=${Math.min(s,192)}>`+
+    `<span>${f}</span><span>${s}px · ${why}</span></div>`).join('')+
+  '</div><div class=at-cap style="margin-top:10px">512s are shown at 192 to fit; they are inspected at full size in the 512 file itself.</div></div>');
+
+$$('#at-out').innerHTML=h;
+
+// Copy behaviour, mirrored from the page so the flash can actually be tried here.
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('.copy,.cc,.cp'); if(!b||b.id==='at-theme')return;
+  const t=b.dataset.copy; if(t){try{await navigator.clipboard.writeText(t);}catch(err){}}
+  b.classList.add('done'); setTimeout(()=>b.classList.remove('done'),1100);
+});
+$$('#at-theme').onclick=()=>{
+  const r=document.documentElement;
+  const dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+  r.dataset.theme=dark?'light':'dark';
+};
+</script>

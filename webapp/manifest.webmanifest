@@ -1,0 +1,16 @@
+{
+  "name": "Specter · exit-IP signal desk",
+  "short_name": "Specter IP",
+  "description": "Check one exit IP or a list of proxies: blocklists, fraud score, abuse history, datacenter/Tor classification, and which of a batch is cleanest.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#16161A",
+  "theme_color": "#16161A",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

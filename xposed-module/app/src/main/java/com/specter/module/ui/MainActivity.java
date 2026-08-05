@@ -2950,8 +2950,11 @@ public class MainActivity extends Activity {
             if (status.equals(e.getValue())) names.add(e.getKey());
         }
         if (names.isEmpty()) return;
-        into.addView(networkMetaRow(title + " · " + names.size(),
-                android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
+        // The COUNT leads the value, not the label. The label column is a fixed dp(96) and now truncates
+        // at the end rather than wrapping — so a count appended to the title ("NO ANSWER · 3") lost the
+        // digit first, which is the one actionable part of the row.
+        into.addView(networkMetaRow(title,
+                names.size() + " · " + android.text.TextUtils.join(", ", names) + "\n" + meaning, colour));
     }
 
 

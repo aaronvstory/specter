@@ -574,13 +574,19 @@ final class HealthCheck {
         }
         // CLEAN. Not called "residential": a name heuristic can't prove a real line, only fail to find a
         // hosting name, so the verdict must not claim more than was measured.
+        //
+        // ...and never claim a blocklist record that was never obtained. When no zone answered — a dead
+        // resolver, or every zone refusing this one — this used to say "no abuse history" anyway, turning
+        // "we didn't look" into "it's clean". ONE expression, read by both branches, exactly as
+        // verdict_factors() in specter/ipcheck.py does it: two branches re-deriving the same decision is
+        // how a difference in MEANING hides as a difference in phrasing.
+        String blocklists = r.dnsblUsable ? "no abuse or blacklist history" : "blocklists NOT checked";
         why.add("clean");
         why.add("no datacenter signal");
         boolean proxyFlag = Boolean.TRUE.equals(r.proxy) || Boolean.TRUE.equals(r.vpn)
                 || Boolean.TRUE.equals(r.tor) || (r.fraudScore != null && r.fraudScore >= 60);
-        why.add(proxyFlag ? "no abuse history" : "no proxy flag");
-        if (proxyFlag) why.add("detectable as a proxy/VPN");
-        else why.add("no abuse or blacklist history");
+        if (proxyFlag) { why.add(blocklists); why.add("detectable as a proxy/VPN"); }
+        else { why.add("no proxy flag"); why.add(blocklists); }
         return why;
     }
 

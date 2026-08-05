@@ -22,6 +22,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - **Android: a meaningful-info-first IP breakdown.** The detail now opens with what the exit IS — exit type,
   blocklists with an honest denominator, fraud score, detectable-as, abuse, getIPIntel, Scamalytics — before
   the per-source dumps. A source that did not run says so; a missing row would read as "fine".
+- **PWA + a full icon set.** Manifest, an offline shell (network-first for the page, so it can never pin a
+  visitor to a stale build; `/api/*` never cached, because a cached measurement is a lie), apple-touch-icon
+  and 16/32/180/192/512 + maskable — all rasterised from one `webapp/icon.svg` by `webapp/make-icons.py`,
+  so the tab icon, the home-screen icon and the app icon cannot drift apart.
+- **An asset render-test page** at `/assets.html`, generated from the real PAGE so it can never show a
+  stale copy: every icon at the size it is actually drawn plus a 4x blow-up, each usage string next to the
+  icon and colour it produces, the chevron in both states, flags, verdict pills and the copy controls.
+- The Specter ghost mark is symmetric now — its body's right wall sat at x=34 while the head's arc sprang
+  from x=39, which is the step that was visible on the right shoulder of the Android launcher icon.
 - Generated-page guards: a test parses the emitted `<script>` (a mis-targeted rewrite once shipped a page
   whose every button was dead) and a second fails when `webapp/index.html` is stale.
 
@@ -35,6 +44,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   the new-account flow: not matching an old login is the point, and apply force-wipes each target before
   writing, so no session survives to be incoherent with. Reopening an account is the Saved tab's job.
   `AppDataVault.conflictingDevices()` went with it.
+
+### Fixed
+- **A blocklist sweep where every zone REFUSED read as clean.** Spamhaus and CBL answer 127.255.255.254 to
+  queries relayed by large public resolvers, and a refusal is correctly not counted as checked — but
+  `dnsbl_usable` was set from the sentinel probes alone, so that run reported "no abuse or blacklist
+  history" having obtained nothing. Coverage now requires at least one zone to have answered, and the
+  report says WHY there is none.
+- **Android said "no abuse history" when no zone answered at all.** The clean verdict now emits
+  "blocklists NOT checked", the same wording the desktop uses, from one shared expression.
+- **Reputation was measured on one address and reported as another.** On a dual-stack exit the address was
+  switched to IPv4 *after* IPQS/AbuseIPDB/getIPIntel/Scamalytics had already been asked about the IPv6 one.
+  The family is now settled before any source is queried.
+- **Three of six line icons rendered blank**, and a fourth as a featureless rectangle. `rx=1.2/>` unquoted
+  parses as the value `1.2/` with no self-close, so the element swallowed its siblings — `ban` drew
+  nothing at all. Every inline-SVG attribute is quoted, the shapes are redrawn for 13px, and
+  `webapp/check-icons.py` now measures ink, spread, interior detail and pairwise distinctness so this
+  cannot recur silently.
+- `Corporate` and `Content Delivery Network` matched no usage rule, so they rendered with no icon.
+- An unbracketed IPv6 proxy (`2001:db8::1`) parsed as host `2001:db8:` port `1` and was accepted. Bracketed
+  IPv6 is now supported; unbracketed multi-colon input is refused instead of guessed at.
+- The `dnsbl_skipped==='ipv6'` branch in all three UI copies was unreachable and its message was stale.
+- Android: the blocklist group count sat at the end of a fixed-width label that truncates, so it was the
+  first thing lost. It leads the value now.
 
 ## [0.26.0] - 2026-08-05
 
