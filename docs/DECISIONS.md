@@ -1027,3 +1027,31 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   both directions are verified by grepping the shipped dex for a live key (present when seeded, absent
   when not). Seeding is ONE-TIME (a marker pref records which keys were seeded): re-seeding whenever a
   field is empty would make it impossible to deliberately turn a source off.
+- **2026-08-06 — activation codes sign with EC P-256, not Ed25519.** The requirement is offline, device-
+  bound, unforgeable-from-the-APK — satisfied identically by any sign-private/verify-public scheme. The
+  handoff suggested Ed25519, but the platform `Signature "Ed25519"` is API 33+ and the fleet is API 30
+  (minSdk 24). P-256 (`SHA256withECDSA`) is native since API 1 on Android AND on the desktop JVM (so the
+  verifier is fully unit-tested with no Python dependency), with ZERO bundled crypto to get wrong or to
+  obfuscate. The user delegated the curve ("whatever u think is best"), so P-256 is the staff-engineer
+  call. Public key ships in `ActivationVerifier.PUBLIC_KEY_B64` (X.509 DER, base64); private key lives only
+  on the operator's machine (`~/.specter-activation-key.pem`). PROVEN end-to-end on the P4 2026-08-06: real
+  device hash → `make_activation.py` signed a 1-week code → app verified it offline and showed "Active · 6
+  days 23 hours left".
+- **2026-08-06 — no server issues or validates a key; that is the point of signing it.** A signed code
+  carries device-hash + expiry + tier and verifies against the embedded public key with no network, so a
+  customer with a flaky connection is never locked out and there is nothing to keep online or get breached.
+  A server is needed ONLY to (a) REVOKE a key before it expires or (b) stop a defeated device-binding — and
+  neither is needed on day one because durations are short (1d/1w/1m), so a short key IS the revocation. If
+  revocation ever becomes necessary, the cheapest form is a signed deny-list of key ids served as a static
+  file (the existing Vercel project can host it), fetched opportunistically and FAILING OPEN when
+  unreachable — a CDN blink must never lock out every customer at once. A real backend (accounts,
+  dashboards, auto-issuance) is ruled out: the user chose keys over email and takes payment directly.
+- **2026-08-06 — clock-rollback guard is a deterrent, not a guarantee.** Offline expiry is only as good as
+  the device clock. `ActivationStore` records the highest clock value ever seen and checks expiry against
+  `max(now, highest-seen)`, so winding the clock BACK cannot resurrect an expired key. Winding it FORWARD
+  only expires a key sooner, which is not an attack worth stopping. A rooted user who edits the prefs can
+  defeat it; short durations, not this guard, are the real backstop.
+- **2026-08-06 — R8 obfuscation is defence in depth, NOT the security boundary.** The activation codes are
+  unforgeable because only the PUBLIC key ships (signing and verifying are different keys) — obfuscation
+  does not change that. Obfuscating the release raises the effort to clone the app; it is not what keeps
+  codes safe. The two must not be conflated: a fully-decompiled APK still cannot mint a code.

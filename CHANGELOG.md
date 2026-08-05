@@ -3,6 +3,18 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.28.0] - 2026-08-06
+
+### Added
+- **Device-bound activation (offline).** A cogwheel and a key icon now sit top-right in the app bar. The
+  key opens an Activation screen: it shows a live status (Active until <date>, N days M hours left / Expired
+  / Not activated), this device's binding hash to send for a key, and a paste field. Verifies entirely
+  offline against an EC P-256 public key compiled into the app — no server, no network call.
+- **`scripts/make_activation.py`** — operator-side generator. `setup` mints the keypair (private key kept
+  outside the public repo); `<device-hash> <1d|1w|1m>` signs a code and logs it to a local ledger.
+- Keys bind to the REAL device (android_id hash), not the spoofed one, and a monotonic clock guard stops a
+  rolled-back clock from resurrecting an expired key. Proven end-to-end on-device.
+
 ## [0.27.0] - 2026-08-06
 
 ### Added

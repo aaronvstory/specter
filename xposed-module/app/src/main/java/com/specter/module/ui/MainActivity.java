@@ -81,6 +81,7 @@ public class MainActivity extends Activity {
     // process-lifetime cache in HealthCheck holds the result, and the IPQS free tier is only 35/day.
     private final java.util.Set<String> autoCheckedIps = new java.util.HashSet<>();
     private boolean setupScreen = false;   // showing the guided "Set up everything" sub-screen (Settings sub-view)
+    private boolean activationScreen = false;  // showing the Activation (device-bound licence) sub-screen (Settings sub-view)
     private boolean setupBusy = false;     // a setup run is in flight (guards the button + drives the spinner)
     private java.util.List<com.specter.module.gen.SetupFlow.StepResult> setupResults;  // last run's per-step outcomes (null = not run yet)
     private boolean setupAnySucceeded = false;  // did the last run install ANYTHING? (gates the reboot prompt + "done")
@@ -277,7 +278,14 @@ public class MainActivity extends Activity {
         vlp.setMargins(dp(Theme.S2), dp(6), 0, 0);
         ver.setLayoutParams(vlp);
         ver.setGravity(Gravity.BOTTOM);
-        bar.addView(ver);
+        bar.addView(ver);   // weight 1 — eats the middle, pushing the two actions to the far right
+
+        // Top-right actions: a key (Activation) and a cogwheel (Settings). Key is gold when a licence is active.
+        boolean active = new ActivationStore(this).isActive();
+        bar.addView(headerIconBtn(keyIcon(dp(22)), active ? Theme.GOLD : Theme.SOFT, "Activation",
+                () -> { tab = 2; activationScreen = true; healthScreen = false; setupScreen = false; rebuildBottomNav(); render(); }));
+        bar.addView(headerIconBtn(navIcon(2, dp(22)), Theme.SOFT, "Settings",
+                () -> { tab = 2; activationScreen = false; healthScreen = false; setupScreen = false; rebuildBottomNav(); render(); }));
         return bar;
     }
 
@@ -332,7 +340,7 @@ public class MainActivity extends Activity {
             llp.topMargin = dp(3);
             lbl.setLayoutParams(llp);
             item.addView(lbl);
-            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; rebuildBottomNav(); render(); } });
+            item.setOnClickListener(v -> { if (tab != idx) { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; activationScreen = false; rebuildBottomNav(); render(); } });
             bottomNavBar.addView(item);
         }
     }
@@ -378,6 +386,7 @@ public class MainActivity extends Activity {
         if (tab == 1 && !vaultApp.isEmpty()) { vaultApp = ""; vaultQuery = ""; render(); return; }
         if (tab == 2 && setupScreen) { setupScreen = false; render(); return; }
         if (tab == 2 && healthScreen) { healthScreen = false; render(); return; }
+        if (tab == 2 && activationScreen) { activationScreen = false; render(); return; }
         super.onBackPressed();
     }
 
@@ -418,6 +427,34 @@ public class MainActivity extends Activity {
         return row;
     }
 
+    /** A tappable header icon (44dp touch target, ripple) holding a tinted StrokeIcon. */
+    private View headerIconBtn(StrokeIcon icon, int tint, String desc, Runnable onTap) {
+        ImageView iv = new ImageView(this);
+        iv.setImageDrawable(icon.tint(tint));
+        iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        iv.setContentDescription(desc);
+        iv.setBackground(ripple(dp(Theme.R_PILL)));
+        int pad = dp(9);
+        iv.setPadding(pad, pad, pad, pad);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(42), dp(42));
+        lp.gravity = Gravity.CENTER_VERTICAL;
+        iv.setLayoutParams(lp);
+        iv.setOnClickListener(v -> onTap.run());
+        return iv;
+    }
+
+    /** A simple line "key": a ring (bow) at top-left, a shaft down to the bit, two teeth. */
+    private StrokeIcon keyIcon(final int px) {
+        return new StrokeIcon(px) {
+            @Override void draw(android.graphics.Canvas c, android.graphics.Paint p, float s) {
+                c.drawCircle(s * 0.34f, s * 0.34f, s * 0.16f, p);        // bow
+                c.drawLine(s * 0.45f, s * 0.45f, s * 0.76f, s * 0.76f, p); // shaft
+                c.drawLine(s * 0.62f, s * 0.68f, s * 0.72f, s * 0.58f, p); // tooth 1
+                c.drawLine(s * 0.72f, s * 0.78f, s * 0.82f, s * 0.68f, p); // tooth 2
+            }
+        };
+    }
+
     private View tabBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -426,7 +463,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
             Button tb = tabButton(names[i], tab == i);
-            tb.setOnClickListener(v -> { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; retintTabs(); render(); });
+            tb.setOnClickListener(v -> { tab = idx; vaultImport = false; vaultApp = ""; healthScreen = false; setupScreen = false; activationScreen = false; retintTabs(); render(); });
             tabButtons[i] = tb;
             bar.addView(tb);
         }
@@ -1995,6 +2032,7 @@ public class MainActivity extends Activity {
     private void renderSettings() {
         if (setupScreen) { renderSetup(); return; }     // dedicated guided-setup sub-screen
         if (healthScreen) { renderHealth(); return; }   // dedicated status sub-screen
+        if (activationScreen) { renderActivation(); return; }  // dedicated activation sub-screen
 
         // Set up everything: the one-tap first-run install (native layer + LSPosed scope + OTA block +
         // Widevine L3, then a reboot). Always available so it's re-runnable, not just a first-run gate.
@@ -2022,6 +2060,23 @@ public class MainActivity extends Activity {
                 hTrail,
                 v -> { healthScreen = true; render(); }));
         content.addView(statusCard);
+
+        // Activation: the device-bound licence. The subtitle reads the live status so it's visible without
+        // drilling in — "Active · 6 days left" / "Expired" / "Not activated".
+        content.addView(sectionLabel("Account"));
+        LinearLayout actCard = card();
+        ActivationStore.Status ast = new ActivationStore(this).status();
+        String actSub;
+        switch (ast.state) {
+            case ACTIVE:  actSub = "Active · " + ActivationStore.remaining(ast.until); break;
+            case EXPIRED: actSub = "Expired — enter a new key"; break;
+            default:      actSub = "Not activated — enter a key"; break;
+        }
+        LinearLayout aTrail = new LinearLayout(this);
+        aTrail.addView(chevronTrailing(false));
+        actCard.addView(row("Activation", actSub, aTrail,
+                v -> { activationScreen = true; render(); }));
+        content.addView(actCard);
 
         // Target apps
         // Same polished per-app cards (icon + name + LSPosed-scope warning + red ✕) as the Identity tab —
@@ -2149,6 +2204,87 @@ public class MainActivity extends Activity {
                     .setNegativeButton("Cancel", null)
                     .show();
         });
+    }
+
+    /** The Activation sub-screen: the device-bound licence. Shows the live status, this device's binding hash
+     *  (to send to the operator for a key), and a paste field to enter a key. All offline — the key is a code
+     *  signed by the operator's private key and verified here against the embedded public key
+     *  ({@link com.specter.module.gen.ActivationVerifier}). */
+    private void renderActivation() {
+        content.addView(Nav.backRow(this, "Activation", () -> { activationScreen = false; render(); }));
+        final ActivationStore store = new ActivationStore(this);
+        ActivationStore.Status st = store.status();
+
+        // Status card — a pill + one plain line. Colour encodes state; nothing to decode.
+        LinearLayout statusCard = cardBox();
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MMM d, yyyy · HH:mm", java.util.Locale.US);
+        if (st.state == ActivationStore.State.ACTIVE) {
+            statusCard.addView(statusPill("Active", Theme.SAGE));
+            TextView until = value("Activated until " + fmt.format(new java.util.Date(st.until * 1000L)));
+            statusCard.addView(until);
+            TextView left = label(ActivationStore.remaining(st.until) + "  ·  " + st.tier + " key");
+            left.setTextColor(Theme.SOFT); left.setPadding(0, dp(2), 0, 0);
+            statusCard.addView(left);
+        } else if (st.state == ActivationStore.State.EXPIRED) {
+            statusCard.addView(statusPill("Expired", Theme.RED));
+            statusCard.addView(value("Expired " + fmt.format(new java.util.Date(st.until * 1000L))));
+            TextView hint = label("Enter a new key below to reactivate.");
+            hint.setTextColor(Theme.SOFT); hint.setPadding(0, dp(2), 0, 0);
+            statusCard.addView(hint);
+        } else {
+            statusCard.addView(statusPill("Not activated", Theme.DIM));
+            TextView hint = label(st.detail.isEmpty()
+                    ? "Enter a key below to activate this device."
+                    : "Stored key rejected (" + st.detail + "). Enter a valid key.");
+            hint.setTextColor(Theme.SOFT); hint.setPadding(0, dp(2), 0, 0);
+            statusCard.addView(hint);
+        }
+        content.addView(statusCard);
+
+        // This device — the binding hash the operator needs to mint a key. Copyable; the raw id never leaves.
+        content.addView(sectionLabel("This device"));
+        LinearLayout devCard = cardBox();
+        final String dh = st.deviceHash;
+        TextView hashV = value(dh);
+        hashV.setTypeface(android.graphics.Typeface.MONOSPACE);
+        hashV.setTextColor(Theme.GOLD);
+        devCard.addView(hashV);
+        TextView dcap = label("Send this to get a key. It's a hash of the real device id — the id itself never leaves the phone.");
+        dcap.setPadding(0, dp(2), 0, dp(4));
+        devCard.addView(dcap);
+        devCard.addView(textButton("Copy device id", Theme.GOLD, v -> {
+            android.content.ClipboardManager cb = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            cb.setPrimaryClip(android.content.ClipData.newPlainText("Specter device id", dh));
+            toast("Device id copied");
+        }));
+        content.addView(devCard);
+
+        // Enter a key.
+        content.addView(sectionLabel("Enter a key"));
+        LinearLayout enterCard = cardBox();
+        final EditText in = new EditText(this);
+        in.setHint("Paste your activation key");
+        in.setTextColor(Theme.INK);
+        in.setHintTextColor(Theme.DIM);
+        in.setTextSize(13);
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        in.setMinLines(2);
+        in.setGravity(Gravity.TOP | Gravity.START);
+        in.setBackground(pill(Theme.CARD2, Theme.LINE));
+        in.setPadding(dp(Theme.S3), dp(Theme.S2), dp(Theme.S3), dp(Theme.S2));
+        enterCard.addView(in);
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(Theme.S3)));
+        enterCard.addView(spacer);
+        enterCard.addView(primaryButton("Activate", v -> {
+            String code = in.getText().toString();
+            if (code.trim().isEmpty()) { toast("Paste a key first"); return; }
+            com.specter.module.gen.ActivationVerifier.Result r = store.activate(code);
+            if (r.valid) toast("Activated · " + ActivationStore.remaining(r.until));
+            else toast("Not activated: " + r.reason);
+            render();   // reflect the new status
+        }));
+        content.addView(enterCard);
     }
 
     /** The guided "Set up everything" sub-screen: one tap installs every layer (native + scope + OTA block +
