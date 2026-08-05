@@ -103,3 +103,23 @@ def test_non_dict_ledger_fails_closed(tmp_path):
     open(path, "w").write('["a", "list", "not", "a", "dict"]')
     with pytest.raises(P.UsedStoreCorrupt):
         P.UsedStore(path)
+
+
+def test_generate_unique_fails_loud_when_it_cannot_produce_a_valid_profile(monkeypatch):
+    """The last line of the ban-critical guarantee: if generation can never satisfy validity (or
+    uniqueness), it must RAISE — never silently return an unvalidated or duplicate profile. Force
+    validate() to always reject and confirm it dies loud within max_tries rather than returning
+    something bad. (This is the branch that turns a stuck generator into a visible failure instead
+    of a reused identifier.)"""
+    monkeypatch.setattr(P, "validate", lambda p, catalog=None: (False, ["forced-invalid"]))
+    with pytest.raises(RuntimeError, match="fresh valid profile"):
+        P.generate_unique(None, max_tries=5)
+
+
+def test_generate_unique_fails_loud_when_every_profile_collides(monkeypatch, tmp_path):
+    """Same guarantee via the uniqueness path: if the ledger rejects every candidate as a collision,
+    generation raises rather than handing back a reused id."""
+    store = P.UsedStore(str(tmp_path / "used.json"))
+    monkeypatch.setattr(store, "collides", lambda p: True)   # everything looks already-used
+    with pytest.raises(RuntimeError, match="fresh valid profile"):
+        P.generate_unique(store, max_tries=5)
