@@ -2607,14 +2607,24 @@ public class MainActivity extends Activity {
             }
         }
 
-        // The lookup MUST leave through the tunnel (it would otherwise check — and hand these APIs — the phone's
-        // home IP). Same gate the timezone alignment uses: no tunnel, no lookup.
+        // Off-tunnel there's no proxy exit — this IP is the device's REAL public IP. Checking it still works
+        // (the user asked to score without a tunnel), but only on an explicit tap through a "uses your real IP"
+        // confirm, and never auto-checked. The auto-check + tunnel-pinned path lives in the on-tunnel branch below.
         if (!vpnRouting) {
-            TextView gate = new TextView(this);
-            gate.setText("Connect the VPN/proxy to check this IP's reputation");
-            gate.setTextColor(Theme.DIM); gate.setTextSize(Theme.T_CAPTION);
-            gate.setPadding(0, dp(Theme.S3), 0, 0);
-            box.addView(gate);
+            TextView note = new TextView(this);
+            note.setText("No tunnel — this would check your device's real public IP");
+            note.setTextColor(Theme.DIM); note.setTextSize(Theme.T_CAPTION);
+            note.setPadding(0, dp(Theme.S3), 0, 0);
+            box.addView(note);
+            View anyway = textButton(repBusy ? "Checking…" : rep == null ? "Check this IP anyway" : "Re-check this IP",
+                    repBusy ? Theme.DIM : Theme.GOLD,
+                    v -> confirmRealIpAction("sending it to IPQualityScore, AbuseIPDB and the blocklists",
+                            () -> checkIpReputation(ip, true)));
+            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            alp.setMargins(0, dp(Theme.S2), 0, 0);
+            anyway.setLayoutParams(alp);
+            box.addView(anyway);
             return box;
         }
         View check = textButton(repBusy ? "Checking…" : rep == null ? "Check IP reputation" : "Re-check reputation",
@@ -2637,12 +2647,38 @@ public class MainActivity extends Activity {
         return box;
     }
 
-    /** Look up the current exit IP's reputation, PINNED to the VPN tunnel so the lookup can never check or leak
-     *  the home IP. Off-thread (network); the result is cached in {@link HealthCheck} and picked up on re-render. */
-    private void checkIpReputation(final String ip) {
+    /** Confirm before any action that would use the device's REAL current public IP because no VPN/proxy tunnel
+     *  is masking it. On a tunnel the exit IP is the proxy's, not the home IP, so the action runs straight through.
+     *  {@code detail} completes the sentence "…uses your device's real public IP by …". This is what lets the
+     *  off-tunnel reputation check and timezone fix exist without ever leaking the home IP by accident. */
+    private void confirmRealIpAction(String detail, Runnable onConfirm) {
+        if (HealthCheck.activeVpnNetwork(getApplicationContext()) != null) { onConfirm.run(); return; }
+        new AlertDialog.Builder(this)
+                .setTitle("Use your real IP?")
+                .setMessage("No VPN/proxy tunnel is active, so this uses your device's real public IP by "
+                        + detail + ".")
+                .setPositiveButton("Continue", (d, w) -> onConfirm.run())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Look up an IP's reputation. On a tunnel the lookup is PINNED to it (so the exit IP is provably the proxy's);
+     *  off-tunnel it runs through the default network on the device's REAL public IP — only ever reached from the
+     *  user-confirmed "check this IP anyway" button, never the auto-check (which stays tunnel-only). Off-thread;
+     *  the result is cached in {@link HealthCheck} and picked up on re-render. */
+    private void checkIpReputation(final String ip) { checkIpReputation(ip, false); }
+
+    /** @param allowRealIp true only from the user-confirmed off-tunnel button. When false (the auto-check and the
+     *  on-tunnel button), a tunnel that has DROPPED since the card rendered aborts the check rather than silently
+     *  querying the real IP — closing the flap/ABA window the old hard gate covered. */
+    private void checkIpReputation(final String ip, final boolean allowRealIp) {
         if (repBusy) return;
+        // null off-tunnel = the default network (real IP). Only allowed when the user explicitly confirmed it.
         final android.net.Network vpn = HealthCheck.activeVpnNetwork(getApplicationContext());
-        if (vpn == null) { toast("No VPN/proxy tunnel — reputation is only checked through the tunnel."); return; }
+        if (vpn == null && !allowRealIp) {
+            toast("Tunnel dropped — reputation is only auto-checked through the tunnel.");
+            return;
+        }
         final String ipqs = prefs.getString("ipqs_key", "").trim();
         final String abuse = prefs.getString("abuseipdb_key", "").trim();
         repBusy = true;
@@ -2769,7 +2805,12 @@ public class MainActivity extends Activity {
                 status.setText("Apply an identity to " + Targets.label(this, ch.fixArg) + " here.");
                 return;
             case MATCH_TZ:
-                matchTimezoneToIp();
+                // allowRealIp = "the user consented to real-IP use" — true iff we're off-tunnel at confirm time
+                // (confirmRealIpAction shows the dialog only then). On-tunnel it's false, so a tunnel that flaps
+                // before the worker thread runs aborts instead of silently aligning to the real IP.
+                confirmRealIpAction("reading its timezone and setting it on your applied profiles",
+                        () -> matchTimezoneToIp(
+                                HealthCheck.activeVpnNetwork(getApplicationContext()) == null));
                 return;
             default:
         }
@@ -2798,18 +2839,34 @@ public class MainActivity extends Activity {
 
     /** Rewrite every applied target profile's "timezone" to the IP's zone (off-thread, su), then force-stop the
      *  targets so the TimeZone.getDefault() hook reloads the new value. Kills the device-vs-IP timezone mismatch. */
-    private void matchTimezoneToIp() {
+    /** @param allowRealIp true only when the user confirmed real-IP use (off-tunnel at confirm time). When false
+     *  (on-tunnel), a tunnel that has DROPPED by the time this worker runs aborts rather than silently aligning to
+     *  the device's real IP — mirrors {@link #checkIpReputation}'s guard and closes the same flap/ABA window. */
+    private void matchTimezoneToIp(final boolean allowRealIp) {
         final Set<String> targets = Targets.get(prefs);
         healthResults = null; render();   // show the "Checking…" spinner while we work + re-check
         new Thread(() -> {
-            // Don't trust the tzId captured at check time (the proxy endpoint/location may have changed since).
-            // Re-resolve the zone THROUGH the current VPN tunnel; if there's no tunnel now, leave the TZ as-is.
+            // Don't trust the tzId captured at check time (the endpoint/location may have changed since). Re-resolve
+            // the zone through the tunnel if there is one, else the default network (the real IP — the caller already
+            // confirmed that off-tunnel). vpn==null off-tunnel is expected, not an error.
             android.net.Network vpn = HealthCheck.activeVpnNetwork(getApplicationContext());
-            HealthCheck.Geo g = vpn != null ? HealthCheck.lookupGeo(vpn) : null;
+            if (vpn == null && !allowRealIp) {
+                // Tunnel dropped since the confirm, and this wasn't a confirmed real-IP action — don't align to the
+                // real IP. Abort before even resolving it.
+                runOnUiThread(() -> {
+                    if (!healthScreen) return;
+                    Toast.makeText(this, "Tunnel dropped — timezone left as-is.", Toast.LENGTH_SHORT).show();
+                    healthResults = null; render();
+                });
+                return;
+            }
+            HealthCheck.Geo g = HealthCheck.lookupGeo(vpn);
             String zone = (g != null) ? g.tz : null;
             int changed = 0;
-            // Final guard: same VPN still active immediately before writing.
-            if (zone != null && vpn.equals(HealthCheck.activeVpnNetwork(getApplicationContext()))) {
+            // On a tunnel the SAME tunnel must still be active right before writing (ABA guard). Off-tunnel there's
+            // no tunnel to flap, so that guard doesn't apply — a null vpn is fine.
+            boolean stillSafe = vpn == null || vpn.equals(HealthCheck.activeVpnNetwork(getApplicationContext()));
+            if (zone != null && stillSafe) {
                 com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
                 for (String pkg : targets) {
                     if (com.specter.module.gen.RootWriter.setTimezone(sh, pkg, zone)) {
@@ -2821,7 +2878,7 @@ public class MainActivity extends Activity {
             final int n = changed; final String z = zone;
             runOnUiThread(() -> {
                 if (!healthScreen) return;
-                Toast.makeText(this, z == null ? "Not on a proxy/VPN — timezone left as-is"
+                Toast.makeText(this, z == null ? "Couldn't read the IP's timezone — left as-is"
                         : n == 0 ? "No profiles updated"
                         : "Timezone set to " + z + " for " + n + " app" + (n == 1 ? "" : "s"),
                         Toast.LENGTH_SHORT).show();

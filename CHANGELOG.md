@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.8] - 2026-08-05
+
+### Added
+- **Exit-IP reputation and timezone-fix now work off-tunnel, on the device's real IP, behind an explicit
+  confirm.** Previously both were hard-gated to a VPN/proxy tunnel. Now, with no tunnel active, the Status
+  card offers a “Check this IP anyway” button and a timezone-vs-IP fix that run on your real public IP after a
+  “Use your real IP?” confirmation dialog. The AUTOMATIC paths stay tunnel-only — the reputation auto-check on
+  open and the on-apply timezone alignment never touch the real IP — and a new `allowRealIp` guard closes the
+  tunnel-flap window so a dropped tunnel can never silently query the real IP. Geolocation of the real IP was
+  already shown off-tunnel (unchanged).
+
 ## [0.24.7] - 2026-08-05
 
 ### Changed
