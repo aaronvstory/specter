@@ -3,6 +3,17 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.24.9] - 2026-08-05
+
+### Added
+- **A target now reads READY without having to be launched.** The Protection-status per-app check had only
+  GREEN (this app's hooks proven running this boot) or a nag to “open the app, then re-check.” Now, once ANY
+  scoped app has proven the module loads on this boot (a fresh heartbeat), every other scoped app that has an
+  identity applied reads a blue **READY · hooks on launch** — you launch one app per boot to confirm the
+  layer is live, not every target. GREEN still means that specific app's hooks are proven running this boot
+  (no false-GREEN), and the hero summary gets its own blue “Ready” tier between amber “Not verified” and green
+  “All good.” Just after a reboot with nothing launched yet, targets still show amber (open any one to confirm).
+
 ## [0.24.8] - 2026-08-05
 
 ### Added

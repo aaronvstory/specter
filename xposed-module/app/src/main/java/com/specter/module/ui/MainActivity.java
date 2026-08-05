@@ -2373,23 +2373,27 @@ public class MainActivity extends Activity {
             return;
         }
 
-        int bad = 0, warn = 0, total = 0;
+        int bad = 0, warn = 0, ready = 0, total = 0;
         for (HealthCheck.Group g : healthResults) for (HealthCheck.Check ch : g.checks) {
             total++;
             if (ch.state == HealthCheck.State.BAD) bad++;
             else if (ch.state == HealthCheck.State.WARN) warn++;
+            else if (ch.state == HealthCheck.State.READY) ready++;
         }
         // Hero summary card: a big verdict line in the worst-state colour + a one-line explanation.
-        // HONESTY: a WARN is NOT necessarily "optional" — "hooks not verified running this boot" is a real
-        // not-proven state. Never claim "spoofing is active" while anything is unresolved; only an all-green
-        // run is a go. Amber = "not verified", not "ready".
-        int heroColor = bad > 0 ? Theme.RED : warn > 0 ? Theme.GOLD : Theme.SAGE;
-        String heroTitle = bad > 0 ? "Not fully spoofing" : warn > 0 ? "Not verified" : "All good";
+        // HONESTY: a WARN is NOT "optional" — "hooks not verified running this boot" is a real not-proven state.
+        // READY is different: configured + the module PROVEN to load this boot, just not yet in this app — so it
+        // gets its own blue tier, never folded into green "all proven". Order: BAD > WARN > READY > all-OK.
+        int heroColor = bad > 0 ? Theme.RED : warn > 0 ? Theme.GOLD : ready > 0 ? Theme.BLUE : Theme.SAGE;
+        String heroTitle = bad > 0 ? "Not fully spoofing" : warn > 0 ? "Not verified"
+                : ready > 0 ? "Ready" : "All good";
         String heroSub = bad > 0
                 ? bad + " failed · " + warn + " unverified"
                 : warn > 0
-                        ? warn + " unverified"
-                        : total + " checks passed";
+                        ? warn + " unverified" + (ready > 0 ? " · " + ready + " ready on launch" : "")
+                        : ready > 0
+                                ? (total - ready) + " proven this boot · " + ready + " ready on launch"
+                                : total + " checks passed";
         content.addView(healthHero(heroColor, heroTitle, heroSub));
 
         for (HealthCheck.Group g : healthResults) {
@@ -2747,6 +2751,7 @@ public class MainActivity extends Activity {
         r.setPadding(dp(Theme.S4), dp(Theme.S3) + dp(1), dp(Theme.S4), dp(Theme.S3) + dp(1));
 
         int color = ch.state == HealthCheck.State.OK ? Theme.SAGE
+                : ch.state == HealthCheck.State.READY ? Theme.BLUE
                 : ch.state == HealthCheck.State.WARN ? Theme.GOLD : Theme.RED;
         // Target-apps rows lead with the app's real icon (reuses appIcon(), already used for target rows
         // elsewhere) instead of a plain dot — a quiet visual cue that this is per-app hook attestation, a
