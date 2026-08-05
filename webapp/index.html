@@ -321,12 +321,13 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
     <!-- The button acts on the two fields directly above it, so nothing goes between them. Bulk is its own
          self-contained mode with its own input and its own button; keys are set-once config, so they go last. -->
     <button class=go id=go>Run check</button>
-    <details><summary>Bulk — compare many proxies</summary>
-      <textarea id=bulk rows=5 placeholder="one proxy per line"></textarea>
+    <details><summary>Bulk — compare many proxies or IPs</summary>
+      <textarea id=bulk rows=5 placeholder="one proxy or IP per line"></textarea>
       <button class=go id=bulkgo style="margin-top:10px">Check all</button>
       <div class="rows hint">
-        <div class=rw><i>Input</i><div>one proxy per line, any format above</div></div>
-        <div class=rw><i>Transport</i><div>the selector above</div></div>
+        <div class=rw><i>Input</i><div>one per line — a proxy (any format above) or a bare IP</div></div>
+        <div class=rw><i>Bare IP</i><div>checked directly, shown as IP in the status column</div></div>
+        <div class=rw><i>Transport</i><div>the selector above (proxies only)</div></div>
       </div>
     </details>
     <details><summary>API keys — optional, it works without them</summary>
@@ -748,6 +749,12 @@ const saveKeys=()=>{try{localStorage.setItem('ipqs_key',$('#ipqs').value.trim())
 function checkBody(proxy){return JSON.stringify({proxy:proxy, proxy_scheme:$('#ptype').value,
   ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim(),
   scamalytics_user:$('#scamuser').value.trim(), scamalytics_key:$('#scamkey').value.trim()});}
+// Bulk body: a bare IP is checked directly (ip), everything else as a proxy — so one paste can mix both.
+function bulkBody(line){
+  const ip=bareIp(line);
+  if(!ip)return checkBody(line);
+  return JSON.stringify({ip:ip, proxy:'', ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim(),
+    scamalytics_user:$('#scamuser').value.trim(), scamalytics_key:$('#scamkey').value.trim()});}
 
 $('#go').onclick=async()=>{
   const b=$('#go'); b.disabled=true; b.textContent='Checking…'; saveKeys();
@@ -789,6 +796,20 @@ function proxyParts(line){
     if(col>=0&&col===hostport.indexOf(':')){host=hostport.slice(0,col); port=hostport.slice(col+1);}
   }
   return {scheme,host:host||null,port:port||null,user:user||null,pass:pass||null};
+}
+// A line that is a BARE IP (v4 or v6, no port, no scheme, no credentials) is NOT a proxy — you cannot route
+// through an IP with no port — so bulk checks it DIRECTLY. This is the "compare a batch of IPs" case the
+// tool is also for; a proxy always carries a port, so it is never mistaken for one. Returns the IP (brackets
+// stripped) or null.
+function bareIp(line){
+  const p=proxyParts(line);
+  if(p.port||p.user||p.pass||p.scheme)return null;
+  let h=(p.host||'').trim();
+  if(h.startsWith('[')&&h.endsWith(']'))h=h.slice(1,-1);
+  const v4=/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if(v4)return v4.slice(1).every(o=>+o<=255)?h:null;
+  if(h.includes(':')&&/^[0-9a-fA-F:]+$/.test(h)&&(h.match(/:/g)||[]).length>=2)return h;   // IPv6 literal
+  return null;
 }
 // The current bulk run, so the row expander can be registered ONCE — re-registering per run would stack
 // listeners that each redraw a stale table.
@@ -942,7 +963,7 @@ $('#bulkgo').onclick=async()=>{
   if(!lines.length)return;
   saveKeys();
   const b=$('#bulkgo'); b.disabled=true; b.textContent='Checking…';
-  const rows=lines.map((line,i)=>({line, i, parts:proxyParts(line), r:null, busy:true, open:false}));
+  const rows=lines.map((line,i)=>({line, i, parts:proxyParts(line), isIp:!!bareIp(line), r:null, busy:true, open:false}));
 
   // ---- the comparison columns ---------------------------------------------------------------
   // Every column answers "which of these do I use?". `get` is the sort key, `cell` the markup. Anything
@@ -953,9 +974,10 @@ $('#bulkgo').onclick=async()=>{
      cell:x=>`<span title="${esc(x.line)}"><span class=pxh>${esc(x.parts.host||x.line)}</span>`+
              (x.parts.port?`<span class=pxp>:${esc(x.parts.port)}</span>`:'')+`</span>`},
     {k:'status', h:'Status',
-     get:x=>x.busy?3:((x.r&&x.r.proxy_alive===false)||(x.r&&x.r.error))?0:1,
+     get:x=>x.busy?3:(x.r&&(x.r.error||(!x.isIp&&x.r.proxy_alive===false)))?0:1,
      cell:x=>x.busy?'<span class="vpill v-unknown-p">…</span>'
-       :(x.r.proxy_alive===false||x.r.error)?'<span class="vpill v-dirty-p">DEAD</span>'
+       :(x.r.error||(!x.isIp&&x.r.proxy_alive===false))?'<span class="vpill v-dirty-p">DEAD</span>'
+       :x.isIp?'<span class="vpill v-unknown-p" title="Checked directly as an IP, not through a proxy">IP</span>'
        :'<span class="vpill v-clean-p">UP</span>'},
     // Grades what the PROXY adds, not the raw round trip — the raw number folds in the checking machine's
     // own distance and is not comparable across observers. Sub-line carries the total so nothing is hidden.
@@ -1136,7 +1158,7 @@ $('#bulkgo').onclick=async()=>{
   draw();
   let idx=0; const CAP=4;
   const worker=async()=>{ while(idx<rows.length){const x=rows[idx++];
-    try{const resp=await fetch(API,{method:'POST',body:checkBody(x.line)}); x.r=await resp.json();}
+    try{const resp=await fetch(API,{method:'POST',body:bulkBody(x.line)}); x.r=await resp.json();}
     catch(e){x.r={error:String(e)};}
     x.busy=false; draw();
   }};
