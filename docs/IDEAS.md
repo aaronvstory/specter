@@ -1059,3 +1059,40 @@ signal-gathering (scope query per target) is compile-only. **On-device verify BE
 DON'T launch it, confirm the row reads READY (amber) not GREEN; launch it, confirm it flips to PROVEN; remove
 it from scope, confirm NOT READY with the right Fix. This is the false-GREEN-sensitive part that must be seen
 on a real device, which is why it's a design here, not a blind change.
+
+## 2026-08-05 - Design: off-tunnel status/timezone WITHOUT leaking the home IP (steers #15/#16)
+
+The user wants the Status card to score the IP, show geo/VPN state, and let you click-to-fix timezone
+EVEN with no proxy tunnel active. The hard constraint: with no tunnel, the exit IP IS the phone's real/home
+IP, and ANY external lookup (ipwho.is for geo/tz, IPQS/AbuseIPDB for reputation) hands that home IP to a
+third party. The current code is deliberately gated to PREVENT exactly this:
+- `autoAlignTimezone` (MainActivity) bails unless `HealthCheck.activeVpnNetwork() != null`, pins the tunnel,
+  looks up geo THROUGH it, and re-checks the same VPN before writing (ABA guard).
+- `reputationRows` shows "Connect the VPN/proxy to check this IP's reputation" and refuses the lookup when
+  `!vpnRouting`.
+So relaxing this is a real privacy decision, not a UI tweak. Split it into a SAFE tier and a CONSENT tier:
+
+**Tier 1 — LOCAL-only, no external call, safe to show always (build freely, no consent needed):**
+- "VPN/proxy active: yes/no" — straight from `HealthCheck.activeVpnNetwork()` (a transport check, no packet
+  leaves the phone). This directly answers the user's "tell whether we're on a VPN even when not routing."
+- SIM carrier / MCC-MNC — local, already in the profile. No lookup.
+These reveal NOTHING to a third party, so they belong on the card unconditionally, off-tunnel included.
+
+**Tier 2 — external lookup on the CURRENT (possibly home) IP, EXPLICIT consent only:**
+- Keep `autoAlignTimezone` and the auto reputation check EXACTLY as they are: automatic == tunnel-only,
+  never touches the home IP. Do NOT relax the automatic path.
+- ADD a distinct MANUAL action — e.g. "Check this IP anyway" / "Align timezone to this IP anyway" — shown
+  only when off-tunnel, that FIRST puts up a clear confirm: "No proxy tunnel is active. This will send your
+  device's REAL IP to <ipwho.is / IPQualityScore> to look it up. Continue?" Only on confirm does it run the
+  same lookup on the current IP (no VPN pin, since there's intentionally none). Wire it through the SAME
+  `check`/`setTimezone` code; the ONLY difference is the missing VPN gate + the consent dialog.
+
+**Why this is the safe shape:** the home IP is never sent anywhere without an explicit, informed tap. The
+automatic paths stay tunnel-only (unchanged), so nothing regresses. Tier 1 gives the user the "am I on a
+VPN / what carrier" answer for free.
+
+**Build + verify:** Tier 1 is a small, safe UI add (compile-verify + bench glance). Tier 2 is the
+privacy-sensitive part — on-device, confirm that OFF-tunnel the card makes ZERO network call until the
+"anyway" button is tapped-and-confirmed (watch with the read-monitor / a proxy-off capture), and that the
+confirm copy names the real-IP exposure. Left as a design, not blind code, for the same reason as #18: a
+mistake here leaks the user's real IP to a fraud API, so it must be seen on a real device.
