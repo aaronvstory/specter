@@ -24,6 +24,10 @@ if (devKeysFile.exists()) {
 }
 static def gradleEscape(String s) { return s == null ? "" : s.replace('\\', '\\\\').replace('"', '\\"') }
 
+// The pref keys MainActivity seeds — one BuildConfig SEED_* field each. Adding a source = one entry here
+// plus one in MainActivity.SEEDED_KEYS. Seeded only in the DEBUG build (see buildTypes below).
+def SEED_KEY_NAMES = ['ipqs_key', 'abuseipdb_key', 'getipintel_contact', 'scamalytics_user', 'scamalytics_key']
+
 android {
     namespace 'com.specter.module'   // == Java package, so generated R is com.specter.module.R
     compileSdk 36
@@ -33,17 +37,34 @@ android {
         targetSdk 36
         versionCode specterVersionCode
         versionName specterVersion
-        // One field per pref key MainActivity seeds. The pref name is the properties key, so adding a
-        // source means adding one line here and one entry in SEEDED_KEYS.
-        ['ipqs_key', 'abuseipdb_key', 'getipintel_contact', 'scamalytics_user', 'scamalytics_key']
-                .each { k ->
-            buildConfigField "String", "SEED_${k.toUpperCase()}",
-                    "\"${gradleEscape(devKeys.getProperty(k, ''))}\""
+        // One field per pref key MainActivity seeds. DEFAULT is empty for every variant; the DEBUG build
+        // below overrides these with the dev keys. Release therefore NEVER carries a seeded key — the
+        // obfuscated distributable and the seeded dev build are never the same artifact (§2e).
+        SEED_KEY_NAMES.each { k ->
+            buildConfigField "String", "SEED_${k.toUpperCase()}", "\"\""
         }
     }
     lint { checkReleaseBuilds false; abortOnError false }
     buildFeatures { buildConfig true }   // expose BuildConfig.VERSION_NAME to the hook (attestation heartbeat)
-    buildTypes { release { minifyEnabled false } }
+    buildTypes {
+        // DEBUG: readable + seeded — the dev build. Fast to iterate, and pre-configured with this machine's
+        // keys (from the gitignored dev-keys.properties) so a reinstall doesn't ask for five keys.
+        debug {
+            SEED_KEY_NAMES.each { k ->
+                buildConfigField "String", "SEED_${k.toUpperCase()}",
+                        "\"${gradleEscape(devKeys.getProperty(k, ''))}\""
+            }
+        }
+        // RELEASE: obfuscated + shrunk + no seeded keys — the distributable. R8 renames classes/methods and
+        // strips dead code so a decompile reads as a.a(b). Signed with the debug key (the project's accepted
+        // install path for an LSPosed module). The Xposed entry point survives via proguard-rules.pro.
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
+        }
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
