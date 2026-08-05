@@ -854,7 +854,6 @@ body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
 .theme:hover{border-color:var(--accent);color:var(--accent)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
 .field label{display:block;font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
-.kst{font:600 9px/1 var(--mono);letter-spacing:.04em;text-transform:none;color:var(--clean)}
 input,select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
   color:var(--ink);padding:11px 12px;font:14px/1.2 var(--mono)}
 input::placeholder{color:var(--dim)}
@@ -949,14 +948,16 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
         </div></div>
       <div class=field><label for=ip>IP · optional</label><input id=ip placeholder="check directly"></div>
     </div>
-    <details><summary>API keys — optional override</summary>
+    <details><summary>Optional: sharpen detection</summary>
       <div class=grid style="margin-top:12px">
-        <div class=field><label for=ipqs>IPQualityScore <span id=ipqs-st class=kst></span></label><input id=ipqs type=password placeholder="your key · optional"></div>
-        <div class=field><label for=abuse>AbuseIPDB <span id=abuse-st class=kst></span></label><input id=abuse type=password placeholder="your key · optional"></div>
+        <div class=field><label for=gii>getIPIntel email</label><input id=gii placeholder="your email · free, no signup"></div>
+        <div class=field><label for=ipqs>IPQualityScore key</label><input id=ipqs type=password placeholder="fraud score · optional"></div>
+        <div class=field><label for=abuse>AbuseIPDB key</label><input id=abuse type=password placeholder="abuse history · optional"></div>
       </div>
-      <p class=note>Keyless already runs: datacenter + 17 blocklists + getIPIntel.<br>
-        Keys add IPQualityScore (fraud score) + AbuseIPDB (abuse history).<br>
-        Blank = use the shared key. Enter = use your own.<br>
+      <p class=note>All optional — each has a free tier:<br>
+        • <b>getIPIntel</b> — email only, no signup<br>
+        • <b>IPQualityScore</b> — key, 35 lookups/day free<br>
+        • <b>AbuseIPDB</b> — key, 1,000 lookups/day free<br>
         Stored locally in ~/.specter-ipcheck.json.</p>
     </details>
     <button class=go id=go>Run check</button>
@@ -985,17 +986,10 @@ $('#theme').onclick=()=>{
 fetch('/config').then(r=>r.json()).then(c=>{
   $('#proxy').value=q.get('proxy')||c.proxy||'';
   $('#ptype').value=q.get('ptype')||c.proxy_scheme||'http';
-  $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||'';
-  markKeys({});
+  $('#ipqs').value=c.ipqs_key||''; $('#abuse').value=c.abuse_key||''; $('#gii').value=c.getipintel_contact||'';
   $('#ip').value=q.get('ip')||'';
   boot();
 });
-// Key status: "your key" when the field has a value, else "shared active" when the server (env) has one.
-window._kst={};
-function markKeys(st){Object.assign(window._kst,st||{});const s=window._kst;
-  [['ipqs',s.ipqs],['abuse',s.abuse]].forEach(([id,on])=>{const e=$('#'+id+'-st'); if(!e)return;
-    e.textContent=$('#'+id).value?'· your key':(on?'· shared active':'');});}
-['ipqs','abuse'].forEach(id=>$('#'+id).addEventListener('input',()=>markKeys()));
 // On open: prefill "check directly" with the visitor's OWN public IP (client-side; ipwho.is is CORS-open),
 // so checking your own IP is one click — and the check runs against the visitor, not the server. Skipped
 // when a ?ip=/?proxy= already seeded the form.
@@ -1078,10 +1072,11 @@ out.addEventListener('click',async e=>{
 // API endpoint — the local server serves /check; build.py rewrites this to /api/check for the Vercel deploy.
 const API='/check';
 const saveKeys=()=>{try{localStorage.setItem('ipqs_key',$('#ipqs').value.trim());
-  localStorage.setItem('abuse_key',$('#abuse').value.trim());}catch(e){}};
-// getipintel_contact is NOT sent — the server supplies it (env var on Vercel, config file locally).
+  localStorage.setItem('abuse_key',$('#abuse').value.trim());
+  localStorage.setItem('getipintel_contact',$('#gii').value.trim());}catch(e){}};
 function checkBody(proxy){return JSON.stringify({proxy:proxy, proxy_scheme:$('#ptype').value,
-  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim()});}
+  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim(),
+  getipintel_contact:$('#gii').value.trim()});}
 
 $('#go').onclick=async()=>{
   const b=$('#go'); b.disabled=true; b.textContent='Checking…'; saveKeys();

@@ -1,0 +1,315 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Specter · exit-IP signal desk</title>
+<style>
+/* "Signal desk": a monospace network instrument. One accent, semantic bands, works light + dark. */
+:root{
+  --bg:#0b0c0f; --grid:#12141a; --panel:#131519; --panel2:#181b21; --line:#242832;
+  --ink:#e9ebef; --soft:#a3a8b2; --dim:#666c78;
+  --accent:#57e3bf; --accent-ink:#04110d;
+  --clean:#5fd39a; --suspect:#f2c04b; --dirty:#f07070; --info:#63b8ea;
+  --glow:0 0 0 1px rgba(87,227,191,.14), 0 8px 30px -12px rgba(0,0,0,.7);
+  --mono:"Cascadia Code","JetBrains Mono","SFMono-Regular",ui-monospace,"Menlo",Consolas,monospace;
+  --sans:-apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;
+}
+:root[data-theme=light]{
+  --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
+  --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
+  --accent:#0e9c81; --accent-ink:#ffffff;
+  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
+}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]){
+  --bg:#efece3; --grid:#e6e2d6; --panel:#fbfaf6; --panel2:#f2efe6; --line:#e0dbcd;
+  --ink:#191b1f; --soft:#565a62; --dim:#8b8f97;
+  --accent:#0e9c81; --accent-ink:#ffffff;
+  --clean:#1f9d63; --suspect:#b8860a; --dirty:#d0483f; --info:#2a7fb8;
+  --glow:0 0 0 1px rgba(14,156,129,.14), 0 10px 30px -16px rgba(60,50,20,.35);
+}}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
+  background:
+    linear-gradient(var(--grid) 1px,transparent 1px) 0 0/100% 46px,
+    radial-gradient(1200px 500px at 78% -8%, color-mix(in srgb,var(--accent) 8%,transparent), transparent 70%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased;}
+.wrap{max-width:760px;margin:0 auto;padding:30px 20px 72px}
+.top{display:flex;align-items:center;justify-content:space-between;margin:0 0 20px}
+.brand{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--soft)}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.theme{background:none;border:1px solid var(--line);color:var(--soft);border-radius:8px;width:34px;height:30px;cursor:pointer;font-size:14px;padding:0}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.field label{display:block;font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
+input,select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  color:var(--ink);padding:11px 12px;font:14px/1.2 var(--mono)}
+input::placeholder{color:var(--dim)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.grid{display:grid;grid-template-columns:1fr 210px;gap:12px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.proxyrow{display:flex;gap:8px}.proxyrow select{width:108px;flex:none;cursor:pointer}
+details{margin-top:13px}summary{cursor:pointer;color:var(--soft);font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;list-style:none}
+summary::-webkit-details-marker{display:none}summary::before{content:"+ ";color:var(--accent)}
+details[open] summary::before{content:"− "}
+.go{width:100%;margin-top:16px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:9px;
+  padding:14px;font:600 13px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:transform .08s,filter .15s}
+.go:hover{filter:brightness(1.06)}.go:active{transform:translateY(1px)}
+.go:disabled{background:var(--panel2);color:var(--dim);cursor:default;filter:none}
+#out{margin-top:16px;display:flex;flex-direction:column;gap:13px}
+.blk{animation:rise .42s cubic-bezier(.2,.7,.2,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.verdict{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px 18px 17px 22px;box-shadow:var(--glow)}
+.verdict::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--vc,var(--dim))}
+.verdict .v{display:flex;align-items:baseline;gap:11px}
+.verdict b{font:700 20px/1 var(--mono);letter-spacing:.06em;color:var(--vc,var(--ink))}
+.verdict .dot{width:9px;height:9px;border-radius:50%;background:var(--vc);align-self:center}
+.verdict span{display:block;color:var(--soft);font-size:13px;margin-top:6px}
+.v-dirty{--vc:var(--dirty)}.v-suspect{--vc:var(--suspect)}.v-clean{--vc:var(--clean)}.v-unknown{--vc:var(--dim)}
+.iprow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ip{font:600 30px/1.1 var(--mono);letter-spacing:-.02em;word-break:break-all}
+.copy{background:var(--panel2);border:1px solid var(--line);color:var(--soft);border-radius:7px;padding:6px 10px;
+  font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:.15s}
+.copy:hover{border-color:var(--accent);color:var(--accent)}
+.copy.done{border-color:var(--clean);color:var(--clean)}
+.sub{color:var(--soft);font:13px/1.5 var(--mono);margin-top:8px}
+.meter{margin-top:16px}
+.meter .head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px}
+.meter .score{font:700 34px/1 var(--mono);color:var(--mc)}
+.meter .cap{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:right}
+.track{position:relative;height:9px;border-radius:6px;background:
+  linear-gradient(90deg,color-mix(in srgb,var(--clean) 30%,transparent) 0 60%,
+  color-mix(in srgb,var(--suspect) 32%,transparent) 60% 85%,
+  color-mix(in srgb,var(--dirty) 34%,transparent) 85% 100%)}
+.track .mk{position:absolute;top:-4px;width:3px;height:17px;border-radius:2px;background:var(--mc);
+  box-shadow:0 0 8px var(--mc);transform:translateX(-50%);transition:left .5s cubic-bezier(.2,.7,.2,1)}
+.scale{display:flex;justify-content:space-between;margin-top:6px;font:10px/1 var(--mono);color:var(--dim)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+.tile em{font-style:normal;display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.tile strong{display:block;font:700 27px/1 var(--mono);margin:9px 0 5px}
+.tile small{color:var(--soft);font-size:12px;line-height:1.45}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{font:600 11px/1 var(--mono);letter-spacing:.04em;padding:6px 11px;border-radius:7px;
+  background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect);border:1px solid color-mix(in srgb,var(--suspect) 30%,transparent)}
+.chip.ok{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean);border-color:color-mix(in srgb,var(--clean) 28%,transparent)}
+.lbl{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:11px}
+.rows{display:flex;flex-direction:column}
+.rw{display:flex;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+.rw:first-child{border-top:0}
+.rw i{font-style:normal;color:var(--dim);width:118px;flex:none;font:600 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
+.rw div{font-family:var(--mono);word-break:break-all}
+.note{color:var(--soft);font-size:12.5px;padding:4px 0}.note+.note{border-top:1px solid var(--line);margin-top:2px;padding-top:8px}
+textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
+  padding:11px 12px;font:13px/1.5 var(--mono);resize:vertical;margin-top:12px}
+textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.tablewrap{overflow-x:auto}
+table.bulk{width:100%;border-collapse:collapse;font:12.5px/1.4 var(--mono)}
+table.bulk th{text-align:left;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bulk td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.bulk tr:last-child td{border-bottom:0}
+table.bulk tbody tr:hover td{background:var(--panel2)}
+.vpill{display:inline-block;padding:3px 9px;border-radius:6px;font:600 10px/1.5 var(--mono);letter-spacing:.04em}
+.v-dirty-p{background:color-mix(in srgb,var(--dirty) 16%,transparent);color:var(--dirty)}
+.v-suspect-p{background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect)}
+.v-clean-p{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean)}
+.v-unknown-p{background:color-mix(in srgb,var(--dim) 16%,transparent);color:var(--soft)}
+.cc{cursor:pointer;color:var(--soft);border:1px solid var(--line);border-radius:6px;padding:4px 8px;
+  font:600 9px/1 var(--mono);background:none;letter-spacing:.06em;text-transform:uppercase}
+.cc:hover{border-color:var(--accent);color:var(--accent)} .cc.done{border-color:var(--clean);color:var(--clean)}
+.pxcell{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft)}
+.loading{color:var(--soft);font:13px/1 var(--mono);letter-spacing:.06em}
+.loading::after{content:"";animation:dots 1.4s steps(4,end) infinite}
+@keyframes dots{0%{content:""}25%{content:"·"}50%{content:"··"}75%{content:"···"}}
+</style>
+<div class=wrap>
+  <div class=top>
+    <div class=brand><span class=pulse></span>Specter · exit-IP signal desk</div>
+    <button class=theme id=theme title="Toggle theme">◐</button>
+  </div>
+  <div class=panel>
+    <div class=grid>
+      <div class=field><label for=proxy>Proxy</label>
+        <div class=proxyrow>
+          <select id=ptype><option value=http>HTTP</option><option value=socks5>SOCKS5</option><option value=socks4>SOCKS4</option></select>
+          <input id=proxy placeholder="host:port:user:pass · host:port">
+        </div></div>
+      <div class=field><label for=ip>IP · optional</label><input id=ip placeholder="check directly"></div>
+    </div>
+    <details><summary>Optional: sharpen detection</summary>
+      <div class=grid style="margin-top:12px">
+        <div class=field><label for=gii>getIPIntel email</label><input id=gii placeholder="your email · free, no signup"></div>
+        <div class=field><label for=ipqs>IPQualityScore key</label><input id=ipqs type=password placeholder="fraud score · optional"></div>
+        <div class=field><label for=abuse>AbuseIPDB key</label><input id=abuse type=password placeholder="abuse history · optional"></div>
+      </div>
+      <p class=note>All optional — each has a free tier:<br>
+        • <b>getIPIntel</b> — email only, no signup<br>
+        • <b>IPQualityScore</b> — key, 35 lookups/day free<br>
+        • <b>AbuseIPDB</b> — key, 1,000 lookups/day free<br>
+        Stored in your browser (localStorage) — never sent anywhere but the checker.</p>
+    </details>
+    <button class=go id=go>Run check</button>
+    <details style="margin-top:14px"><summary>Bulk: compare many proxies</summary>
+      <textarea id=bulk rows=5 placeholder="one proxy per line — host:port:user:pass (or host:port)"></textarea>
+      <button class=go id=bulkgo style="margin-top:10px">Check all</button>
+      <p class=note>One line = one proxy. Checked through the transport above. Results in one copyable table.</p>
+    </details>
+    <p class=note style="margin-top:10px"><b>Works with no keys</b> — datacenter + 17 blocklists + getIPIntel grade every exit.<br>Add keys above to sharpen it.</p>
+  </div>
+  <div id=out></div>
+</div>
+<script>
+const $=s=>document.querySelector(s), out=$('#out');
+const q=new URLSearchParams(location.search);
+
+// Theme: follow the OS, remember an explicit toggle.
+const root=document.documentElement;
+try{const sv=localStorage.getItem('specter-theme'); if(sv)root.dataset.theme=sv;}catch(e){}
+$('#theme').onclick=()=>{
+  const dark=root.dataset.theme?root.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+  root.dataset.theme=dark?'light':'dark';
+  try{localStorage.setItem('specter-theme',root.dataset.theme);}catch(e){}
+};
+
+(function(){const ls=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};
+  $('#proxy').value=q.get('proxy')||'';
+  $('#ptype').value=q.get('ptype')||'http';
+  $('#ipqs').value=ls('ipqs_key'); $('#abuse').value=ls('abuse_key'); $('#gii').value=ls('getipintel_contact');
+  $('#ip').value=q.get('ip')||'';
+  boot();
+})();
+// On open: prefill "check directly" with the visitor's OWN public IP (client-side; ipwho.is is CORS-open),
+// so checking your own IP is one click — and the check runs against the visitor, not the server. Skipped
+// when a ?ip=/?proxy= already seeded the form.
+async function boot(){
+  if(!$('#ip').value && !$('#proxy').value){
+    try{const o=await (await fetch('https://ipwho.is/')).json(); if(o&&o.ip)$('#ip').value=o.ip;}catch(e){}
+  }
+  $('#go').click();
+}
+const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
+const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
+function row(k,v){return `<div class=rw><i>${esc(k)}</i><div>${esc(v)}</div></div>`}
+
+function render(r){
+  if(r.error){out.innerHTML=`<div class="blk verdict v-dirty"><div class=v><span class=dot></span><b>FAILED</b></div><span>${esc(r.error)}</span></div>`;return}
+  let t='', i=0;
+  const blk=(h)=>`<div class=blk style="animation-delay:${(i++)*55}ms">${h}</div>`;
+
+  t+=blk(`<div class="verdict v-${r.verdict}"><div class=v><span class=dot></span><b>${esc(r.verdict.toUpperCase())}</b></div><span>${esc(r.verdict_reason)}</span></div>`);
+
+  // Exit-IP hero + copy.
+  let hero=`<div class=panel><div class=iprow><span class=ip>${esc(r.ip||'unknown')}</span>`;
+  if(r.ip)hero+=`<button class=copy data-ip="${esc(r.ip)}">Copy</button>`;
+  hero+=`</div><div class=sub>${esc([r.isp,r.connection_type,r.location].filter(Boolean).join('  ·  ')||'—')}</div>`;
+  if(r.timezone)hero+=`<div class=sub>${esc(r.timezone)}</div>`;
+  hero+=`</div>`;
+  t+=blk(hero);
+  // IPQS's fraud_score is deliberately NOT the visual hero — it saturates on proxies, so it's one tile among
+  // the signals below, not a giant meter that reads as "the verdict".
+
+  // Signal tiles.
+  const pol=(r.policy_lists||[]).length, hits=(r.blacklists||[]).length;
+  let tiles='';
+  // Exit type leads — a datacenter/hosting exit is the strongest usability signal (real ISPs pass more easily).
+  if(r.connection_class){const dc=r.connection_class==='datacenter';
+    const ct=r.connection_class[0].toUpperCase()+r.connection_class.slice(1);
+    tiles+=`<div class=tile><em>Exit type</em><strong style="font-size:20px;color:var(--${dc?'dirty':'clean'})">${esc(ct)}</strong><small>${dc?'hosting IP — real ISPs pass more easily':'real network line'}</small></div>`;}
+  const bl=hits>=2?'dirty':hits?'suspect':(r.dnsbl_usable?'clean':'dim');
+  tiles+=`<div class=tile><em>Blacklists</em><strong style="color:var(--${bl})">${r.dnsbl_usable||hits?hits:'—'}</strong>`+
+    `<small>${hits?esc(r.blacklists.join(', ')):r.dnsbl_usable?`none of ${esc(r.dnsbl_checked)} lists`:'blocklist DNS unreachable'}${pol?` · plus ${pol} policy listing${pol>1?'s':''}`:''}</small></div>`;
+  if(pol)tiles+=`<div class=tile><em>Policy lists</em><strong style="font-size:20px;color:var(--info)">${pol}</strong><small>${esc(r.policy_lists.join(', '))} · a mail-sending policy listing, not an abuse report</small></div>`;
+  if(r.abuse_confidence!=null){const ac=r.abuse_confidence>=50?'dirty':r.abuse_confidence>=10?'suspect':'clean';
+    tiles+=`<div class=tile><em>Abuse</em><strong style="color:var(--${ac})">${esc(r.abuse_confidence)}%</strong><small>${esc(r.abuse_reports||0)} reports in 90 days</small></div>`;}
+  if(r.abuse_velocity)tiles+=`<div class=tile><em>Abuse velocity</em><strong style="font-size:20px">${esc(r.abuse_velocity)}</strong><small>IPQualityScore</small></div>`;
+  // Fraud score as ONE tile among the signals — not a hero meter. Labeled "detects proxies" so a saturated
+  // 100 reads as expected, not as the verdict.
+  if(r.fraud_score!=null){const fb=band(r.fraud_score);
+    tiles+=`<div class=tile><em>Fraud score</em><strong style="color:var(--${fb})">${esc(r.fraud_score)}</strong><small>IPQualityScore${r.ipqs_strictness!=null?' · strictness '+esc(r.ipqs_strictness):''}${r.fraud_score>=85?' · flags every proxy, runs high':''}</small></div>`;}
+  if(r.getipintel_score!=null){const g=r.getipintel_score, gb=g>=0.99?'dirty':g>=0.90?'suspect':'clean';
+    tiles+=`<div class=tile><em>getIPIntel</em><strong style="color:var(--${gb})">${g.toFixed(2)}</strong><small>${g>=0.99?'proxy/hosting exit':g>=0.90?'likely proxy':'residential-ish'}${r.getipintel_bad?' · bad IP':''}</small></div>`;}
+  t+=blk(`<div class=tiles>${tiles}</div>`);
+
+  if(r.fraud_score!=null){
+    const chips=(r.flags||[]).length?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
+      :'<span class="chip ok">Not flagged as proxy or VPN</span>';
+    t+=blk(`<div class=panel><div class=lbl>Flagged as</div><div class=chips>${chips}</div></div>`);
+  }
+
+  let d='';
+  [['ISP','isp'],['Organization','organization'],['ASN','asn'],['Host','host'],
+   ['Connection','connection_type'],['Usage','usage_type'],['Location','location'],
+   ['Time zone','timezone']].forEach(([k,v])=>{if(r[v])d+=row(k,r[v])});
+  if(d)t+=blk(`<div class=panel><div class=rows>${d}</div></div>`);
+  if((r.notes||[]).length)t+=blk(`<div class=panel>${r.notes.map(n=>`<div class=note>${esc(n)}</div>`).join('')}</div>`);
+  out.innerHTML=t;
+}
+
+// Copy (delegated — renders rebuild the buttons). Handles the hero .copy (data-ip) and the bulk table .cc
+// (data-copy: a proxy string or an exit IP).
+out.addEventListener('click',async e=>{
+  const b=e.target.closest('.copy,.cc'); if(!b)return;
+  const txt=b.dataset.copy!=null?b.dataset.copy:b.dataset.ip; if(!txt)return;
+  try{await navigator.clipboard.writeText(txt);}
+  catch(err){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
+  const o=b.textContent; b.textContent=b.classList.contains('cc')?'✓':'Copied ✓'; b.classList.add('done');
+  setTimeout(()=>{b.textContent=o; b.classList.remove('done');},1300);
+});
+
+// API endpoint — the local server serves /check; build.py rewrites this to /api/check for the Vercel deploy.
+const API='/api/check';
+const saveKeys=()=>{try{localStorage.setItem('ipqs_key',$('#ipqs').value.trim());
+  localStorage.setItem('abuse_key',$('#abuse').value.trim());
+  localStorage.setItem('getipintel_contact',$('#gii').value.trim());}catch(e){}};
+function checkBody(proxy){return JSON.stringify({proxy:proxy, proxy_scheme:$('#ptype').value,
+  ip:proxy?'':$('#ip').value.trim(), ipqs_key:$('#ipqs').value.trim(), abuse_key:$('#abuse').value.trim(),
+  getipintel_contact:$('#gii').value.trim()});}
+
+$('#go').onclick=async()=>{
+  const b=$('#go'); b.disabled=true; b.textContent='Checking…'; saveKeys();
+  out.innerHTML='<div class="blk panel"><span class=loading>Running lookups</span></div>';
+  try{
+    const r=await fetch(API,{method:'POST',body:checkBody($('#proxy').value.trim())});
+    render(await r.json());
+  }catch(e){render({error:String(e)})}
+  b.disabled=false; b.textContent='Run check';
+};
+
+// Bulk: check many proxies (one per line) and show them in one sortable, copyable comparison table.
+const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpperCase())}</span>`;
+$('#bulkgo').onclick=async()=>{
+  const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!lines.length)return;
+  saveKeys();
+  const b=$('#bulkgo'); b.disabled=true; b.textContent='Checking…';
+  const rows=lines.map(line=>({line, r:null, busy:true}));
+  const cell=(txt,cls)=>`<td class="${cls||''}">${esc(txt)}</td>`;
+  const draw=()=>{
+    const done=rows.filter(x=>!x.busy).length;
+    let h=`<div class="blk panel tablewrap"><table class=bulk><thead><tr><th>Proxy</th><th>Exit IP</th>`+
+      `<th>Verdict</th><th>getIPIntel</th><th>Lists</th><th>Type</th><th>Copy</th></tr></thead><tbody>`;
+    for(const x of rows){const r=x.r||{};
+      const ip=r.ip||(x.busy?'…':'—');
+      const g=r.getipintel_score!=null?r.getipintel_score.toFixed(2):'—';
+      const hits=r.ip?String((r.blacklists||[]).length):(x.busy?'':'—');
+      const type=r.connection_class||(r.ip?'residential':(x.busy?'':'—'));
+      const vd=x.busy?'<span class="vpill v-unknown-p">…</span>':vpill(r.error?'unknown':r.verdict);
+      h+=`<tr>${cell(x.line,'pxcell')}${cell(ip)}<td>${vd}</td>${cell(g)}${cell(hits)}${cell(type)}`+
+        `<td style="white-space:nowrap"><button class=cc data-copy="${esc(x.line)}">proxy</button> `+
+        (r.ip?`<button class=cc data-copy="${esc(r.ip)}">ip</button>`:'')+`</td></tr>`;
+    }
+    h+=`</tbody></table><p class=note style="padding:10px 10px 0">${done}/${rows.length} checked · click Proxy or IP to copy</p></div>`;
+    out.innerHTML=h;
+  };
+  draw();
+  let idx=0; const CAP=4;
+  const worker=async()=>{ while(idx<rows.length){const x=rows[idx++];
+    try{const resp=await fetch(API,{method:'POST',body:checkBody(x.line)}); x.r=await resp.json();}
+    catch(e){x.r={error:String(e)};}
+    x.busy=false; draw();
+  }};
+  await Promise.all(Array.from({length:Math.min(CAP,rows.length)},worker));
+  b.disabled=false; b.textContent='Check all';
+};
+</script>

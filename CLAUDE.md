@@ -1,5 +1,10 @@
 # Specter — project instructions
 
+## No prose paragraphs (NON-NEGOTIABLE)
+Terse. Bullets by default. One idea per line. A standalone sentence gets its own line; never chain 3+
+sentences into a block. Applies to chat replies AND all UI copy (webapp notes, app text, docs). User is
+emphatic: "nobody wants to read claude slop prose paragraphs." See memory `terse-no-paragraphs`.
+
 Specter is an LSPosed/Xposed module + standalone Android app + Python reference core that generates
 coherent **US** device configuration profiles and applies them on-device (Magisk `su`). A generated
 profile sets model/build fields, IDs, storage/RAM, and related device values consistently; a probe app
