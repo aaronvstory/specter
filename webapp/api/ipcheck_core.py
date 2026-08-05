@@ -297,6 +297,13 @@ def _gii_dc(rep: dict) -> bool:
     return gii is not None and gii >= _GII_HOSTING
 
 
+def _ipapi_dc(rep: dict) -> bool:
+    """ip-api.com's `hosting` boolean — a KEYLESS datacenter signal. Measured 2026-08-06: hosting=true on
+    Google/Cloudflare/OpenDNS and on the 31173 VPN range, false on residential; it lets a no-key user get a
+    real exit-type verdict where before connection_class returned None (only the name regex + getIPIntel)."""
+    return bool(rep.get("ipapi_hosting"))
+
+
 def connection_class(rep: dict) -> str | None:
     """"tor" / "mobile" / "datacenter" / None. None = couldn't tell — deliberately not guessed
     "residential", since "not obviously a datacenter" is all a name heuristic can honestly claim.
@@ -310,7 +317,7 @@ def connection_class(rep: dict) -> str | None:
     if rep.get("mobile"):
         return "mobile"
     blob = " ".join(str(rep.get(k) or "") for k in ("isp", "organization", "host")).strip()
-    if _scam_dc(rep) or (blob and _DATACENTER_RE.search(blob)) or _gii_dc(rep):
+    if _scam_dc(rep) or (blob and _DATACENTER_RE.search(blob)) or _gii_dc(rep) or _ipapi_dc(rep):
         return "datacenter"
     return None
 
@@ -369,10 +376,11 @@ def verdict_factors(rep: dict) -> tuple[str, list[str]]:
         # proven on only four IPs — if it ever misfires, "datacenter/hosting IP (Scamalytics DCH)" is
         # diagnosable at a glance, where a bare factor line would look identical to the name-regex verdict
         # that has been trusted for months.
+        _blob = " ".join(str(rep.get(k) or "") for k in ("isp", "organization", "host"))
         why.append("datacenter/hosting IP" +
                    (f" (Scamalytics {rep.get('scam_proxy_type') or 'is_datacenter'})" if _scam_dc(rep)
-                    else " (getIPIntel)" if _gii_dc(rep) and not _DATACENTER_RE.search(
-                        " ".join(str(rep.get(k) or "") for k in ("isp", "organization", "host")))
+                    else " (getIPIntel)" if _gii_dc(rep) and not _DATACENTER_RE.search(_blob)
+                    else " (ip-api)" if _ipapi_dc(rep) and not _DATACENTER_RE.search(_blob)
                     else ""))
     if len(hits) >= 2:
         why.append(f"{len(hits)} blacklists")
@@ -810,6 +818,21 @@ def lookup_geo(opener, ip: str | None = None) -> dict:
         "country_code": o.get("country_code"),
         "timezone": (o.get("timezone") or {}).get("id"),
     }
+
+
+def _ipapi_lookup(ip: str, opener) -> dict:
+    """ip-api.com — KEYLESS (no signup, 45 req/min): `hosting`/`proxy`/`mobile` booleans + the ASN name. A
+    free classifier exactly where IPQS/AbuseIPDB need a key. HTTP-only on the free tier, which is fine — the
+    call is server-side, never from the browser. Returns {} on any failure or rate-limit (an ABSENT signal,
+    never an error that fails the whole check). Queried DIRECTLY about the exit IP, like the blocklists."""
+    if not ip:
+        return {}
+    o = _get_json("http://ip-api.com/json/" + urllib.parse.quote(ip, safe="")
+                  + "?fields=status,proxy,hosting,mobile,asname", opener)
+    if not isinstance(o, dict) or o.get("status") != "success":
+        return {}
+    return {"ipapi_hosting": bool(o.get("hosting")), "ipapi_proxy": bool(o.get("proxy")),
+            "ipapi_mobile": bool(o.get("mobile")), "ipapi_asname": o.get("asname") or None}
 
 
 def _premium(v) -> bool:
@@ -1260,6 +1283,14 @@ def check(proxy: str | None = None, ip: str | None = None,
     # about that IP either way. (On-device it must go through the tunnel, because there the lookup
     # is also how the IP itself is learned.)
     rep.update(dnsbl_check(bl_ip))
+    # ip-api.com — keyless hosting/proxy/mobile classifier. Runs BEFORE connection_class so a no-key user
+    # still gets a real exit-type verdict (hosting→datacenter, mobile→mobile). Its own opener, queried
+    # directly about the exit IP; failure/rate-limit just yields no signal.
+    rep.update(_ipapi_lookup(rep["ip"], urllib.request.build_opener()))
+    if rep.get("ipapi_mobile"):
+        rep["mobile"] = True
+    if rep.get("ipapi_proxy"):
+        rep["notes"].append("ip-api.com: flagged this exit as a proxy/VPN")
     cc = connection_class(rep)
     if cc:
         rep["connection_class"] = cc     # "datacenter" / "mobile" — the strongest usability signal

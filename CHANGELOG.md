@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.0] - 2026-08-06
+
+### Added
+- **Keyless reputation source: ip-api.com** (web + Android). A no-key, no-signup hosting/proxy/mobile
+  classifier + ASN name. It feeds `connection_class`, so a user with NO API keys now gets a real exit-type
+  verdict (hosting→datacenter, mobile→mobile) where before only the name regex + getIPIntel could decide,
+  and a proxy=true adds a note. Measured before integrating: it flagged a 31173 VPN exit as proxy that the
+  keyless path otherwise missed. The datacenter factor names the source ('(ip-api)') so a misfire is
+  diagnosable. Android needed a scoped cleartext-traffic exception (ip-api's free tier is HTTP-only).
+
 ## [0.28.0] - 2026-08-06
 
 ### Added
@@ -778,7 +788,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   profile timezone to match the IP â killing detectme.proâs âTimezone Mismatchâ flag. GATED on being routed
   through a VPN/proxy (NetworkCapabilities.TRANSPORT_VPN): it will NEVER align to the phoneâs own home/carrier
   IP. Identity fields are untouched â only the timezone key changes. Verified on-device: exit IP
-  67.9.12.215 (Birmingham AL) â routing pill âProxy/VPNâ, timezone matches America/Chicago.
+  67.9.12.215 (Birmingham AL) → routing pill âProxy/VPNâ, timezone matches America/Chicago.
 - **WebRTC IP-leak fix (âFix WebRTC leakâ protection, default on).** WebRTC is NOT blocked (a blocked WebRTC is
   itself a fraud flag) â instead a JS ICE-candidate filter is injected into a scoped appâs WebViews that drops
   only the real local/private/mDNS (RFC1918, 169.254, fe80::, .local) candidates while the proxyâs public
@@ -1135,12 +1145,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ### Added
 - **Per-app âMonitor readsâ toggle** (in-app version of the manual logcat trace). On a target's card, tap
-  âMonitor readsâ â it arms trace on that app's live profile + starts the capture; the button shows
+  âMonitor readsâ → it arms trace on that app's live profile + starts the capture; the button shows
   âMonitoringâ¦ (tap to stop)â. Use the app (login/session), then tap Stop â trace disarms, capture stops,
   and the read report opens (what the app read + spoofed/real per signal). 30-min auto-stop safety net. You
   decide the window (start on tap, stop on tap) since a login can take 1 min or 1 hour.
 ### Changed
-- **Renamed the session-migration buttons** âCapture/Restore sessionâ â âCopy login / Paste loginâ â the old
+- **Renamed the session-migration buttons** âCapture/Restore sessionâ → âCopy login / Paste loginâ â the old
   name collided with read-monitoring; these move a LOGIN between devices, not a trace.
 
 ## [0.14.5] â 2026-07-29
