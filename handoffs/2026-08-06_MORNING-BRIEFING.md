@@ -29,11 +29,13 @@ Version **0.29.4**. Local tests: **pytest + JVM all green**. No `nul` files. Bot
 
 ## ⚠️ Needs YOU (I could not do these safely/at all autonomously)
 
-1. **Redeploy the Vercel webapp — the LIVE site is STALE.** `webapp-idanis-projects.vercel.app` has NONE of
-   the above web work (no cogwheel, no bulk-IP, no ip-api, no prefill fix). The code on `main` has it all; the
-   deploy froze (its production branch was the `feat/…` branch that got merged + deleted). **Fix:** Vercel
-   dashboard → Production Branch = **`main`**, Root Directory = **`webapp/`** → Redeploy. (I have no Vercel
-   auth in the cron; a git-branch workaround was blocked by the safety classifier.) *Biggest user-facing gap.*
+1. **Redeploy the Vercel webapp — the LIVE site is PARTIALLY STALE** (re-measured 2026-08-06).
+   `webapp-idanis-projects.vercel.app`: bulk-compare, ipwho.is geo, and flags ARE live (an intermediate
+   deploy) — the earlier "no bulk-IP" note was wrong. What's MISSING vs `main`: the **settings cogwheel**
+   (`id=gear`/`settingsclose`) + ~4KB of changes. Root cause unchanged: the deploy froze on a since-deleted
+   `feat/…` production branch. **Fix:** Vercel dashboard → Production Branch = **`main`**, Root Directory =
+   **`webapp/`** → Redeploy. (Tried the Vercel MCP from the cron this run: token EXPIRED — re-auth is
+   interactive, so it's still user-gated.) *Biggest user-facing gap.*
 2. **Re-arm Lockito on the 4a.** Its GPS spoof is DOWN (no process, real location live). Needs your route
    config; an arbitrary route is worse than none. Do it before your next Dasher shift.
 3. **Green-light the live Dasher AppData round-trip.** Its mechanism is already proven and `SessionMigrator`
