@@ -3,6 +3,13 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.1] - 2026-08-06
+
+### Fixed
+- **Web: the own-IP prefill no longer clobbers what you typed.** The prefill fetch takes ~1s; if you typed
+  an IP (or proxy) during that window it was silently overwritten with your own IP. It now re-checks the
+  field is still empty AFTER the fetch before filling it. Verified: typing mid-fetch keeps your value.
+
 ## [0.29.0] - 2026-08-06
 
 ### Added
