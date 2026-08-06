@@ -17,7 +17,9 @@ One page. What shipped, current state, what needs you (with exact steps).
 - **#87** — Web: the own-IP **prefill no longer clobbers** an IP you typed during its fetch.
 - **#88** — Android: the **"Flagged as"** reputation row now shows for keyless users via ip-api.
 
-Version **0.29.2**. Local tests: **267 pytest + JVM all green**. No `nul` files. Both phones reachable.
+Version **0.29.4**. Local tests: **pytest + JVM all green**. No `nul` files. Both phones reachable.
+
+**Merged since this briefing (#89-#93):** #90 fixed a keyless hosting IP reading a false green "Not flagged" (Sourcery). #91 Dasher 3-layer linkage research (device / identity / location â Specter owns the device layer). #92 an honest README "Scope â necessary, not sufficient" section. #93 a new **"Carrier vs IP"** status row (v0.29.4): flags a US SIM behind a non-US exit IP, zero API cost, one-directional so it never false-greens â the last in-scope lever the fintech research surfaced.
 
 ## Verified (QA, this run)
 - Copy chips → clipboard (host/port/user/pass/whole-line) ✅
