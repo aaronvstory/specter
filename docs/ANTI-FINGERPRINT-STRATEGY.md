@@ -1118,3 +1118,37 @@ IPQS and AbuseIPDB saturate for one structural reason: both compress to a single
 **UI wording, per the project rule** (and echoed independently by the research): a checker reporting "not a datacenter, not blocklisted" must render as **"no negative signals found"** — never as a clean verdict. Only colour in the warning direction; a false all-clear on a vendor-labelled field is the one failure mode that isn't survivable.
 
 **Out of scope, worth stating plainly so it isn't re-litigated:** behavioral biometrics (accelerometer stillness, touch geometry) and location-plausibility-over-time are the layers a device-config profile cannot address at all. No amount of IP hygiene or Build-field coherence touches them.
+
+---
+
+## Live Dasher trace — what a real fintech-adjacent app actually reads (PROVEN, on-device 2026-08-06)
+
+Read-only trace of `com.doordash.driverapp` on the P4 (filtered continuous logcat + native SpecterTrace,
+34s from cold launch, 8530 captured lines). Cross-referenced every read against what Specter spoofs.
+
+**Every IDENTITY signal Dasher read is already spoofed — no identity coverage gap:**
+- `android_id` — read 12x, and it got back `6cbe4e3eb40e2ed4`, which is EXACTLY the value in Dasher's
+  applied profile (the spoofed one, not the device's real id). This is the app's single most-read identifier.
+- `ro.product.board`, `ro.build.version.sdk`, `ro.product.first_api_level`, `ro.build.version.preview_sdk`
+  — all spoofed on the native path (board via PROP_ALIASES; the SDK/first_api_level pair via the deferred
+  `g_prop_spoof_late` map, per the CLAUDE.md note).
+- File-mtime probing for factory-reset detection — `[osstat]` 378x + `[lastmod]` 40x — all intercepted by
+  the File/Os.stat hooks (the same anchor FPJS uses).
+
+**The real exposure is BEHAVIORAL, not identity — and it is OUT OF a device-config profile's reach:**
+- Dasher loads the **Cambridge Mobile Telematics (CMT) SDK** — 162 `dlsym` binds to
+  `Java_com_cmtelematics_sdk_sensorflow_SensorFlowImpl_*` (newSensorFlow, onSensorCollectionChanged,
+  setModuleLogger, moduleVersion) and `cmtelematics_FilterEngine_*`. That is a driving-behaviour telematics
+  engine reading the RAW accelerometer/gyro stream and signal-processing it — driver scoring / insurance
+  telematics, standard in gig-driver apps.
+- This confirms the fintech-signals research on the nose: behavioural biometrics (how the phone MOVES, is it
+  in a hand or sitting flat, driving patterns over time) are a layer no Build-field or `android_id` spoof
+  touches. Specter spoofs the sensor DESCRIPTOR (LSM6DSO name) but never the sensor DATA STREAM, and it
+  should not try to — faking a plausible motion stream is a different, much harder problem, and a static or
+  obviously-synthetic stream is itself a stronger tell than a real one.
+
+**Verdict / epistemic clarity:** the device-config layer is COMPLETE for what it covers — every identity
+read Dasher makes returns the spoofed value. The residual exposure is the CMT telematics stream, which is
+DELIBERATELY out of scope; do NOT try to close it with more fingerprint spoofing. The lever that matters for
+a telematics-carrying app is not another Build field — it is not tripping the behavioural model (which is
+about how the device is actually used, not what it claims to be).
