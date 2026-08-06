@@ -7,6 +7,10 @@ from pathlib import Path
 
 from specter import ipcheck
 
+# The real _ipapi_lookup, captured before conftest's autouse fixture stubs the module attribute — so the
+# degradation test below exercises the ACTUAL parsing/error handling, not the stub.
+_REAL_IPAPI_LOOKUP = ipcheck._ipapi_lookup
+
 
 # ---- DNSBL query form ----------------------------------------------------------------------
 
@@ -1343,6 +1347,21 @@ def test_ipapi_hosting_classifies_datacenter_keyless():
 def test_ipapi_mobile_takes_precedence_over_hosting():
     # A mobile carrier exit reads as mobile even if ip-api also flags hosting (CGNAT gateways often do).
     assert ipcheck.connection_class({"mobile": True, "ipapi_hosting": True}) == "mobile"
+
+
+def test_ipapi_lookup_parses_and_degrades(monkeypatch):
+    """The REAL _ipapi_lookup (captured before the autouse stub): a good response maps to the four fields; a
+    rate-limit / non-success / non-dict / empty response is an ABSENT signal ({}), never an exception that
+    would fail the whole check. _get_json is stubbed since the real fn calls it by module lookup."""
+    monkeypatch.setattr(ipcheck, "_get_json",
+                        lambda url, opener=None: {"status": "success", "hosting": True, "proxy": True,
+                                                  "mobile": False, "asname": "GOOGLE"})
+    assert _REAL_IPAPI_LOOKUP("8.8.8.8", None) == {
+        "ipapi_hosting": True, "ipapi_proxy": True, "ipapi_mobile": False, "ipapi_asname": "GOOGLE"}
+    for bad in ({"status": "fail", "message": "rate limit reached"}, None, {}, "not-a-dict", 42):
+        monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener=None, _b=bad: _b)
+        assert _REAL_IPAPI_LOOKUP("8.8.8.8", None) == {}, f"bad response {bad!r} must degrade to {{}}"
+    assert _REAL_IPAPI_LOOKUP("", None) == {}          # no IP → no lookup at all
 
 
 def test_ipapi_feeds_check_flow_and_proxy_note(monkeypatch):
