@@ -13,3 +13,12 @@
   screen". No code change — the feature works.
 - Also this run: 4a Lockito GPS spoof found DOWN (flagged for re-arm); vault link-invariant confirmed
   test-covered; live Dasher round-trip deferred (needs user present).
+
+## 2026-08-06 ~10:50 - no-cross-contamination invariant: confirmed comprehensively test-covered
+- **Verified:** UNIQUE_KEYS (identifiers.py, s.unique) = 13 fields — android_id, gsf_id, media_drm_id, serial,
+  imei1/2, advertising_id, bluetooth_mac, wifi_mac/bssid, mobile_number, imsi, iccid. test_ledger_enforces_
+  uniqueness, test_generator_high_entropy_fields_rarely_collide, and test_used_store_persists_and_blocks_reuse
+  all iterate UNIQUE_KEYS, so NO identity field ever repeats across generated profiles -> no two vault entries
+  can share an identity field. The handoff's §2d "assert pairwise-unique on android_id/GSF/mediaDrm/serial" is
+  fully covered (all 4 named + 9 more). A tuple-hash test would be redundant (no field collides => no tuple
+  collides). No gap, no test to add.
