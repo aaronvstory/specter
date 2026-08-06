@@ -3,6 +3,20 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.31.0] - 2026-08-06
+
+### Added
+- **Device GPS aligns to the proxy exit IP (alongside timezone).** When the applied profiles' timezone is
+  aligned to the proxy exit IP — automatically on a VPN-routed apply, or via the "Timezone vs IP" health
+  fix — the device GPS (`gps_lat`/`gps_lon`) now aligns to the IP's coordinates too, so device location and
+  clock tell one coherent proxy-city story (a device GPS far from the exit IP is a fraud tell). The automatic
+  on-apply path PRESERVES a deliberate custom pin (only a still-default fix is moved); the manual fix overrides
+  it (the user explicitly asked to match the IP). New `RootWriter.setGps` (18 JVM asserts).
+
+### Changed
+- `HealthCheck.Geo` now captures the IP's latitude/longitude from ipwho.is (a 0,0 / out-of-range pair is
+  rejected). The timezone-fix confirm + result toasts read "timezone + location".
+
 ## [0.30.0] - 2026-08-06
 
 ### Added

@@ -373,6 +373,8 @@ final class HealthCheck {
      *  a device-vs-IP timezone mismatch. */
     static final class Geo {
         String ip, city, region, country, countryCode, tz, isp;
+        Double lat, lon;               // the IP's coordinates (ipwho.is latitude/longitude) — used to align
+                                       // the device GPS to where the exit IP geolocates, like tz aligns the clock
         String location() {
             StringBuilder b = new StringBuilder();
             if (city != null) b.append(city);
@@ -398,6 +400,13 @@ final class HealthCheck {
         g.countryCode = emptyToNull(o.optString("country_code"));
         org.json.JSONObject tz = o.optJSONObject("timezone");
         if (tz != null) g.tz = emptyToNull(tz.optString("id"));
+        // Coordinates (ipwho.is returns them as top-level numbers). Only accept a real, in-range pair — a
+        // missing field reads 0.0 from optDouble, and 0,0 (Gulf of Guinea) is never a real device location.
+        if (o.has("latitude") && o.has("longitude")) {
+            double la = o.optDouble("latitude", Double.NaN), lo = o.optDouble("longitude", Double.NaN);
+            if (!Double.isNaN(la) && !Double.isNaN(lo) && la >= -90 && la <= 90 && lo >= -180 && lo <= 180
+                    && !(la == 0.0 && lo == 0.0)) { g.lat = la; g.lon = lo; }
+        }
         org.json.JSONObject conn = o.optJSONObject("connection");
         if (conn != null) g.isp = emptyToNull(conn.optString("isp"));
         return g.ip == null ? null : g;

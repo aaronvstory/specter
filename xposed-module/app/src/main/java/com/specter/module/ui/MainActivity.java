@@ -3512,7 +3512,7 @@ public class MainActivity extends Activity {
             case MATCH_TZ:
                 // The confirm decides real-IP consent once; matchTimezoneToIp gets that boolean and never
                 // re-queries the VPN to decide, so a tunnel flap can't run it on the real IP without the dialog.
-                confirmRealIpAction("reading its timezone and setting it on your applied profiles",
+                confirmRealIpAction("reading its timezone + location and setting them on your applied profiles",
                         confirmed -> matchTimezoneToIp(confirmed));
                 return;
             default:
@@ -3530,13 +3530,24 @@ public class MainActivity extends Activity {
             android.net.Network vpn = HealthCheck.activeVpnNetwork(getApplicationContext());
             if (vpn == null) return null;
             HealthCheck.Geo g = HealthCheck.lookupGeo(vpn);
-            if (g == null || g.tz == null) return null;
+            // Align whatever the lookup gave us — timezone AND/OR coordinates. Bail only when NEITHER is present.
+            if (g == null || (g.tz == null && (g.lat == null || g.lon == null))) return null;
             // Final guard: the SAME VPN network must still be active right before we write.
             if (!vpn.equals(HealthCheck.activeVpnNetwork(getApplicationContext()))) return null;
             com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
-            int n = 0;
-            for (String pkg : pkgs) if (com.specter.module.gen.RootWriter.setTimezone(sh, pkg, g.tz)) n++;
-            return n > 0 ? "Timezone aligned to " + g.tz + " (proxy IP)." : null;
+            int n = 0, gn = 0;
+            for (String pkg : pkgs) {
+                if (g.tz != null && com.specter.module.gen.RootWriter.setTimezone(sh, pkg, g.tz)) n++;
+                // Align the device GPS to the proxy IP's coordinates too, so device location + timezone tell one
+                // coherent proxy-city story (a device GPS far from the IP is a fraud tell). onlyIfDefault=true:
+                // this AUTOMATIC path never clobbers a location the user set by hand — only a still-default fix.
+                if (g.lat != null && g.lon != null
+                        && com.specter.module.gen.RootWriter.setGps(sh, pkg, g.lat, g.lon, true)) gn++;
+            }
+            if (n == 0 && gn == 0) return null;
+            String what = (n > 0 && gn > 0) ? "Timezone + location" : (n > 0 ? "Timezone" : "Location");
+            String where = g.tz != null ? g.tz : (g.city != null ? g.city : "the exit IP");
+            return what + " aligned to " + where + " (proxy IP).";
         } catch (Throwable t) { return null; }
     }
 
@@ -3569,21 +3580,35 @@ public class MainActivity extends Activity {
             // On a tunnel the SAME tunnel must still be active right before writing (ABA guard). Off-tunnel there's
             // no tunnel to flap, so that guard doesn't apply — a null vpn is fine.
             boolean stillSafe = vpn == null || vpn.equals(HealthCheck.activeVpnNetwork(getApplicationContext()));
-            if (zone != null && stillSafe) {
+            final Double glat = (g != null) ? g.lat : null, glon = (g != null) ? g.lon : null;
+            final boolean haveCoords = glat != null && glon != null;
+            boolean anyGps = false, anyTz = false;
+            // Align whatever the lookup gave — timezone AND/OR coordinates. The gate is now just the ABA guard,
+            // not "zone != null", so a lookup with coordinates but no timezone.id still aligns the location (the
+            // confirm text promises "timezone + location").
+            if (stillSafe && (zone != null || haveCoords)) {
                 com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
                 for (String pkg : targets) {
-                    if (com.specter.module.gen.RootWriter.setTimezone(sh, pkg, zone)) {
+                    boolean tzOk = zone != null && com.specter.module.gen.RootWriter.setTimezone(sh, pkg, zone);
+                    // Manual "match to IP" (onlyIfDefault=false) — the user explicitly asked, so override a custom pin.
+                    boolean gpsOk = haveCoords && com.specter.module.gen.RootWriter.setGps(sh, pkg, glat, glon);
+                    if (tzOk) anyTz = true;
+                    if (gpsOk) anyGps = true;
+                    if (tzOk || gpsOk) {
                         changed++;
                         try { sh.run("am force-stop " + pkg, null); } catch (Throwable ignored) {}
                     }
                 }
             }
-            final int n = changed; final String z = zone;
+            final int n = changed; final String z = zone; final boolean withLoc = anyGps, withTz = anyTz;
+            final boolean gotNothing = z == null && !haveCoords;
             runOnUiThread(() -> {
                 if (!healthScreen) return;
-                Toast.makeText(this, z == null ? "Couldn't read the IP's timezone — left as-is"
+                String what = withTz && withLoc ? "Timezone + location" : withLoc ? "Location" : "Timezone";
+                String where = z != null ? z : "the exit IP";
+                Toast.makeText(this, gotNothing ? "Couldn't read the IP's location — left as-is"
                         : n == 0 ? "No profiles updated"
-                        : "Timezone set to " + z + " for " + n + " app" + (n == 1 ? "" : "s"),
+                        : what + " set to " + where + " for " + n + " app" + (n == 1 ? "" : "s"),
                         Toast.LENGTH_SHORT).show();
                 healthResults = null; render();   // re-run checks — the mismatch row should clear
             });

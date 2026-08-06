@@ -1116,3 +1116,9 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   stream is a telematics tell, and skipping the real registration would break a stream-only app. Single-shot
   Fused reads (getLastLocation/getCurrentLocation) ARE spoofed and cover identity checks; the dev test set is
   single-shot only. Close later by proxying the LocationCallback to rewrite each real delivery to the static fix.
+- **2026-08-06 — Device GPS follows the PROXY exit IP, not the phone area code, when aligning.** The GPS
+  default derives from the phone's area code (coherent with the default timezone). But when the user routes
+  through a proxy and aligns timezone to the exit IP, the GPS aligns to the IP's lat/lon TOO — device GPS +
+  timezone both point at the proxy city, mutually coherent, matching the v0.19.0 tz-follows-IP philosophy
+  (the portable phone number is the weakest signal). AUTO on-apply align preserves a hand-set custom pin
+  (RootWriter.setGps onlyIfDefault=true); the MANUAL "match to IP" fix overrides it (explicit user intent).

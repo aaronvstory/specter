@@ -189,6 +189,54 @@ public final class RootWriter {
         } catch (Throwable t) { return false; }
     }
 
+    /** Set the {@code gps_lat}/{@code gps_lon} of an already-applied profile to a specific fix (e.g. the proxy
+     *  exit IP's coordinates), leaving every other field — gps_accuracy and the whole identity — untouched.
+     *  Reads the live JSON via su, patches the two keys, writes it back atomically. Returns true if the profile
+     *  existed and was updated (or already matched). Aligns the device GPS to where the IP geolocates, the same
+     *  way {@link #setTimezone} aligns the device clock — so device GPS + timezone tell one coherent
+     *  proxy-city story. Coordinates are formatted to 6 decimals (Locale.ROOT) to match the generated format.
+     *  Best-effort — false on any failure or out-of-range input. */
+    public static boolean setGps(Shell shell, String pkg, double lat, double lon) {
+        return setGps(shell, pkg, lat, lon, false);
+    }
+
+    /** As {@link #setGps(Shell, String, double, double)}, but when {@code onlyIfDefault} is true it leaves a
+     *  DELIBERATE custom pin alone — it only overwrites a fix that still equals the coherent area-code default
+     *  ({@link Generators#gpsForAreaCode}). The automatic on-apply alignment passes true (don't silently clobber
+     *  a location the user chose); the manual "match to IP" action passes false (the user explicitly asked to
+     *  match the exit IP). Returns false when a custom pin is preserved. */
+    public static boolean setGps(Shell shell, String pkg, double lat, double lon, boolean onlyIfDefault) {
+        if (!validPkg(pkg)) return false;
+        if (Double.isNaN(lat) || Double.isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
+        try {
+            String json = shell.runCapture("cat " + PROFILE_DIR + "/" + pkg + ".json 2>/dev/null");
+            if (json == null || json.trim().isEmpty()) return false;
+            java.util.LinkedHashMap<String, String> m = new java.util.LinkedHashMap<>();
+            com.specter.module.SpoofLogic.parseFlatJson(json, m);
+            m.remove(com.specter.module.SpoofLogic.TRUE_ANDROID_ID_KEY);   // shadow key, never written back
+            if (m.isEmpty()) return false;
+            if (onlyIfDefault) {
+                // Skip when the current fix is a custom pin (differs from the area-code default) — the auto path
+                // must not overwrite a location the user set by hand. A profile with no fix yet is treated as
+                // default (safe to set). Uses the same pure derivation the generator + UI use.
+                String ph = m.get("mobile_number"), aid = m.get("android_id");
+                String curLat = m.get("gps_lat"), curLon = m.get("gps_lon");
+                if (ph != null && ph.length() == 11 && ph.startsWith("1") && aid != null
+                        && curLat != null && curLon != null) {
+                    String[] def = Generators.gpsForAreaCode(ph.substring(1, 4), aid);
+                    if (!(def[0].equals(curLat) && def[1].equals(curLon))) return false;   // custom pin -> preserve
+                }
+            }
+            String slat = String.format(java.util.Locale.ROOT, "%.6f", lat);
+            String slon = String.format(java.util.Locale.ROOT, "%.6f", lon);
+            if (slat.equals(m.get("gps_lat")) && slon.equals(m.get("gps_lon"))) return true;   // already aligned
+            m.put("gps_lat", slat);
+            m.put("gps_lon", slon);
+            write(shell, pkg, toFlatJson(m));
+            return true;
+        } catch (Throwable t) { return false; }
+    }
+
     /** Serialize a flat string map to JSON with the same escaping the profile writer expects. */
     static String toFlatJson(java.util.Map<String, String> m) {
         StringBuilder b = new StringBuilder("{");

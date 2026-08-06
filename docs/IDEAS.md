@@ -1304,3 +1304,11 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   the real track). Close by PROXYING the obfuscated LocationCallback to rewrite each real delivery to the static
   fix (never a moving stream - telematics tell). Add if a probe shows an in-scope app reads location exclusively
   via Fused streaming. Status: idea/known-limitation.
+
+
+- **2026-08-06 - GPS-follows-proxy-IP SHIPPED (v0.31.0).** Aligning timezone to the exit IP now aligns device
+  GPS too (RootWriter.setGps; auto path preserves a custom pin, manual overrides). Closes the GPS-vs-IP
+  coherence gap the v0.30.0 GPS feature opened. FUTURE: a dedicated "Location vs IP" health-check row (catches
+  a GPS mismatch even when the timezone matches - e.g. a custom pin in the same tz but a different city), and
+  E2E-verify the VPN-align path on a live tunnel (this tick proved setGps by unit test + the hook read path
+  on-device, but did not exercise a live VPN align). Status: shipped (core) / idea (the two follow-ups).
