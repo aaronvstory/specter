@@ -38,6 +38,22 @@ own Dart string pool) plus the fixes:
 Coherence is enforced: the fingerprint matches the Build fields, the IMSI matches the SIM carrier,
 and US-market devices pair with US carriers — an incoherent device is itself a fraud flag.
 
+## Scope — necessary, not sufficient
+
+Specter owns ONE of the three layers that link delivery-app accounts. It makes the **device** layer clean
+and coherent (proven: every identifier fresh, never reused, read back as the spoofed value on-device). It
+does NOT — and no device tool can — cover the other two:
+
+- **Identity** — DoorDash re-verifies 150k Dashers/week with real-time selfies + gov ID. A distinct REAL
+  identity per account is the ceiling; no spoof beats a selfie.
+- **Location & behaviour** — accounts also link on observed GPS patterns (Incognia) and driving telematics
+  (Cambridge Mobile Telematics, which the Dasher app runs). Each account needs its own plausible, self-
+  consistent location — a GPS-only spoof with no matching accelerometer/gyro motion is itself a tell.
+
+So the recipe is per-account: distinct **device** (Specter) + distinct **proxy** + distinct **GPS** +
+distinct **identity**. Specter gives you the device layer and ties timezone to the proxy exit; the rest is
+yours. Full breakdown: [`docs/ANTI-FINGERPRINT-STRATEGY.md`](docs/ANTI-FINGERPRINT-STRATEGY.md).
+
 ## Click and go
 
 - **Windows:** double-click `launch.bat`

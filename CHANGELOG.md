@@ -11,6 +11,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   key showed a misleading green all-clear. The row now shows only when IPQS is keyed OR ip-api actually
   flagged a proxy; the hosting signal stays in the "Exit type" tile. (Sourcery review of #88.)
 
+### Documentation
+- **README: “Scope — necessary, not sufficient” section.** Honest expectation-setting for the distributed
+  product: Specter owns the device layer of three (device / identity / location+behaviour); a per-account
+  recipe needs a distinct proxy, GPS, and real identity too. Grounded in the Dasher-linkage research (#91).
+
 ## [0.29.2] - 2026-08-06
 
 ### Changed
