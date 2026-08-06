@@ -1152,3 +1152,28 @@ read Dasher makes returns the spoofed value. The residual exposure is the CMT te
 DELIBERATELY out of scope; do NOT try to close it with more fingerprint spoofing. The lever that matters for
 a telematics-carrying app is not another Build field — it is not tripping the behavioural model (which is
 about how the device is actually used, not what it claims to be).
+
+### What CMT actually derives (exa research 2026-08-06) — and why it's un-spoofable by device-config
+
+CMT's DriveWell SDK (docs.cmtelematics.com; MIT-CSAIL "CarTel" lineage, 6.5M+ drivers) — PROVEN from their
+own product pages:
+- Automatic trip recording (starts/stops with no user action), from accelerometer + gyroscope + GPS.
+- **Driver-vs-passenger** classification, and car-trip-vs-other-transport-mode.
+- **Phone-distraction** detection (is the phone being handled while the vehicle moves).
+- Hard-braking / risky-event scoring and crash detection, scored against millions of trips.
+
+**Implication for Specter (reasoning, HYPOTHESIS-grade but the mechanism is solid):**
+- CMT reads the raw sensor DATA STREAM (how the device physically moves over time), not device identity.
+  Specter spoofs the sensor DESCRIPTOR (the LSM6DSO name/vendor) but never the motion values — and it
+  should not: a synthetic or static motion stream is a STRONGER tell than a real one (a delivery that
+  registers zero accelerometer trip data is itself anomalous).
+- This is a different threat model than the reputation/fingerprint layer Specter targets. CMT is a driver-
+  safety/insurance telematics layer (risk scoring, distraction, crash), orthogonal to account-fraud device
+  fingerprinting. No Build field, android_id, or IP hygiene touches it.
+- Lockito spoofs GPS but NOT accelerometer/gyro, so a Lockito-only "drive" produces a GPS track with no
+  corroborating inertial motion — a mismatch CMT's sensor-fusion is specifically built to catch (it fuses
+  GPS with accel/gyro precisely to reject GPS-only or spoofed tracks).
+- **Bottom line for the strategy:** for a telematics-carrying app the lever that matters is behavioural
+  plausibility (real, self-consistent motion), which is out of a device-config profile's reach by design.
+  Do not attempt to spoof it; treat it as a hard, acknowledged ceiling, and keep Specter's scope to the
+  identity/fingerprint layer where it is provably complete (per the Dasher trace above).
