@@ -57,3 +57,20 @@
 - **getIPIntel r/i (item 1109):** oflags=bcri accepted (queryOFlags echoed) but result=-5 from here
   (banned/rate-limited/contact) - can't observe the r/i response fields. Blocked on live verification;
   don't build r/i parsing until a real response confirms field names. Logged in docs/IDEAS.md.
+
+## 2026-08-06 - section-2d no-cross-contamination + AppData reliability AUDIT (verified, no gap)
+
+- **Ask:** 'VERIFY the no-cross-contamination invariant holds via tests - it's already the design.'
+- **Method:** traced the real SessionMigrator capture/restore shell commands + cross-checked every
+  concern the prompt raised against the tests. Ran both suites.
+- **Findings - all correctly implemented AND test-pinned:**
+  - Cross-contamination: capture excludes cache/code_cache/oat/app_textures/lib + our .specter_* probes;
+    clear is a full `pm clear` (no residue on switch). (SessionMigratorTest excludes + clear asserts.)
+  - WAL: takes the WHOLE databases/ incl -wal/-shm (live token lives in -wal), never just *.db.
+  - Force-stop: REQUIRED before tar (exit 5) and before restore (exit 8); ordering pinned (force-stop
+    BEFORE tar); restore does not `|| true` a failed stop.
+  - SELinux + ownership: restore chown -R to THIS install's resolved uid + restorecon -R.
+  - Root-extraction safety: refuses absolute/../ paths (exit 6) and symlink/hardlink entries; staging dir.
+  - Generation uniqueness (separate layer): 400/2000/3000-gen no-reuse, persistence, fail-closed, fail-loud.
+- **Result:** pytest green + JVM green (SessionMigrator 53, AppDataVault 48). Invariant HOLDS, no gap.
+  No code change - design is already correct + comprehensively covered (54 SessionMigrator asserts).
