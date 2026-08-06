@@ -50,7 +50,7 @@ public final class Protections {
         new P("hide_mock",     "Hide mock location",     "Mock-location flags read as clean"),
         new P("hide_dev",      "Hide developer mode",    "ADB and Developer Options read as off"),
         new P("hide_apps",     "Hide app list",          "Specter and root tools stay out of app lists"),
-        new P("hide_vpn",      "Hide VPN interfaces",    "VPN interfaces stay hidden from scoped apps"),
+        new P("hide_vpn",      "Hide VPN interfaces",    "Hidden from scoped apps"),
         new P("fix_webrtc",    "Fix WebRTC leak",        "WebRTC exposes only the routed address"),
         new P("spoof_ua",      "Match browser signature","User-Agent matches the applied phone"),
         new P("spoof_apktime", "Randomize install time", "Install time changes with the identity"),

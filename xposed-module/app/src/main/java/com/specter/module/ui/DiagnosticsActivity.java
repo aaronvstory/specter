@@ -161,7 +161,7 @@ public final class DiagnosticsActivity extends Activity {
         autoSaveOnStop = getIntent() != null && getIntent().getBooleanExtra(EXTRA_FROM_STOP, false)
                 && prefs.getBoolean("autosave_trace", true);
         final android.widget.CheckBox autosave = new android.widget.CheckBox(this);
-        autosave.setText("Auto-save report when monitoring stops");
+        autosave.setText("Auto-save report on stop");
         autosave.setChecked(prefs.getBoolean("autosave_trace", true));
         autosave.setTextColor(Theme.SOFT);
         autosave.setTextSize(Theme.T_CAPTION);
@@ -202,7 +202,7 @@ public final class DiagnosticsActivity extends Activity {
         StringBuilder sb = new StringBuilder("Watching " + targets.size() + " apps: ");
         int i = 0;
         for (String p : targets) { if (i++ > 0) sb.append(", "); sb.append(Targets.label(this, p)); }
-        sb.append(" — reads from all of them are mixed below.");
+        sb.append(" (reads mixed below)");
         return sb.toString();
     }
 
@@ -243,8 +243,7 @@ public final class DiagnosticsActivity extends Activity {
         statRow.removeAllViews();
         if (raw == null) {
             summary.setTextSize(12);
-            summary.setText("Capture not running. Turn on “Read logging” in Settings, then APPLY to a "
-                    + "scoped target and open it.");
+            summary.setText("Capture off. Turn on Read logging in Settings, then open a scoped target.");
             return;
         }
         summary.setTextSize(11);
@@ -348,6 +347,9 @@ public final class DiagnosticsActivity extends Activity {
             tgt.setTextColor(Theme.INK);
             tgt.setTextSize(13);
             tgt.setTypeface(android.graphics.Typeface.MONOSPACE);   // paths/keys read far better monospace
+            tgt.setMaxLines(1); tgt.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);   // never wrap a value
+            tgt.setOnLongClickListener(v -> { android.widget.Toast.makeText(this, r.target,
+                    android.widget.Toast.LENGTH_SHORT).show(); return true; });   // full path on long-press (escape hatch)
             tgt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             row.addView(tgt);
 
@@ -387,7 +389,7 @@ public final class DiagnosticsActivity extends Activity {
     private static String groupNote(Coverage.State state) {
         switch (state) {
             case LEAK: return "These identify the real phone. Worth spoofing.";
-            case UNKNOWN: return "We don't know if these identify the phone. Report any that look device-specific.";
+            case UNKNOWN: return "Might identify the phone. Report any that look device-specific.";
             default: return null;
         }
     }
@@ -471,8 +473,7 @@ public final class DiagnosticsActivity extends Activity {
         exporting = true;
         // Acknowledge the tap IMMEDIATELY. The su round-trip below can take a second or more (Magisk may
         // have to spawn a fresh root shell), and with no feedback the button reads as laggy/broken.
-        exportBtn.setText("Exporting…");
-        exportBtn.setEnabled(false);
+        exportBtn.setEnabled(false);   // grey out + Toast for feedback; never swap the label (that resizes the button)
         android.widget.Toast.makeText(this, "Writing coverage report…", android.widget.Toast.LENGTH_SHORT).show();
         // Pause the 2s poll for the duration: its own `su -c tail` competes with ours for the su daemon,
         // which is what makes the export feel slow.

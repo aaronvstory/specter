@@ -231,7 +231,7 @@ public class AppPickerActivity extends Activity {
         }
 
         TextView count = new TextView(this);
-        count.setText(rest.size() + " app(s)" + (showSystem ? "" : " — user apps (toggle to show system)"));
+        count.setText(rest.size() + " app(s)" + (showSystem ? "" : " · user only"));
         count.setTextColor(Theme.DIM);
         count.setTextSize(12);
         count.setPadding(dp(4), dp(4), dp(4), dp(6));
@@ -239,7 +239,7 @@ public class AppPickerActivity extends Activity {
         if (rest.isEmpty() && sel.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText(query.isEmpty()
-                    ? "No apps found. (If this stays empty, the app may lack package-visibility access.)"
+                    ? "No apps found (missing package-visibility access?)."
                     : "No apps match \"" + query + "\".");
             empty.setTextColor(Theme.SOFT);
             empty.setPadding(dp(4), dp(8), dp(4), dp(8));
@@ -303,7 +303,7 @@ public class AppPickerActivity extends Activity {
             new Thread(() -> {
                 final boolean scoped = Targets.isScoped(r.pkg);
                 runOnUiThread(() -> {
-                    if (!scoped) { scopeWarn.setText("⚠ not enabled in LSPosed — enable Specter for this app"); scopeWarn.setVisibility(View.VISIBLE); }
+                    if (!scoped) { scopeWarn.setText("⚠ not in LSPosed — enable Specter"); scopeWarn.setVisibility(View.VISIBLE); }
                 });
             }).start();
         }

@@ -669,7 +669,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 try {
                     if (triedN == 0) {
-                        String msg = "Already applied. Relaunch the app(s), or tap \"Generate another identity\" for a new one.";
+                        String msg = "Already applied — relaunch the app(s) or generate another identity.";
                         status.setText(msg); toast(msg);
                         return;
                     }
@@ -940,7 +940,7 @@ public class MainActivity extends Activity {
         col.addView(lab);
         TextView d = new TextView(this);
         d.setText(stale ? "Tap to retry — grant root so it can update."
-                : "Some deep signals still read the real device without it.");
+                : "Some signals still read the real device.");
         d.setTextColor(Theme.SOFT); d.setTextSize(Theme.T_CAPTION);
         d.setPadding(0, dp(Theme.S1), 0, 0);
         col.addView(d);
@@ -1088,7 +1088,7 @@ public class MainActivity extends Activity {
             content.addView(section("Identifiers"));
             content.addView(identifiersCard());   // one group card, plain rows (was 15 separate cards)
             TextView hint = new TextView(this);
-            hint.setText("Tap a row to edit · long-press to randomize just that field");
+            hint.setText("Tap to edit · long-press to randomize");
             hint.setTextColor(Theme.DIM); hint.setTextSize(Theme.T_CAPTION);
             hint.setPadding(dp(Theme.S4) + dp(Theme.S1), dp(Theme.S1), dp(Theme.S4), dp(Theme.S2));
             content.addView(hint);
@@ -2058,7 +2058,7 @@ public class MainActivity extends Activity {
                 "Check protection status",
                 "Verify setup, hooks, location, and network",
                 hTrail,
-                v -> { healthScreen = true; render(); }));
+                v -> { healthResults = null; healthScreen = true; render(); }));   // always re-check fresh on entry
         content.addView(statusCard);
 
         // Activation: the device-bound licence. The subtitle reads the live status so it's visible without
@@ -2250,7 +2250,7 @@ public class MainActivity extends Activity {
         hashV.setTypeface(android.graphics.Typeface.MONOSPACE);
         hashV.setTextColor(Theme.GOLD);
         devCard.addView(hashV);
-        TextView dcap = label("Send this to get a key. It's a hash of the real device id — the id itself never leaves the phone.");
+        TextView dcap = label("Send this to get a key — a hash of your device id; the id never leaves the phone.");
         dcap.setPadding(0, dp(2), 0, dp(4));
         devCard.addView(dcap);
         devCard.addView(textButton("Copy device id", Theme.GOLD, v -> {
@@ -2385,7 +2385,7 @@ public class MainActivity extends Activity {
             content.addView(primary);
 
             View check = textButton("Check protection status instead", Theme.GOLD,
-                    v -> { setupScreen = false; healthScreen = true; render(); });
+                    v -> { setupScreen = false; healthResults = null; healthScreen = true; render(); });
             ((TextView) check).setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -3415,7 +3415,7 @@ public class MainActivity extends Activity {
         final TextView chip = statusChip(prefs.getBoolean("widevine_l3", true));
         titleRow.addView(chip);
         txt.addView(titleRow);
-        TextView d = value("Device-wide software DRM · disables HD Netflix and Prime");
+        TextView d = value("Software DRM device-wide · breaks HD Netflix/Prime");
         d.setTextColor(Theme.DIM); d.setTextSize(12); d.setTextIsSelectable(false);
         txt.addView(d);
         head.addView(txt);
@@ -3790,7 +3790,7 @@ public class MainActivity extends Activity {
         saveRow.addView(button("Save current to vault", true, v -> {
             if (profile.isEmpty()) { toast("No identity yet — RANDOMIZE ALL on the Identity tab first."); return; }
             String at = appliedTargets();
-            if (at.isEmpty()) { toast("Apply this identity to an app first — the vault only stores applied profiles."); return; }
+            if (at.isEmpty()) { toast("Apply to an app first — the vault only saves applied identities."); return; }
             promptSaveName(at);
         }));
         saveCard.addView(saveRow);
@@ -4501,7 +4501,7 @@ public class MainActivity extends Activity {
         back.setBackground(ripple(0));
         content.addView(back);
 
-        TextView hint = value("Files exported from Specter, found in Download/Specter. Tap one to import it.");
+        TextView hint = value("Exported files in Download/Specter. Tap to import.");
         hint.setTextColor(Theme.DIM); hint.setTextSize(Theme.T_CAPTION);
         hint.setPadding(dp(Theme.S4) + dp(Theme.S1), 0, dp(Theme.S4), dp(Theme.S3));
         content.addView(hint);
@@ -4548,6 +4548,7 @@ public class MainActivity extends Activity {
         TextView s = new TextView(this);
         s.setText(base); s.setTextColor(Theme.SOFT); s.setTextSize(Theme.T_CAPTION); s.setSingleLine(true);
         s.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+        s.setOnLongClickListener(v -> { toast(base); return true; });   // full filename on long-press (truncation escape hatch)
         col.addView(s);
         card.addView(col);
         card.addView(chevronTrailing(false));

@@ -3,6 +3,21 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.5] - 2026-08-06
+
+### Changed
+- **App-wide UX sweep (terser copy, no 2-line wraps).** An audit of every UI string tightened 17 that were
+  wordier than needed or wrapped on a phone — e.g. the target-app status ("Identity applied · open any target
+  once to confirm hooks load this boot" → "Applied · open a target to confirm hooks"), the identity-edit
+  hint, the activation device-id note, the DRM/vault/export lines, and the app-picker warnings.
+- **Protection Status re-checks automatically on entry.** Opening it now always runs a fresh check instead
+  of showing the last cached result.
+
+### Fixed
+- **Export button no longer resizes on tap** (greys out + toasts instead of swapping its label).
+- **Long values no longer wrap**: the diagnostics target path and the import filename truncate to one line,
+  with the full text on long-press.
+
 ## [0.29.4] - 2026-08-06
 
 ### Added
