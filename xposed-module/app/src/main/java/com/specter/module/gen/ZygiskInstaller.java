@@ -88,12 +88,10 @@ public final class ZygiskInstaller {
         String iv = SpoofLogic.modulePropVersion(out);
         String installedMd5 = extractMd5(out);
         String bundledMd5 = bundledSoMd5(ctx);
-        // "current" now means version AND bytes match. If we can't compute a hash (no md5sum, asset read
-        // failure), fall back to the version compare alone rather than forcing a needless re-install.
-        boolean versionOk = iv != null && bundled != null && iv.equals(bundled);
-        boolean hashOk = (installedMd5 == null || bundledMd5 == null)   // can't compare -> don't block on it
-                || installedMd5.equalsIgnoreCase(bundledMd5);
-        return new Status(true, versionOk && hashOk, iv, bundled);
+        // "current" = the .so BYTES match (md5). The version string bumps on every release (incl. Java-only
+        // ones), so gating on it re-synced a byte-identical .so and armed a pointless "Reboot required" on
+        // every app update. Byte-match is the truth; version compare is the fallback when a hash is missing.
+        return new Status(true, SpoofLogic.isNativeCurrent(installedMd5, bundledMd5, iv, bundled), iv, bundled);
     }
 
     /** Pull the md5 the status probe printed ("__specter_md5__ <hash>"), or null if absent. */

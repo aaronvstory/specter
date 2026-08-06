@@ -312,6 +312,19 @@ public final class SpoofLogic {
     }
 
     /**
+     * Is the on-device native layer CURRENT vs the bundled one? The .so BYTES are authoritative: a real
+     * native change flips the md5, a version-only bump does not. The version STRING is stamped from ../VERSION
+     * so it bumps on EVERY release incl. Java-only ones — gating "current" on it falsely flagged every
+     * Java-only update as stale, which re-synced a BYTE-IDENTICAL .so and armed a pointless "Reboot required".
+     * So compare md5 when both are known; fall back to the version compare only when a hash can't be computed.
+     */
+    public static boolean isNativeCurrent(String installedMd5, String bundledMd5,
+                                          String installedVer, String bundledVer) {
+        if (installedMd5 != null && bundledMd5 != null) return installedMd5.equalsIgnoreCase(bundledMd5);
+        return installedVer != null && bundledVer != null && installedVer.equals(bundledVer);
+    }
+
+    /**
      * The {@code su} program that installs a Magisk module ATOMICALLY: build the layout under {@code
      * moduleDir + ".stage"} from the app-extracted files, then rename into place (back up + roll back on
      * failure, so a failed rename never leaves a half-written module). Only our own dir + the app-private

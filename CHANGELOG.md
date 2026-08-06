@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.6] - 2026-08-06
+
+### Fixed
+- **No more false “Reboot required” after a Java-only update.** The native-layer staleness check gated on
+  the module.prop version string, which is stamped from VERSION and bumps on EVERY release — so a Java-only
+  update re-synced a BYTE-IDENTICAL .so and armed a pointless reboot banner that never cleared. Now the
+  check compares the .so bytes (md5): a real native change flips it, a version bump does not.
+  (SpoofLogic.isNativeCurrent, 7 JVM asserts.)
+
 ## [0.29.5] - 2026-08-06
 
 ### Changed
