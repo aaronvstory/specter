@@ -48,6 +48,18 @@
 > device-config profile can touch (confirms the research). Conclusion: config layer COMPLETE for what it
 > covers; don't chase telematics with more spoofing. So §2d's trace ask is fully done + merged.
 >
+> ### ✅ UPDATE 4 ~08:35 — run substantively COMPLETE; one item deliberately deferred
+> Brief + backlog done across 3 merged PRs (#83 activation/cogwheels/bulk-IP/R8/research, #84 ip-api,
+> #85 Dasher trace). Confirmed this fire that the in-app vault EXPORT/IMPORT to /sdcard/Download/Specter
+> already EXISTS + is UI-wired + tested (VaultPortable) — the vault-loss safety net is built. All tests
+> green (267 py + JVM), main clean, both phones reachable.
+> **DEFERRED (needs you present): the live Dasher AppData round-trip.** Its mechanism is already PROVEN
+> (memory appdata-vault-login-migration) and SessionMigrator is UNCHANGED this session, so nothing new to
+> verify. Running it means driving Save/Restore via blind taps on the 4a's LIVE Dasher login — a mis-tap
+> risks income and I have no credentials to re-login if a restore came back broken. Do it deliberately WITH
+> the user (confirm Dasher's state, back up first, accept the re-login risk). Everything ELSE in §2d is done
+> (design confirmed in review, read-only trace merged, export/import exists).
+>
 > **Highest-value NEXT items (in `docs/IDEAS.md`, 2026-08-06 entry):** (1) local coherence check — exit-IP
 > timezone vs the profile's applied timezone + exit geo vs carrier/MCC (zero API cost, real vendor weight);
 > (2) add a discriminating reputation source where IPQS/AbuseIPDB saturate (ip-api.com → ipapi.is); (3)
