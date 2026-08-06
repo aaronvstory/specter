@@ -235,12 +235,17 @@ work). Never ship cosmetic/non-functional UI — build it or clearly mark it non
 ### Review gauntlet (NON-NEGOTIABLE before every merge)
 Run **`/gauntlet` before merging any PR to main.**
 
-> **STATUS 2026-08-06: codex is OUT OF QUOTA until ~Sep 4 — the gauntlet is the subagent + the PR bots.**
-> A codex run now returns only `You've hit your usage limit`; it produced NO review this session. Per the
-> rule below, treat that as absent for the round and do not block a merge on it. When it returns it is on
-> a limited free plan, so reserve it for genuinely risky pre-merge review, and note the gotcha: with a
-> ChatGPT account `gpt-5.6-sol` is rejected → use `gpt-5.6-terra` (`echo "$P" | codex exec -m
-> gpt-5.6-terra -`, PIPE never arg). **gemini** CLI is still dead (`IneligibleTierError`).
+> **STATUS 2026-08-06: codex is BACK — run it in the gauntlet before EVERY merge, and use it regularly**
+> (user-confirmed 2026-08-06). It is a first-class gauntlet source again, in parallel with the
+> `code-reviewer` subagent, on every pre-merge diff — not reserved for "risky" changes. Also reach for it
+> off-merge: to check your own work, for a second opinion on a fix, or on any tricky/unfamiliar question.
+> PROVEN this session: on the global-GPS diff codex independently found the SAME high-confidence bug the
+> subagent did (custom pin overwritten when the phone/android_id toggle is off) plus a real second finding —
+> so both sources earn their place. Invoke: `cat prompt.txt | codex exec - 2>&1 | tee out.txt`, run in the
+> BACKGROUND (`run_in_background`), read the verdict from the END of the file, VERIFY real findings came back
+> (an empty/echoed run = the prompt never arrived — fix the invocation, never pass the prompt as an arg).
+> Default model worked this session; if a ChatGPT account rejects `gpt-5.6-sol`, fall back to `-m
+> gpt-5.6-terra`. **gemini** CLI is still dead (`IneligibleTierError`).
 >
 > **The PR review bots are NO LONGER "broken" — CodeRabbit earned a place on 2026-08-05/06.** On PR #83 it
 > produced ~8 real findings across two rounds, several of them serious and none of them cosmetic: a
@@ -254,8 +259,8 @@ Run **`/gauntlet` before merging any PR to main.**
 \(.body | split("<details>")[0])"'`
 
 The gauntlet's AUTHORITATIVE review sources are (1) a **`code-reviewer` subagent** and (2) **`/codex`**
-(GPT-5.x, a strong different-model second opinion) — *while codex is down, (1) alone is the gauntlet*.
-Run them in parallel on `git diff main...HEAD`, reconcile, fix everything both agree on plus any
+(GPT-5.x, a strong different-model second opinion) — **run BOTH on every pre-merge diff** (codex is back,
+2026-08-06). Run them in parallel on `git diff main...HEAD`, reconcile, fix everything both agree on plus any
 reproducible single-source CRITICAL/HIGH, add tests, re-verify. **CodeRabbit is now a THIRD source
 worth reading** (see the status box) — still never GATE a merge on a bot, since they can be slow or wrong,
 but do not dismiss them unread either. The subagent remains the most precise instrument: on PR #83 it
