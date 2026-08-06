@@ -3,6 +3,13 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.7] - 2026-08-06
+
+### Fixed
+- **Identity header no longer repeats the device.** The save-name prefill defaults to the device, so the
+  identity title often already named it — and the subtitle repeated it (“Google Pixel” over “Google Pixel 5
+  · T-Mobile”). When the title already contains the device, the subtitle now shows just the carrier.
+
 ## [0.29.6] - 2026-08-06
 
 ### Fixed

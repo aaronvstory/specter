@@ -1124,12 +1124,22 @@ public class MainActivity extends Activity {
         dev.setPadding(0, dp(Theme.S1), 0, 0);
         c.addView(dev);
         if (!savedName.isEmpty()) {
-            TextView sub = new TextView(this);
-            sub.setText(deviceLine);
-            sub.setTextColor(Theme.SOFT);
-            sub.setTextSize(Theme.T_CAPTION);
-            sub.setPadding(0, dp(2), 0, 0);
-            c.addView(sub);
+            // The save-name prefill defaults to the device, so the NAME often already contains it — don't echo
+            // the device below (it read "Google Pixel" over "Google Pixel 5 · T-Mobile"). When the name names
+            // the device, the subtitle drops to just the carrier so it ADDS info instead of repeating the title.
+            String low = savedName.toLowerCase(java.util.Locale.US);
+            String mfr = profile.getOrDefault("build_manufacturer", "");
+            boolean nameHasDevice = (!device.isEmpty() && low.contains(device.toLowerCase(java.util.Locale.US)))
+                    || (!mfr.isEmpty() && low.contains(mfr.toLowerCase(java.util.Locale.US)));
+            String subLine = nameHasDevice ? carrier : deviceLine;
+            if (!subLine.isEmpty()) {
+                TextView sub = new TextView(this);
+                sub.setText(subLine);
+                sub.setTextColor(Theme.SOFT);
+                sub.setTextSize(Theme.T_CAPTION);
+                sub.setPadding(0, dp(2), 0, 0);
+                c.addView(sub);
+            }
         }
 
         Set<String> tgts = Targets.get(prefs);
