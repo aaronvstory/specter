@@ -33,3 +33,15 @@
 - **Verified:** JVM tests green (incl. 9 new), clean build, symbol in shipped dex (classes2/4), ipwho.is
   country_code confirmed live. NOT installed on-device (both phones carry a live Cash session in scope;
   install -r de-registers the module) — row reuses the proven Check/Group render of the adjacent TZ row.
+
+## 2026-08-06 - section-1 screenshot-driven polish sweep (web, both themes)
+
+- **What:** drove the real local server, captured single + bulk + expanded-detail + settings in dark AND
+  light (.shots/harness/shoot.mjs). Inspected every PNG.
+- **Result:** core use case is polished, no actionable defect. Three questions (alive/where/how clean)
+  each answer fast; bulk columns align + never wrap; flags render; detail is sectioned with per-source
+  scores + all 17 blocklist zones; settings masks keys (Scamalytics username plaintext BY DESIGN).
+- **Ruled out (measured, not a bug):** single-dark flag = sub-150ms flagcdn load placeholder in a 14x10
+  slot (dimensions reserved, onerror fallback, renders in the other 3 shots; no CSP block on the deploy).
+  USAGE 'box' = ICON.server rendering correctly (a server icon is a rectangle).
+- **No code change** - manufacturing a fix would be dishonest; the sweep's honest finding is 'clean'.
