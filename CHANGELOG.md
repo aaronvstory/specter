@@ -3,6 +3,15 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.4] - 2026-08-06
+
+### Added
+- **Android status page: “Carrier vs IP” coherence row (zero API cost).** Flags a US SIM (MCC 310-316)
+  reading behind a non-US exit IP — a SIM-country vs IP-country mismatch that fraud models weight, the same
+  family as the existing timezone-vs-IP check but on a signal it can miss. One-directional: the row shows
+  only when BOTH the carrier country and the exit-IP country are known, so an unmappable MCC never emits a
+  false all-clear. (Verdict Check #2 from the fintech-signals research, docs/ANTI-FINGERPRINT-STRATEGY.md.)
+
 ## [0.29.3] - 2026-08-06
 
 ### Fixed

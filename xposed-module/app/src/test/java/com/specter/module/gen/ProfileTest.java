@@ -304,6 +304,17 @@ public class ProfileTest {
         Profile.backfillHardware(noHwDataset, null);
         check(noHwDataset.size() == 1, "backfillHardware no-op when no dataset supplied");
 
+        // Country.countryIsoForMcc — carrier-country vs IP-country coherence input (one-directional).
+        check("US".equals(Country.countryIsoForMcc("310260")), "MCC 310 (T-Mobile) -> US");
+        check("US".equals(Country.countryIsoForMcc("311480")), "MCC 311 (Verizon) -> US");
+        check("US".equals(Country.countryIsoForMcc("316010")), "MCC 316 (upper US bound) -> US");
+        check(Country.countryIsoForMcc("262010") == null, "MCC 262 (Germany) -> null (unmapped, never false-warns)");
+        check(Country.countryIsoForMcc("309000") == null, "MCC 309 (below US range) -> null");
+        check(Country.countryIsoForMcc("317000") == null, "MCC 317 (above US range) -> null");
+        check(Country.countryIsoForMcc(null) == null, "null MCC -> null");
+        check(Country.countryIsoForMcc("31") == null, "too-short MCC -> null");
+        check(Country.countryIsoForMcc("abc260") == null, "non-numeric MCC -> null");
+
         System.out.println("Profile+UsedStore: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }

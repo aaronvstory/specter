@@ -22,3 +22,14 @@
   can share an identity field. The handoff's §2d "assert pairwise-unique on android_id/GSF/mediaDrm/serial" is
   fully covered (all 4 named + 9 more). A tuple-hash test would be redundant (no field collides => no tuple
   collides). No gap, no test to add.
+
+## 2026-08-06 — "Carrier vs IP" coherence row (v0.29.4, PR #93)
+
+- **What changed:** Country.countryIsoForMcc (pure, 310-316->US); HealthCheck captures ipwho.is
+  country_code + profileSimMcc reader + new "Carrier vs IP" status row; 9 JVM asserts; VERSION 0.29.4;
+  CHANGELOG/IDEAS/strategy-doc verdict updated. Ships Verdict Check #2 from the fintech-signals research.
+- **Why:** the one concrete, in-scope, zero-API lever the research surfaced that wasn't built; flags a US
+  SIM behind a non-US exit (SIM-country vs IP-country mismatch). One-directional (never false-greens).
+- **Verified:** JVM tests green (incl. 9 new), clean build, symbol in shipped dex (classes2/4), ipwho.is
+  country_code confirmed live. NOT installed on-device (both phones carry a live Cash session in scope;
+  install -r de-registers the module) — row reuses the proven Check/Group render of the adjacent TZ row.
