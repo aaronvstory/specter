@@ -1312,3 +1312,8 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   a GPS mismatch even when the timezone matches - e.g. a custom pin in the same tz but a different city), and
   E2E-verify the VPN-align path on a live tunnel (this tick proved setGps by unit test + the hook read path
   on-device, but did not exercise a live VPN align). Status: shipped (core) / idea (the two follow-ups).
+
+- **2026-08-06 - Global default location SHIPPED (v0.32.0).** A location applied to every identity (fallback)
+  + a hard Lock (override-all), Settings > Location. Per-identity Location card promoted to always-visible on
+  the Identity screen (was buried). Precedence resolved at apply time (RootWriter.effectiveGps). Answers the
+  user ask: set GPS per-fingerprint OR globally, applied on apply + restored from vault. Status: shipped.

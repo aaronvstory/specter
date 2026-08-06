@@ -3,6 +3,20 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.32.0] - 2026-08-06
+
+### Added
+- **Global default location (not tied to one fingerprint).** Settings → Location: set a "Default location"
+  (coordinates OR a geocoded address) applied to EVERY identity, plus a "Lock to this location" switch.
+  Precedence, high→low: hard **Lock** → the identity's own **custom pin** → the global **default** (fallback)
+  → the identity's coherent **area-code default**. Resolved at apply time (`RootWriter.effectiveGps`, 6 JVM
+  asserts) in the one choke every apply routes through, so it also covers vault restores. A global location
+  set makes the automatic proxy-IP GPS-align step aside; a hard lock is respected even by the manual "match
+  to IP" fix.
+- **Per-identity Location card promoted to an always-visible card** on the Identity screen (was buried under
+  "Show all fields"). It shows the EFFECTIVE fix after the global policy — "Locked / Global default / Custom
+  pin / Coherent default" — so it never misreports what an app will read; a hard lock routes edits to Settings.
+
 ## [0.31.0] - 2026-08-06
 
 ### Added

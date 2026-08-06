@@ -724,6 +724,23 @@ public class MainActivity extends Activity {
         // masking: when it's ON, arm the hook (spoof_accounts=1); when OFF, gmail was already omitted
         // above, so the hook stays dormant. One control, shown next to the value — no separate toggle.
         if (Toggles.isEnabled(prefs, "gmail") && out.containsKey("gmail")) out.put("spoof_accounts", "1");
+        // Global default-location policy (Settings): resolve the fix that actually gets applied —
+        // lock > this identity's own custom pin > the global default location > the area-code default.
+        // Only when GPS spoofing is on for this identity (gps_lat survived the toggle filter above).
+        if (out.containsKey("gps_lat")) {
+            // Read the area/android_id INPUTS from the RAW identity (src), not the toggle-filtered `out`:
+            // mobile_number and android_id are individually toggleable, and if either is off they'd be absent
+            // from `out` — then the custom-pin check couldn't run and a global fallback would silently clobber a
+            // deliberate per-identity pin (and diverge from the Identity card, which reads the raw profile). The
+            // GPS VALUE + the on/off guard still come from `out` (they honour the gps toggle).
+            String ph = src.get("mobile_number");
+            String area = (ph != null && ph.length() == 11 && ph.startsWith("1")) ? ph.substring(1, 4) : null;
+            String[] eff = com.specter.module.gen.RootWriter.effectiveGps(area, src.get("android_id"),
+                    out.get("gps_lat"), out.get("gps_lon"),
+                    prefs.getString("gps_global_lat", null), prefs.getString("gps_global_lon", null),
+                    prefs.getBoolean("gps_global_lock", false));
+            if (eff != null) { out.put("gps_lat", eff[0]); out.put("gps_lon", eff[1]); }
+        }
         return out;
     }
 
@@ -1070,6 +1087,11 @@ public class MainActivity extends Activity {
         // the full field editor. A user applies in 2 taps; power users expand details when they want them.
         content.addView(identitySummaryCard());
 
+        // Location — a prominent, always-visible card (per-identity GPS: address/coords, applied with the
+        // identity + restored from the vault). Surfaced here, not buried under "Show all fields".
+        content.addView(section("Location"));
+        content.addView(locationCard());
+
         // Target apps — one group card, plain rows.
         content.addView(section("Target apps"));
         content.addView(targetAppsCard());
@@ -1085,8 +1107,6 @@ public class MainActivity extends Activity {
         if (detailsExpanded) {
             content.addView(section("Device"));
             content.addView(deviceSpecCard());
-            content.addView(section("Location"));
-            content.addView(locationCard());
             content.addView(section("Identifiers"));
             content.addView(identifiersCard());   // one group card, plain rows (was 15 separate cards)
             TextView hint = new TextView(this);
@@ -1440,7 +1460,22 @@ public class MainActivity extends Activity {
     private View locationCard() {
         LinearLayout card = cardBox();
         card.setPadding(dp(12), dp(9), dp(12), dp(9));
-        final String lat = profile.get("gps_lat"), lon = profile.get("gps_lon");
+        final String ownLat = profile.get("gps_lat"), ownLon = profile.get("gps_lon");
+        // What an app will ACTUALLY read after the global default-location policy (Settings): lock > this
+        // identity's own custom pin > the global default > the area-code default. The card shows the EFFECTIVE
+        // fix so it never lies about what's applied.
+        // Honour the same GPS on/off state the apply path does (enabledProfile's out.containsKey("gps_lat")
+        // guard): if location spoofing is off for this identity, an app reads the REAL GPS — so the card must
+        // say so, never display a spoofed value it won't apply.
+        final boolean gpsOn = Toggles.isEnabled(prefs, "gps_lat");
+        final boolean lock = prefs.getBoolean("gps_global_lock", false);
+        final String gLat = prefs.getString("gps_global_lat", null), gLon = prefs.getString("gps_global_lon", null);
+        String ph = profile.get("mobile_number");
+        String area = (ph != null && ph.length() == 11 && ph.startsWith("1")) ? ph.substring(1, 4) : null;
+        String[] eff = (gpsOn && ownLat != null) ? com.specter.module.gen.RootWriter.effectiveGps(
+                area, profile.get("android_id"), ownLat, ownLon, gLat, gLon, lock) : null;
+        final boolean globalInEffect = eff != null;                // a global default/lock overrode this identity
+        final String lat = globalInEffect ? eff[0] : ownLat, lon = globalInEffect ? eff[1] : ownLon;
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -1451,7 +1486,7 @@ public class MainActivity extends Activity {
         lab.setTextSize(13);
         lab.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         final TextView val = new TextView(this);
-        val.setText(lat == null ? "—" : lat + ", " + lon);
+        val.setText(!gpsOn ? "Off" : lat == null ? "—" : lat + ", " + lon);
         val.setTextColor(Theme.INK);
         val.setTextSize(14);
         val.setSingleLine(true);                                   // never wrap a value mid-text (layout rule)
@@ -1463,16 +1498,26 @@ public class MainActivity extends Activity {
         card.addView(row);
 
         TextView cap = new TextView(this);
-        cap.setText(lat == null ? "Randomize an identity first"
-                : isDefaultLocation() ? "Coherent default — matches the area code" : "Custom pin");
+        cap.setText(!gpsOn ? "Location spoofing is off — apps read the real GPS"
+                : lat == null ? "Randomize an identity first"
+                : globalInEffect && lock ? "🔒 Locked to a global location · in Settings"
+                : globalInEffect ? "Global default location · in Settings"
+                : isDefaultLocation() ? "Coherent default — matches the area code"
+                : "Custom pin");
         cap.setTextColor(Theme.DIM);
         cap.setTextSize(11);
         cap.setPadding(0, dp(2), 0, 0);
         card.addView(cap);
 
-        if (lat != null) fillCity(lat, lon, val);                  // async "City, ST · lat, lon"
+        if (gpsOn && lat != null) fillCity(lat, lon, val);         // async "City, ST · lat, lon"
         card.setOnClickListener(x -> {
             if (profile.isEmpty()) { toast("No identity yet — tap Randomize first."); return; }
+            // A hard lock means the per-identity pin would be ignored — send the user to Settings instead of
+            // opening an editor whose value can't take effect. A global fallback still lets a per-identity pin win.
+            if (globalInEffect && lock) {
+                toast("Location is locked globally — change it in Settings.");
+                return;
+            }
             editLocation();
         });
         return card;
@@ -2302,6 +2347,11 @@ public class MainActivity extends Activity {
         info.addView(desc);
         content.addView(info);
 
+        // A location applied to EVERY identity, independent of any one fingerprint — a fallback, or a hard lock.
+        // Per-identity GPS still lives on the Identity screen (Location card); this is the not-tied-to-one option.
+        content.addView(sectionLabel("Location"));
+        content.addView(globalLocationCard());
+
         content.addView(sectionLabel("Protections"));
         content.addView(protectionsCard(false));
 
@@ -2338,8 +2388,134 @@ public class MainActivity extends Activity {
         content.addView(sectionLabel("Advanced (root)"));
         content.addView(widevineL3Row());
         content.addView(gsfResetRow());
-        // Location spoofing (proper hidemymock + Lockito-style GPS) is a planned later PR — not shown
-        // as a dead toggle until it actually works.
+    }
+
+    /** The global default-location control: a "Default location" (address/coords, applied to every identity
+     *  when it has no pin of its own) + a "Lock" switch that forces it on every identity regardless. Distinct
+     *  from the per-identity Location card on the Identity screen. Empty = identities use their own coherent fix. */
+    private View globalLocationCard() {
+        LinearLayout card = cardBox();
+        final String gLat = prefs.getString("gps_global_lat", null), gLon = prefs.getString("gps_global_lon", null);
+        final String gLabel = prefs.getString("gps_global_label", null);
+        final boolean set = gLat != null && !gLat.isEmpty() && gLon != null && !gLon.isEmpty();
+
+        // Row 1 — the location itself (tap to set / change / clear).
+        LinearLayout r1 = new LinearLayout(this);
+        r1.setOrientation(LinearLayout.HORIZONTAL);
+        r1.setGravity(Gravity.CENTER_VERTICAL);
+        r1.setPadding(0, dp(6), 0, dp(6));
+        LinearLayout t1 = new LinearLayout(this);
+        t1.setOrientation(LinearLayout.VERTICAL);
+        t1.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView lab = label("Default location");
+        lab.setTextColor(Theme.INK); lab.setTextSize(14);
+        t1.addView(lab);
+        final TextView sub = value(set
+                ? (gLabel != null && !gLabel.isEmpty() ? gLabel + " · " + gLat + ", " + gLon : gLat + ", " + gLon)
+                : "Not set — each identity uses its own coherent location");
+        sub.setTextColor(Theme.DIM); sub.setTextSize(12);
+        sub.setSingleLine(true); sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        t1.addView(sub);
+        r1.addView(t1);
+        TextView act = new TextView(this);
+        act.setText(set ? "Change" : "Set");
+        act.setTextColor(Theme.GOLD); act.setTextSize(14);
+        act.setPadding(dp(12), 0, 0, 0);
+        r1.addView(act);
+        r1.setOnClickListener(v -> editGlobalLocation());
+        card.addView(r1);
+        if (set && gLabel != null) fillCity(gLat, gLon, sub);   // fill/confirm the city label
+
+        card.addView(hairlineInset());
+
+        // Row 2 — lock (forced everywhere) vs fallback (only when an identity has no pin).
+        LinearLayout r2 = new LinearLayout(this);
+        r2.setOrientation(LinearLayout.HORIZONTAL);
+        r2.setGravity(Gravity.CENTER_VERTICAL);
+        r2.setPadding(0, dp(6), 0, dp(6));
+        LinearLayout t2 = new LinearLayout(this);
+        t2.setOrientation(LinearLayout.VERTICAL);
+        t2.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView lab2 = label("Lock to this location");
+        lab2.setTextColor(set ? Theme.INK : Theme.DIM); lab2.setTextSize(14);
+        t2.addView(lab2);
+        TextView d2 = value("On: forced on every identity · Off: a fallback only");
+        d2.setTextColor(Theme.DIM); d2.setTextSize(12); d2.setTextIsSelectable(false);
+        t2.addView(d2);
+        r2.addView(t2);
+        final Switch sw = new Switch(this); tintSwitch(sw);
+        sw.setChecked(prefs.getBoolean("gps_global_lock", false));
+        sw.setEnabled(set);                                     // can't lock to nothing
+        sw.setOnCheckedChangeListener((v, on) -> {
+            prefs.edit().putBoolean("gps_global_lock", on).apply();
+            status.setText(on ? "Location locked — every identity uses it. Re-apply to push."
+                    : "Lock off — fallback only. Re-apply to push.");
+        });
+        r2.addView(sw);
+        card.addView(r2);
+        return card;
+    }
+
+    /** Dialog to set the GLOBAL default location: coordinates OR an address (geocoded at set-time), blank = clear. */
+    private void editGlobalLocation() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        final EditText in = new EditText(this);
+        in.setHint("lat, lon   or   an address");
+        String gLat = prefs.getString("gps_global_lat", null), gLon = prefs.getString("gps_global_lon", null);
+        if (gLat != null && !gLat.isEmpty()) in.setText(gLat + ", " + gLon);
+        in.setTextColor(Theme.INK);
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        box.addView(in);
+        TextView help = new TextView(this);
+        help.setText("Applies to every identity (a fallback, or a hard lock below).\nBlank = clear — identities use their own.");
+        help.setTextColor(Theme.DIM);
+        help.setTextSize(11);
+        help.setPadding(0, dp(8), 0, 0);
+        box.addView(help);
+        new AlertDialog.Builder(this)
+                .setTitle("Default location")
+                .setView(box)
+                .setPositiveButton("Set", (d, w) -> applyGlobalLocationInput(in.getText().toString().trim()))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void applyGlobalLocationInput(String s) {
+        if (s.isEmpty()) {                                       // clear the global location (and the lock)
+            prefs.edit().remove("gps_global_lat").remove("gps_global_lon").remove("gps_global_label")
+                    .putBoolean("gps_global_lock", false).apply();
+            render();
+            status.setText("Global location cleared — identities use their own.");
+            return;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "^\\s*(-?\\d{1,2}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)\\s*$").matcher(s);
+        if (m.matches()) {
+            try {
+                double la = Double.parseDouble(m.group(1)), lo = Double.parseDouble(m.group(2));
+                if (la < -90 || la > 90 || lo < -180 || lo > 180) { toast("Coordinates out of range."); return; }
+                setGlobalLocation(fmt6(la), fmt6(lo), "");
+            } catch (Throwable t) { toast("Couldn't parse those coordinates."); }
+            return;
+        }
+        status.setText("Looking up “" + s + "”…");
+        final String addr = s;
+        new Thread(() -> {
+            final double[] ll = geocodeAddress(addr);
+            runOnUiThread(() -> {
+                if (ll == null) { status.setText(""); toast("Couldn't find that address — try coordinates."); return; }
+                setGlobalLocation(fmt6(ll[0]), fmt6(ll[1]), addr);
+            });
+        }).start();
+    }
+
+    private void setGlobalLocation(String lat, String lon, String label) {
+        prefs.edit().putString("gps_global_lat", lat).putString("gps_global_lon", lon)
+                .putString("gps_global_label", label).apply();
+        render();
+        status.setText("Global location set — Re-apply to push. Lock it to force it on every identity.");
     }
 
     /** The reputation API keys this build was compiled with, if any. Empty in a distributable build — the
@@ -3534,6 +3710,11 @@ public class MainActivity extends Activity {
             if (g == null || (g.tz == null && (g.lat == null || g.lon == null))) return null;
             // Final guard: the SAME VPN network must still be active right before we write.
             if (!vpn.equals(HealthCheck.activeVpnNetwork(getApplicationContext()))) return null;
+            // A global default-location (Settings) means the user is controlling GPS deliberately — the
+            // automatic IP-align steps aside for it (timezone still aligns). Its onlyIfDefault guard below would
+            // preserve it anyway; this makes the intent explicit.
+            String gGlobal = prefs.getString("gps_global_lat", null);
+            boolean globalGpsSet = gGlobal != null && !gGlobal.isEmpty();
             com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
             int n = 0, gn = 0;
             for (String pkg : pkgs) {
@@ -3541,7 +3722,7 @@ public class MainActivity extends Activity {
                 // Align the device GPS to the proxy IP's coordinates too, so device location + timezone tell one
                 // coherent proxy-city story (a device GPS far from the IP is a fraud tell). onlyIfDefault=true:
                 // this AUTOMATIC path never clobbers a location the user set by hand — only a still-default fix.
-                if (g.lat != null && g.lon != null
+                if (!globalGpsSet && g.lat != null && g.lon != null
                         && com.specter.module.gen.RootWriter.setGps(sh, pkg, g.lat, g.lon, true)) gn++;
             }
             if (n == 0 && gn == 0) return null;
@@ -3586,12 +3767,19 @@ public class MainActivity extends Activity {
             // Align whatever the lookup gave — timezone AND/OR coordinates. The gate is now just the ABA guard,
             // not "zone != null", so a lookup with coordinates but no timezone.id still aligns the location (the
             // confirm text promises "timezone + location").
+            // A hard LOCK (Settings) means "this location, always" — even a manual match-to-IP respects it
+            // (timezone still aligns). A global default WITHOUT lock is a fallback the explicit action may override.
+            boolean gpsLocked = prefs.getBoolean("gps_global_lock", false)
+                    && prefs.getString("gps_global_lat", null) != null
+                    && !prefs.getString("gps_global_lat", "").isEmpty();
             if (stillSafe && (zone != null || haveCoords)) {
                 com.specter.module.gen.RootWriter.SuShell sh = new com.specter.module.gen.RootWriter.SuShell();
                 for (String pkg : targets) {
                     boolean tzOk = zone != null && com.specter.module.gen.RootWriter.setTimezone(sh, pkg, zone);
-                    // Manual "match to IP" (onlyIfDefault=false) — the user explicitly asked, so override a custom pin.
-                    boolean gpsOk = haveCoords && com.specter.module.gen.RootWriter.setGps(sh, pkg, glat, glon);
+                    // Manual "match to IP" (onlyIfDefault=false) — the user explicitly asked, so override a custom
+                    // pin. But a hard lock still wins (skip the GPS write when locked).
+                    boolean gpsOk = !gpsLocked && haveCoords
+                            && com.specter.module.gen.RootWriter.setGps(sh, pkg, glat, glon);
                     if (tzOk) anyTz = true;
                     if (gpsOk) anyGps = true;
                     if (tzOk || gpsOk) {

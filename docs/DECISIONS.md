@@ -1122,3 +1122,11 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   timezone both point at the proxy city, mutually coherent, matching the v0.19.0 tz-follows-IP philosophy
   (the portable phone number is the weakest signal). AUTO on-apply align preserves a hand-set custom pin
   (RootWriter.setGps onlyIfDefault=true); the MANUAL "match to IP" fix overrides it (explicit user intent).
+- **2026-08-06 — Global location precedence: lock > per-identity pin > global default > area-code default.**
+  A user wanted BOTH a per-fingerprint location AND a not-tied-to-a-fingerprint one. Resolved with a global
+  "Default location" (fallback) + a "Lock" (override-all), evaluated by the pure RootWriter.effectiveGps at
+  APPLY time (enabledProfile — the single choke every apply + vault-restore routes through), so the Identity
+  card's DISPLAY and the applied bytes always agree (the card runs the same resolver). The vault keeps each
+  identity's OWN fix (not the resolved one), so the global policy re-applies fresh on every restore. A global
+  location set → the proxy-IP auto-align steps aside (the user is controlling location deliberately); a hard
+  lock is respected even by the manual match-to-IP.

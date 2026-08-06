@@ -122,6 +122,28 @@ public class RootWriterTest {
         check(w2[0] == 0, "auto-align never wrote over the custom pin");
         check(RootWriter.setGps(custShell, "com.x.y", 40.0, -80.0, false), "manual align overrides even a custom pin");
 
+        // ---- effectiveGps: the global default-location precedence (lock > pin > global default > area default) ----
+        String[] d312 = Generators.gpsForAreaCode("312", "aidZ");   // this identity's coherent default
+        String gLat = "34.052200", gLon = "-118.243700";            // a global default (LA)
+        // 1) LOCK on + global set -> global wins over EVERYTHING (even a custom pin)
+        String[] r1 = RootWriter.effectiveGps("312", "aidZ", "25.761700", "-80.191800", gLat, gLon, true);
+        check(r1 != null && r1[0].equals(gLat) && r1[1].equals(gLon), "lock: global overrides a custom pin");
+        // 2) no lock + identity has a CUSTOM pin -> keep the pin (return null)
+        check(RootWriter.effectiveGps("312", "aidZ", "25.761700", "-80.191800", gLat, gLon, false) == null,
+                "no-lock: a custom pin beats the global default");
+        // 3) no lock + identity is at its AREA-CODE DEFAULT + global set -> global fallback applies
+        String[] r3 = RootWriter.effectiveGps("312", "aidZ", d312[0], d312[1], gLat, gLon, false);
+        check(r3 != null && r3[0].equals(gLat) && r3[1].equals(gLon), "no-lock: global fallback fills a default fix");
+        // 4) no lock + default fix + NO global -> keep the area-code default (null)
+        check(RootWriter.effectiveGps("312", "aidZ", d312[0], d312[1], null, null, false) == null,
+                "no-lock + no global -> keep the area-code default");
+        // 5) lock set but NO global location -> behaves as no-lock (can't lock to nothing)
+        check(RootWriter.effectiveGps("312", "aidZ", d312[0], d312[1], null, null, true) == null,
+                "lock with no global location is a no-op");
+        // 6) empty-string global coords treated as absent
+        check(RootWriter.effectiveGps("312", "aidZ", d312[0], d312[1], "", "", false) == null,
+                "blank global coords treated as no global");
+
         // ---- serialize <-> parse ROUND-TRIP: toFlatJson (the writer) must be losslessly readable by
         //      SpoofLogic.parseFlatJson (the reader the hooks use). This is the historically-buggy area
         //      (the 0.22.10 `\/`-unescape fix): a value with a quote/backslash/newline/CR/tab or a JSON

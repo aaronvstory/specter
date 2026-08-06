@@ -237,6 +237,29 @@ public final class RootWriter {
         } catch (Throwable t) { return false; }
     }
 
+    /** Resolve the effective GPS fix to APPLY, given the identity's own gps and the global default-location
+     *  policy (Settings). Precedence, high→low:
+     *    1. a hard LOCK to the global location (overrides everything),
+     *    2. the identity's own DELIBERATE custom pin (its gps differs from its area-code default),
+     *    3. the global DEFAULT location (fallback, when the identity has no deliberate pin),
+     *    4. the identity's own fix (its coherent area-code default) — leave it be.
+     *  Returns {lat, lon} (6-decimal strings, as the rest of the pipeline uses) to WRITE onto the applied
+     *  profile, or null to leave the profile's own gps unchanged. Pure (no I/O) so it is unit-tested. The
+     *  global coordinates are trusted as-provided (the Settings UI formats + validates them at set time). */
+    public static String[] effectiveGps(String areaCode, String androidId, String profLat, String profLon,
+                                        String globalLat, String globalLon, boolean lock) {
+        boolean haveGlobal = globalLat != null && !globalLat.isEmpty() && globalLon != null && !globalLon.isEmpty();
+        if (lock && haveGlobal) return new String[]{ globalLat, globalLon };          // hard override, wins over all
+        boolean customPin = false;
+        if (areaCode != null && androidId != null && profLat != null && profLon != null) {
+            String[] def = Generators.gpsForAreaCode(areaCode, androidId);
+            customPin = !(def[0].equals(profLat) && def[1].equals(profLon));           // fix != area-code default
+        }
+        if (customPin) return null;                                                   // the per-identity pin wins
+        if (haveGlobal) return new String[]{ globalLat, globalLon };                  // global default (fallback)
+        return null;                                                                  // keep the area-code default
+    }
+
     /** Serialize a flat string map to JSON with the same escaping the profile writer expects. */
     static String toFlatJson(java.util.Map<String, String> m) {
         StringBuilder b = new StringBuilder("{");
