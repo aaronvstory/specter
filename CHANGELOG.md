@@ -3,13 +3,21 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.3] - 2026-08-06
+
+### Fixed
+- **Android: a keyless hosting exit no longer reads "Not flagged as proxy or VPN" in green.** 0.29.2 gated
+  the "Flagged as" row on any ip-api signal, so a datacenter/hosting IP (hosting=true, proxy=false) with no
+  key showed a misleading green all-clear. The row now shows only when IPQS is keyed OR ip-api actually
+  flagged a proxy; the hosting signal stays in the "Exit type" tile. (Sourcery review of #88.)
+
 ## [0.29.2] - 2026-08-06
 
 ### Changed
 - **Android: the "Flagged as" reputation row now shows for keyless users too**, driven by ip-api.com's
   proxy read (labelled "Proxy (ip-api)"), not only when an IPQS key is set — parity with the web, where
   ip-api's proxy signal already surfaces. No change when IPQS is keyed (verified on-device: renders
-  "Proxy Â· Abuse" as before).
+  "Proxy · Abuse" as before).
 
 ## [0.29.1] - 2026-08-06
 
@@ -1183,7 +1191,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ### Changed
 - **Saved-profile UI cleanup.** Saved entries now read like a phone, not a filename: the title is the
-  device/name and the subtitle is a readable time (âMon 07/26 Â· 2:53 PMâ) instead of the raw
+  device/name and the subtitle is a readable time (âMon 07/26 · 2:53 PMâ) instead of the raw
   â072726-Mon-1453-â¦â label. The Save dialog prefills the device name (blank = date/time) with a hint.
 ### Fixed
 - **Save-name doubling bug.** If the clock rolled to a new minute between opening the Save dialog and

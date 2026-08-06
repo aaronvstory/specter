@@ -2736,9 +2736,12 @@ public class MainActivity extends Activity {
             // 3) Flags, as their own compact line. Shown when IPQS is keyed OR ip-api gave us a KEYLESS
             //    proxy/hosting read — so a no-key user still sees a "flagged as" verdict (parity with the web,
             //    which surfaces ip-api's proxy note).
+            // Show the row when IPQS is keyed, OR when ip-api actually flagged a PROXY. NOT for hosting-only
+            // (proxy=false): the datacenter/hosting signal is already the "Exit type" tile above, and an empty
+            // flags list here would render a misleading green "Not flagged as proxy or VPN" for a hosting exit.
             boolean haveIpqs = rep.fraudScore != null;
-            boolean haveIpapi = rep.ipapiProxy != null || rep.ipapiHosting != null;
-            if (haveIpqs || haveIpapi) {
+            boolean haveIpapiProxy = Boolean.TRUE.equals(rep.ipapiProxy);
+            if (haveIpqs || haveIpapiProxy) {
                 java.util.List<String> flags = new java.util.ArrayList<>();
                 if (Boolean.TRUE.equals(rep.tor)) flags.add("Tor");
                 if (Boolean.TRUE.equals(rep.vpn)) flags.add("VPN");
