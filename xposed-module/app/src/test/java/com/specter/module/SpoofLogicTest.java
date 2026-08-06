@@ -273,6 +273,17 @@ public class SpoofLogicTest {
         check(par == 0, "webrtc shim parens balanced");
         check(brc == 0, "webrtc shim braces balanced");
 
+        // isNativeCurrent: .so byte-match is authoritative; version compare is only the fallback.
+        check(SpoofLogic.isNativeCurrent("abc", "abc", "v0.29.1", "v0.29.5"),
+                "Java-only release: bytes match, version bumped -> CURRENT (the false-reboot-banner fix)");
+        check(!SpoofLogic.isNativeCurrent("abc", "def", "v1", "v1"),
+                "native rebuild: same version, bytes differ -> STALE (keeps the original same-version fix)");
+        check(!SpoofLogic.isNativeCurrent("abc", "def", "v1", "v2"), "bytes differ -> STALE regardless of version");
+        check(SpoofLogic.isNativeCurrent("ABC", "abc", "v1", "v2"), "md5 compare is case-insensitive");
+        check(SpoofLogic.isNativeCurrent(null, "x", "v1", "v1"), "no hash -> fall back to version (match) -> CURRENT");
+        check(!SpoofLogic.isNativeCurrent("x", null, "v1", "v2"), "no bundled hash + version mismatch -> STALE");
+        check(!SpoofLogic.isNativeCurrent(null, null, null, "v1"), "no hash + no installed version -> STALE (not current)");
+
         System.out.println("SpoofLogic: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }
