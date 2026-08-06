@@ -1,51 +1,6 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "{sw.js,manifest.webmanifest,assets.html}",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "*.{svg,png}",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "api/check.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "15mb",
-        "includeFiles": "api/ipcheck_core.py"
-      }
-    },
-    {
-      "src": "api/config.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/check",
-      "methods": [
-        "POST",
-        "OPTIONS"
-      ],
-      "dest": "/api/check.py"
-    },
-    {
-      "src": "/api/config",
-      "dest": "/api/config.py"
-    },
-    {
-      "src": "/(sw\\.js|manifest\\.webmanifest|assets\\.html|[^/]+\\.(?:svg|png))",
-      "dest": "/$1"
-    },
-    {
-      "src": "/",
-      "dest": "/index.html"
-    }
-  ]
+  "functions": {
+    "api/check.py": { "maxDuration": 30 },
+    "api/config.py": { "maxDuration": 10 }
+  }
 }
