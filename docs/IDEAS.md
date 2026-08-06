@@ -1270,3 +1270,20 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   (IP banned / rate-limited / contact rejected) for both, so the free tier's r/i RESPONSE fields could not
   be observed. BLOCKED on live verification: needs an un-banned source IP + a valid metered contact.
   Do NOT build r/i parsing until a successful response confirms the field names. Status: blocked-verify.
+
+## 2026-08-06 - two deeper bugs found while verifying the 0.29.5 phone update (diagnosed, need focused fixes)
+- **False "Reboot required" banner on every update (HIGH, misleading).** After install -r + reboot, with hooks
+  PROVEN live this boot (probe: 30 spoofed), the main screen still shows "Reboot required - a recent change
+  needs a reboot to activate." ROOT CAUSE: ZygiskInstaller.Status.current = versionOk && hashOk. BOTH
+  false-positive on a Java-only release: (a) module.prop version is stamped from ../VERSION so it bumps every
+  release incl. Java-only ones; (b) the native .so md5 differs on every non-reproducible rebuild even with no
+  native source change. So current=false forever -> banner persists. install -r also does NOT update the
+  Zygisk .so in /data/adb/modules, and the LSPosed prefs-path switch around install -r can orphan the
+  reboot_pending_since marker. FIX DIRECTION: stamp a native_source_hash into module.prop at build time
+  (hash the cpp/h, not the binary) and compare THAT; or suppress the banner when the native layer is proven
+  functionally live this boot. Needs on-device test (another install/reboot cycle). Status: idea/diagnosed.
+- **Identity title redundancy: "Brittany Mccullough 3 Google Pixel" (MED).** The current-identity title comes
+  from the vault LABEL via labelName(), and the label itself embeds the device name + a mid-string "3" dedup,
+  so "Google Pixel" shows in BOTH the title and the subtitle ("Google Pixel 5 · T-Mobile"). It's a label-
+  GENERATION issue (new saves) + a data issue (existing labels already carry it). FIX: stop embedding the
+  device in the vault label, or have labelName strip a trailing device-name token. Status: idea/diagnosed.
