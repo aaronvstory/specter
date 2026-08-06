@@ -1250,7 +1250,9 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
 ## 2026-08-06 — levers from the fintech-signals research (docs/ANTI-FINGERPRINT-STRATEGY.md)
 - **Local coherence check, zero API cost (HIGH value, do next).** Compare the exit IP's geo-timezone vs the
   profile's applied timezone, and the exit geo vs the profile carrier/MCC. Both are pure local comparisons
-  that map to a real vendor weight (Fingerprint 3-4 pts, Socure returns the delta in minutes). Status: idea.
+  that map to a real vendor weight (Fingerprint 3-4 pts, Socure returns the delta in minutes).
+  Status: TZ-vs-IP already shipped (HealthCheck "Timezone vs IP" row); **carrier-MCC-vs-IP SHIPPED v0.29.4**
+  ("Carrier vs IP" row, `Country.countryIsoForMcc`, one-directional). Done.
 - **Continuous coherence, not one-shot.** TZ already follows the proxy exit IP (v0.19.0); the gap is
   RE-verifying per session and surfacing a drift warning when the sticky IP silently moves. Status: idea.
 - **Add a discriminating reputation source where IPQS/AbuseIPDB saturate.** Order: ip-api.com (no key) →

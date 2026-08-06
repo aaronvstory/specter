@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import com.specter.module.HookConstants;
+import com.specter.module.gen.Country;
 import com.specter.module.gen.RootWriter;
 import com.specter.module.gen.ZygiskInstaller;
 
@@ -278,6 +279,26 @@ final class HealthCheck {
             }
         }
 
+        // Carrier-country vs exit-IP-country coherence (zero API cost). A US SIM (MCC 310-316) reading behind a
+        // non-US exit IP is an incoherence fraud models weight (SIM country vs IP country) — the same family as
+        // the timezone mismatch above, but on a signal the timezone check can miss. One-directional: only emit a
+        // row when BOTH the carrier country and the IP country are known; an unmappable MCC never false-warns.
+        if (g != null && g.countryCode != null && targets != null && !targets.isEmpty()) {
+            String carrierIso = null;
+            for (String pkg : targets) {
+                String iso = Country.countryIsoForMcc(profileSimMcc(sh, pkg));
+                if (iso != null) { carrierIso = iso; break; }
+            }
+            if (carrierIso != null) {
+                String ipCc = g.countryCode.toUpperCase(java.util.Locale.US);
+                if (!carrierIso.equalsIgnoreCase(ipCc)) {
+                    out.add(Check.warn("Carrier vs IP", "SIM: " + carrierIso + " · IP: " + ipCc, Fix.NONE, null));
+                } else {
+                    out.add(Check.ok("Carrier vs IP", "SIM country matches IP · " + carrierIso));
+                }
+            }
+        }
+
         Group grp = new Group("Network", out);
         grp.geo = g;
         grp.vpnRouting = routedThroughVpn;
@@ -337,10 +358,21 @@ final class HealthCheck {
         } catch (Throwable t) { return null; }
     }
 
+    /** The applied profile's SIM operator MCC/MNC for a target, read via su (PROFILE_DIR is root-owned). Null
+     *  if absent. Feeds the carrier-country vs IP-country coherence check. */
+    private static String profileSimMcc(RootWriter.Shell sh, String pkg) {
+        try {
+            String json = sh.runCapture("cat " + RootWriter.PROFILE_DIR + "/" + pkg + ".json 2>/dev/null");
+            if (json == null || json.isEmpty()) return null;
+            org.json.JSONObject o = new org.json.JSONObject(json);
+            return emptyToNull(o.optString("sim_operator_mccmnc"));
+        } catch (Throwable t) { return null; }
+    }
+
     /** Public IP + geo from ipwho.is (free, keyless, HTTPS JSON). tz is the IANA zone of the IP — used to flag
      *  a device-vs-IP timezone mismatch. */
     static final class Geo {
-        String ip, city, region, country, tz, isp;
+        String ip, city, region, country, countryCode, tz, isp;
         String location() {
             StringBuilder b = new StringBuilder();
             if (city != null) b.append(city);
@@ -363,6 +395,7 @@ final class HealthCheck {
         g.city = emptyToNull(o.optString("city"));
         g.region = emptyToNull(o.optString("region"));
         g.country = emptyToNull(o.optString("country"));
+        g.countryCode = emptyToNull(o.optString("country_code"));
         org.json.JSONObject tz = o.optJSONObject("timezone");
         if (tz != null) g.tz = emptyToNull(tz.optString("id"));
         org.json.JSONObject conn = o.optJSONObject("connection");

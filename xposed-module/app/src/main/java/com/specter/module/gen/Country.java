@@ -46,4 +46,17 @@ public final class Country {
     }
 
     public static Country[] all() { return new Country[]{US}; }
+
+    /** ISO country code for a SIM MCC/MNC (reads just the 3-digit MCC), or null when unknown. Used to flag a
+     *  carrier-country vs exit-IP-country incoherence (a US SIM behind a non-US exit). USA-only build: ITU
+     *  assigns MCC 310-316 entirely to the United States. Null on anything not-known-US so it never
+     *  false-warns on a country we can't map (one-directional, per the reputation rule). */
+    public static String countryIsoForMcc(String mccmnc) {
+        if (mccmnc == null || mccmnc.length() < 3) return null;
+        try {
+            int mcc = Integer.parseInt(mccmnc.substring(0, 3));
+            if (mcc >= 310 && mcc <= 316) return "US";
+        } catch (NumberFormatException ignored) {}
+        return null;
+    }
 }
