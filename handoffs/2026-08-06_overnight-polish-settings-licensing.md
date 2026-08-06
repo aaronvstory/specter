@@ -39,6 +39,15 @@
 > item turned out to ALREADY exist (Status → Network "Timezone vs IP"). Note: `_direct_baseline_ms` +
 > `_ipapi_lookup` are both module-global-ish; the conftest autouse fixture stubs them for test isolation.
 >
+> ### ✅ UPDATE 3 ~08:05 — live Dasher trace DONE (PR #85 merged)
+> Did the read-only Dasher trace properly this time (clean continuous filtered capture, not the drowned
+> logcat dump). Findings in docs/ANTI-FINGERPRINT-STRATEGY.md: EVERY identity signal Dasher reads is
+> spoofed (android_id returns the profile's spoofed 6cbe4e3eb40e2ed4; board/sdk/first_api native; 418
+> factory-reset file-mtime probes all hooked). The real exposure is BEHAVIORAL — Dasher loads the CMT
+> (Cambridge Mobile Telematics) SensorFlow SDK (raw accel/gyro driving telematics), the behavioral layer no
+> device-config profile can touch (confirms the research). Conclusion: config layer COMPLETE for what it
+> covers; don't chase telematics with more spoofing. So §2d's trace ask is fully done + merged.
+>
 > **Highest-value NEXT items (in `docs/IDEAS.md`, 2026-08-06 entry):** (1) local coherence check — exit-IP
 > timezone vs the profile's applied timezone + exit geo vs carrier/MCC (zero API cost, real vendor weight);
 > (2) add a discriminating reputation source where IPQS/AbuseIPDB saturate (ip-api.com → ipapi.is); (3)
