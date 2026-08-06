@@ -68,9 +68,6 @@ public final class Profile {
             "battery_uah",
             // US timezone (derived from the phone area code) + locale — appended last, matches profile.py.
             "timezone", "locale",
-            // Per-identity GPS fix (area-code metro centroid + android_id jitter) — emitted in the same tz
-            // block, after locale, matches profile.py order. A static point only (no faked motion).
-            "gps_lat", "gps_lon", "gps_accuracy",
     };
 
     /** The globally-unique (ban-critical no-reuse) keys — mirror of identifiers.UNIQUE_KEYS. */
@@ -315,12 +312,6 @@ public final class Profile {
         if (ph != null && ph.length() == 11 && ph.startsWith("1")) {
             p.put("timezone", Generators.tzForAreaCode(ph.substring(1, 4)));
             p.put("locale", "en-US");
-            // Per-identity GPS fix, coherent with the area code's metro. Static point only (no faked motion,
-            // a telematics tell). Pure (no RNG) -> byte-parity with specter/profile.py.
-            String[] gps = Generators.gpsForAreaCode(ph.substring(1, 4), p.get("android_id"));
-            p.put("gps_lat", gps[0]);
-            p.put("gps_lon", gps[1]);
-            p.put("gps_accuracy", gps[2]);
         }
         return p;
     }
@@ -344,14 +335,6 @@ public final class Profile {
         if (ph != null && ph.length() == 11 && ph.startsWith("1")) {
             if (!p.containsKey("timezone")) p.put("timezone", Generators.tzForAreaCode(ph.substring(1, 4)));
             if (!p.containsKey("locale")) p.put("locale", "en-US");
-            // GPS fix backfill: derive from area code + android_id for a profile saved before GPS existed, so
-            // an old vault identity still spoofs a coherent location instead of leaking the host's GPS.
-            if (aid != null && !p.containsKey("gps_lat")) {
-                String[] gps = Generators.gpsForAreaCode(ph.substring(1, 4), aid);
-                p.put("gps_lat", gps[0]);
-                p.put("gps_lon", gps[1]);
-                p.put("gps_accuracy", gps[2]);
-            }
         }
         return p;
     }

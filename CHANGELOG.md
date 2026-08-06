@@ -3,6 +3,16 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.33.0] - 2026-08-07
+
+### Removed
+- **Per-identity GPS location spoofing — fully removed.** Specter no longer sets any app's location; scoped
+  apps read the real device GPS. Gone: the LocationManager + GMS Fused hooks, the generated
+  `gps_lat`/`gps_lon`/`gps_accuracy` fields, the Identity "Location" card + its editor, the Settings global
+  default-location control + hard lock, and the on-apply / match-to-IP GPS alignment. **Timezone** alignment
+  to the proxy exit IP is UNCHANGED (it never depended on GPS). `hide_mock` (hides a mock-provider flag like
+  Lockito's from scoped apps) is KEPT — location is left to a dedicated tool (e.g. Lockito).
+
 ## [0.32.1] - 2026-08-07
 
 ### Fixed

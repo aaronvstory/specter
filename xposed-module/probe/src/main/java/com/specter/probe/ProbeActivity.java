@@ -270,11 +270,6 @@ public class ProbeActivity extends Activity {
                         getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, -1)));
             } catch (Throwable t) { put(o, "boot_count", "ERR:" + t); }
 
-            // GPS location (per-identity gps_lat/gps_lon) — read the same way a real app does: raw
-            // LocationManager.getLastKnownLocation AND GMS Fused getLastLocation. isFromMockProvider must
-            // read false (the edge over a system mock-provider). The verifier diffs lat/lon vs the profile.
-            probeLocation(o);
-
             // /proc/meminfo MemTotal — a direct file read that must match total_ram (spoofed by the native
             // meminfo redirect), not leak the real device RAM.
             try {
@@ -432,39 +427,6 @@ public class ProbeActivity extends Activity {
         ScrollView sv = new ScrollView(this);
         sv.addView(tv);
         setContentView(sv);
-    }
-
-    /** Read the device location on every path a scoped app uses, so the verifier can prove Specter returns
-     *  the profile's per-identity fix (and isFromMockProvider()==false). Raw LocationManager (framework) +
-     *  GMS Fused (the path most apps, incl. Dasher, actually use). Fused getLastLocation() returns an
-     *  already-complete Task when our hook fired, so getResult() reads it synchronously on the main thread —
-     *  a still-pending task means the hook did NOT fire (reported, not silently null). */
-    private void probeLocation(JSONObject o) {
-        try {
-            android.location.LocationManager lm =
-                    (android.location.LocationManager) getSystemService(LOCATION_SERVICE);
-            reportLoc(o, "lm_gps", lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER));
-            reportLoc(o, "lm_network", lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER));
-        } catch (Throwable t) { put(o, "lm_gps", "ERR:" + t); }
-        try {
-            com.google.android.gms.location.FusedLocationProviderClient fused =
-                    com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this);
-            com.google.android.gms.tasks.Task<android.location.Location> task = fused.getLastLocation();
-            if (task != null && task.isComplete()) reportLoc(o, "fused_last", task.getResult());
-            else put(o, "fused_last", "pending(hook-miss?)");
-        } catch (Throwable t) { put(o, "fused_last", "ERR:" + t); }
-    }
-
-    /** Flatten a Location into prefix_lat/_lon/_acc/_mock/_provider; "null" when absent. 6-decimal lat/lon so
-     *  it compares byte-for-byte against the profile's gps_lat/gps_lon strings. */
-    private void reportLoc(JSONObject o, String prefix, android.location.Location l) {
-        if (l == null) { put(o, prefix, "null"); return; }
-        put(o, prefix + "_lat", String.format(java.util.Locale.ROOT, "%.6f", l.getLatitude()));
-        put(o, prefix + "_lon", String.format(java.util.Locale.ROOT, "%.6f", l.getLongitude()));
-        put(o, prefix + "_acc", String.valueOf(l.getAccuracy()));
-        put(o, prefix + "_provider", l.getProvider());
-        try { put(o, prefix + "_mock", String.valueOf(l.isFromMockProvider())); }
-        catch (Throwable t) { put(o, prefix + "_mock", "ERR:" + t); }
     }
 
     /** Native GPU renderer via an in-process EGL/GLES context — the direct-JNI path Specter's native

@@ -74,3 +74,16 @@
   - Generation uniqueness (separate layer): 400/2000/3000-gen no-reuse, persistence, fail-closed, fail-loud.
 - **Result:** pytest green + JVM green (SessionMigrator 53, AppDataVault 48). Invariant HOLDS, no gap.
   No code change - design is already correct + comprehensively covered (54 SessionMigrator asserts).
+
+## 2026-08-07 00:35 - Vault restore follows the save's own target app(s) + "what applied"
+- **What changed:** New `RestoreTargets` pure helper (parse/resolve/drivesSwitch) + `Vault.targetsFor`;
+  `restoreSaved` now drives targets from the save's stored `_targets` (app-agnostic) not the current
+  selection; `restoreAppData` re-points targets to `e.pkg`; both paths report itemised ✓/✗ "what landed".
+  VERSION 0.32.0→0.32.1; CHANGELOG + DECISIONS updated. New JVM test (20 asserts) wired into run-jvm-tests.sh.
+- **Why:** Restoring a bundle captured for app X applied it to whatever target was selected (Y) — incoherent.
+  User task (ultracode). Fix is driven entirely by each save's own packages, never a hardcoded app list.
+- **Verified:** JVM suite green (incl. RestoreTargetsTest 20), pytest green, clean module APK builds
+  (specter-module-v0.32.1.apk). Gauntlet: codex CLEAN + code-reviewer subagent CLEAN (only a dead-code
+  `if (switched) render()` in the empty-targets branch, removed). LF/CRLF discipline held; no nul files.
+  Squash-merged to main (d0917a7), pushed, branch deleted. Deployed v0.32.1 to P4 + 4a (both rebooted,
+  module re-registered in scope). GPS left to the user (4a Lockito Florida sim running per user; P4 user-handled).

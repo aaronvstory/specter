@@ -681,78 +681,6 @@ def tz_for_area_code(area):
     return _TZ_BY_AREA.get(area, "America/New_York")
 
 
-# Area-code -> metro centroid (lat, lon) in MICRODEGREES (integer x1e6). The area code already pins a
-# specific US metro (212 = NYC), so a fix derived from it is coherent with the phone number + the area-code
-# timezone. Storing integers (not floats) keeps the emitted lat/lon string byte-identical between Python and
-# Java (no float-formatting divergence). Pure lookup, no RNG -> byte-parity safe. Keep in EXACT lockstep with
-# Java Generators.LATLON_BY_AREA.
-_LATLON_ROWS = [
-    ((40712800, -74006000),  "212 646 917 718"),        # New York City
-    ((34052200, -118243700), "213 323 310 424 818"),    # Los Angeles
-    ((41878100, -87629800),  "312 773 872"),            # Chicago
-    ((29760400, -95369800),  "281 713 832"),            # Houston
-    ((33448400, -112074000), "602 480 623"),            # Phoenix
-    ((39952600, -75165200),  "215 267"),                # Philadelphia
-    ((29424100, -98493600),  "210 726"),                # San Antonio
-    ((32715700, -117161100), "619 858"),                # San Diego
-    ((32776700, -96797000),  "214 469 972"),            # Dallas
-    ((37338200, -121886300), "408 669"),                # San Jose
-    ((30267200, -97743100),  "512 737"),                # Austin
-    ((30332200, -81655700),  "904"),                    # Jacksonville
-    ((28538300, -81379200),  "407 321"),                # Orlando
-    ((25761700, -80191800),  "305 786"),                # Miami
-    ((27950600, -82457200),  "813"),                    # Tampa
-    ((39961200, -82998800),  "614"),                    # Columbus
-    ((41499300, -81694400),  "216"),                    # Cleveland
-    ((39103100, -84512000),  "513"),                    # Cincinnati
-    ((35227100, -80843100),  "704 980"),                # Charlotte
-    ((35779600, -78638200),  "919 984"),                # Raleigh
-    ((39768400, -86158100),  "317 463"),                # Indianapolis
-    ((47606200, -122332100), "206 425 253"),            # Seattle
-    ((39739200, -104990300), "303 720"),                # Denver
-    ((42360100, -71058900),  "617 857"),                # Boston
-    ((36162700, -86781600),  "615 629"),                # Nashville
-    ((35149500, -90049000),  "901"),                    # Memphis
-    ((45515200, -122678400), "503 971"),                # Portland OR
-    ((36169900, -115139800), "702 725"),                # Las Vegas
-    ((33749000, -84388000),  "404 470 678"),            # Atlanta
-    ((43038900, -87906500),  "414 262"),                # Milwaukee
-    ((35084400, -106650400), "505 575"),                # Albuquerque
-    ((40760800, -111891000), "801 385"),                # Salt Lake City
-    ((39099700, -94578600),  "816 913"),                # Kansas City
-    ((38627000, -90199400),  "314"),                    # St. Louis
-    ((40440600, -79995900),  "412 878"),                # Pittsburgh
-    ((44977800, -93265000),  "612 651 763"),            # Minneapolis / St. Paul
-]
-_LATLON_BY_AREA = {}
-for _ll, _codes in _LATLON_ROWS:
-    for _c in _codes.split():
-        _LATLON_BY_AREA[_c] = _ll
-
-# Default fix for an unmapped area code: NYC, coherent with tz_for_area_code's America/New_York default.
-_GPS_DEFAULT_LATLON = (40712800, -74006000)
-
-
-def _fmt_microdeg(micro):
-    """Signed integer microdegrees -> fixed 6-decimal string ("40.712800" / "-74.006000"). The formatting is
-    pure integer arithmetic so Java emits byte-identical output. MUST match Java fmtMicroDeg."""
-    sign = "-" if micro < 0 else ""
-    a = -micro if micro < 0 else micro
-    return "%s%d.%06d" % (sign, a // 1000000, a % 1000000)
-
-
-def gps_for_area_code(area, android_id):
-    """Coherent per-identity GPS fix (lat, lon, accuracy) as strings. lat/lon = the area code's metro centroid
-    plus a deterministic android_id-derived jitter (~+/-0.06 deg, city-scale) so two identities in the same
-    area code don't share an exact pin; accuracy = a plausible 8-19 m. Pure (no RNG) -> byte-parity safe.
-    MUST match Java gpsForAreaCode."""
-    base = _LATLON_BY_AREA.get(area, _GPS_DEFAULT_LATLON)
-    aid = android_id or ""
-    dlat = (_codename_hash(aid + "gpslat") % 120001) - 60000
-    dlon = (_codename_hash(aid + "gpslon") % 120001) - 60000
-    acc = 8 + (_codename_hash(aid + "gpsacc") % 12)
-    return _fmt_microdeg(base[0] + dlat), _fmt_microdeg(base[1] + dlon), str(acc)
-
 
 def phone_us(r):
     # NANP: a REAL assigned area code + exchange [2-9]XX (never an N11 service code) + 4 digits, with a
@@ -879,9 +807,6 @@ def validate(key, value):
         "factory_reset_epoch": lambda v: bool(re.fullmatch(r"\d{10}", v)) and 1420070400 < int(v) < _now_epoch(),
         "gmail":               lambda v: bool(re.fullmatch(r"[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?@(gmail\.com|outlook\.com|yahoo\.com|hotmail\.com|proton\.me|icloud\.com)", v)),
         "app_set_id":          lambda v: bool(re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", v)),
-        "gps_lat":             lambda v: bool(re.fullmatch(r"-?\d{1,2}\.\d{6}", v)) and -90.0 <= float(v) <= 90.0,
-        "gps_lon":             lambda v: bool(re.fullmatch(r"-?\d{1,3}\.\d{6}", v)) and -180.0 <= float(v) <= 180.0,
-        "gps_accuracy":        lambda v: bool(re.fullmatch(r"\d{1,3}", v)) and 1 <= int(v) <= 500,
     }
     fn = checks.get(key)
     return True if fn is None else fn(value)

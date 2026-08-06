@@ -2,6 +2,14 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-07 — per-identity GPS spoofing REMOVED (shipped v0.30.0, ripped out v0.33.0).** The user runs a
+  dedicated GPS tool (Lockito) for location; Specter's own per-identity GPS fought it (two mock sources) with
+  no benefit for that workflow. Removed the WHOLE feature (LocationManager + Fused hooks, generation, Identity
+  card + editor, Settings global default/lock, on-apply + match-to-IP GPS align) rather than default-off it —
+  the user asked to rip it out, not park it. KEPT: `hide_mock` (still useful — hides Lockito's mock-provider
+  flag from scoped apps) and the proxy-IP **timezone** alignment (never depended on GPS). Generation removal
+  was byte-parity-safe: `gps_for_area_code` was pure/hash-derived (no seeded-RNG draws), so no other field's
+  stream shifted. The dead `tabBar()` 4th "Location" name is unrelated leftover (no visible Location tab).
 - **2026-08-07 — vault restore drives targets from the SAVE, and auto-switches silently (no confirm dialog).**
   A saved bundle carries its own `_targets`; restore now applies to those, not the currently-selected target
   (the old bug applied X's identity to app Y). Chose **auto-set** over a confirm-on-mismatch prompt: the
