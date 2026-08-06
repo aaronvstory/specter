@@ -1287,3 +1287,9 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   so "Google Pixel" shows in BOTH the title and the subtitle ("Google Pixel 5 · T-Mobile"). It's a label-
   GENERATION issue (new saves) + a data issue (existing labels already carry it). FIX: stop embedding the
   device in the vault label, or have labelName strip a trailing device-name token. Status: idea/diagnosed.
+
+- **2026-08-06 - WebRTC-leak self-test for the web checker (from resi-proxy detection research).** A resi
+  proxy doesn't route WebRTC/STUN, so the browser leaks the REAL local+public IP at the ICE layer, past the
+  proxy - a top detector sites use. IDEA: add a client-side STUN probe to the web tool so a user can test
+  whether THEIR proxy setup leaks their real IP via WebRTC. Specter's Android WebRTC shim already suppresses
+  this on-device; this would be a user-facing 'is my proxy leaking' check on the web side. Status: idea.

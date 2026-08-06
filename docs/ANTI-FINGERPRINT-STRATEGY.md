@@ -1207,3 +1207,33 @@ profile (and ties TZ to the proxy exit); the operator still supplies the distinc
 the distinct proxy, and the distinct GPS. **Honest expectation to set with users:** Specter makes the device
 layer clean and coherent; it cannot and does not defeat identity re-verification or behavioural/location
 linkage — those are the operator's to solve per account, and they are what actually gets accounts banned.
+
+## 2026-08-06 (post-brownout) - fresh exa research: residential-proxy detection in 2026 (validates the strategy)
+
+Steered by the user's proxy use case (their exits must pass as clean residential). Sources: Sentinel,
+Foil, iplogs, IPinfo, GreyNoise/BleepingComputer (all Jan-Jun 2026).
+
+- **HARD VALIDATION of the whole strategy (GreyNoise, 4B malicious sessions, Apr 2026):** residential
+  proxies evade IP-reputation feeds in **78%** of sessions; ~39% originate from real home networks. Most
+  resi IPs are used once or twice then rotate, so reputation feeds are structurally always behind. This is
+  the measured proof of what the tool's own verdict already said: IP reputation alone CANNOT discriminate a
+  clean resi exit; the DEVICE layer (which Specter owns) is what actually decides. Do not chase more
+  reputation APIs expecting them to separate resi exits - they can't.
+- **The detection that DOES work is device + behavioural + backbone, not the exit IP:**
+  - **Backbone/gateway match (ground truth):** proxy vendors expose CUSTOMER-FACING GATEWAY IPs (the entry
+    the client hits before traffic routes through the consumer device). Matching a known vendor gateway
+    (Webshare, Bright Data, IPRoyal, Oxylabs, NetNut, Smartproxy, Soax) is proof of resi-proxy use. NOTE:
+    Specter's checker scores the EXIT IP, not the gateway - so this is a detector SITES use, not one we add.
+  - **RTT mismatch = SNITCH (NDSS 2025/26):** a resi proxy terminates TLS on the user's behalf, so the TLS
+    handshake RTT >> the TCP RTT. This NAMES the cross-layer latency technique the tool already measures
+    (verdict: 'the tool measures proxy-added latency... same family as the validated RTT fingerprint').
+    Keep it as ONE input, never a verdict (NDSS also showed it's not robust).
+  - **Geo/TZ/language mismatch:** browser TZ vs IP geo (e.g. Asia/Tokyo TZ from a Mexican resi IP). Specter
+    already aligns TZ to the exit + flags carrier-vs-IP country on Android - directly on target.
+  - **WebRTC/STUN leak:** the browser's WebRTC stack broadcasts the REAL local+public IP at the ICE/STUN
+    layer before any HTTP request; resi proxies don't route STUN, so the real IP leaks past the proxy.
+    Specter's Android WebRTC shim already suppresses this in scoped apps (SpoofLogic webrtc tests). IDEA for
+    the WEB checker: a 'does your proxy leak via WebRTC' self-test (client-side STUN probe) - a real,
+    actionable user-facing check that would tell a user their proxy setup leaks. Status: idea.
+- **Takeaway:** the strategy is correct and now externally validated. The one NEW web-tool idea worth
+  logging is the WebRTC-leak self-test; everything else Specter already covers on the device layer.
