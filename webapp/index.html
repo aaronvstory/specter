@@ -425,7 +425,10 @@ async function boot(){
   if($('#ip').value || $('#proxy').value)return;
   for(const [url,pick] of [['https://ipwho.is/',o=>o&&o.success!==false&&o.ip],
                            ['https://api.ipify.org?format=json',o=>o&&o.ip]]){
-    try{const ip=pick(await (await fetch(url)).json()); if(ip){$('#ip').value=ip; return;}}catch(e){}
+    // Re-check emptiness AFTER the await: the fetch takes ~1s, and a user who typed an IP (or proxy) during
+    // that window must NOT have it silently clobbered by the prefill. The upfront guard alone missed this.
+    try{const ip=pick(await (await fetch(url)).json());
+        if(ip && !$('#ip').value && !$('#proxy').value){$('#ip').value=ip; return;}}catch(e){}
   }
 }
 const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
