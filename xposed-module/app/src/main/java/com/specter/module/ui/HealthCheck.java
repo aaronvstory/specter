@@ -173,12 +173,12 @@ final class HealthCheck {
                     // Not run yet this boot, but the layer is proven live (another scoped app has a fresh heartbeat)
                     // and this app is scoped + has an identity — so it WILL hook on launch. READY, not a warning.
                     perApp.add(Check.ready(f.label,
-                            "Ready · identity applied · module live this boot — hooks on launch", f.pkg));
+                            "Ready · identity applied · hooks load on launch", f.pkg));
                 } else {
                     // Nothing has proven the module loads on this boot yet (e.g. just after a reboot). Open ANY one
                     // target once to confirm the layer is live — then the rest read READY without their own launch.
                     perApp.add(Check.warn(f.label,
-                            "Identity applied · open any target once to confirm hooks load this boot",
+                            "Applied · open a target to confirm hooks",
                             Fix.NONE, f.pkg));
                 }
             }
