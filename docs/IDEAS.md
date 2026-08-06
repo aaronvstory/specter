@@ -1264,3 +1264,9 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   `lib/` (code_cache with a stale uid can trigger a full data wipe on reboot); confirm `am force-stop`
   precedes the snapshot; expect per-app variance and report WHICH login layer failed (plain row vs
   Keystore-wrapped vs server-side device-binding) rather than a bare "restore failed". Status: to verify.
+
+- **2026-08-06 UPDATE (getIPIntel r/i, item above):** live-tested oflags=bcri from here on 8.8.8.8 +
+  24.48.0.1. getIPIntel ECHOED queryOFlags="bcri" (flags syntactically accepted) but returned result=-5
+  (IP banned / rate-limited / contact rejected) for both, so the free tier's r/i RESPONSE fields could not
+  be observed. BLOCKED on live verification: needs an un-banned source IP + a valid metered contact.
+  Do NOT build r/i parsing until a successful response confirms the field names. Status: blocked-verify.

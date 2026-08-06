@@ -45,3 +45,15 @@
   slot (dimensions reserved, onerror fallback, renders in the other 3 shots; no CSP block on the deploy).
   USAGE 'box' = ICON.server rendering correctly (a server icon is a rectangle).
 - **No code change** - manufacturing a fix would be dishonest; the sweep's honest finding is 'clean'.
+
+## 2026-08-06 - phone-side section-1 screencap (P4, read-only) + getIPIntel r/i probe
+
+- **P4 app screencap (read-only, no install/reboot/Cash touch):** Identity tab, v0.29.1. UI clean +
+  terse - current identity, Apply/Generate, target apps (Dasher), identity details, bottom nav.
+- **Spotted nit ALREADY FIXED in current code:** v0.29.1 title concatenated name+'Google Pixel';
+  v0.29.4 (MainActivity:1120) renders savedName as the title with device as a clean subtitle. The '3'
+  in the name is an intentional vault-label dedup suffix. No fix needed. Did NOT deploy v0.29.4 to P4
+  (install-r de-registers the module -> live-Cash hook-coverage risk, rule zero).
+- **getIPIntel r/i (item 1109):** oflags=bcri accepted (queryOFlags echoed) but result=-5 from here
+  (banned/rate-limited/contact) - can't observe the r/i response fields. Blocked on live verification;
+  don't build r/i parsing until a real response confirms field names. Logged in docs/IDEAS.md.
