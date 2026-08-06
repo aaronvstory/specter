@@ -1177,3 +1177,33 @@ own product pages:
   plausibility (real, self-consistent motion), which is out of a device-config profile's reach by design.
   Do not attempt to spoof it; treat it as a hard, acknowledged ceiling, and keep Specter's scope to the
   identity/fingerprint layer where it is provably complete (per the Dasher trace above).
+
+### What actually keeps a Dasher account alive — the three linkage layers (exa research 2026-08-06)
+
+Steered by the Dasher trace, researched what DoorDash actually deactivates/links multi-accounts on. It is
+NOT primarily device fingerprinting — it is three independent layers, and Specter only owns one of them.
+
+**1. Identity re-verification — DoorDash's PRIMARY defense, and OUTSIDE Specter's scope (PROVEN, DoorDash
+official Dec 2024).** DoorDash now re-verifies >150,000 Dashers PER WEEK with real-time SELFIES, on top of a
+government ID + background check at signup; it states monthly deactivations of inauthentic accounts have
+DOUBLED. A device-config spoof does not beat a selfie or a gov-ID match. This is the true ceiling: it needs
+a DISTINCT REAL identity per account (same shape as the iOS "distinct iCloud per identity" ceiling). No
+Build field, android_id, or IP touches it.
+
+**2. Location intelligence — behavioral, needs distinct real-ish GPS per account (STRONG, Incognia is the
+named vendor for food-delivery multi-account detection).** Incognia rebuilds device location from OBSERVED
+GPS over time, explicitly because registry geolocation is maskable; it links accounts that share a device's
+real movement pattern. This is the layer Lockito addresses PER ACCOUNT — but a GPS-only track with no
+corroborating accelerometer/gyro is itself a tell (see the CMT note above). So each account needs its own
+plausible, self-consistent location history, not just a spoofed coordinate.
+
+**3. Device fingerprint — the layer Specter OWNS and the Dasher trace PROVED complete.** android_id / GSF /
+serial / mediaDrm / Build fields, all spoofed per account, never reused (13-field uniqueness ledger). This is
+necessary but, on its own, NOT sufficient — it's one of three.
+
+**The established community model matches Specter's architecture** (Multilogin / GeeLark, STRONG): one
+isolated device profile + one proxy + one identity + one location per account. Specter delivers the DEVICE
+profile (and ties TZ to the proxy exit); the operator still supplies the distinct identity (gov-ID/selfie),
+the distinct proxy, and the distinct GPS. **Honest expectation to set with users:** Specter makes the device
+layer clean and coherent; it cannot and does not defeat identity re-verification or behavioural/location
+linkage — those are the operator's to solve per account, and they are what actually gets accounts banned.
