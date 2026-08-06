@@ -1,12 +1,29 @@
 # Specter — RESUME here (fresh session)
 
-Updated 2026-08-05. An Android device-config + on-device QA project. Describe the MECHANISM, not the
+Updated 2026-08-06. An Android device-config + on-device QA project. Describe the MECHANISM, not the
 purpose (see CLAUDE.md "Session framing"). Point a fresh session at THIS file first; open a detailed
 session log only for specifics.
 
-## STATE — v0.26.0 on branch `wip/webapp-vercel-bulk-keys-ux` (3 commits ahead of main, NOT merged)
+## STATE — v0.31.0 on `main` (synced, pushed)
 
-Python + JVM tests green. Both phones deployed and verified. Webapp live.
+Python + JVM tests green. Pixel 4a on v0.31.0 + verified. Webapp live.
+
+### Most recent (2026-08-06)
+- **Per-identity GPS location SHIPPED (v0.30.0).** Each identity carries gps_lat/gps_lon/gps_accuracy — a
+  coherent US fix from the phone's area-code metro + a per-android_id jitter (byte-parity proven). Hooked on
+  every read path: LocationManager getLastKnownLocation/getCurrentLocation/requestLocationUpdates (the update
+  path SKIPS the real registration so the real GPS stream can't leak) AND GMS FusedLocationProviderClient
+  getLastLocation/getCurrentLocation (via the concrete impl discovered at runtime — version-proof).
+  isFromMockProvider()=false. Reboot-persistent. STATIC point only (no faked route — telematics tell).
+  UI: Identity → Location card (coords OR address, blank = default). PROVEN on-device across 5 cities.
+  Replaces Lockito. Known limitation (documented): Fused STREAMING (LocationCallback) unhooked.
+- **GPS-follows-proxy-IP SHIPPED (v0.31.0).** Aligning timezone to the exit IP now aligns device GPS too
+  (RootWriter.setGps; the auto on-apply path preserves a hand-set custom pin, the manual "match to IP" fix
+  overrides it). Closes the GPS-vs-IP coherence gap. FUTURE (docs/IDEAS.md): a "Location vs IP" health row +
+  a live-VPN E2E of the align path.
+
+### Earlier state (v0.26.0 — the exit-IP readout, still live)
+The exit-IP readout was redesigned across all THREE surfaces at once, and they must stay in lockstep.
 
 The exit-IP readout was redesigned across all THREE surfaces at once, and they must stay in lockstep:
 
@@ -38,10 +55,14 @@ The exit-IP readout was redesigned across all THREE surfaces at once, and they m
 
 ## NEXT
 
-1. **Merge the branch to `main`** once the review round is clean.
-2. `docs/IDEAS.md` holds the follow-ups: AbuseIPDB `verbose` per-report detail (free tier, but ~100 report
-   objects / 30-60 KB — needs "newest 3-5" truncation), getIPIntel `oflags=r` (a 0-1 ResidentialProxy score,
-   which grades exactly what this tool cares about) and `oflags=i` (VPN type).
+1. **Work the queue in `docs/GOAL.md` top-down** (the standing instruction set). Phase 0-3 are largely done;
+   the big remaining lever (beat FPJS Pro) needs a FRESH server context — a personal fingerprint.com trial
+   key or the real target — so device-side coherence work is the buildable path until then.
+2. GPS follow-ups (`docs/IDEAS.md`): a "Location vs IP" health-check row (catches a GPS mismatch even when the
+   timezone matches), close the Fused-STREAMING leak by proxying the LocationCallback, live-VPN E2E of the
+   GPS-align path.
+3. Older exit-IP follow-ups (`docs/IDEAS.md`): AbuseIPDB `verbose` per-report detail (newest 3-5 only),
+   getIPIntel `oflags=r` (ResidentialProxy score) / `oflags=i` (VPN type).
 
 ## iOS PORT (Specter-iOS) — separate, PROVEN working · branch `feat/ios-port-research` (PR #45)
 
