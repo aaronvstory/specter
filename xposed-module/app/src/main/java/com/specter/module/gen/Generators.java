@@ -760,6 +760,78 @@ public final class Generators {
         return tz != null ? tz : "America/New_York";
     }
 
+    // Area-code -> metro centroid (lat, lon) in MICRODEGREES (integer x1e6). The area code already pins a
+    // specific US metro (212 = NYC), so a fix derived from it is coherent with the phone number + timezone.
+    // Storing integers (not floats) keeps the emitted string byte-identical to Python. MUST stay in EXACT
+    // lockstep with specter/generators.py _LATLON_ROWS. Pure lookup, no RNG.
+    private static final java.util.Map<String, long[]> LATLON_BY_AREA = new java.util.HashMap<>();
+    static {
+        Object[][] rows = {
+            {new long[]{40712800L, -74006000L},  "212 646 917 718"},        // New York City
+            {new long[]{34052200L, -118243700L}, "213 323 310 424 818"},    // Los Angeles
+            {new long[]{41878100L, -87629800L},  "312 773 872"},            // Chicago
+            {new long[]{29760400L, -95369800L},  "281 713 832"},            // Houston
+            {new long[]{33448400L, -112074000L}, "602 480 623"},            // Phoenix
+            {new long[]{39952600L, -75165200L},  "215 267"},                // Philadelphia
+            {new long[]{29424100L, -98493600L},  "210 726"},                // San Antonio
+            {new long[]{32715700L, -117161100L}, "619 858"},                // San Diego
+            {new long[]{32776700L, -96797000L},  "214 469 972"},            // Dallas
+            {new long[]{37338200L, -121886300L}, "408 669"},                // San Jose
+            {new long[]{30267200L, -97743100L},  "512 737"},                // Austin
+            {new long[]{30332200L, -81655700L},  "904"},                    // Jacksonville
+            {new long[]{28538300L, -81379200L},  "407 321"},                // Orlando
+            {new long[]{25761700L, -80191800L},  "305 786"},                // Miami
+            {new long[]{27950600L, -82457200L},  "813"},                    // Tampa
+            {new long[]{39961200L, -82998800L},  "614"},                    // Columbus
+            {new long[]{41499300L, -81694400L},  "216"},                    // Cleveland
+            {new long[]{39103100L, -84512000L},  "513"},                    // Cincinnati
+            {new long[]{35227100L, -80843100L},  "704 980"},                // Charlotte
+            {new long[]{35779600L, -78638200L},  "919 984"},                // Raleigh
+            {new long[]{39768400L, -86158100L},  "317 463"},                // Indianapolis
+            {new long[]{47606200L, -122332100L}, "206 425 253"},            // Seattle
+            {new long[]{39739200L, -104990300L}, "303 720"},                // Denver
+            {new long[]{42360100L, -71058900L},  "617 857"},                // Boston
+            {new long[]{36162700L, -86781600L},  "615 629"},                // Nashville
+            {new long[]{35149500L, -90049000L},  "901"},                    // Memphis
+            {new long[]{45515200L, -122678400L}, "503 971"},                // Portland OR
+            {new long[]{36169900L, -115139800L}, "702 725"},                // Las Vegas
+            {new long[]{33749000L, -84388000L},  "404 470 678"},            // Atlanta
+            {new long[]{43038900L, -87906500L},  "414 262"},                // Milwaukee
+            {new long[]{35084400L, -106650400L}, "505 575"},                // Albuquerque
+            {new long[]{40760800L, -111891000L}, "801 385"},                // Salt Lake City
+            {new long[]{39099700L, -94578600L},  "816 913"},                // Kansas City
+            {new long[]{38627000L, -90199400L},  "314"},                    // St. Louis
+            {new long[]{40440600L, -79995900L},  "412 878"},                // Pittsburgh
+            {new long[]{44977800L, -93265000L},  "612 651 763"},            // Minneapolis / St. Paul
+        };
+        for (Object[] row : rows) {
+            long[] ll = (long[]) row[0];
+            for (String a : ((String) row[1]).split(" ")) LATLON_BY_AREA.put(a, ll);
+        }
+    }
+    // Default fix for an unmapped area code: NYC, coherent with tzForAreaCode's America/New_York default.
+    private static final long[] GPS_DEFAULT_LATLON = {40712800L, -74006000L};
+
+    /** Signed integer microdegrees -> fixed 6-decimal string ("40.712800" / "-74.006000"). Pure integer
+     *  arithmetic so Python emits byte-identical output. MUST match Python _fmt_microdeg. */
+    static String fmtMicroDeg(long micro) {
+        String sign = micro < 0 ? "-" : "";
+        long a = micro < 0 ? -micro : micro;
+        return sign + (a / 1000000L) + "." + String.format(Locale.ROOT, "%06d", a % 1000000L);
+    }
+
+    /** Coherent per-identity GPS fix (lat, lon, accuracy) as strings. lat/lon = the area code's metro centroid
+     *  plus a deterministic android_id-derived jitter (~+/-0.06 deg, city-scale); accuracy = a plausible 8-19 m.
+     *  Pure (no RNG) -> byte-parity safe. MUST match Python gps_for_area_code. */
+    public static String[] gpsForAreaCode(String area, String androidId) {
+        long[] base = LATLON_BY_AREA.getOrDefault(area, GPS_DEFAULT_LATLON);
+        String aid = androidId == null ? "" : androidId;
+        long dlat = (codenameHash(aid + "gpslat") % 120001L) - 60000L;
+        long dlon = (codenameHash(aid + "gpslon") % 120001L) - 60000L;
+        long acc = 8L + (codenameHash(aid + "gpsacc") % 12L);
+        return new String[]{ fmtMicroDeg(base[0] + dlat), fmtMicroDeg(base[1] + dlon), String.valueOf(acc) };
+    }
+
     public static String imsi(Rng r, String mccmnc) {
         return mccmnc + digits(r, 15 - mccmnc.length());
     }

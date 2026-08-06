@@ -1293,3 +1293,14 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   proxy - a top detector sites use. IDEA: add a client-side STUN probe to the web tool so a user can test
   whether THEIR proxy setup leaks their real IP via WebRTC. Specter's Android WebRTC shim already suppresses
   this on-device; this would be a user-facing 'is my proxy leaking' check on the web side. Status: idea.
+
+- **2026-08-06 - Per-identity GPS location SHIPPED (v0.30.0, replaces Lockito).** Hook LocationManager + GMS
+  Fused per scoped app to return the profile's gps_lat/gps_lon; coherent US default from the area-code metro
+  + android_id jitter; isFromMockProvider()=false; reboot-persistent. Static point only (no faked route -
+  telematics tell). PROVEN on-device (Pixel 4a, both read paths, two identities). Status: shipped.
+- **2026-08-06 - FUTURE: close the Fused-streaming leak (requestLocationUpdates/LocationCallback).** v0.30.0
+  covers single-shot Fused reads (getLastLocation/getCurrentLocation) + SKIPS the real LocationManager stream
+  registration. The Fused STREAMING callback is still unhooked = a KNOWN leak for a stream-only Fused app (gets
+  the real track). Close by PROXYING the obfuscated LocationCallback to rewrite each real delivery to the static
+  fix (never a moving stream - telematics tell). Add if a probe shows an in-scope app reads location exclusively
+  via Fused streaming. Status: idea/known-limitation.

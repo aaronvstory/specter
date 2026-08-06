@@ -82,6 +82,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         if (!gateOff(p, "spoof_sysfs")) hookDisplayMetrics(lpparam, p);
         hookLocaleTimezone(p);
         if (!gateOff(p, "hide_mock")) hookMockLocation(lpparam);
+        if (!gateOff(p, "spoof_gps")) hookLocation(lpparam, p);
         if (!gateOff(p, "hide_vpn")) hookVpn(lpparam);
         if (!gateOff(p, "fix_webrtc")) hookWebRtc(lpparam);
         hookBattery(lpparam, p);
@@ -212,6 +213,161 @@ public class HookEntry implements IXposedHookLoadPackage {
         try { XposedBridge.hookAllMethods(Settings.System.class, "getInt", mockInt); } catch (Throwable ignored) {}
         try { XposedBridge.hookAllMethods(Settings.System.class, "getString", mockStr); } catch (Throwable ignored) {}
     }
+
+    // Fused impl classes already hooked in THIS process — hookAllMethods on the same concrete method twice
+    // would double-invoke our (idempotent) setResult; the guard keeps it to one hook per obfuscated impl.
+    private static final java.util.Set<String> sHookedFusedImpls =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+
+    /** Build a real-looking Location at the profile's gps_lat/gps_lon (accuracy gps_accuracy). Fresh
+     *  time/elapsedRealtimeNanos so it reads as a current fix; isFromMockProvider() is false because we
+     *  build it with a plain constructor (only the test-provider path sets the mock flag) — the anti-detection
+     *  edge over a system mock-provider like Lockito. Static point only: no bearing/speed, so there is no
+     *  faked motion for a telematics SDK to catch (a moving GPS track with no matching accel/gyro is a
+     *  STRONGER tell than a stationary device — see docs/ANTI-FINGERPRINT-STRATEGY.md). Null if the profile
+     *  carries no coordinates. */
+    private android.location.Location buildSpoofedLocation(Map<String, String> p, String provider) {
+        String slat = p.get("gps_lat"), slon = p.get("gps_lon");
+        if (slat == null || slon == null) return null;
+        double lat, lon; float acc = 10f;
+        try { lat = Double.parseDouble(slat); lon = Double.parseDouble(slon); }
+        catch (Throwable t) { return null; }
+        try { acc = Float.parseFloat(p.get("gps_accuracy")); } catch (Throwable ignored) {}
+        android.location.Location l = new android.location.Location(
+                provider == null || provider.isEmpty() ? "gps" : provider);
+        l.setLatitude(lat);
+        l.setLongitude(lon);
+        l.setAccuracy(acc);
+        l.setAltitude(0.0);                 // a stationary ground-level fix
+        l.setTime(System.currentTimeMillis());
+        l.setElapsedRealtimeNanos(android.os.SystemClock.elapsedRealtimeNanos());
+        return l;
+    }
+
+    /** Per-identity GPS location: return the profile's fix on every READ path a scoped app uses, so it reads
+     *  ITS identity's location (Dasher one city, Cash another) instead of the real device GPS. Covers the raw
+     *  framework LocationManager AND Google Play Services Fused (the path most apps, incl. Dasher, actually
+     *  use). Reboot-persistent by construction: the hook reads the profile file on every app launch, no
+     *  re-arming (the whole point vs Lockito's runtime-only test provider). Each sub-hook is best-effort. */
+    private void hookLocation(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        if (p.get("gps_lat") == null || p.get("gps_lon") == null) return;
+
+        // --- 1) android.location.LocationManager (framework, non-GMS apps + the fallback path) ---
+        try {
+            Class<?> lm = XposedHelpers.findClass("android.location.LocationManager", lp.classLoader);
+            // getLastKnownLocation(provider [, LastLocationRequest]) -> our fix, tagged with the asked provider.
+            XposedBridge.hookAllMethods(lm, "getLastKnownLocation", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    String prov = (mp.args.length > 0 && mp.args[0] instanceof String) ? (String) mp.args[0] : "gps";
+                    android.location.Location l = buildSpoofedLocation(p, prov);
+                    if (l != null) mp.setResult(l);
+                }
+            });
+            // getCurrentLocation(provider, ..., Executor, Consumer<Location>) (API 30+) -> deliver our fix on the
+            // caller-supplied Executor (the API contract: the consumer runs on that Executor, commonly the main
+            // executor so a UI-touching consumer is safe) and SKIP the real async lookup so no real fix reaches
+            // the app. Falls back to the main looper if no Executor arg is present.
+            try { XposedBridge.hookAllMethods(lm, "getCurrentLocation", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam mp) {
+                    String prov = "gps"; Object consumer = null; java.util.concurrent.Executor exec = null;
+                    for (Object a : mp.args) {
+                        if (a instanceof java.util.concurrent.Executor) exec = (java.util.concurrent.Executor) a;
+                        else if (a instanceof java.util.function.Consumer) consumer = a;
+                        else if (a instanceof String) prov = (String) a;
+                    }
+                    final android.location.Location l = buildSpoofedLocation(p, prov);
+                    if (l == null || consumer == null) return;   // can't deliver -> let the original run
+                    @SuppressWarnings("unchecked")
+                    final java.util.function.Consumer<Object> c = (java.util.function.Consumer<Object>) consumer;
+                    mp.setResult(null);                          // skip the real lookup (no real fix reaches the app)
+                    final Runnable deliver = new Runnable() {
+                        @Override public void run() { try { c.accept(l); } catch (Throwable ignored) {} } };
+                    if (exec != null) { try { exec.execute(deliver); return; } catch (Throwable ignored) {} }
+                    new android.os.Handler(android.os.Looper.getMainLooper()).post(deliver);
+                }
+            }); } catch (Throwable ignored) {}
+            // requestLocationUpdates / requestSingleUpdate -> SKIP the real system registration entirely, then
+            // deliver ONE static spoofed fix to a LocationListener arg. An afterHook that let the real
+            // registration stand would LEAK: the OS keeps delivering the true GPS track to the app's listener
+            // via a system_server Binder callback that Xposed can't intercept — so the app would see one spoofed
+            // point then the real trail (a worse tell than no spoof). setResult(null) on these void methods skips
+            // the real registration on EVERY overload (LocationListener AND PendingIntent), so no real fix can
+            // ever reach the app; the single-shot getLastKnownLocation/getCurrentLocation/Fused reads still cover
+            // apps that use a PendingIntent. Static point only (one fix, no motion) — telematics-safe.
+            XC_MethodHook staticUpdates = new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam mp) {
+                    final android.location.Location l = buildSpoofedLocation(p, "gps");
+                    if (l == null) return;               // no profile fix -> nothing to spoof, let the real run
+                    android.location.LocationListener listener = null;
+                    for (Object a : mp.args) if (a instanceof android.location.LocationListener) {
+                        listener = (android.location.LocationListener) a; break;
+                    }
+                    mp.setResult(null);                  // skip the real registration (closes the real-stream leak)
+                    if (listener != null) {
+                        final android.location.LocationListener ll = listener;
+                        new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                            @Override public void run() { try { ll.onLocationChanged(l); } catch (Throwable ignored) {} }
+                        });
+                    }
+                }
+            };
+            try { XposedBridge.hookAllMethods(lm, "requestLocationUpdates", staticUpdates); } catch (Throwable ignored) {}
+            try { XposedBridge.hookAllMethods(lm, "requestSingleUpdate", staticUpdates); } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
+
+        // --- 2) GMS Fused (com.google.android.gms.location.FusedLocationProviderClient) ---
+        hookFusedLocation(lp, p);
+    }
+
+    /** Spoof the Fused location client's single-shot reads. FusedLocationProviderClient is ABSTRACT, so its
+     *  getLastLocation/getCurrentLocation can't be hooked directly (no method body) — instead hook the concrete
+     *  factory LocationServices.getFusedLocationProviderClient(...), take the returned instance's REAL
+     *  (obfuscated) impl class, and hook the concrete methods on THAT. Version-proof: we never name the
+     *  obfuscated class. Returns a completed Task<Location> via the concrete Tasks.forResult(Object). */
+    private void hookFusedLocation(final XC_LoadPackage.LoadPackageParam lp, final Map<String, String> p) {
+        final java.lang.reflect.Method forResult;
+        try {
+            Class<?> tasks = XposedHelpers.findClass("com.google.android.gms.tasks.Tasks", lp.classLoader);
+            forResult = tasks.getMethod("forResult", Object.class);
+        } catch (Throwable t) {
+            // GMS not present in this app (or a stripped build) -> the LocationManager hooks above still apply.
+            return;
+        }
+        final XC_MethodHook taskLoc = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam mp) {
+                android.location.Location l = buildSpoofedLocation(p, "fused");
+                if (l == null) return;
+                try { mp.setResult(forResult.invoke(null, l)); } catch (Throwable ignored) {}
+            }
+        };
+        try {
+            Class<?> locServices = XposedHelpers.findClass(
+                    "com.google.android.gms.location.LocationServices", lp.classLoader);
+            XposedBridge.hookAllMethods(locServices, "getFusedLocationProviderClient", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam mp) {
+                    Object client = mp.getResult();
+                    if (client == null) return;
+                    Class<?> impl = client.getClass();
+                    if (!sHookedFusedImpls.add(lp.packageName + "/" + impl.getName())) return;  // once per impl
+                    try { XposedBridge.hookAllMethods(impl, "getLastLocation", taskLoc); } catch (Throwable ignored) {}
+                    try { XposedBridge.hookAllMethods(impl, "getCurrentLocation", taskLoc); } catch (Throwable ignored) {}
+                    XposedBridge.log("[specter] GPS: Fused impl hooked (" + impl.getName() + ") for " + lp.packageName);
+                }
+            });
+        } catch (Throwable t) {
+            XposedBridge.log("[specter] GPS: LocationServices not found for " + lp.packageName + " — Fused not spoofed");
+        }
+        // KNOWN LIMITATION (documented, not a silent gap): Fused requestLocationUpdates is NOT hooked, so an app
+        // that reads location ONLY via the Fused STREAMING callback gets the REAL location stream (a leak, same
+        // class as the LocationManager one fixed above). Left unhooked deliberately: the obfuscated
+        // LocationCallback + LocationResult delivery path is fragile to spoof, faking a MOVING stream is a
+        // telematics tell we must NOT introduce, and skipping the real registration outright would break a
+        // stream-only app (no location at all). The single-shot getLastLocation/getCurrentLocation ARE spoofed
+        // and cover identity/onboarding reads (the dominant path); the dev test set uses single-shot only. Close
+        // this by PROXYING the LocationCallback (rewrite each real delivery to the static fix) if a probe ever
+        // shows an in-scope app reads location exclusively via Fused streaming. See docs/DECISIONS.md.
+    }
+
 
     /** Mask VPN/proxy use so a scoped app can't tell the device is behind a tunnel — the fleet routes through
      *  a proxy/VPN and "device is on a VPN" is a risk signal a fingerprinter checks. Covers every IN-PROCESS

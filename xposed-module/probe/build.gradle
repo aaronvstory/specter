@@ -26,3 +26,9 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+dependencies {
+    // GMS Fused location — the probe reads getLastLocation() the same way a real app (incl. Dasher) does,
+    // so the verifier can prove Specter's Fused hook returns the profile fix. Raw LocationManager needs no dep.
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
+}

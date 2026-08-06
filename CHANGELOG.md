@@ -3,6 +3,31 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.30.0] - 2026-08-06
+
+### Added
+- **Per-identity GPS location (replaces Lockito).** Each identity carries a coherent US location
+  (`gps_lat`/`gps_lon`/`gps_accuracy`), derived from the phone's area-code metro plus a per-android_id
+  jitter — so a scoped app reads ITS identity's city (Dasher one, Cash another). Spoofed on every read path:
+  `LocationManager.getLastKnownLocation`/`getCurrentLocation`/`requestLocationUpdates` AND GMS
+  `FusedLocationProviderClient.getLastLocation`/`getCurrentLocation`. `isFromMockProvider()` reads false —
+  the edge over a system mock-provider like Lockito, whose test-provider fixes flag as mocked.
+  Reboot-persistent by construction (the hook reads the profile on every app launch — no re-arming).
+  Static point only: Specter never fakes a moving route (a GPS track with no matching inertial motion is a
+  telematics tell). PROVEN on-device (Pixel 4a): both read paths return the profile fix across two
+  identities, `isFromMockProvider()` false.
+- **Identity → Location field.** Optional per-identity override: enter coordinates OR an address (geocoded
+  once at set-time), blank = the coherent area-code default; shows the resolved city.
+
+### Changed
+- Profile schema gains `gps_lat`/`gps_lon`/`gps_accuracy` (Python + Java byte-parity; pure lookup, no RNG,
+  so it consumes no seeded draw and every existing field is byte-identical).
+
+### Known limitation
+- The Fused STREAMING path (`requestLocationUpdates` + `LocationCallback`) is not hooked, so an app that
+  reads location ONLY via that stream still sees the real track. Single-shot Fused reads and the raw
+  `LocationManager` stream ARE covered. Documented, not silent — see docs/DECISIONS.md.
+
 ## [0.29.7] - 2026-08-06
 
 ### Fixed

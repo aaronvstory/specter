@@ -1085,6 +1085,8 @@ public class MainActivity extends Activity {
         if (detailsExpanded) {
             content.addView(section("Device"));
             content.addView(deviceSpecCard());
+            content.addView(section("Location"));
+            content.addView(locationCard());
             content.addView(section("Identifiers"));
             content.addView(identifiersCard());   // one group card, plain rows (was 15 separate cards)
             TextView hint = new TextView(this);
@@ -1426,6 +1428,185 @@ public class MainActivity extends Activity {
             if (i < fields.size() - 1) card.addView(hairline());
         }
         return card;
+    }
+
+    // Reverse-geocoded "City, ST" cache keyed by "lat,lon" so a re-render doesn't re-hit the geocoder.
+    private final java.util.Map<String, String> cityCache = new java.util.HashMap<>();
+
+    /** Per-identity GPS location card: shows the current fix (+ city, best-effort) and whether it's the
+     *  coherent area-code default or a custom pin. Tap to enter coordinates OR an address; blank resets to the
+     *  default. A STATIC point only — Specter never fakes a moving route (a GPS track with no matching inertial
+     *  motion is a telematics tell). What a scoped app reads via LocationManager + GMS Fused. */
+    private View locationCard() {
+        LinearLayout card = cardBox();
+        card.setPadding(dp(12), dp(9), dp(12), dp(9));
+        final String lat = profile.get("gps_lat"), lon = profile.get("gps_lon");
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView lab = new TextView(this);
+        lab.setText("Location");
+        lab.setTextColor(Theme.DIM);
+        lab.setTextSize(13);
+        lab.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        final TextView val = new TextView(this);
+        val.setText(lat == null ? "—" : lat + ", " + lon);
+        val.setTextColor(Theme.INK);
+        val.setTextSize(14);
+        val.setSingleLine(true);                                   // never wrap a value mid-text (layout rule)
+        val.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        val.setGravity(Gravity.END);
+        val.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.4f));
+        row.addView(lab);
+        row.addView(val);
+        card.addView(row);
+
+        TextView cap = new TextView(this);
+        cap.setText(lat == null ? "Randomize an identity first"
+                : isDefaultLocation() ? "Coherent default — matches the area code" : "Custom pin");
+        cap.setTextColor(Theme.DIM);
+        cap.setTextSize(11);
+        cap.setPadding(0, dp(2), 0, 0);
+        card.addView(cap);
+
+        if (lat != null) fillCity(lat, lon, val);                  // async "City, ST · lat, lon"
+        card.setOnClickListener(x -> {
+            if (profile.isEmpty()) { toast("No identity yet — tap Randomize first."); return; }
+            editLocation();
+        });
+        return card;
+    }
+
+    /** Dialog: enter "lat, lon" OR an address; blank = the coherent default from the phone's area code. */
+    private void editLocation() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        final EditText in = new EditText(this);
+        in.setHint("lat, lon   or   an address");
+        String lat = profile.get("gps_lat"), lon = profile.get("gps_lon");
+        if (lat != null) in.setText(lat + ", " + lon);
+        in.setTextColor(Theme.INK);
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        box.addView(in);
+        TextView help = new TextView(this);
+        help.setText("Blank = coherent default from the phone's area code.\nStatic point only — no route.");
+        help.setTextColor(Theme.DIM);
+        help.setTextSize(11);
+        help.setPadding(0, dp(8), 0, 0);
+        box.addView(help);
+        new AlertDialog.Builder(this)
+                .setTitle("Location")
+                .setView(box)
+                .setPositiveButton("Set", (d, w) -> applyLocationInput(in.getText().toString().trim()))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Parse the Location dialog input: blank -> default, "lat, lon" -> direct, else geocode the address. */
+    private void applyLocationInput(String s) {
+        if (s.isEmpty()) {                                          // reset to the coherent default
+            if (resyncDefaultLocation()) {
+                persistCurrentState(); render();
+                status.setText("Location reset to the coherent default — APPLY to push.");
+            } else {
+                toast("Need a phone number first to derive the default.");
+            }
+            return;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "^\\s*(-?\\d{1,2}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)\\s*$").matcher(s);
+        if (m.matches()) {                                         // explicit coordinates
+            try {
+                double la = Double.parseDouble(m.group(1)), lo = Double.parseDouble(m.group(2));
+                if (la < -90 || la > 90 || lo < -180 || lo > 180) { toast("Coordinates out of range."); return; }
+                setLocation(fmt6(la), fmt6(lo), profile.getOrDefault("gps_accuracy", "10"), "Custom location set");
+            } catch (Throwable t) { toast("Couldn't parse those coordinates."); }
+            return;
+        }
+        // Treat as an address — geocode once at set-time (never at runtime), off the UI thread.
+        status.setText("Looking up “" + s + "”…");
+        final String addr = s;
+        new Thread(() -> {
+            final double[] ll = geocodeAddress(addr);
+            runOnUiThread(() -> {
+                if (ll == null) { status.setText(""); toast("Couldn't find that address — try coordinates."); return; }
+                setLocation(fmt6(ll[0]), fmt6(ll[1]), profile.getOrDefault("gps_accuracy", "10"),
+                        "Location set to " + addr);
+            });
+        }).start();
+    }
+
+    private void setLocation(String lat, String lon, String acc, String msg) {
+        profile.put("gps_lat", lat);
+        profile.put("gps_lon", lon);
+        profile.put("gps_accuracy", acc);
+        persistCurrentState();
+        render();
+        status.setText(msg + " — APPLY to push.");
+    }
+
+    /** True when the profile's gps fix equals the derived default for its phone area code + android_id (i.e.
+     *  the user has NOT set a custom pin). */
+    private boolean isDefaultLocation() {
+        String ph = profile.get("mobile_number"), aid = profile.get("android_id");
+        String lat = profile.get("gps_lat"), lon = profile.get("gps_lon");
+        if (ph == null || ph.length() != 11 || !ph.startsWith("1") || aid == null || lat == null) return false;
+        String[] g = Generators.gpsForAreaCode(ph.substring(1, 4), aid);
+        return g[0].equals(lat) && g[1].equals(lon);
+    }
+
+    /** Recompute the coherent-default gps fix from the current phone + android_id. Returns false if the phone
+     *  isn't a US number yet. Used on "blank" reset and to keep a default fix coherent when the phone changes. */
+    private boolean resyncDefaultLocation() {
+        String ph = profile.get("mobile_number"), aid = profile.get("android_id");
+        if (ph == null || ph.length() != 11 || !ph.startsWith("1") || aid == null) return false;
+        String[] g = Generators.gpsForAreaCode(ph.substring(1, 4), aid);
+        profile.put("gps_lat", g[0]);
+        profile.put("gps_lon", g[1]);
+        profile.put("gps_accuracy", g[2]);
+        return true;
+    }
+
+    private static String fmt6(double d) { return String.format(java.util.Locale.ROOT, "%.6f", d); }
+
+    /** Forward-geocode an address to [lat, lon] at set-time (best-effort; null on failure/no network). */
+    private double[] geocodeAddress(String addr) {
+        try {
+            if (!android.location.Geocoder.isPresent()) return null;
+            android.location.Geocoder gc = new android.location.Geocoder(this, java.util.Locale.US);
+            java.util.List<android.location.Address> r = gc.getFromLocationName(addr, 1);
+            if (r == null || r.isEmpty()) return null;
+            android.location.Address a = r.get(0);
+            return new double[]{ a.getLatitude(), a.getLongitude() };
+        } catch (Throwable t) { return null; }
+    }
+
+    /** Best-effort reverse-geocode the fix to "City, ST" and prepend it to the value line. Failures are silent
+     *  (the coordinates already show), so no network just means no city label. */
+    private void fillCity(final String lat, final String lon, final TextView val) {
+        final String key = lat + "," + lon;
+        String cached = cityCache.get(key);
+        if (cached != null) { if (!cached.isEmpty()) val.setText(cached + " · " + lat + ", " + lon); return; }
+        if (!android.location.Geocoder.isPresent()) return;
+        new Thread(() -> {
+            String city = "";
+            try {
+                android.location.Geocoder gc = new android.location.Geocoder(this, java.util.Locale.US);
+                java.util.List<android.location.Address> r =
+                        gc.getFromLocation(Double.parseDouble(lat), Double.parseDouble(lon), 1);
+                if (r != null && !r.isEmpty()) {
+                    android.location.Address a = r.get(0);
+                    String loc = a.getLocality() != null ? a.getLocality() : a.getSubAdminArea();
+                    String st = a.getAdminArea();
+                    if (loc != null) city = st != null ? loc + ", " + st : loc;
+                }
+            } catch (Throwable ignored) {}
+            final String c = city;
+            cityCache.put(key, c);
+            runOnUiThread(() -> { if (!c.isEmpty()) val.setText(c + " · " + lat + ", " + lon); });
+        }).start();
     }
 
     /** A 1px separator line in the theme's hairline color, for spec-sheet rows. */
@@ -1901,7 +2082,9 @@ public class MainActivity extends Activity {
                 if (profile.isEmpty()) return true;
                 final Map<String, String> ctx = new LinkedHashMap<>(profile);
                 new Thread(() -> { try { final String nv = svc.randomizeField(ctx, f.key);
-                    runOnUiThread(() -> { profile.put(f.key, nv); persistCurrentState(); render(); status.setText(f.label + " randomized — Apply to push."); });
+                    runOnUiThread(() -> { boolean rl = "mobile_number".equals(f.key) && isDefaultLocation();
+                        profile.put(f.key, nv); if (rl) resyncDefaultLocation();
+                        persistCurrentState(); render(); status.setText(f.label + " randomized — Apply to push."); });
                 } catch (Throwable t) {} }).start();
                 return true;
             });
@@ -2030,9 +2213,13 @@ public class MainActivity extends Activity {
                     // Format validation applies to identifiers (android_id/imei/…); device fields have no
                     // strict format (validate() returns true) so a hand-entered device value is allowed.
                     if (!Generators.validate(f.key, nv)) { toast("Invalid " + f.label + " format — not saved."); return; }
+                    // If the phone (area code) changes and the location was the coherent default, keep it
+                    // coherent by re-deriving it for the new area code (a custom pin is left untouched).
+                    boolean resyncLoc = "mobile_number".equals(f.key) && isDefaultLocation();
                     profile.put(f.key, nv);
+                    if (resyncLoc) resyncDefaultLocation();
                     persistCurrentState();
-                    if (val != null) val.setText(nv); else render();   // null val (grouped row) -> re-render
+                    if (val != null && !resyncLoc) val.setText(nv); else render();   // null val / loc change -> re-render
                     status.setText(f.label + " set to a custom value — APPLY to push.");
                 })
                 .setNegativeButton("Cancel", null)

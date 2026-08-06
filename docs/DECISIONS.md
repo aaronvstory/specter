@@ -1087,3 +1087,32 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   unforgeable because only the PUBLIC key ships (signing and verifying are different keys) — obfuscation
   does not change that. Obfuscating the release raises the effort to clone the app; it is not what keeps
   codes safe. The two must not be conflated: a fully-decompiled APK still cannot mint a code.
+- **2026-08-06 — GPS location = per-app HOOK, not a system mock provider.** Lockito registers a system-wide
+  test-location provider (needs the dev-settings "mock location app" grant, drops on reboot, and its fixes
+  read `isFromMockProvider()==true`). Specter instead hooks each scoped app's own location reads
+  (LocationManager + GMS Fused) and returns the profile fix — per-identity, no grant, reboot-persistent
+  (the hook re-reads the profile every launch), and `isFromMockProvider()` stays false. Static point only:
+  NOT copying Lockito's route feature, because a moving GPS track with no matching accel/gyro is a stronger
+  tell than a stationary device on a telematics-carrying app (CMT on Dasher).
+- **2026-08-06 — GPS default derived from the phone area code, not a separate geo source.** The area code
+  already pins a US metro (212=NYC), so a fix from it is coherent with the number + timezone with no extra
+  state. Stored as integer microdegrees + a per-android_id jitter (~±0.06°) so it's pure (no RNG → byte-parity
+  trivial) and two identities in one area code don't share an exact pin. Proxy-exit geo alignment was
+  considered and deferred — the area-code metro is coherent enough and needs no runtime network.
+- **2026-08-06 — Fused hooked via the concrete impl class, discovered at runtime.** `FusedLocationProviderClient`
+  is abstract (its `getLastLocation` has no body to hook), so instead the hook wraps the concrete factory
+  `LocationServices.getFusedLocationProviderClient(...)`, takes the returned instance's real (obfuscated)
+  class, and hooks the concrete methods on THAT. Version-proof — the obfuscated impl name is never hardcoded.
+- **2026-08-06 — GPS `requestLocationUpdates` SKIPS the real registration (not an after-hook).** An after-hook
+  that pushes one spoofed fix but lets the real `LocationManager.requestLocationUpdates` registration stand
+  LEAKS: the OS keeps delivering the true GPS track to the app's listener via a system_server Binder callback
+  Xposed can't intercept — one spoofed point then the real trail (a worse tell than no spoof). Fix: skip the
+  real registration (`setResult(null)` in `beforeHookedMethod`) on every overload, then deliver ONE static fix
+  to a LocationListener. Found by the code-reviewer gauntlet. `getCurrentLocation` similarly skips the real
+  async lookup and honours the caller's Executor.
+- **2026-08-06 — Fused STREAMING (`requestLocationUpdates`/LocationCallback) left unhooked = a KNOWN leak,
+  documented not silent.** An app reading location ONLY via the Fused streaming callback still gets the real
+  stream. Not closed because: the obfuscated LocationCallback+LocationResult path is fragile, faking a moving
+  stream is a telematics tell, and skipping the real registration would break a stream-only app. Single-shot
+  Fused reads (getLastLocation/getCurrentLocation) ARE spoofed and cover identity checks; the dev test set is
+  single-shot only. Close later by proxying the LocationCallback to rewrite each real delivery to the static fix.

@@ -375,6 +375,12 @@ def build_profile(r, devices, us_bias=True, country="US", hardware=None):
     if len(_ph) == 11 and _ph.startswith("1"):
         p["timezone"] = G.tz_for_area_code(_ph[1:4])
         p["locale"] = "en-US"
+        # Per-identity GPS fix, coherent with the area code's metro (and its timezone above). A static point
+        # only — no faked motion (a moving GPS track with no matching inertial stream is a telematics tell,
+        # see docs/ANTI-FINGERPRINT-STRATEGY.md). Pure (no RNG) -> byte-parity safe. The UI can override
+        # lat/lon (an explicit address/coords); blank keeps this coherent default.
+        _lat, _lon, _acc = G.gps_for_area_code(_ph[1:4], p.get("android_id", ""))
+        p["gps_lat"], p["gps_lon"], p["gps_accuracy"] = _lat, _lon, _acc
     return p
 
 

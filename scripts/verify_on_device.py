@@ -176,7 +176,29 @@ def main():
         print(f"{'blockCount*blockSize':22} {st_bxs[:36]:36} "
               f"{'○ coherent' if coherent else '⚠ INCOHERENT (total != blocks*size)'}")
 
-    return 1 if leak else 0
+    # GPS location (per-identity gps_lat/gps_lon). Both the raw LocationManager and GMS Fused reads must
+    # equal the profile fix, and isFromMockProvider() must read false — the edge over a system mock-provider
+    # like Lockito (whose test-provider fixes flag isFromMockProvider()==true, a detectable tell).
+    gps_leak = False
+    want_lat = str(applied.get("gps_lat", "<none>"))
+    want_lon = str(applied.get("gps_lon", "<none>"))
+    if want_lat != "<none>":
+        print(f"\n--- GPS location (want {want_lat},{want_lon}) ---")
+        for label, pfx in (("LocationManager gps", "lm_gps"), ("Fused getLastLocation", "fused_last")):
+            got_lat = str(probe.get(pfx + "_lat", "<none>"))
+            got_lon = str(probe.get(pfx + "_lon", "<none>"))
+            mock = str(probe.get(pfx + "_mock", "<none>"))
+            raw = str(probe.get(pfx, "<none>"))
+            if got_lat == want_lat and got_lon == want_lon:
+                mock_note = "✅ spoofed, isFromMockProvider=false" if mock == "false" \
+                    else f"⚠ spoofed BUT isFromMockProvider={mock}"
+                print(f"{label:22} {got_lat},{got_lon}  {mock_note}")
+            elif got_lat in ("<none>",) or raw in ("null", "pending(hook-miss?)"):
+                print(f"{label:22} {raw[:36]:36} ⚠ no fix / hook miss (is the probe in Specter's scope?)")
+            else:
+                print(f"{label:22} {got_lat},{got_lon}  ❌ MISMATCH"); gps_leak = True
+
+    return 1 if (leak or gps_leak) else 0
 
 
 if __name__ == "__main__":
