@@ -72,6 +72,19 @@
 >   so no new info to gain, and a broken restore = login loss I can't recover (no creds). Do it WITH you.
 >   Both vaults backed up again this fire (P4 33fp/20 logins, 4a 10fp/0 logins).
 >
+> ### IMPORTANT UPDATE 6 ~11:00 — the LIVE Vercel webapp is STALE (users get the OLD tool)
+> The deployed site (webapp-idanis-projects.vercel.app) is missing EVERY overnight web improvement — no
+> settings cogwheel (id=gear absent), no bulk bare-IP support (bareIp absent), no ip-api note, no prefill
+> fix. The committed webapp/index.html on main HAS all of them; the live deploy froze. Vercel is NOT wired
+> via a GitHub Action or a local .vercel link — it's a dashboard Git integration that stopped deploying
+> (most likely its production branch was the feat/bulk-comparison-and-ipv6-coverage branch, which was
+> merged + DELETED on the PR #83 merge, so pushes to main no longer trigger it).
+> **I could not fix this autonomously**: no vercel CLI, no persisted auth, no VERCEL_TOKEN, and the Vercel
+> MCP token is expired (headless/cron). **YOU need to:** in the Vercel dashboard set the project's
+> Production Branch to `main` and Root Directory to `webapp/`, then trigger a redeploy (or `vercel --prod`
+> from webapp/). After that the live tool will have the cogwheel, bulk IP/proxy checks, ip-api, and the
+> prefill fix. This is the biggest user-facing gap right now — the polish is on main but not live.
+>
 > **Highest-value NEXT items (in `docs/IDEAS.md`, 2026-08-06 entry):** (1) local coherence check — exit-IP
 > timezone vs the profile's applied timezone + exit geo vs carrier/MCC (zero API cost, real vendor weight);
 > (2) add a discriminating reputation source where IPQS/AbuseIPDB saturate (ip-api.com → ipapi.is); (3)
