@@ -6,7 +6,9 @@
 ## The problem (user, 2026-08-07)
 Restoring a saved bundle from the vault ignores which app that bundle belongs to, and never says what actually got applied.
 
-Concrete: a saved bundle was captured for **Cash App** (its `_targets` = `com.squareup.cash`). In the Identity tab the selected **target app is Dasher** (`com.doordash.driverapp`). Restore that Cash bundle → it reports "applied", but it applied the **Cash identity/appdata to the DASHER app**. That is incoherent.
+**App-agnostic — Cash App and Dasher below are ONLY illustrative examples.** The fix must work for ANY package. It is driven ENTIRELY by the packages each vault save stores (`Entry.targets` for a profile, `pkg` for a login) — never a hardcoded app list, never special-cased for Cash/Dasher/income apps. Whatever app(s) a save was captured for is what it restores to.
+
+Concrete (example only): a saved bundle was captured for app **X** (its `_targets` = X's package). In the Identity tab the selected **target app is a different app Y**. Restore that X bundle → it reports "applied", but it applied **X's identity/appdata to app Y**. That is incoherent — and it's wrong for any X≠Y, not just Cash vs Dasher.
 
 Two defects:
 1. **Restore doesn't drive the target selection.** A restore should set (or at least confirm) the target app(s) to the ones the saved bundle belongs to — the vault entry already carries them — so a Cash save restores to Cash, not to whatever is currently selected.
