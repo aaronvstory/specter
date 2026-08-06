@@ -2733,12 +2733,19 @@ public class MainActivity extends Activity {
             else tiles.add(repTile(num(rep.scamScore), "Scamalytics", scamColour(rep.scamRisk)));
             for (View r : tileRows(tiles, 3)) box.addView(r);
 
-            // 3) Flags, as their own compact line.
-            if (rep.fraudScore != null) {
+            // 3) Flags, as their own compact line. Shown when IPQS is keyed OR ip-api gave us a KEYLESS
+            //    proxy/hosting read — so a no-key user still sees a "flagged as" verdict (parity with the web,
+            //    which surfaces ip-api's proxy note).
+            boolean haveIpqs = rep.fraudScore != null;
+            boolean haveIpapi = rep.ipapiProxy != null || rep.ipapiHosting != null;
+            if (haveIpqs || haveIpapi) {
                 java.util.List<String> flags = new java.util.ArrayList<>();
                 if (Boolean.TRUE.equals(rep.tor)) flags.add("Tor");
                 if (Boolean.TRUE.equals(rep.vpn)) flags.add("VPN");
                 if (Boolean.TRUE.equals(rep.proxy)) flags.add("Proxy");
+                // ip-api's keyless proxy read — labelled so its source is clear, and skipped if IPQS already
+                // said Proxy (no duplicate). This is what a no-key user sees where IPQS would be blank.
+                if (Boolean.TRUE.equals(rep.ipapiProxy) && !Boolean.TRUE.equals(rep.proxy)) flags.add("Proxy (ip-api)");
                 if (Boolean.TRUE.equals(rep.recentAbuse)) flags.add("Abuse");
                 box.addView(flags.isEmpty()
                         ? networkMetaRow("FLAGGED AS", "Not flagged as proxy or VPN", Theme.SAGE)

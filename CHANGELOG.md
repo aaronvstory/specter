@@ -3,6 +3,14 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.29.2] - 2026-08-06
+
+### Changed
+- **Android: the "Flagged as" reputation row now shows for keyless users too**, driven by ip-api.com's
+  proxy read (labelled "Proxy (ip-api)"), not only when an IPQS key is set — parity with the web, where
+  ip-api's proxy signal already surfaces. No change when IPQS is keyed (verified on-device: renders
+  "Proxy Â· Abuse" as before).
+
 ## [0.29.1] - 2026-08-06
 
 ### Fixed
