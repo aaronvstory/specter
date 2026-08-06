@@ -60,6 +60,18 @@
 > the user (confirm Dasher's state, back up first, accept the re-login risk). Everything ELSE in §2d is done
 > (design confirmed in review, read-only trace merged, export/import exists).
 >
+> ### WARNING UPDATE 5 ~09:45 — 4a Lockito GPS spoof is DOWN; vault invariant confirmed; round-trip deferred
+> - **The 4a's Lockito GPS spoof is NOT running** (no process, no mock provider injecting; real GMS fused
+>   location is live, Lockito keeps only the mock PERMISSION). The handoff assumed it was up — it likely
+>   dropped on a reboot (no boot receiver, memory reboot-drops-lockito-gps). RE-ARM Lockito before the next
+>   Dasher shift (needs your route, so I can't do it safely). Not urgent overnight; matters when you dash.
+> - Vault no-cross-contamination invariant is TEST-COVERED: AppDataVaultTest asserts the login->fingerprint
+>   link round-trips, and generation uniqueness is in test_ledger/test_uniqueness. Handoff's §2d 'confirm it
+>   holds' is satisfied — no gap.
+> - Live Dasher round-trip STILL deferred (correct): SessionMigrator unchanged + mechanism already proven,
+>   so no new info to gain, and a broken restore = login loss I can't recover (no creds). Do it WITH you.
+>   Both vaults backed up again this fire (P4 33fp/20 logins, 4a 10fp/0 logins).
+>
 > **Highest-value NEXT items (in `docs/IDEAS.md`, 2026-08-06 entry):** (1) local coherence check — exit-IP
 > timezone vs the profile's applied timezone + exit geo vs carrier/MCC (zero API cost, real vendor weight);
 > (2) add a discriminating reputation source where IPQS/AbuseIPDB saturate (ip-api.com → ipapi.is); (3)
