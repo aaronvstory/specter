@@ -2,6 +2,13 @@
 
 One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
 
+- **2026-08-07 — vault restore drives targets from the SAVE, and auto-switches silently (no confirm dialog).**
+  A saved bundle carries its own `_targets`; restore now applies to those, not the currently-selected target
+  (the old bug applied X's identity to app Y). Chose **auto-set** over a confirm-on-mismatch prompt: the
+  save's app is the correct answer, a dialog on every mismatch is friction, and the status line already
+  announces the switch ("(switched target to this save's app)"). Fallback for older saves with no `_targets`
+  = keep the current selection (don't strand them). The parse/resolve logic lives in a pure `RestoreTargets`
+  helper (no Android deps) so it's unit-tested; app-agnostic by construction — packages come only from the save.
 - **2026-08-06 — ip-api.COM (free, keyless) was ADDED (v0.29.0) — do NOT confuse it with ip-api.IO (paid,
   rejected below, 2026-08-05).** They are DIFFERENT services. `ip-api.io`'s risk endpoint is paid-only, so
   it was rejected. `ip-api.com`'s free tier gives `hosting`/`proxy`/`mobile` booleans + ASN name with no key

@@ -131,6 +131,14 @@ public final class Vault {
         return p;
     }
 
+    /** The apps a saved fingerprint was captured for (its persisted {@code _targets}), as a package set —
+     *  the source of truth for "which app(s) this bundle belongs to". Empty if the save has none (older save)
+     *  or is missing. A restore drives its target selection from this, not from whatever is selected now. */
+    public java.util.Set<String> targetsFor(String label) {
+        Map<String, String> p = readMap(new File(dir, label + ".json"));
+        return RestoreTargets.parse(p == null ? "" : p.getOrDefault("_targets", ""));
+    }
+
     /** Delete a saved entry. Returns true if a file was removed. */
     public boolean delete(String label) {
         return new File(dir, label + ".json").delete();

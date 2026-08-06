@@ -31,6 +31,7 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
     app/src/main/java/com/specter/module/ui/Coverage.java \
     app/src/main/java/com/specter/module/ui/Dnsbl.java \
     app/src/main/java/com/specter/module/ui/DiagReport.java \
+    app/src/main/java/com/specter/module/ui/RestoreTargets.java \
     app/src/test/java/com/specter/module/SpoofLogicTest.java \
     app/src/test/java/com/specter/module/gen/GeneratorsTest.java \
     app/src/test/java/com/specter/module/gen/ProfileTest.java \
@@ -46,7 +47,8 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
     app/src/test/java/com/specter/module/ui/VaultPortableTest.java \
     app/src/test/java/com/specter/module/ui/CoverageTest.java \
     app/src/test/java/com/specter/module/ui/DnsblTest.java \
-    app/src/test/java/com/specter/module/ui/DiagReportTest.java
+    app/src/test/java/com/specter/module/ui/DiagReportTest.java \
+    app/src/test/java/com/specter/module/ui/RestoreTargetsTest.java
 "$JAVA" -cp "$OUT" com.specter.module.SpoofLogicTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.GeneratorsTest
 "$JAVA" -cp "$OUT" com.specter.module.gen.ProfileTest
@@ -63,4 +65,5 @@ OUT=.jvm-test-out; rm -rf "$OUT"; mkdir -p "$OUT"
 "$JAVA" -cp "$OUT" com.specter.module.ui.CoverageTest
 "$JAVA" -cp "$OUT" com.specter.module.ui.DnsblTest
 "$JAVA" -cp "$OUT" com.specter.module.ui.DiagReportTest
+"$JAVA" -cp "$OUT" com.specter.module.ui.RestoreTargetsTest
 python3 check_copy_guard.py

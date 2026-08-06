@@ -4074,14 +4074,14 @@ public class MainActivity extends Activity {
                             // semantic across every path (so the applied-signature below is exact).
                             svc.apply(e.pkg, enabledProfile(fp));
                             appliedFp = fp;
-                            note.append("fingerprint ").append(e.fingerprint).append(" applied; ");
-                        } catch (Throwable t) { note.append("fingerprint apply failed (").append(t.getMessage()).append("); "); }
-                    } else note.append("linked fingerprint missing; ");
-                }
+                            note.append("✓ fingerprint ").append(e.fingerprint).append(" applied; ");
+                        } catch (Throwable t) { note.append("✗ fingerprint apply failed (").append(t.getMessage()).append("); "); }
+                    } else note.append("✗ linked fingerprint missing; ");
+                } else note.append("(no linked fingerprint) ");
                 // 3) Restore the staged login (safe swap + rollback).
                 try {
                     com.specter.module.gen.SessionMigrator.restore(e.pkg);
-                    note.append("login restored");
+                    note.append("✓ login restored");
                     // Left STOPPED on purpose — nothing launches a target app without an explicit user
                     // tap. The user opens it when ready.
                 } catch (com.specter.module.gen.SessionMigrator.SessionException se) {
@@ -4110,8 +4110,13 @@ public class MainActivity extends Activity {
                         appliedByPkg.put(e.pkg, applySignature(enabledProfile()));
                         persistCurrentState();
                     }
+                    if (fErr == null) {
+                        // The login landed on e.pkg, so point the Identity tab's target selection at that app —
+                        // the render() below re-reads Targets.get and re-renders the target card.
+                        Targets.set(prefs, new java.util.LinkedHashSet<>(java.util.Collections.singletonList(e.pkg)));
+                    }
                     if (alive()) {
-                        if (fErr == null) status.setText("Restored " + Targets.label(this, e.pkg) + " — " + fNote + ".");
+                        if (fErr == null) status.setText("Restored → " + Targets.label(this, e.pkg) + ": " + fNote + ".");
                         else status.setText(sessionErrorMessage(e.pkg, false, fErr));
                     }
                 } finally { opBusy = false; if (alive()) render(); }
@@ -5038,8 +5043,16 @@ public class MainActivity extends Activity {
         // appliedByPkg keeps its entries: they describe what each app is wearing, and this restore has not
         // touched any app yet. Nothing matches the just-loaded identity, so it still reads "not applied".
         persistCurrentState();
-        Set<String> targets = Targets.get(prefs);
+        // A save restores to the app(s) it was CAPTURED for (its stored _targets), app-agnostic — not
+        // whatever is selected now. If it has none (older save), keep the current selection. When it drives
+        // a switch, write it so the Identity tab's target card re-renders to the save's apps.
+        Set<String> savedTargets = vault.targetsFor(labelStr);
+        Set<String> current = Targets.get(prefs);
+        Set<String> targets = RestoreTargets.resolve(savedTargets, current);
+        final boolean switched = RestoreTargets.drivesSwitch(savedTargets, current);
+        if (!savedTargets.isEmpty()) Targets.set(prefs, targets);
         if (targets.isEmpty()) {
+            // Reachable only when the save had no _targets AND nothing is selected, so no switch happened.
             status.setText("Restored " + labelStr + " — pick a target app (Settings), then it will apply.");
             toast("Restored into the current identity. Select a target app to apply.");
             return;
@@ -5077,13 +5090,24 @@ public class MainActivity extends Activity {
                         else appliedByPkg.remove(pkg);
                     }
                     persistCurrentState();
-                    if (allClean) toast("Wiped and restored to " + pkgs.size() + " app(s).");
-                    else if (clearedN > 0) toast("⚠️ Only " + clearedN + "/" + pkgs.size()
-                            + " app(s) done — grant root in Magisk?");
-                    String tail = (clrErr != null ? " Clear error: " + clrErr : "")
-                            + (err != null ? " Apply error: " + err : "")
-                            + (clrErr == null && err == null ? " Relaunch them to see it." : "");
-                    status.setText("Restored " + labelStr + " to " + okN + "/" + pkgs.size() + " app(s)." + tail);
+                    // Itemised "what actually landed": this path restores a FINGERPRINT only (a saved
+                    // fingerprint carries no login), so say so — and which app(s) it reached.
+                    String appNames = appNamesText(okPkgs);
+                    boolean fullOk = allClean && okN == pkgs.size() && okN > 0;
+                    String switchNote = switched ? " (switched target to this save's app" + (targets.size() > 1 ? "s" : "") + ")" : "";
+                    if (fullOk) {
+                        toast("✓ Fingerprint restored to " + pkgs.size() + " app(s).");
+                        status.setText("✓ Fingerprint " + labelStr + " → " + appNames
+                                + " · no login in this save. Relaunch to see it." + switchNote);
+                    } else {
+                        if (okN > 0) toast("⚠️ Fingerprint on " + okN + "/" + pkgs.size()
+                                + " app(s) — grant root in Magisk?");
+                        else toast("⚠️ Restore failed — grant root in Magisk?");
+                        String tail = (clrErr != null ? " Clear error: " + clrErr : "")
+                                + (err != null ? " Apply error: " + err : "");
+                        status.setText("⚠ Fingerprint " + labelStr + " → " + okN + "/" + pkgs.size() + " app(s)"
+                                + (appNames != null ? " (" + appNames + ")" : "") + " · no login in this save." + tail + switchNote);
+                    }
                 } finally {
                     opBusy = false;
                     render();   // clear the busy state on the summary/hero

@@ -3,6 +3,20 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.32.1] - 2026-08-07
+
+### Fixed
+- **Vault restore now follows the saved bundle's own app(s), not whatever target is selected.** Restoring a
+  saved fingerprint reads its stored `_targets` and applies to THOSE apps (and re-points the target
+  selection to them), so a bundle captured for app X restores to X — app-agnostic, driven entirely by the
+  save, never a hardcoded app list. Older saves with no `_targets` fall back to the current selection.
+  Restoring a saved login (AppData) likewise re-points the Identity target to that login's app. Pure
+  target-derivation helper `RestoreTargets` (20 JVM asserts).
+- **Restore now says what actually landed.** A fingerprint restore reports "✓ Fingerprint <label> → <apps>
+  · no login in this save" (or a ⚠ partial with the count + error); a login restore reports an itemised
+  ✓/✗ per part (fingerprint applied / login restored). No more vague "restored to N app(s)" that hid
+  which app got what.
+
 ## [0.32.0] - 2026-08-06
 
 ### Added
