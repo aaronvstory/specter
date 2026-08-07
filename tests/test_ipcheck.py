@@ -658,7 +658,7 @@ def test_flags_lists_only_true_verdicts_in_priority_order():
 
 def test_check_merges_every_source_and_assembles_verdict_and_flags(monkeypatch):
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "1.2.3.4", "isp": "ACME"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "1.2.3.4", "isp": "ACME"})
     monkeypatch.setattr(ipcheck, "lookup_ipqs",
                         lambda ip, key, opener: {"fraud_score": 90, "proxy": True})
     monkeypatch.setattr(ipcheck, "lookup_abuseipdb",
@@ -674,7 +674,7 @@ def test_check_merges_every_source_and_assembles_verdict_and_flags(monkeypatch):
 
 def test_check_notes_when_no_key_is_set(monkeypatch):
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "1.2.3.4"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "1.2.3.4"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {
         "blacklists": [], "policy_lists": [], "dnsbl_checked": 12, "dnsbl_usable": True})
     rep = ipcheck.check()                             # no ipqs_key
@@ -686,7 +686,7 @@ def test_check_carries_an_explicit_ip_even_when_geo_fails(monkeypatch):
     # --ip 5.6.7.8 with a geo lookup that returns nothing: the address we were told to check must still
     # be checked (blacklists), not dropped — the fix that made an explicit --ip survive a geo failure.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
     seen = {}
 
     def fake_dnsbl(ip):
@@ -702,7 +702,7 @@ def test_check_carries_an_explicit_ip_even_when_geo_fails(monkeypatch):
 def test_check_gives_up_with_a_note_when_the_exit_ip_cant_be_found(monkeypatch):
     # No --ip and geo failed -> there's nothing to check; say so, don't press on against a null IP.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
     called = {"dnsbl": False}
 
     def fake_dnsbl(ip):
@@ -877,7 +877,7 @@ def test_an_ipv6_exit_falls_back_to_ipv4_so_the_blocklists_still_run(monkeypatch
     # blocklist evidence behind a clean-looking verdict. Ask again over IPv4 instead of giving up.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     monkeypatch.setattr(ipcheck, "lookup_geo",
-                        lambda opener, ip=None: {"ip": "2605:59ca::e798", "isp": "Starlink"})
+                        lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798", "isp": "Starlink"})
     monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
     checked = {}
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: checked.setdefault("ip", ip) and {} or
@@ -889,6 +889,65 @@ def test_an_ipv6_exit_falls_back_to_ipv4_so_the_blocklists_still_run(monkeypatch
     assert rep["exit_ipv6"] == "2605:59ca::e798"     # ...and the v6 exit is still reported, not hidden
     assert any("dual-stack" in n for n in rep["notes"])
     assert rep["dnsbl_usable"] is True
+
+
+def test_semicolons_separate_a_proxy_line_exactly_like_colons():
+    # Vendors hand out `host;port;user;pass` as often as the colon form, and re-typing a pasted list is
+    # not a thing anyone should have to do. Normalised in ONE place, after the scheme comes off, so every
+    # shape gets it — and so a `scheme://` prefix is never damaged on the way through.
+    colon = ipcheck.parse_proxy("host.com:1080:user:pass", "http")
+    semi = ipcheck.parse_proxy("host.com;1080;user;pass", "http")
+    assert (semi.host, semi.port, semi.user, semi.password) == \
+           (colon.host, colon.port, colon.user, colon.password)
+    scheme = ipcheck.parse_proxy("socks5://host.com;1080;user;pass", "http")
+    assert scheme.scheme == "socks5" and scheme.port == 1080 and scheme.password == "pass"
+    assert ipcheck.parse_proxy("user:pass@host.com;1080", "http").port == 1080
+    # A bracketed IPv6 endpoint carries colons that are part of the ADDRESS. It has no semicolons, so the
+    # normalisation must leave it exactly as it was.
+    assert ipcheck.parse_proxy("[2001:db8::1]:8080", "http").host == "[2001:db8::1]"
+
+
+def test_a_proxy_that_is_merely_slow_is_retried_before_being_called_dead(monkeypatch):
+    # MEASURED 2026-08-07: five lightningproxies SOCKS5 endpoints answered in ~800 ms once warm, but a
+    # cold concurrent hosted run had every one of them exceed the timeout — and the batch rendered DEAD
+    # while a direct SOCKS5 handshake to all five succeeded. "No answer within Ns" is not "down".
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    calls = []
+
+    def flaky(opener, ip=None, timeout=None):
+        # Count only the calls that go THROUGH THE PROXY (opener is None, the stub above). The direct
+        # no-proxy baseline in _direct_baseline_ms uses a real opener and must not be counted as a retry.
+        if opener is None:
+            calls.append(timeout)
+        return {} if len(calls) < 2 else {"ip": "24.116.160.60", "isp": "Sparklight"}
+
+    monkeypatch.setattr(ipcheck, "lookup_geo", flaky)
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {})
+    rep = ipcheck.check("socks5://host:1080:user:pass")
+    assert rep["proxy_alive"] is True                 # ...not DEAD on the strength of one slow request
+    assert rep["ip"] == "24.116.160.60"
+    assert len(calls) == 2                            # exactly one retry, not a loop
+    # ...and the retry gets a LONGER budget, because the whole point is that the first one ran out of time.
+    assert calls[0] is None and calls[1] == ipcheck.SLOW_TIMEOUT > ipcheck.TIMEOUT
+    assert any("answered on a retry" in n for n in rep["notes"])
+
+
+def test_a_dead_proxy_note_names_the_transport_actually_used_and_claims_no_untried_retry(monkeypatch):
+    # Two false statements lived in this note. A line carrying `socks5://` overrides the UI selector, so
+    # with the selector on HTTP the report said "no answer as HTTP" about a request that went out as
+    # SOCKS5 — and it claimed "the other transport did not answer either" when no such retry is even
+    # attempted for an explicit scheme. Both read as evidence; neither was measured.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
+    rep = ipcheck.check("socks5://host:1080:user:pass", proxy_scheme="http")
+    note = next(n for n in rep["notes"] if n.startswith("Proxy: no answer"))
+    assert "SOCKS5" in note and "HTTP" not in note     # the transport that was actually used
+    assert "the other transport" not in note           # no retry happened, so none may be claimed
+    assert rep["proxy_alive"] is False
+    # It says what was OBSERVED — two silences and how long each waited — and lists the causes without
+    # asserting which one it was. Nothing here re-dials to find out; that would be a second measurement
+    # of a different moment, reported as if it described the first.
+    assert f"within {ipcheck.TIMEOUT}s" in note and f"within {ipcheck.SLOW_TIMEOUT}s" in note
 
 
 def test_the_ipv4_pin_survives_one_endpoint_going_dark(monkeypatch):
@@ -933,7 +992,7 @@ def test_geo_is_remeasured_on_the_ipv4_address_it_is_reported_against(monkeypatc
     # exit is not evidence about the other.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
 
-    def geo(opener, ip=None):
+    def geo(opener, ip=None, timeout=None):
         if ip is None:
             return {"ip": "2605:59ca::e798", "isp": "v6 upstream", "timezone": "America/Denver",
                     "country_code": "CA"}
@@ -958,7 +1017,7 @@ def test_a_failed_ipv4_regeo_drops_the_stale_fields_rather_than_relabelling_them
     # `timezone` is what the device-vs-IP alignment acts on.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     monkeypatch.setattr(ipcheck, "lookup_geo",
-                        lambda opener, ip=None: {} if ip else
+                        lambda opener, ip=None, timeout=None: {} if ip else
                         {"ip": "2605:59ca::e798", "isp": "v6 upstream", "location": "Denver, CO, US",
                          "country_code": "CA", "timezone": "America/Denver"})
     monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
@@ -975,7 +1034,7 @@ def test_an_ipv6_only_exit_is_still_checked_against_the_zones_that_have_ipv6_dat
     # No IPv4 route: still check, against the four zones that actually hold IPv6 data, and report THAT
     # denominator — "0 of 4 IPv6 lists" is a real result, "0 of 17" would be a lie.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "2605:59ca::e798"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798"})
     monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: None)
     seen = {}
 
@@ -1101,7 +1160,7 @@ def test_every_reputation_source_is_asked_about_the_address_the_report_names(mon
     were never taken on."""
     asked = {}
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "2605:59ca::e798"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798"})
     monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
     monkeypatch.setattr(ipcheck, "lookup_ipqs",
                         lambda ip, key, opener: asked.setdefault("ipqs", ip) and {} or {"fraud_score": 0})
@@ -1225,7 +1284,7 @@ def test_scamalytics_credentials_never_reach_the_caller(monkeypatch):
     # that forwards the user or key fails HERE. The key rides in the QUERY STRING, and the hosted deploy
     # renders this report in a visitor's browser.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "1.2.3.4", "isp": "Example"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "1.2.3.4", "isp": "Example"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
                                                             "dnsbl_checked": 17, "dnsbl_usable": True,
                                                             "dnsbl_detail": []})
@@ -1373,7 +1432,7 @@ def test_latency_reports_what_the_proxy_ADDS_not_the_raw_round_trip(monkeypatch)
     comparable between a laptop in Asia and a function in Virginia."""
     calls = []
 
-    def fake_geo(opener, ip=None):
+    def fake_geo(opener, ip=None, timeout=None):
         calls.append(opener)
         return {"ip": "153.66.193.140", "isp": "SpaceX Starlink"}
 
@@ -1397,7 +1456,7 @@ def test_direct_baseline_is_measured_once_per_run_not_per_row(monkeypatch):
     as DEAD. It must be measured once and cached (the autouse fixture clears the cache before this test)."""
     direct_calls = []
 
-    def fake_geo(opener, ip=None):
+    def fake_geo(opener, ip=None, timeout=None):
         if opener != "PROXIED":
             direct_calls.append(opener)     # only the DIRECT baseline lookups, not the proxied primary ones
         return {"ip": "1.2.3.4", "isp": "X"}
@@ -1447,7 +1506,7 @@ def test_ipapi_lookup_parses_and_degrades(monkeypatch):
 def test_ipapi_feeds_check_flow_and_proxy_note(monkeypatch):
     # End to end: with no keys, ip-api's hosting promotes the exit type to datacenter and proxy=true adds a
     # note. Override the autouse stub with a real-looking ip-api result.
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {"ip": "45.83.220.5", "isp": "31173 Services AB"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "45.83.220.5", "isp": "31173 Services AB"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
                                                             "dnsbl_checked": 17, "dnsbl_usable": True, "dnsbl_detail": []})
     monkeypatch.setattr(ipcheck, "_ipapi_lookup", lambda ip, opener=None: {
@@ -1463,7 +1522,7 @@ def test_no_baseline_request_is_made_when_there_is_no_proxy(monkeypatch):
     # double every keyless lookup for nothing.
     calls = []
     monkeypatch.setattr(ipcheck, "lookup_geo",
-                        lambda opener, ip=None: calls.append(opener) or {"ip": "8.8.8.8"})
+                        lambda opener, ip=None, timeout=None: calls.append(opener) or {"ip": "8.8.8.8"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
                                                             "dnsbl_checked": 17, "dnsbl_usable": True,
                                                             "dnsbl_detail": []})
@@ -1481,7 +1540,7 @@ def test_a_socks_proxy_addressed_as_http_is_retried_not_called_dead(monkeypatch)
         tried.append(scheme)
         return scheme
 
-    def fake_geo(opener, ip=None):
+    def fake_geo(opener, ip=None, timeout=None):
         # Only the SOCKS transport answers, exactly as the real proxy behaved.
         return {"ip": "24.26.39.144", "isp": "Spectrum"} if opener == "socks5" else {}
 
@@ -1500,7 +1559,7 @@ def test_a_socks_proxy_addressed_as_http_is_retried_not_called_dead(monkeypatch)
 
 def test_a_genuinely_dead_proxy_still_reads_dead_and_says_both_were_tried(monkeypatch):
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": scheme)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
     rep = ipcheck.check("host:9999", proxy_scheme="http")
     assert rep["proxy_alive"] is False
     assert rep["verdict"] == "unknown"                    # and never crashes the page
@@ -1512,7 +1571,7 @@ def test_an_explicit_scheme_is_never_second_guessed(monkeypatch):
     # with the user about what they typed.
     tried = []
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": tried.append(scheme) or scheme)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
     ipcheck.check("socks5://host:1080")
     assert tried == ["http"], f"an explicit scheme must be tried once, got {tried}"
 

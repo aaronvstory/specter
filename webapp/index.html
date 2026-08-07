@@ -807,6 +807,10 @@ const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpper
 function proxyParts(line){
   let s=(line||'').trim(), scheme=null;
   const i=s.indexOf('://'); if(i>0){scheme=s.slice(0,i).toLowerCase(); s=s.slice(i+3);}
+  // `;` is accepted anywhere `:` is — normalised in the same place and the same order as parse_proxy(),
+  // AFTER the scheme comes off. If only the server learned this, a `host;port;user;pass` line would check
+  // correctly while the copy chips beside it showed one unsplit blob.
+  s=s.split(';').join(':');
   let user=null, pass=null, hostport=s;
   const at=s.lastIndexOf('@');
   if(at>=0){const creds=s.slice(0,at); hostport=s.slice(at+1);
@@ -865,8 +869,7 @@ const chip=(label,value,titleText)=>value==null||value===''?'<span class=dim>—
   // long value (a full IPv6 exit, a whole `host:port:user:pass` line) renders clipped — and a title that
   // only says "Copy ip" is no escape hatch at all. This is the detail row that the truncated bulk-table
   // cell defers to, so it has to actually hold the whole string. One helper, so every chip gets it.
-  // `titleText` overrides the value for the one chip that must NOT reveal itself on hover: the whole line
-  // carries the password, which the row deliberately renders as dots.
+  // `titleText` overrides the value when a chip's hover text should say something other than the value.
   :`<button class=cp data-copy="${esc(value)}" title="${esc(titleText!=null?titleText:value)}&#10;Click to copy"><i>${esc(label)}</i>${esc(value)}</button>`;
 
 function bulkDetail(x){
@@ -876,13 +879,14 @@ function bulkDetail(x){
 
   t+=dGrp('Proxy');
   // All the credentials on ONE row of chips. One click copies just that part; a tick confirms in a slot
-  // that is always reserved, so nothing moves. The password shows dots but copies its real value.
+  // that is always reserved, so nothing moves. The password is shown IN FULL, deliberately: this is a
+  // proxy list the user pasted in themselves, on their own screen, and dots made the one field you most
+  // often need to eyeball against the vendor's dashboard the only one you could not read.
   t+=dRow('Copy',
     chip('host',p.host)+chip('port',p.port)+
     (p.user?chip('user',p.user):'')+
-    (p.pass?`<button class=cp data-copy="${esc(p.pass)}" title="Copy password"><i>pass</i>`+
-      '\u2022'.repeat(Math.min(p.pass.length,10))+`</button>`:'')+
-    chip('whole line',x.line,'The whole line, password included'));
+    (p.pass?chip('pass',p.pass):'')+
+    chip('whole line',x.line));
   t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
   t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
   if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;

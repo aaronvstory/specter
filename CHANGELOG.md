@@ -3,6 +3,30 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.33.2] - 2026-08-07
+
+### Fixed
+- **A slow proxy is no longer reported as a dead one.** A single request that missed the 8s budget was
+  enough to render DEAD. MEASURED 2026-08-07: five live lightningproxies SOCKS5 endpoints answered in
+  ~800 ms once warm but took 13-19 s each on a cold, concurrent hosted run, so an entire batch read DEAD
+  while a direct SOCKS5 handshake to every one of them succeeded. The liveness probe now retries once
+  with a 24s budget (`SLOW_TIMEOUT`) and says so in the notes. Costs nothing on a genuinely dead proxy -
+  a refused connection or an unresolvable host fails in well under a second. Vercel's function cap for
+  `api/check.py` went 30s -> 60s so the retry can actually finish.
+- **The dead-proxy note no longer states two things that were never measured.** It named the UI SELECTOR
+  rather than the transport actually used, so a `socks5://` line checked with the selector on HTTP
+  reported "no answer as HTTP" about a request that went out as SOCKS5. And it claimed "the other
+  transport did not answer either" even when no such retry is attempted - which is exactly the case for
+  a line carrying its own scheme. It now names the real transport and only claims what it tried.
+
+### Changed
+- **`;` is accepted anywhere `:` is in a proxy line** - `host;port;user;pass` parses identically to the
+  colon form, mixed forms work, and a `scheme://` prefix survives. Normalised in one place on both the
+  server and the copy-chip parser, so the two can't disagree.
+- **The password chip shows its value in full instead of dots.** It is the user's own pasted proxy list
+  on their own screen, and dots made the one field you most often need to eyeball against the vendor's
+  dashboard the only unreadable one.
+
 ## [0.33.1] - 2026-08-07
 
 ### Fixed

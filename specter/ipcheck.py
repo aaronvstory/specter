@@ -41,6 +41,12 @@ from typing import NamedTuple
 
 CONFIG = Path.home() / ".specter-ipcheck.json"
 TIMEOUT = 8
+# The budget for the RETRY of a proxy's liveness probe, after the normal one ran out of time. Generous on
+# purpose: MEASURED 2026-08-07, five live lightningproxies SOCKS5 endpoints answered in ~800 ms once warm
+# but took 13-19 s each on a cold concurrent hosted run, so an 8 s retry would have failed for the same
+# reason the first attempt did and reported five working proxies as dead. Only ever paid once, and only by
+# a proxy that already missed the fast path.
+SLOW_TIMEOUT = 24
 
 # The blocklists behind the "found in N blacklists" count — keyless, no quota, no account. Every
 # zone here was verified live (queried for 127.0.0.2, which each one lists by convention). SORBS is
@@ -581,6 +587,10 @@ def parse_proxy(text: str, default_scheme: str = "http") -> Proxy | None:
     out; or a bare `host:port`. `default_scheme` (from the UI's selector) fills in when there's no
     `://`. Raises ValueError with a readable reason on anything it can't make sense of.
 
+    Separators: `;` is accepted anywhere `:` is, because vendors hand out `host;port;user;pass` as often
+    as the colon form and re-typing a pasted list is not a thing anyone should have to do. The two can be
+    mixed. Same caveat as below — a password containing `;` can't use that form.
+
     Limitation, stated rather than papered over: the `host:port:user:pass` form splits on colons, so a
     password that itself contains a colon can't be expressed that way — use the `user:pass@host:port`
     or `scheme://` form for those (percent-encoding not required)."""
@@ -592,6 +602,10 @@ def parse_proxy(text: str, default_scheme: str = "http") -> Proxy | None:
     if "://" in text:
         scheme, _, text = text.partition("://")
         scheme = scheme.lower()
+    # AFTER the scheme is off, so `socks5://` survives, and after nothing else has looked at the string —
+    # every shape below is colon-separated, so normalising once here means each of them accepts `;` for
+    # free rather than four separate places learning about it.
+    text = text.replace(";", ":")
     if scheme not in _PROXY_SCHEMES:
         raise ValueError(f"unknown proxy scheme {scheme!r} — use http, socks5, or socks4")
 
@@ -771,12 +785,23 @@ def _opener(proxy: str | None, default_scheme: str = "http"):
         urllib.request.ProxyHandler({"http": p.http_url(), "https": p.http_url()}))
 
 
-def _get_json(url: str, opener, headers: dict | None = None) -> dict | None:
+def _effective_scheme(proxy, default_scheme: str) -> str:
+    """The transport a check ACTUALLY went out on. A line carrying its own ``scheme://`` overrides the UI
+    selector, so reporting the selector describes a request that was never made."""
+    try:
+        p = parse_proxy(proxy, default_scheme) if isinstance(proxy, str) else proxy
+        return p.scheme if p else default_scheme
+    except ValueError:
+        return default_scheme
+
+
+def _get_json(url: str, opener, headers: dict | None = None,
+              timeout: float | None = None) -> dict | None:
     """GET a JSON document. None on a transport failure; an API's own error body is returned as-is
     so the caller can surface *why* (bad key, quota spent) instead of a generic failure."""
     try:
         req = urllib.request.Request(url, headers=headers or {})
-        with opener.open(req, timeout=TIMEOUT) as r:
+        with opener.open(req, timeout=timeout or TIMEOUT) as r:
             return json.loads(r.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         try:
@@ -843,10 +868,11 @@ def lookup_exit_v4(opener) -> str | None:
     return None
 
 
-def lookup_geo(opener, ip: str | None = None) -> dict:
+def lookup_geo(opener, ip: str | None = None, timeout: float | None = None) -> dict:
     """ISP/location/timezone for ``ip``, or for this connection's own exit IP when ``ip`` is None
     (in which case it also discovers what that exit IP is, as seen through ``opener``'s proxy)."""
-    o = _get_json(f"https://ipwho.is/{urllib.parse.quote(ip, safe='') if ip else ''}", opener)
+    o = _get_json(f"https://ipwho.is/{urllib.parse.quote(ip, safe='') if ip else ''}", opener,
+                  timeout=timeout)
     if not o or not o.get("success"):
         return {}
     where = ", ".join(x for x in (o.get("city"), o.get("region"), o.get("country")) if x)
@@ -1251,6 +1277,21 @@ def check(proxy: str | None = None, ip: str | None = None,
             rep["proxy_scheme_used"] = alt
             rep["notes"].append(f"Proxy: no answer as {proxy_scheme.upper()} — it responded as "
                                 f"{alt.upper()}. Set the transport to {alt.upper()} to avoid the retry.")
+    # A first request through a proxy can exceed TIMEOUT while the proxy is perfectly ALIVE, and calling
+    # that "dead" is a confident wrong answer. MEASURED 2026-08-07: five lightningproxies SOCKS5 endpoints
+    # answered in ~800 ms once warm, but on a cold, concurrent hosted run the same five took 13-19 s each
+    # and the whole batch rendered DEAD — while a direct SOCKS5 handshake to every one of them succeeded.
+    # So retry ONCE on the same transport before drawing any conclusion. This costs nothing on a genuinely
+    # dead proxy: a refused connection or an unresolvable host fails in well under a second, it does not
+    # burn the timeout.
+    if proxy and not geo:
+        started = time.monotonic()
+        geo = lookup_geo(opener, ip, timeout=SLOW_TIMEOUT)
+        latency_ms = int((time.monotonic() - started) * 1000)
+        if geo:
+            rep["notes"].append(
+                f"Proxy: no answer within {TIMEOUT}s, but it answered on a retry with a {SLOW_TIMEOUT}s "
+                "budget — the proxy is up, just slow to get going. The latency shown is the retry's.")
     merge(geo)
     if proxy:
         rep["proxy_alive"] = bool(geo)
@@ -1271,10 +1312,20 @@ def check(proxy: str | None = None, ip: str | None = None,
             if base_ms is not None:
                 rep["direct_ms"] = base_ms
                 rep["proxy_added_ms"] = max(0, latency_ms - base_ms)
-        elif retried_scheme is None:
-            rep["notes"].append("Proxy: no answer as " + proxy_scheme.upper()
-                                + ", and the other transport did not answer either — it is down, "
-                                  "unreachable, or the credentials are wrong")
+        else:
+            # Say what was ACTUALLY tried, and no more. Two things were wrong here. (1) It named
+            # `proxy_scheme` — the UI SELECTOR — when a line carrying its own `socks5://` overrides the
+            # selector entirely, so a SOCKS5 line checked with the selector on HTTP reported "no answer as
+            # HTTP" about a request that went out as SOCKS5. (2) It claimed "the other transport did not
+            # answer either" even when no such retry was attempted, which is exactly the case for a line
+            # with an explicit scheme. Both statements read as evidence and neither was measured.
+            used = (rep.get("proxy_scheme_used") or _effective_scheme(proxy, proxy_scheme)).upper()
+            tried_both = retried_scheme is not None or "://" not in str(proxy)
+            rep["notes"].append(
+                f"Proxy: no answer as {used}"
+                + (", and the other transport did not answer either" if tried_both else "")
+                + f" — nothing came back within {TIMEOUT}s, then nothing within {SLOW_TIMEOUT}s on a "
+                  "retry. It is down, unreachable, out of plan quota, or the credentials are wrong.")
     if not rep.get("ip"):
         if not ip:
             # EVERY return carries a verdict. This one used to return a report with no `verdict` key at
@@ -2227,6 +2278,10 @@ const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpper
 function proxyParts(line){
   let s=(line||'').trim(), scheme=null;
   const i=s.indexOf('://'); if(i>0){scheme=s.slice(0,i).toLowerCase(); s=s.slice(i+3);}
+  // `;` is accepted anywhere `:` is — normalised in the same place and the same order as parse_proxy(),
+  // AFTER the scheme comes off. If only the server learned this, a `host;port;user;pass` line would check
+  // correctly while the copy chips beside it showed one unsplit blob.
+  s=s.split(';').join(':');
   let user=null, pass=null, hostport=s;
   const at=s.lastIndexOf('@');
   if(at>=0){const creds=s.slice(0,at); hostport=s.slice(at+1);
@@ -2285,8 +2340,7 @@ const chip=(label,value,titleText)=>value==null||value===''?'<span class=dim>—
   // long value (a full IPv6 exit, a whole `host:port:user:pass` line) renders clipped — and a title that
   // only says "Copy ip" is no escape hatch at all. This is the detail row that the truncated bulk-table
   // cell defers to, so it has to actually hold the whole string. One helper, so every chip gets it.
-  // `titleText` overrides the value for the one chip that must NOT reveal itself on hover: the whole line
-  // carries the password, which the row deliberately renders as dots.
+  // `titleText` overrides the value when a chip's hover text should say something other than the value.
   :`<button class=cp data-copy="${esc(value)}" title="${esc(titleText!=null?titleText:value)}&#10;Click to copy"><i>${esc(label)}</i>${esc(value)}</button>`;
 
 function bulkDetail(x){
@@ -2296,13 +2350,14 @@ function bulkDetail(x){
 
   t+=dGrp('Proxy');
   // All the credentials on ONE row of chips. One click copies just that part; a tick confirms in a slot
-  // that is always reserved, so nothing moves. The password shows dots but copies its real value.
+  // that is always reserved, so nothing moves. The password is shown IN FULL, deliberately: this is a
+  // proxy list the user pasted in themselves, on their own screen, and dots made the one field you most
+  // often need to eyeball against the vendor's dashboard the only one you could not read.
   t+=dRow('Copy',
     chip('host',p.host)+chip('port',p.port)+
     (p.user?chip('user',p.user):'')+
-    (p.pass?`<button class=cp data-copy="${esc(p.pass)}" title="Copy password"><i>pass</i>`+
-      '\u2022'.repeat(Math.min(p.pass.length,10))+`</button>`:'')+
-    chip('whole line',x.line,'The whole line, password included'));
+    (p.pass?chip('pass',p.pass):'')+
+    chip('whole line',x.line));
   t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
   t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
   if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
