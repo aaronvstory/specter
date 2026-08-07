@@ -145,3 +145,38 @@
   verdict. `publicVPN` is unspoofable on-device; `osMismatch` reads the TCP SYN (MSS/TTL - p0f labels MSS
   1300-1460 "generic tunnel or VPN"), which is KERNEL-level, so root-only and device-wide, not an
   Xposed/Zygisk reach. Measure before building.
+
+## 2026-08-08 - Proxy error surfacing + credential scrubbing (PR #105, v0.33.3)
+
+- **What changed:** `specter/ipcheck.py` - `_why()` unwraps urllib's `<urlopen error ...>`; `_get_json`/
+  `lookup_geo` take an `errbox`; `check()` collects every probe's reason into `rep["proxy_error"]` + a
+  "Proxy said" UI row; `_secret_forms()` + `_safe_reason()` scrub credentials out of it. Squashed `b781361`.
+- **Why:** a live ten-proxy batch read DEAD. The proxy had actually answered `503 No exit node` - credentials
+  fine, vendor's exit pool empty - and the checker discarded that sentence and guessed "down, or the
+  credentials are wrong", pointing the user at the one thing that was never broken.
+- **Verified:** live against the real endpoint - a wrong password now reports `407 Proxy Authentication
+  Required`, a real `503 No exit node` reports verbatim, no credential anywhere in the report. 289 tests
+  green; every new test proven to FAIL without its fix. The vendor pool later refilled on its own
+  (`172.8.14.57`, AT&T), confirming the 503 was transient capacity.
+- **Gauntlet - THREE reviewers, THREE DIFFERENT leaks in the same 40-line function, none caught all three:**
+  1. codex + subagent (both, independently): `_why` capped at 160 chars BEFORE `_safe_reason` scrubbed, so a
+     cut landing inside a secret left a fragment the literal replace could no longer match. The trim CREATED
+     the leak it looked like it prevented. Scrub first, cap last.
+  2. codex + subagent (both): a literal replace misses the same secret percent-encoded or base64'd into
+     `Proxy-Authorization: Basic ...` - which is how urllib actually sends it.
+  3. PR bot (missed by both reviewers): redacting only `basic|bearer|digest` left
+     `Proxy-Authorization: Custom <token>` in the clear. The scheme is the other side's CHOICE, so keying on
+     it is the wrong invariant. Now redacted to end of line regardless of scheme.
+  Plus, found while testing #3: a 1-char username made the literal replace rewrite every occurrence of that
+  letter ("Proxy-A***thorization"). Secrets under 4 chars now match on word boundaries.
+- **PROCESS FAILURE to avoid repeating:** the `code-reviewer` subagent ran `git stash` in the shared working
+  tree and swallowed the in-flight credential fix into `stash@{0}`. Recovered in full (verified by test +
+  live run), but review subagents must be told NEVER to touch git state - they share the working tree.
+- **Also settled this session (fingerprint.com / VPN, measured, no code change):** Chrome's renderers run as
+  app-zygote ISOLATED uids (90000-98999) forked from `com.android.chrome_zygote`, so Specter reaches only the
+  browser process (uid 10213). PROVEN: with Specter's Chrome profile set to `America/New_York` the renderer
+  reported the real `Asia/Manila`. Scoping Chrome buys nothing for browser fingerprinting - unscope it.
+  Controlled A/B on fingerprint.com with the proxy OFF: device TZ mismatched (Manila vs LA exit) -> VPN
+  Detected; TZ matched exactly -> STILL VPN Detected. So it is `publicVPN`, not `timezoneMismatch`: the home
+  line exits at `23.159.216.252` (Byte Node AS17243, a hosting ASN, IPQS 100 Proxy/abuse/bot). Not MTU either
+  - `tun0` measured MTU 1500, already the plain-Ethernet value vs p0f's 1300-1460 tunnel signatures.
