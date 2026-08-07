@@ -25,6 +25,7 @@ finding here means the same thing as a finding on the phone.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -799,13 +800,36 @@ def _opener(proxy: str | None, default_scheme: str = "http"):
         urllib.request.ProxyHandler({"http": p.http_url(), "https": p.http_url()}))
 
 
-def _safe_reason(reason: str, proxy) -> str:
-    """A proxy's failure reason with the credentials taken back out.
+def _secret_forms(p) -> list[str]:
+    """Every form a credential can wear inside an error string, longest first.
 
-    The error branch is the one that leaks. A proxy library is free to put the host, the username, or
-    the whole `user:pass@host:port` into the message it raises, and this string is on its way to a
-    report the user copies and pastes. Scrub the username and password before it goes anywhere, and
-    scrub the LONGER one first so a password that contains the username can't leave a fragment."""
+    Replacing the literal ``user`` and ``password`` is not enough, because the credential does not
+    necessarily appear literally. urllib builds ``Proxy-Authorization: Basic <base64(user:pass)>``, and
+    a proxy URL percent-encodes. Each of those is the SAME secret in a costume, and an error that echoes
+    the header or the URL carries it straight through a literal scrub.
+
+    Longest first: a password that CONTAINS the username would otherwise be cut down to a fragment
+    (``***pass``) with the rest of the real password still in the clear."""
+    forms: set[str] = set()
+    user, password = getattr(p, "user", "") or "", getattr(p, "password", "") or ""
+    for secret in filter(None, (user, password)):
+        forms.update((secret, urllib.parse.quote(secret, safe=""), urllib.parse.quote_plus(secret)))
+    if user or password:
+        pair = f"{user}:{password}"
+        forms.update((pair, urllib.parse.quote(pair, safe=""),
+                      base64.b64encode(pair.encode("utf-8")).decode("ascii")))
+    return sorted((f for f in forms if f), key=len, reverse=True)
+
+
+def _safe_reason(reason: str, proxy) -> str:
+    """A proxy's failure reason with the credentials taken back out, then capped for display.
+
+    The error branch is the one that leaks. A proxy library is free to put the host, the username, the
+    whole ``user:pass@host:port``, or the Proxy-Authorization header into the message it raises, and
+    this string is on its way to a report the user copies into a public issue.
+
+    Order is the whole point: scrub FIRST, cap LAST. Capping first can cut a secret in half, and a half
+    secret survives every replace below."""
     if not reason:
         return ""
     try:
@@ -813,9 +837,12 @@ def _safe_reason(reason: str, proxy) -> str:
     except ValueError:
         p = None
     if p:
-        for secret in sorted(filter(None, (p.user, p.password)), key=len, reverse=True):
+        for secret in _secret_forms(p):
             reason = reason.replace(secret, "***")
-    return reason
+    # Belt and braces for the encoding we did NOT predict: whatever follows an auth scheme is a
+    # credential by definition, so redact it without having to recognise it first.
+    reason = re.sub(r"(?i)\b(basic|bearer|digest)\s+\S+", r"\1 ***", reason)
+    return reason[:160]
 
 
 def _effective_scheme(proxy, default_scheme: str) -> str:
@@ -836,12 +863,16 @@ def _why(exc: BaseException) -> str:
     answered CONNECT with ``503 No exit node`` — the account was fine, the vendor simply had no
     residential exit to hand out. "Dead" is the one thing that was NOT true.
 
-    urllib wraps the useful part in ``<urlopen error ...>``; unwrap it and keep the inside."""
+    urllib wraps the useful part in ``<urlopen error ...>``; unwrap it and keep the inside.
+
+    Deliberately does NOT truncate. Length is capped in _safe_reason AFTER scrubbing, because cutting
+    the string first can slice a credential in half, and a half-credential is exactly what a literal
+    replace can no longer match — the trim would create the leak it looks like it prevents."""
     text = str(getattr(exc, "reason", None) or exc).strip()
     m = re.match(r"<urlopen error (.*)>$", text)
     if m:
         text = m.group(1).strip()
-    return text[:160]
+    return text
 
 
 def _get_json(url: str, opener, headers: dict | None = None,
@@ -859,6 +890,10 @@ def _get_json(url: str, opener, headers: dict | None = None,
         try:
             return json.loads(e.read().decode("utf-8", "replace"))
         except Exception:
+            # A proxy refusal can arrive as an HTTPError rather than a URLError; dropping it here
+            # would silently lose the one sentence that explains the failure.
+            if errbox is not None:
+                errbox.append(_why(e))
             return None
     except Exception as e:
         if errbox is not None:
@@ -1331,8 +1366,12 @@ def check(proxy: str | None = None, ip: str | None = None,
     # round trip a real request would pay. ponytail: one timed HTTPS round trip, not a separate TCP dial —
     # it measures usable latency (connect + TLS + fetch) rather than a raw handshake. Upgrade path if the
     # split ever matters: time the CONNECT separately to tell "proxy slow" from "upstream slow".
+    # Every probe drops its failure reason in here. The FIRST attempt is the one most likely to carry
+    # the vendor's own sentence ("503 No exit node"); the retry after it frequently just times out, so
+    # collecting only the last one would trade the useful answer for a generic one.
+    probe_errs: list[str] = []
     started = time.monotonic()
-    geo = lookup_geo(opener, ip)
+    geo = lookup_geo(opener, ip, errbox=probe_errs)
     latency_ms = int((time.monotonic() - started) * 1000)
     # A SOCKS proxy addressed as HTTP just reads DEAD — indistinguishable from one that is genuinely down.
     # MEASURED 2026-08-06: an entire vendor's list (lightningproxies, SOCKS5 on :1080) reported DEAD until
@@ -1347,7 +1386,7 @@ def check(proxy: str | None = None, ip: str | None = None,
         try:
             alt_opener = _opener(proxy, alt)
             started = time.monotonic()
-            geo = lookup_geo(alt_opener, ip)
+            geo = lookup_geo(alt_opener, ip, errbox=probe_errs)
             latency_ms = int((time.monotonic() - started) * 1000)
         except ValueError:
             geo = {}                    # the line doesn't even parse as the other family — not a retry case
@@ -1363,7 +1402,6 @@ def check(proxy: str | None = None, ip: str | None = None,
     # So retry ONCE on the same transport before drawing any conclusion. This costs nothing on a genuinely
     # dead proxy: a refused connection or an unresolvable host fails in well under a second, it does not
     # burn the timeout.
-    probe_errs: list[str] = []
     if proxy and not geo:
         started = time.monotonic()
         geo = lookup_geo(opener, ip, timeout=SLOW_TIMEOUT, errbox=probe_errs)
@@ -1407,7 +1445,9 @@ def check(proxy: str | None = None, ip: str | None = None,
             # has told us the account is fine and its pool is empty — reporting that as a bare "it is
             # down, or the credentials are wrong" sends the user to re-check the one thing that was
             # never broken. Only fall back to the list of possibilities when nothing was said.
-            reason = _safe_reason(next((e for e in probe_errs if e), ""), proxy)
+            spoken = next((e for e in probe_errs
+                           if e and not re.search(r"(?i)tim(ed )?out|timeout", e)), "")
+            reason = _safe_reason(spoken, proxy)
             if reason:
                 rep["proxy_error"] = reason
                 why = "the proxy answered: " + reason

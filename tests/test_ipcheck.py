@@ -987,9 +987,59 @@ def test_a_proxy_failure_reason_never_carries_the_credentials_out_with_it():
     scrubbed = ipcheck._safe_reason(
         "407 auth failed for tomuser:tomuserpass at host:1080", "host:1080:tomuser:tomuserpass")
     assert "tomuserpass" not in scrubbed and "tomuser" not in scrubbed
-    # The LONGER secret is scrubbed first on purpose: here the password contains the username, so
+    # The LONGER form is scrubbed first on purpose: here the password contains the username, so
     # replacing the username first would leave "***pass" — a fragment of the password still in the clear.
-    assert scrubbed == "407 auth failed for ***:*** at host:1080"
+    # The whole `user:pass` pair is itself one of the forms, so it collapses to a single marker.
+    assert scrubbed == "407 auth failed for *** at host:1080"
+
+
+def test_a_credential_survives_no_disguise_and_no_truncation():
+    """Both leaks the gauntlet reproduced, pinned.
+
+    (1) ORDER: `_why` used to cap the string at 160 chars and `_safe_reason` scrubbed afterwards, so a
+    cut landing inside a secret left a fragment that the literal replace could no longer match — the
+    trim CREATED the leak it looked like it prevented. Scrub first, cap last.
+    (2) DISGUISE: a literal replace of user/password misses the same secret percent-encoded, or
+    base64'd into `Proxy-Authorization: Basic ...`, which is exactly how urllib sends it.
+    """
+    import base64 as _b64
+    proxy = "h:1080:tomuser:tomuserpass"
+    b64 = _b64.b64encode(b"tomuser:tomuserpass").decode()
+    for label, reason in [
+        ("literal", "407 denied for tomuser:tomuserpass"),
+        ("base64 auth header", f"Proxy-Authorization: Basic {b64} rejected"),
+        ("percent-encoded", "failed http://tomuser%3Atomuserpass@h:1080"),
+        ("query encoding", "user=tomuser&pass=tomuserpass"),
+        ("secret across the cap", "x" * 155 + "tomuserpass tail"),
+        # An encoding nobody predicted: whatever follows an auth scheme is a credential by definition.
+        ("unknown encoding", "Bearer ZXhvdGljLXNlY3JldA=="),
+    ]:
+        out = ipcheck._safe_reason(reason, proxy)
+        for secret in ("tomuserpass", "tomuser", b64, "ZXhvdGlj"):
+            assert secret not in out, f"{label}: {secret!r} leaked -> {out!r}"
+        assert len(out) <= 160
+    # ...while the reason this whole feature exists still survives intact and readable.
+    assert ipcheck._safe_reason("Tunnel connection failed: 503 No exit node", proxy) \
+        == "Tunnel connection failed: 503 No exit node"
+
+
+def test_a_timeout_is_never_reported_as_the_proxy_answering(monkeypatch):
+    # A timeout is OUR observation, not the proxy speaking. `_why` turns urllib's TimeoutError into the
+    # truthy string "timed out", which would have set proxy_error and rendered "the proxy answered:
+    # timed out" — a sentence that contradicts itself, for the most common failure mode there is.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+
+    def geo(opener, ip=None, timeout=None, errbox=None):
+        if errbox is not None:
+            errbox.append("timed out")
+        return {}
+
+    monkeypatch.setattr(ipcheck, "lookup_geo", geo)
+    rep = ipcheck.check("socks5://host:1080:user:pass")
+    assert "proxy_error" not in rep
+    note = next(n for n in rep["notes"] if n.startswith("Proxy: no answer"))
+    assert "the proxy answered" not in note
+    assert "nothing came back within" in note
 
 
 def test_urllib_wrapping_is_unwrapped_so_the_reason_reads_like_a_sentence():
@@ -1085,7 +1135,7 @@ def test_geo_is_remeasured_on_the_ipv4_address_it_is_reported_against(monkeypatc
     # exit is not evidence about the other.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
 
-    def geo(opener, ip=None, timeout=None):
+    def geo(opener, ip=None, timeout=None, errbox=None):
         if ip is None:
             return {"ip": "2605:59ca::e798", "isp": "v6 upstream", "timezone": "America/Denver",
                     "country_code": "CA"}
@@ -1525,7 +1575,7 @@ def test_latency_reports_what_the_proxy_ADDS_not_the_raw_round_trip(monkeypatch)
     comparable between a laptop in Asia and a function in Virginia."""
     calls = []
 
-    def fake_geo(opener, ip=None, timeout=None):
+    def fake_geo(opener, ip=None, timeout=None, errbox=None):
         calls.append(opener)
         return {"ip": "153.66.193.140", "isp": "SpaceX Starlink"}
 
@@ -1549,7 +1599,7 @@ def test_direct_baseline_is_measured_once_per_run_not_per_row(monkeypatch):
     as DEAD. It must be measured once and cached (the autouse fixture clears the cache before this test)."""
     direct_calls = []
 
-    def fake_geo(opener, ip=None, timeout=None):
+    def fake_geo(opener, ip=None, timeout=None, errbox=None):
         if opener != "PROXIED":
             direct_calls.append(opener)     # only the DIRECT baseline lookups, not the proxied primary ones
         return {"ip": "1.2.3.4", "isp": "X"}
@@ -1633,7 +1683,7 @@ def test_a_socks_proxy_addressed_as_http_is_retried_not_called_dead(monkeypatch)
         tried.append(scheme)
         return scheme
 
-    def fake_geo(opener, ip=None, timeout=None):
+    def fake_geo(opener, ip=None, timeout=None, errbox=None):
         # Only the SOCKS transport answers, exactly as the real proxy behaved.
         return {"ip": "24.26.39.144", "isp": "Spectrum"} if opener == "socks5" else {}
 
