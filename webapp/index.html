@@ -807,10 +807,13 @@ const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpper
 function proxyParts(line){
   let s=(line||'').trim(), scheme=null;
   const i=s.indexOf('://'); if(i>0){scheme=s.slice(0,i).toLowerCase(); s=s.slice(i+3);}
-  // `;` is accepted anywhere `:` is — normalised in the same place and the same order as parse_proxy(),
-  // AFTER the scheme comes off. If only the server learned this, a `host;port;user;pass` line would check
-  // correctly while the copy chips beside it showed one unsplit blob.
-  s=s.split(';').join(':');
+  // `;` is accepted anywhere `:` is — normalised in the same place, the same order, and with the same
+  // credential exemption as parse_proxy(). If only the server learned this, a `host;port;user;pass` line
+  // would check correctly while the copy chips beside it showed one unsplit blob; and if only the server
+  // learned the exemption, a `user:pa;ss@host` line would be CHECKED with the right password while the
+  // chip offered a corrupted one to copy.
+  {const a=s.lastIndexOf('@');
+   s = a<0 ? s.split(';').join(':') : s.slice(0,a+1)+s.slice(a+1).split(';').join(':');}
   let user=null, pass=null, hostport=s;
   const at=s.lastIndexOf('@');
   if(at>=0){const creds=s.slice(0,at); hostport=s.slice(at+1);

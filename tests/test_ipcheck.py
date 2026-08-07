@@ -2,6 +2,7 @@
 takes already-fetched data."""
 
 import json
+import time
 import re
 from pathlib import Path
 
@@ -878,7 +879,7 @@ def test_an_ipv6_exit_falls_back_to_ipv4_so_the_blocklists_still_run(monkeypatch
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     monkeypatch.setattr(ipcheck, "lookup_geo",
                         lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798", "isp": "Starlink"})
-    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: "153.66.117.15")
     checked = {}
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: checked.setdefault("ip", ip) and {} or
                         {"blacklists": [], "policy_lists": [], "dnsbl_checked": 17, "dnsbl_usable": True,
@@ -905,6 +906,58 @@ def test_semicolons_separate_a_proxy_line_exactly_like_colons():
     # A bracketed IPv6 endpoint carries colons that are part of the ADDRESS. It has no semicolons, so the
     # normalisation must leave it exactly as it was.
     assert ipcheck.parse_proxy("[2001:db8::1]:8080", "http").host == "[2001:db8::1]"
+
+
+def test_a_semicolon_inside_a_password_is_not_a_separator():
+    # Found by codex in the gauntlet. `user:pa;ss@host:8080` is a line that WORKED, and teaching the
+    # parser that `;` separates turned its password into `pa:ss` — a live proxy failing to authenticate
+    # with nothing on screen to say why. Credentials are exempt; only the host:port after the last `@`
+    # is normalised.
+    p = ipcheck.parse_proxy("user:pa;ss@host.com:8080", "http")
+    assert p.password == "pa;ss" and p.user == "user" and p.port == 8080
+    # ...and the exemption does not cost the host:port its semicolons on the same line.
+    assert ipcheck.parse_proxy("user:pa;ss@host.com;8080", "http").port == 8080
+    # With no `@` there are no credentials to protect, so the whole line is separators.
+    assert ipcheck.parse_proxy("host.com;1080;user;pa", "http").password == "pa"
+
+
+def test_the_ipv4_pin_gives_up_rather_than_running_a_check_past_its_budget(monkeypatch):
+    # Also codex. Worst case a bare line spends TIMEOUT + TIMEOUT + SLOW_TIMEOUT before the v4 pin even
+    # starts, and the pin's own three endpoints can add 3xTIMEOUT — past the hosted function cap, throwing
+    # away a result that had already succeeded. Losing the pin beats losing the report.
+    tried = []
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener, headers=None, timeout=None:
+                        tried.append(url) or None)
+    monkeypatch.setattr(ipcheck, "_get_text", lambda url, opener: tried.append(url) or None)
+    assert ipcheck.lookup_exit_v4(None, deadline=time.monotonic() - 1) is None
+    assert tried == [], "the walk must not start at all once the budget is spent"
+    # With time on the clock it still walks every endpoint — the deadline is a ceiling, not a throttle.
+    assert ipcheck.lookup_exit_v4(None, deadline=time.monotonic() + 60) is None
+    assert len(tried) == len(ipcheck._V4_ECHOES)
+
+
+def test_a_spent_budget_skips_the_reputation_sources_instead_of_losing_the_whole_check(monkeypatch):
+    # The gauntlet's sharpest finding. Everything after the liveness probe goes out through the SAME
+    # opener, so a proxy slow enough to need the 24s retry makes every later request slow too — four
+    # reputation sources at the full timeout each is another 32s on top of a liveness path that may
+    # already have spent 40. The hosted checker's cap then kills the invocation and returns NOTHING,
+    # which is a worse answer than the "dead proxy" this whole change set out to fix.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo",
+                        lambda opener, ip=None, timeout=None: {"ip": "1.2.3.4", "isp": "ACME"})
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {})
+    monkeypatch.setattr(ipcheck, "CHECK_BUDGET", -1)         # the budget is already gone on entry
+    asked = []
+    for name in ("lookup_ipqs", "lookup_abuseipdb", "lookup_getipintel", "lookup_scamalytics"):
+        monkeypatch.setattr(ipcheck, name, lambda *a, _n=name, **k: asked.append(_n) or {})
+    rep = ipcheck.check("host:1080", ipqs_key="k", abuse_key="k",
+                        getipintel_contact="a@b.c", scam_user="u", scam_key="k")
+    assert asked == [], f"a spent budget must not start another lookup, got {asked}"
+    assert rep["ip"] == "1.2.3.4" and rep["proxy_alive"] is True   # ...and the real answer still ships
+    assert rep["verdict"]                                          # with a verdict, not an exception
+    assert sum("not asked" in n for n in rep["notes"]) == 4        # each one says so, by name
+    # A key that EXISTS but went unasked must never be reported as a missing key — different facts.
+    assert not any("No IPQualityScore key" in n for n in rep["notes"])
 
 
 def test_a_proxy_that_is_merely_slow_is_retried_before_being_called_dead(monkeypatch):
@@ -999,7 +1052,7 @@ def test_geo_is_remeasured_on_the_ipv4_address_it_is_reported_against(monkeypatc
         return {"ip": ip, "isp": "Starlink", "timezone": "America/New_York", "country_code": "US"}
 
     monkeypatch.setattr(ipcheck, "lookup_geo", geo)
-    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: "153.66.117.15")
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {})
     rep = ipcheck.check("host:1080")
     assert rep["ip"] == "153.66.117.15"          # the re-lookup's echo must not become the reported address
@@ -1020,7 +1073,7 @@ def test_a_failed_ipv4_regeo_drops_the_stale_fields_rather_than_relabelling_them
                         lambda opener, ip=None, timeout=None: {} if ip else
                         {"ip": "2605:59ca::e798", "isp": "v6 upstream", "location": "Denver, CO, US",
                          "country_code": "CA", "timezone": "America/Denver"})
-    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: "153.66.117.15")
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {})
     rep = ipcheck.check("host:1080")
     assert rep["ip"] == "153.66.117.15"
@@ -1035,7 +1088,7 @@ def test_an_ipv6_only_exit_is_still_checked_against_the_zones_that_have_ipv6_dat
     # denominator — "0 of 4 IPv6 lists" is a real result, "0 of 17" would be a lie.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798"})
-    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: None)
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: None)
     seen = {}
 
     def fake_dnsbl(ip):
@@ -1161,7 +1214,7 @@ def test_every_reputation_source_is_asked_about_the_address_the_report_names(mon
     asked = {}
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798"})
-    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: "153.66.117.15")
     monkeypatch.setattr(ipcheck, "lookup_ipqs",
                         lambda ip, key, opener: asked.setdefault("ipqs", ip) and {} or {"fraud_score": 0})
     monkeypatch.setattr(ipcheck, "lookup_abuseipdb",

@@ -19,10 +19,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   transport did not answer either" even when no such retry is attempted - which is exactly the case for
   a line carrying its own scheme. It now names the real transport and only claims what it tried.
 
+- **A slow proxy no longer runs the check past its own budget.** Everything after the liveness probe
+  goes out through the SAME opener, so a proxy slow enough to need the 24s retry makes every later
+  request slow too - four reputation sources at the full timeout each is another 32s on top of a liveness
+  path that may already have spent 40. The hosted checker's cap then killed the invocation and returned
+  NOTHING, which is worse than the wrong answer this release set out to fix. A `CHECK_BUDGET` now stops
+  the optional late work (the IPv4 endpoint walk, the latency baseline, the reputation sources) from
+  starting when there is no time left, and names each source it skipped. Found by both gauntlet reviewers.
+- **A key that exists but went unasked is no longer reported as a missing key.** Budget-skipping IPQS
+  fell through to the "No IPQualityScore key" branch, which is a different fact.
+
 ### Changed
 - **`;` is accepted anywhere `:` is in a proxy line** - `host;port;user;pass` parses identically to the
-  colon form, mixed forms work, and a `scheme://` prefix survives. Normalised in one place on both the
-  server and the copy-chip parser, so the two can't disagree.
+  colon form, mixed forms work, and a `scheme://` prefix survives. Credentials are EXEMPT: `user:pa;ss@host`
+  keeps its password intact - a blanket replace silently turned a working password into `pa:ss`. Normalised
+  in one place on both the server and the copy-chip parser, so the two can't disagree.
 - **The password chip shows its value in full instead of dots.** It is the user's own pasted proxy list
   on their own screen, and dots made the one field you most often need to eyeball against the vendor's
   dashboard the only unreadable one.
