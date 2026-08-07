@@ -799,6 +799,25 @@ def _opener(proxy: str | None, default_scheme: str = "http"):
         urllib.request.ProxyHandler({"http": p.http_url(), "https": p.http_url()}))
 
 
+def _safe_reason(reason: str, proxy) -> str:
+    """A proxy's failure reason with the credentials taken back out.
+
+    The error branch is the one that leaks. A proxy library is free to put the host, the username, or
+    the whole `user:pass@host:port` into the message it raises, and this string is on its way to a
+    report the user copies and pastes. Scrub the username and password before it goes anywhere, and
+    scrub the LONGER one first so a password that contains the username can't leave a fragment."""
+    if not reason:
+        return ""
+    try:
+        p = parse_proxy(proxy, "http") if isinstance(proxy, str) else proxy
+    except ValueError:
+        p = None
+    if p:
+        for secret in sorted(filter(None, (p.user, p.password)), key=len, reverse=True):
+            reason = reason.replace(secret, "***")
+    return reason
+
+
 def _effective_scheme(proxy, default_scheme: str) -> str:
     """The transport a check ACTUALLY went out on. A line carrying its own ``scheme://`` overrides the UI
     selector, so reporting the selector describes a request that was never made."""
@@ -809,10 +828,29 @@ def _effective_scheme(proxy, default_scheme: str) -> str:
         return default_scheme
 
 
+def _why(exc: BaseException) -> str:
+    """A transport failure as one short, quotable phrase — or "" when there is nothing worth repeating.
+
+    A proxy that refuses you usually SAYS why, and throwing that away is how a working credential set
+    with an empty vendor pool ends up rendered as a bare "DEAD". MEASURED 2026-08-08: proxy-seller
+    answered CONNECT with ``503 No exit node`` — the account was fine, the vendor simply had no
+    residential exit to hand out. "Dead" is the one thing that was NOT true.
+
+    urllib wraps the useful part in ``<urlopen error ...>``; unwrap it and keep the inside."""
+    text = str(getattr(exc, "reason", None) or exc).strip()
+    m = re.match(r"<urlopen error (.*)>$", text)
+    if m:
+        text = m.group(1).strip()
+    return text[:160]
+
+
 def _get_json(url: str, opener, headers: dict | None = None,
-              timeout: float | None = None) -> dict | None:
+              timeout: float | None = None, errbox: list | None = None) -> dict | None:
     """GET a JSON document. None on a transport failure; an API's own error body is returned as-is
-    so the caller can surface *why* (bad key, quota spent) instead of a generic failure."""
+    so the caller can surface *why* (bad key, quota spent) instead of a generic failure.
+
+    ``errbox``, when given, collects the transport failure's reason so a caller can repeat it rather
+    than reporting a generic silence. Nothing is scrubbed here — see _safe_reason at the call site."""
     try:
         req = urllib.request.Request(url, headers=headers or {})
         with opener.open(req, timeout=TIMEOUT if timeout is None else timeout) as r:
@@ -822,7 +860,9 @@ def _get_json(url: str, opener, headers: dict | None = None,
             return json.loads(e.read().decode("utf-8", "replace"))
         except Exception:
             return None
-    except Exception:
+    except Exception as e:
+        if errbox is not None:
+            errbox.append(_why(e))
         return None
 
 
@@ -889,11 +929,12 @@ def lookup_exit_v4(opener, deadline: float | None = None) -> str | None:
     return None
 
 
-def lookup_geo(opener, ip: str | None = None, timeout: float | None = None) -> dict:
+def lookup_geo(opener, ip: str | None = None, timeout: float | None = None,
+               errbox: list | None = None) -> dict:
     """ISP/location/timezone for ``ip``, or for this connection's own exit IP when ``ip`` is None
     (in which case it also discovers what that exit IP is, as seen through ``opener``'s proxy)."""
     o = _get_json(f"https://ipwho.is/{urllib.parse.quote(ip, safe='') if ip else ''}", opener,
-                  timeout=timeout)
+                  timeout=timeout, errbox=errbox)
     if not o or not o.get("success"):
         return {}
     where = ", ".join(x for x in (o.get("city"), o.get("region"), o.get("country")) if x)
@@ -1322,9 +1363,10 @@ def check(proxy: str | None = None, ip: str | None = None,
     # So retry ONCE on the same transport before drawing any conclusion. This costs nothing on a genuinely
     # dead proxy: a refused connection or an unresolvable host fails in well under a second, it does not
     # burn the timeout.
+    probe_errs: list[str] = []
     if proxy and not geo:
         started = time.monotonic()
-        geo = lookup_geo(opener, ip, timeout=SLOW_TIMEOUT)
+        geo = lookup_geo(opener, ip, timeout=SLOW_TIMEOUT, errbox=probe_errs)
         latency_ms = int((time.monotonic() - started) * 1000)
         if geo:
             rep["notes"].append(
@@ -1361,11 +1403,21 @@ def check(proxy: str | None = None, ip: str | None = None,
             # with an explicit scheme. Both statements read as evidence and neither was measured.
             used = (rep.get("proxy_scheme_used") or _effective_scheme(proxy, proxy_scheme)).upper()
             tried_both = retried_scheme is not None or "://" not in str(proxy)
+            # If the proxy SAID why, repeat it. A vendor that answers CONNECT with "503 No exit node"
+            # has told us the account is fine and its pool is empty — reporting that as a bare "it is
+            # down, or the credentials are wrong" sends the user to re-check the one thing that was
+            # never broken. Only fall back to the list of possibilities when nothing was said.
+            reason = _safe_reason(next((e for e in probe_errs if e), ""), proxy)
+            if reason:
+                rep["proxy_error"] = reason
+                why = "the proxy answered: " + reason
+            else:
+                why = (f"nothing came back within {TIMEOUT}s, then nothing within {SLOW_TIMEOUT}s on a "
+                       "retry. It is down, unreachable, out of plan quota, or the credentials are wrong.")
             rep["notes"].append(
                 f"Proxy: no answer as {used}"
                 + (", and the other transport did not answer either" if tried_both else "")
-                + f" — nothing came back within {TIMEOUT}s, then nothing within {SLOW_TIMEOUT}s on a "
-                  "retry. It is down, unreachable, out of plan quota, or the credentials are wrong.")
+                + " — " + why)
     if not rep.get("ip"):
         if not ip:
             # EVERY return carries a verdict. This one used to return a report with no `verdict` key at
@@ -2409,6 +2461,10 @@ function bulkDetail(x){
     chip('whole line',x.line));
   t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
   t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
+  // What the proxy SAID, when it said anything. "503 No exit node" means the credentials are fine and
+  // the vendor's pool is empty — a completely different action from "your proxy is down", and the row
+  // is the difference between the user re-checking their password and going to the vendor.
+  t+=dTxt('Proxy said',r.proxy_error||null);
   if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
     t+=dTxt('Latency',add+' ms added by the proxy · '+(add<400?'fast':add<1200?'usable':'slow'));
     if(r.direct_ms!=null)

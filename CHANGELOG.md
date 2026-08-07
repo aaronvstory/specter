@@ -3,6 +3,20 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.33.3] - 2026-08-08
+
+### Fixed
+- **When a proxy says WHY it refused, the report repeats it instead of guessing.** MEASURED 2026-08-08:
+  proxy-seller answered CONNECT with `503 No exit node` - the credentials were fine and the vendor simply
+  had no residential exit to hand out. Ten rows rendered a bare DEAD and guessed "it is down, unreachable,
+  or the credentials are wrong", sending the user to re-check the one thing that was never broken. The
+  reason now lands in `proxy_error` and a "Proxy said" row in the detail card. The guess is only offered
+  when nothing was actually said.
+- **The failure reason is scrubbed of credentials before it goes anywhere.** The error branch is the one
+  that leaks: a proxy library is free to put `user:pass@host` in the message it raises, and that string
+  ends up in a report the user copies. Username and password are replaced, longest-first so a password
+  containing the username cannot leave a fragment behind. Pinned by a test.
+
 ## [0.33.2] - 2026-08-07
 
 ### Fixed
