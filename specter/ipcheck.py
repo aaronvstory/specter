@@ -787,6 +787,37 @@ def _get_json(url: str, opener, headers: dict | None = None) -> dict | None:
         return None
 
 
+def _get_text(url: str, opener) -> str | None:
+    """GET a plain-text body, stripped. None on any failure.
+
+    Separate from _get_json because two of the three IPv4-only echoes answer with a bare address and
+    ``json.loads("23.159.216.252")`` raises — routed through _get_json they could never succeed. The strip
+    is load-bearing too: checkip.amazonaws.com returns a trailing newline, and `reverse_v4` rejects
+    ``"252\\n"`` because ``"252\\n".isdigit()`` is False."""
+    try:
+        with opener.open(urllib.request.Request(url), timeout=TIMEOUT) as r:
+            return r.read().decode("utf-8", "replace").strip() or None
+    except Exception:
+        return None
+
+
+# IPv4-ONLY echo endpoints, in order. A hostname with no AAAA record is the only lever that pins the
+# family when an HTTP proxy does its own DNS and outbound connect — we never see that socket, so
+# `AF_INET` is not available to us. MEASURED 2026-08-07 via DNS-over-HTTPS (this machine's own resolver
+# strips AAAA from every answer, even google.com, so `nslookup`/`getaddrinfo` prove nothing here): all
+# three below answer with A records and NO AAAA, while `ipwho.is` — the ordinary exit lookup — has two.
+#
+# THREE OPERATORS, not one: ipify sits behind Cloudflare, so a single endpoint made "pin the family" fail
+# whenever an exit could not reach Cloudflare, silently dropping the whole report onto IPv6. amazonaws is
+# AWS and ident.me is Hetzner, so no two share a fate. Ordered by measured latency (0.7s / 1.8s / 1.2s
+# direct); the second and third are only ever paid when the one before it gave nothing.
+_V4_ECHOES: tuple[tuple[str, bool], ...] = (
+    ("https://api4.ipify.org?format=json", True),    # True  -> JSON {"ip": ...}
+    ("https://checkip.amazonaws.com", False),        # False -> bare text (this one has a trailing \n)
+    ("https://v4.ident.me", False),
+)
+
+
 def lookup_exit_v4(opener) -> str | None:
     """This connection's exit IP, forced over IPv4.
 
@@ -796,11 +827,20 @@ def lookup_exit_v4(opener) -> str | None:
     because every DNSBL zone we query is IPv4-only (measured 2026-08-05: all 17 answer the 127.0.0.2 test
     entry, none answer the 2001:db8::2 one), so an IPv6 sample means ZERO blocklist evidence.
 
-    Asking an IPv4-only host pins the family, so a checkable address always exists. Returns None when the
-    proxy has no IPv4 route at all — which is itself worth reporting rather than hiding."""
-    o = _get_json("https://api4.ipify.org?format=json", opener)
-    ip = (o or {}).get("ip")
-    return ip if reverse_v4(ip) else None
+    Asking an IPv4-only host pins the family, so a checkable address always exists. Returns None only when
+    NO endpoint had an IPv4 route — a genuinely v6-only exit, which is worth reporting rather than
+    hiding. One endpoint failing no longer looks like that; see _V4_ECHOES."""
+    for url, is_json in _V4_ECHOES:
+        raw = _get_json(url, opener) if is_json else _get_text(url, opener)
+        ip = raw.get("ip") if isinstance(raw, dict) else raw
+        # Strip HERE, where the address is accepted — not only in _get_text where it is fetched.
+        # checkip.amazonaws.com answers with a trailing newline and `reverse_v4` rejects "252\n"
+        # (`"252\n".isdigit()` is False), so an endpoint that works reads as one that is down. A
+        # whitespace-padded value can arrive from the JSON branch too; one normalisation covers both.
+        ip = ip.strip() if isinstance(ip, str) else None
+        if reverse_v4(ip):
+            return ip
+    return None
 
 
 def lookup_geo(opener, ip: str | None = None) -> dict:
@@ -1259,6 +1299,16 @@ def check(proxy: str | None = None, ip: str | None = None,
         if v4:
             rep["exit_ipv6"] = rep["ip"]
             rep["ip"] = v4
+            # Re-ask about the IPv4 address. `merge(geo)` above filled isp/location/country_code/timezone
+            # from the IPv6 record, and swapping only rep["ip"] would leave those four attributed to an
+            # address they were never measured on — the same mis-attribution this block's own comment
+            # documents fixing for IPQS/AbuseIPDB. A dual-stack exit usually agrees with itself, but
+            # "usually" is not a measurement, and country_code paints the flag while timezone drives the
+            # device-vs-IP alignment. Costs one request, and only on the rare dual-stack path.
+            merge(lookup_geo(opener, v4))
+            # merge() writes every non-None field INCLUDING "ip", so the re-lookup's own echo of the
+            # address would silently become the reported one. rep["ip"] is settled here and nowhere else.
+            rep["ip"] = v4
             rep["notes"].append("Exit: dual-stack — also reachable at " + rep["exit_ipv6"]
                                 + "; every check ran on the IPv4 address, which 17 blocklist zones cover")
         else:
@@ -1632,7 +1682,13 @@ table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
 .pxh{color:var(--ink);display:inline-block;max-width:112px;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;vertical-align:bottom}
 .pxp{color:var(--accent);font-weight:700}
-.ipv{font-size:12px}
+/* Same idiom as .pxh above. `table-layout:auto` sizes each column to its widest value and every cell is
+   nowrap, so ONE IPv6-only exit (39 chars ≈ 280px against ~108px for an IPv4) widens the Exit IP column
+   and shoves every column after it out of alignment. 132px clears the longest IPv4 (15 chars ≈ 108px at
+   12px in the --mono stack, all of whose members are ≤0.6em advance) with room to spare, so the common
+   case never ellipsises. Full address on the title, and in the row's detail chip. */
+.ipv{font-size:12px;display:inline-block;max-width:132px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;vertical-align:bottom}
 .ms{font-variant-numeric:tabular-nums}
 .dim{color:var(--dim)}
 .c-clean{color:var(--clean)} .c-suspect{color:var(--suspect)} .c-warn{color:var(--warn)} .c-dirty{color:var(--dirty)}
@@ -1776,11 +1832,14 @@ function markKeys(st){const s=window._kst=Object.assign(window._kst||{},st||{});
 // so checking your own IP is one click. Prefill only — the check never runs by itself; opening the page
 // must not spend an API quota or a getIPIntel rate-limit slot the visitor didn't ask for.
 // Two sources: ipwho.is answers HTTP 200 with {success:false} when it rate-limits a caller, so a single
-// endpoint leaves the field blank exactly when the tool is being used a lot. ipify is the keyless fallback.
+// endpoint leaves the field blank exactly when the tool is being used a lot. It is the FALLBACK, not the
+// first try, because it is dual-stack (AAAA measured 2026-08-07) — an IPv6 visitor would get a v6 address
+// typed into the box and their very first check would run on the family only 4 blocklist zones cover.
+// api4.ipify.org has no AAAA at all, so it always answers with the IPv4 address.
 async function boot(){
   if($('#ip').value || $('#proxy').value)return;
-  for(const [url,pick] of [['https://ipwho.is/',o=>o&&o.success!==false&&o.ip],
-                           ['https://api.ipify.org?format=json',o=>o&&o.ip]]){
+  for(const [url,pick] of [['https://api4.ipify.org?format=json',o=>o&&o.ip],
+                           ['https://ipwho.is/',o=>o&&o.success!==false&&o.ip]]){
     // Re-check emptiness AFTER the await: the fetch takes ~1s, and a user who typed an IP (or proxy) during
     // that window must NOT have it silently clobbered by the prefill. The upfront guard alone missed this.
     try{const ip=pick(await (await fetch(url)).json());
@@ -2207,8 +2266,14 @@ const dTxt=(k,v)=>dRow(k,v==null||v===''?null:esc(String(v)));
 const dGrp=t=>`<tr class=grp><td colspan=2>${esc(t)}</td></tr>`;
 // A one-click copy chip. The label stays put and a tick appears in a slot that is always reserved,
 // so confirming never changes the chip's width.
-const chip=(label,value)=>value==null||value===''?'<span class=dim>—</span>'
-  :`<button class=cp data-copy="${esc(value)}" title="Copy ${esc(label)}"><i>${esc(label)}</i>${esc(value)}</button>`;
+const chip=(label,value,titleText)=>value==null||value===''?'<span class=dim>—</span>'
+  // The VALUE goes on the title, not just "Copy <label>". `.cp` is max-width:190px with an ellipsis, so a
+  // long value (a full IPv6 exit, a whole `host:port:user:pass` line) renders clipped — and a title that
+  // only says "Copy ip" is no escape hatch at all. This is the detail row that the truncated bulk-table
+  // cell defers to, so it has to actually hold the whole string. One helper, so every chip gets it.
+  // `titleText` overrides the value for the one chip that must NOT reveal itself on hover: the whole line
+  // carries the password, which the row deliberately renders as dots.
+  :`<button class=cp data-copy="${esc(value)}" title="${esc(titleText!=null?titleText:value)}&#10;Click to copy"><i>${esc(label)}</i>${esc(value)}</button>`;
 
 function bulkDetail(x){
   const r=x.r||{}, p=x.parts||{};
@@ -2223,7 +2288,7 @@ function bulkDetail(x){
     (p.user?chip('user',p.user):'')+
     (p.pass?`<button class=cp data-copy="${esc(p.pass)}" title="Copy password"><i>pass</i>`+
       '\u2022'.repeat(Math.min(p.pass.length,10))+`</button>`:'')+
-    chip('whole line',x.line));
+    chip('whole line',x.line,'The whole line, password included'));
   t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
   t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
   if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
@@ -2374,7 +2439,7 @@ $('#bulkgo').onclick=async()=>{
      cell:x=>x.busy?'<span class="vpill v-unknown-p">…</span>':vpill(x.r.error?'unknown':x.r.verdict)},
     {k:'ip', h:'Exit IP', get:x=>(x.r&&x.r.ip)||'',
      cell:x=>x.r&&x.r.ip
-       ?flagImg(x.r.country_code||'')+`<span class=ipv>${esc(x.r.ip)}</span>`+
+       ?flagImg(x.r.country_code||'')+`<span class=ipv title="${esc(x.r.ip)}">${esc(x.r.ip)}</span>`+
         (x.r.exit_ipv6?'<span class=tag title="Dual-stack — this proxy also exits over IPv6">+v6</span>':'')
        :'<span class=dim>—</span>'},
     // Headings name the SOURCE, so a bare number is never anonymous. Full name on the title.

@@ -891,6 +891,65 @@ def test_an_ipv6_exit_falls_back_to_ipv4_so_the_blocklists_still_run(monkeypatch
     assert rep["dnsbl_usable"] is True
 
 
+def test_the_ipv4_pin_survives_one_endpoint_going_dark(monkeypatch):
+    # The whole point of the pin is that it does not give up quietly. It used to ask ONE host
+    # (api4.ipify.org, behind Cloudflare); when that answered with nothing the report simply fell through
+    # to IPv6 — which is what a user saw on 2026-08-07: nine rows of a ten-proxy batch read IPv4 and the
+    # tenth read `2605:59ca:...:e674`, graded against 2 zones instead of 14. Three endpoints on three
+    # operators (Cloudflare / AWS / Hetzner) means no single one going dark can do that again.
+    asked = []
+
+    def fake_json(url, opener, headers=None):
+        asked.append(url)
+        return None                                  # the Cloudflare-fronted one answers with nothing
+
+    def fake_text(url, opener):
+        asked.append(url)
+        return "153.66.117.15" if "amazonaws" in url else None
+
+    monkeypatch.setattr(ipcheck, "_get_json", fake_json)
+    monkeypatch.setattr(ipcheck, "_get_text", fake_text)
+    assert ipcheck.lookup_exit_v4(None) == "153.66.117.15"
+    assert len(asked) == 2 and "ipify" in asked[0]    # tried in order, stopped as soon as one answered
+    # ...and every endpoint in the chain is IPv4-ONLY by hostname, which is the entire mechanism: an HTTP
+    # proxy does its own DNS and outbound connect, so a host with an AAAA record can still be reached over
+    # IPv6 and hand back a v6 exit. A dual-stack host in this list would silently defeat the pin.
+    assert not any(h in u for u, _ in ipcheck._V4_ECHOES
+                   for h in ("ipwho.is", "://api.ipify.org", "://icanhazip.com", "://ident.me"))
+
+
+def test_a_text_endpoint_with_a_trailing_newline_is_still_a_valid_address(monkeypatch):
+    # checkip.amazonaws.com answers `23.159.216.252\n`. Without the strip, reverse_v4 rejects it —
+    # `"252\n".isdigit()` is False — so a working endpoint reads as a dead one and the chain walks past it.
+    monkeypatch.setattr(ipcheck, "_get_json", lambda url, opener, headers=None: None)
+    monkeypatch.setattr(ipcheck, "_get_text", lambda url, opener: "  153.66.117.15\n")
+    assert ipcheck.lookup_exit_v4(None) == "153.66.117.15"
+
+
+def test_geo_is_remeasured_on_the_ipv4_address_it_is_reported_against(monkeypatch):
+    # The address swap used to relabel the report without re-measuring: isp/location/country_code/timezone
+    # came from the IPv6 record and were then presented as facts about the IPv4 address. That is the same
+    # mis-attribution the swap was moved ahead of the reputation lookups to prevent — one family of the
+    # exit is not evidence about the other.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+
+    def geo(opener, ip=None):
+        if ip is None:
+            return {"ip": "2605:59ca::e798", "isp": "v6 upstream", "timezone": "America/Denver",
+                    "country_code": "CA"}
+        return {"ip": ip, "isp": "Starlink", "timezone": "America/New_York", "country_code": "US"}
+
+    monkeypatch.setattr(ipcheck, "lookup_geo", geo)
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {})
+    rep = ipcheck.check("host:1080")
+    assert rep["ip"] == "153.66.117.15"          # the re-lookup's echo must not become the reported address
+    assert rep["isp"] == "Starlink"              # ...and every derived field describes THAT address
+    assert rep["timezone"] == "America/New_York"
+    assert rep["country_code"] == "US"
+    assert rep["exit_ipv6"] == "2605:59ca::e798"
+
+
 def test_an_ipv6_only_exit_is_still_checked_against_the_zones_that_have_ipv6_data(monkeypatch):
     # No IPv4 route: still check, against the four zones that actually hold IPv6 data, and report THAT
     # denominator — "0 of 4 IPv6 lists" is a real result, "0 of 17" would be a lie.

@@ -3,6 +3,35 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.33.1] - 2026-08-07
+
+### Fixed
+- **The exit IP is now always the IPv4 address whenever the proxy has an IPv4 route** — webapp, CLI and the
+  Android Status screen. A dual-stack exit answers on whichever family the connection happens to use, and
+  the family was pinned by asking ONE IPv4-only host; when that host answered with nothing, the whole
+  report silently fell through to IPv6. That is what a ten-proxy batch showed on 2026-08-07: nine rows read
+  IPv4 and the tenth read `2605:59ca:...:e674`, graded against 2 blocklist zones instead of 14. The pin now
+  asks three IPv4-only endpoints across three operators (Cloudflare / AWS / Hetzner), so no single one
+  going dark can do it again. `None` from all three still means a genuinely IPv6-only exit and is still
+  reported honestly, against the four zones that hold IPv6 data.
+- **Android had no IPv4 pin at all.** The phone learned its exit from dual-stack `ipwho.is` with nothing
+  correcting the family, so on an IPv6-capable tunnel every reputation source and 13 of the 17 blocklist
+  zones were asked about an address the app then displayed as something else. It now runs the same
+  three-endpoint pin, and shows the IPv6 address in an "ALSO EXITS AT" row rather than hiding it.
+- **ISP / location / country / timezone are re-measured on the IPv4 address they are reported against.**
+  The swap previously relabelled the report without re-measuring: those four fields came from the IPv6
+  record and were then presented as facts about the IPv4 one.
+- **One IPv6 exit no longer breaks the bulk table's column widths.** MEASURED at 1900px: a single 39-char
+  address widened the Exit IP column from 222px to 388px and squeezed every other column (Proxy −29px, ISP
+  −21px, Location −20px, Flags −17px). The address now caps at 132px — clear of the longest IPv4, which
+  measures 98px and never ellipsises — with the full value on hover.
+- **A truncated copy chip now shows its full value on hover.** `.cp` clips at 190px but its tooltip only
+  said "Copy ip", so a long exit IP or proxy line was unreadable in the detail row that the truncated table
+  cell defers to. The password chip is deliberately exempt — it stays dots.
+- **The webapp's own-IP prefill asks an IPv4-only endpoint first.** It led with dual-stack `ipwho.is`, so
+  an IPv6 visitor got a v6 address typed into the box and their first check ran on the family only four
+  zones cover.
+
 ## [0.33.0] - 2026-08-07
 
 ### Removed
