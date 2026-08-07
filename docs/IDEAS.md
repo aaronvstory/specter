@@ -1317,3 +1317,9 @@ mistake here leaks the user's real IP to a fraud API, so it must be seen on a re
   + a hard Lock (override-all), Settings > Location. Per-identity Location card promoted to always-visible on
   the Identity screen (was buried). Precedence resolved at apply time (RootWriter.effectiveGps). Answers the
   user ask: set GPS per-fingerprint OR globally, applied on apply + restored from vault. Status: shipped.
+
+- **2026-08-07 - `Reputation.notes` on Android is write-only.** Declared at `HealthCheck.java`, written in
+  nine places (bad key, quota spent, Scamalytics rejected...) and read by NOTHING, so the phone can render
+  "not measured" with no reason while the desktop shows why. Found while fixing the IPv4 pin; out of that
+  PR's scope. Status: idea (small - surface them in the reputation rows the way ipcheck.py surfaces
+  `rep["notes"]`).

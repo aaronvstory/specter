@@ -255,6 +255,33 @@ final class HealthCheck {
         // when present, so the IP is the proxy exit. The IP/location is rendered as a rich card (Group.geo)
         // above these rows — here we only add the timezone verdict row.
         Geo g = lookupGeo(vpnNet);
+        // Settle WHICH address this readout is about BEFORE any reputation source or blocklist is asked
+        // about it — the same ordering ipcheck.py:check() enforces, and for the same reason. ipwho.is is
+        // dual-stack, so a v6-capable tunnel reports its IPv6 exit; 13 of the 17 blocklist zones hold no
+        // IPv6 data at all, so that sample is a verdict backed by a quarter of the evidence. Re-asking
+        // ipwho.is about the IPv4 address is what keeps ISP/location/country/timezone attributed to the
+        // address they were actually measured on, rather than relabelled from the v6 record.
+        // Only the dual-stack path pays these two requests; a v4 exit (the common case) pays nothing.
+        if (g != null && Dnsbl.reverseV4(g.ip) == null) {
+            String v4 = lookupExitV4(vpnNet);
+            if (v4 != null) {
+                Geo v4geo = lookupGeo(vpnNet, v4);
+                String was = g.ip;
+                if (v4geo != null) {
+                    g = v4geo;
+                } else {
+                    // The re-lookup FAILED. Keeping the IPv6 record's fields and relabelling them with
+                    // the IPv4 address is the exact mis-attribution this block exists to prevent,
+                    // reintroduced on the error path — and here it is worse than on desktop: `tz` drives
+                    // the timezone-vs-IP fix a user taps, `countryCode` drives the carrier-vs-IP verdict,
+                    // and `isp` feeds connectionClass. Drop them; "Unknown" is honest, a wrong verdict is
+                    // not.
+                    g.city = g.region = g.country = g.countryCode = g.tz = g.isp = null;
+                }
+                g.ip = v4;
+                g.exitIpv6 = was;
+            }
+        }
         if (g == null) {
             out.add(Check.warn("Public IP", "IP lookup unavailable · check network", Fix.NONE, null));
         } else if (g.tz != null) {
@@ -373,6 +400,9 @@ final class HealthCheck {
      *  a device-vs-IP timezone mismatch. */
     static final class Geo {
         String ip, city, region, country, countryCode, tz, isp;
+        /** Set only on a dual-stack exit: the IPv6 address the tunnel ALSO answers on, while {@code ip}
+         *  holds the IPv4 one every check actually ran against. Mirrors rep["exit_ipv6"] in ipcheck.py. */
+        String exitIpv6;
         String location() {
             StringBuilder b = new StringBuilder();
             if (city != null) b.append(city);
@@ -382,13 +412,19 @@ final class HealthCheck {
         }
     }
 
-    /** Blocking IP-geo lookup. Null on any failure (offline, timeout, parse). */
-    static Geo lookupGeo() { return lookupGeo(null); }
-
     /** Blocking IP-geo lookup, optionally pinned to a specific {@code net} (the VPN tunnel) so the exit IP is
-     *  provably the tunnel's, not a home IP if the VPN flaps mid-lookup. Null on any failure. */
-    static Geo lookupGeo(android.net.Network net) {
-        org.json.JSONObject o = getJson(net, "https://ipwho.is/", null);
+     *  provably the tunnel's, not a home IP if the VPN flaps mid-lookup. Null on any failure.
+     *
+     *  <p>NOTE: ipwho.is is DUAL-STACK, so on an IPv6-capable tunnel {@code ip} comes back as an IPv6
+     *  address. Callers that use {@code ip} must pin the family with {@link #lookupExitV4} — see
+     *  networkGroup(). Callers that only read {@code tz} do not need to and should not pay for it. */
+    static Geo lookupGeo(android.net.Network net) { return lookupGeo(net, null); }
+
+    /** As above, but for a SPECIFIC {@code ip} rather than whatever address the connection happens to exit
+     *  from — the Java twin of lookup_geo(opener, ip) in ipcheck.py. Used after the IPv4 pin, so the
+     *  ISP/location/country/timezone on screen describe the address every check ran against. */
+    static Geo lookupGeo(android.net.Network net, String ip) {
+        org.json.JSONObject o = getJson(net, "https://ipwho.is/" + (ip == null ? "" : enc(ip)), null);
         if (o == null || !o.optBoolean("success", false)) return null;
         Geo g = new Geo();
         g.ip = emptyToNull(o.optString("ip"));
@@ -401,6 +437,43 @@ final class HealthCheck {
         org.json.JSONObject conn = o.optJSONObject("connection");
         if (conn != null) g.isp = emptyToNull(conn.optString("isp"));
         return g.ip == null ? null : g;
+    }
+
+    /** IPv4-ONLY echo endpoints, in order — the Java twin of _V4_ECHOES in ipcheck.py. Pairs of
+     *  {url, "json"|"text"}. Three OPERATORS, not one: ipify is behind Cloudflare, amazonaws is AWS,
+     *  ident.me is Hetzner, so no two fail together. MEASURED 2026-08-07 via DNS-over-HTTPS: all three
+     *  publish A records and NO AAAA, which is the whole mechanism — an IPv4-only hostname is the only
+     *  lever that pins the family when something else (the tunnel, a proxy) does the outbound connect. */
+    private static final String[][] V4_ECHOES = {
+            {"https://api4.ipify.org?format=json", "json"},
+            {"https://checkip.amazonaws.com", "text"},
+            {"https://v4.ident.me", "text"},
+    };
+
+    /** This connection's exit IP, forced over IPv4, pinned to {@code net} so it still leaves through the
+     *  tunnel. Null only when NO endpoint had an IPv4 route — a genuinely IPv6-only exit, which is worth
+     *  reporting rather than hiding (it gets the honest 4-zone verdict; see checkDnsbl).
+     *
+     *  <p>WHY: a dual-stack exit answers on whichever family the connection happens to use, and every
+     *  blocklist zone but four is IPv4-only (measured 2026-08-05: all 17 answer the 127.0.0.2 test entry,
+     *  none answer the 2001:db8::2 one). An IPv6 sample means the reputation sources and 13 of the 17
+     *  zones were asked about an address the app then reports as something else. */
+    static String lookupExitV4(android.net.Network net) {
+        for (String[] e : V4_ECHOES) {
+            String ip;
+            if ("json".equals(e[1])) {
+                org.json.JSONObject o = getJson(net, e[0], null);
+                ip = o == null ? null : emptyToNull(o.optString("ip"));
+            } else {
+                ip = getText(net, e[0]);
+            }
+            // Trim HERE, where the address is ACCEPTED, not only in getText where it is fetched.
+            // checkip.amazonaws.com answers with a trailing newline and Dnsbl.reverseV4 rejects "252\n",
+            // so an endpoint that works would read as one that is down. Covers the JSON branch too.
+            if (ip != null) ip = ip.trim();
+            if (ip != null && Dnsbl.reverseV4(ip) != null) return ip;
+        }
+        return null;
     }
 
     /** GET a JSON document, optionally PINNED to {@code net} (the tunnel), with optional extra request headers
@@ -431,6 +504,31 @@ final class HealthCheck {
             while ((line = r.readLine()) != null) sb.append(line);
             r.close();
             return new org.json.JSONObject(sb.toString());
+        } catch (Throwable t) {
+            return null;
+        } finally {
+            if (c != null) try { c.disconnect(); } catch (Throwable ignored) {}
+        }
+    }
+
+    /** GET a plain-text body, trimmed, optionally PINNED to {@code net}. Null on any failure or an empty
+     *  body. Separate from getJson because two of the three IPv4-only echoes answer with a bare address:
+     *  {@code new JSONObject("23.159.216.252")} throws, and checkip.amazonaws.com adds a trailing newline
+     *  that would make Dnsbl.reverseV4 reject an otherwise valid address. Blocking; call off the UI thread. */
+    private static String getText(android.net.Network net, String url) {
+        java.net.HttpURLConnection c = null;
+        try {
+            java.net.URL u = new java.net.URL(url);
+            c = (java.net.HttpURLConnection) (net != null ? net.openConnection(u) : u.openConnection());
+            c.setConnectTimeout(5000);
+            c.setReadTimeout(5000);
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(c.getInputStream(), "UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line);
+            r.close();
+            return emptyToNull(sb.toString().trim());
         } catch (Throwable t) {
             return null;
         } finally {

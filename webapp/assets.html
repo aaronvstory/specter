@@ -270,7 +270,13 @@ table.bulk th.cw,table.bulk td.cw{width:30px;padding-left:4px;padding-right:0}
 .pxh{color:var(--ink);display:inline-block;max-width:112px;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;vertical-align:bottom}
 .pxp{color:var(--accent);font-weight:700}
-.ipv{font-size:12px}
+/* Same idiom as .pxh above. `table-layout:auto` sizes each column to its widest value and every cell is
+   nowrap, so ONE IPv6-only exit (39 chars ≈ 280px against ~108px for an IPv4) widens the Exit IP column
+   and shoves every column after it out of alignment. 132px clears the longest IPv4 (15 chars ≈ 108px at
+   12px in the --mono stack, all of whose members are ≤0.6em advance) with room to spare, so the common
+   case never ellipsises. Full address on the title, and in the row's detail chip. */
+.ipv{font-size:12px;display:inline-block;max-width:132px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;vertical-align:bottom}
 .ms{font-variant-numeric:tabular-nums}
 .dim{color:var(--dim)}
 .c-clean{color:var(--clean)} .c-suspect{color:var(--suspect)} .c-warn{color:var(--warn)} .c-dirty{color:var(--dirty)}

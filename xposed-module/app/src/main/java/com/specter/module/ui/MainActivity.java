@@ -2610,6 +2610,14 @@ public class MainActivity extends Activity {
         card.addView(hairlineInset());
         card.addView(networkMetaRow("LOCATION", g.location()));
         if (g.tz != null) card.addView(networkMetaRow("TIME ZONE", g.tz));
+        // A dual-stack exit answers on either family and the app deliberately reports the IPv4 one (13 of
+        // the 17 blocklist zones hold no IPv6 data). Say so, or the address above silently changes family
+        // between runs with nothing on screen explaining why.
+        if (g.exitIpv6 != null) {
+            card.addView(networkMetaRow("ALSO EXITS AT", g.exitIpv6
+                    + "\nDual-stack — every check ran on the IPv4 address, which 17 zones cover",
+                    Theme.DIM));
+        }
 
         // Exit-IP reputation: how this IP scores with fraud/abuse data sources. A coherent device on a burned
         // proxy IP still draws friction, and no amount of fingerprint work fixes that — so it belongs on the

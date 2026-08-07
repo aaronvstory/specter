@@ -1145,3 +1145,19 @@ One line per non-obvious call and WHY, so it isn't re-litigated. Newest first.
   identity's OWN fix (not the resolved one), so the global policy re-applies fresh on every restore. A global
   location set → the proxy-IP auto-align steps aside (the user is controlling location deliberately); a hard
   lock is respected even by the manual match-to-IP.
+- **2026-08-07 - IPv4 is pinned by HOSTNAME, not by socket options.** An HTTP proxy does its own DNS and
+  outbound connect, so `AF_INET`/`socket` family selection is not available to us at all - the only lever is
+  asking a host that publishes no AAAA record. Hence `_V4_ECHOES` (Python) / `V4_ECHOES` (Java): three
+  IPv4-only hostnames, verified AAAA-less via DNS-over-HTTPS (this machine's own resolver strips AAAA from
+  every answer, even google.com, so `nslookup`/`getaddrinfo` cannot prove it locally). Three OPERATORS, not
+  three hostnames: ipify is behind Cloudflare, so one endpoint meant one bad day silently dropped a report
+  onto IPv6. amazonaws=AWS, ident.me=Hetzner - no shared fate.
+- **2026-08-07 - An IPv6-only exit is still graded, not refused.** When all three endpoints come back empty
+  the exit genuinely has no IPv4 route; it keeps the honest four-zone IPv6 verdict rather than reading
+  `unknown`. Re-litigating this would contradict a deliberate, tested decision
+  (`test_an_ipv6_only_exit_is_still_checked_against_the_zones_that_have_ipv6_data`) and its Java twin.
+- **2026-08-07 - The v4 swap RE-MEASURES geo instead of relabelling.** Costs one extra request, and only on
+  the rare dual-stack path. Swapping only the address left isp/location/country_code/timezone attributed to
+  an address they were never measured on - the same mis-attribution the swap was moved ahead of the
+  reputation lookups to prevent. A dual-stack exit usually agrees with itself, but "usually" is not a
+  measurement, and country_code paints the flag while timezone drives device-vs-IP alignment.
