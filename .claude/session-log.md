@@ -122,3 +122,26 @@
 - **Gauntlet:** `code-reviewer` subagent + codex + PR bots all converged on the SAME single bug - the
   failed-re-lookup path relabelled stale IPv6 geo instead of dropping it. Fixed in `e0ccbc5` before merge.
   Nothing else found by any source. The `test` CI check fails at 0 steps (known account-level outage).
+
+## 2026-08-07 - Slow proxy != dead proxy (PR #104, v0.33.2)
+
+- **What changed:** `specter/ipcheck.py` - liveness probe retries once at `SLOW_TIMEOUT`=24s; `CHECK_BUDGET`=45s
+  soft ceiling stops the optional late work (v4 endpoint walk, latency baseline, the four reputation sources)
+  from starting when there is no time left; dead-proxy note names the transport ACTUALLY used and no longer
+  claims an untried retry; `;` accepted anywhere `:` is, credentials exempt; password chip shows in full;
+  `pyproject.toml` synced to VERSION with a test. `webapp/vercel.json` maxDuration 30 -> 60. Squashed `169b329`.
+- **Why:** a bulk run of five LIVE lightningproxies SOCKS5 endpoints rendered all DEAD. One request missing
+  an 8s budget was being reported as evidence the proxy is down.
+- **Verified:** MEASURED - the same five answered in ~800 ms warm but 13-19 s each on a cold concurrent
+  hosted run, while a direct SOCKS5 handshake to all five succeeded. Cold+concurrent with the fix: 5/5 alive,
+  ~5.5 s each. 282 tests green; every new test proven to FAIL without its fix (temporarily neutered, re-run).
+- **Gauntlet:** codex + `code-reviewer` subagent BOTH found the same two bugs independently - the `;`
+  normalisation corrupting a real password (`user:pa;ss@host` -> `pa:ss`), and the retry pushing worst-case
+  wall clock to ~80 s against a 60 s cap, where the function is killed and returns NOTHING (worse than the
+  bug being fixed). The subagent additionally found the dual-stack re-geo still running at the plain 8 s.
+  PR bots added two more: `;` undocumented in the UI format panel, and `pyproject.toml` stuck at 0.3.0.
+- **Open question for the user:** which FPJS `vpn.methods` boolean actually fires on the 4a. `hide_vpn` is
+  in-process only (NetworkCapabilities / NetworkInterface / getifaddrs) and cannot move a server-side
+  verdict. `publicVPN` is unspoofable on-device; `osMismatch` reads the TCP SYN (MSS/TTL - p0f labels MSS
+  1300-1460 "generic tunnel or VPN"), which is KERNEL-level, so root-only and device-wide, not an
+  Xposed/Zygisk reach. Measure before building.
