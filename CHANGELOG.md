@@ -25,6 +25,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   address widened the Exit IP column from 222px to 388px and squeezed every other column (Proxy −29px, ISP
   −21px, Location −20px, Flags −17px). The address now caps at 132px — clear of the longest IPv4, which
   measures 98px and never ellipsises — with the full value on hover.
+- **When the IPv4 re-lookup itself fails, the stale fields are dropped rather than relabelled.** The
+  error path is the one that leaks: `merge({})` is a no-op, so the IPv6 record's ISP/location/country/
+  timezone would have survived and been presented as facts about the IPv4 address. They are omitted
+  instead, with a note saying why - a dash is honest, and that `timezone` is what the device-vs-IP
+  alignment acts on. Found by codex in the pre-merge gauntlet.
 - **A truncated copy chip now shows its full value on hover.** `.cp` clips at 190px but its tooltip only
   said "Copy ip", so a long exit IP or proxy line was unreadable in the detail row that the truncated table
   cell defers to. The password chip is deliberately exempt — it stays dots.

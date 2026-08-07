@@ -1305,12 +1305,26 @@ def check(proxy: str | None = None, ip: str | None = None,
             # documents fixing for IPQS/AbuseIPDB. A dual-stack exit usually agrees with itself, but
             # "usually" is not a measurement, and country_code paints the flag while timezone drives the
             # device-vs-IP alignment. Costs one request, and only on the rare dual-stack path.
-            merge(lookup_geo(opener, v4))
+            v4_geo = lookup_geo(opener, v4)
+            merge(v4_geo)
             # merge() writes every non-None field INCLUDING "ip", so the re-lookup's own echo of the
             # address would silently become the reported one. rep["ip"] is settled here and nowhere else.
             rep["ip"] = v4
-            rep["notes"].append("Exit: dual-stack — also reachable at " + rep["exit_ipv6"]
-                                + "; every check ran on the IPv4 address, which 17 blocklist zones cover")
+            if not v4_geo:
+                # The re-lookup FAILED (timeout, rate-limit). merge({}) is a no-op, so the IPv6 record's
+                # fields would survive and be presented as facts about the IPv4 address — the exact
+                # mis-attribution this block exists to prevent, reintroduced on the error path. DROP them:
+                # a dash is honest, a wrong ISP or timezone is not, and `timezone` here drives the
+                # device-vs-IP alignment a user acts on.
+                for k in ("isp", "location", "country_code", "timezone"):
+                    rep.pop(k, None)
+                rep["notes"].append("Exit: dual-stack — also reachable at " + rep["exit_ipv6"]
+                                    + ". The IPv4 address could not be geolocated, so ISP/location/"
+                                    "timezone are omitted rather than carried over from the IPv6 record")
+            else:
+                rep["notes"].append("Exit: dual-stack — also reachable at " + rep["exit_ipv6"]
+                                    + "; every check ran on the IPv4 address, which 17 blocklist zones "
+                                      "cover")
         else:
             rep["notes"].append("Exit: IPv6 only — checked against the 4 zones that hold IPv6 data")
 

@@ -950,6 +950,27 @@ def test_geo_is_remeasured_on_the_ipv4_address_it_is_reported_against(monkeypatc
     assert rep["exit_ipv6"] == "2605:59ca::e798"
 
 
+def test_a_failed_ipv4_regeo_drops_the_stale_fields_rather_than_relabelling_them(monkeypatch):
+    # The ERROR path is the one that leaks. When the re-lookup of the IPv4 address fails (timeout,
+    # rate-limit) the merge is a no-op, so the IPv6 record's isp/location/country_code/timezone would
+    # survive and be presented as facts about an address they were never measured on — the very
+    # mis-attribution the re-lookup was added to prevent. A dash is honest; a wrong ISP is not, and this
+    # `timezone` is what the device-vs-IP alignment acts on.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+    monkeypatch.setattr(ipcheck, "lookup_geo",
+                        lambda opener, ip=None: {} if ip else
+                        {"ip": "2605:59ca::e798", "isp": "v6 upstream", "location": "Denver, CO, US",
+                         "country_code": "CA", "timezone": "America/Denver"})
+    monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener: "153.66.117.15")
+    monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {})
+    rep = ipcheck.check("host:1080")
+    assert rep["ip"] == "153.66.117.15"
+    assert rep["exit_ipv6"] == "2605:59ca::e798"
+    for stale in ("isp", "location", "country_code", "timezone"):
+        assert stale not in rep, f"{stale} was carried over from the IPv6 record"
+    assert any("omitted rather than carried over" in n for n in rep["notes"])
+
+
 def test_an_ipv6_only_exit_is_still_checked_against_the_zones_that_have_ipv6_data(monkeypatch):
     # No IPv4 route: still check, against the four zones that actually hold IPv6 data, and report THAT
     # denominator — "0 of 4 IPv6 lists" is a real result, "0 of 17" would be a lie.

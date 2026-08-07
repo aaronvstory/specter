@@ -267,7 +267,17 @@ final class HealthCheck {
             if (v4 != null) {
                 Geo v4geo = lookupGeo(vpnNet, v4);
                 String was = g.ip;
-                if (v4geo != null) g = v4geo;
+                if (v4geo != null) {
+                    g = v4geo;
+                } else {
+                    // The re-lookup FAILED. Keeping the IPv6 record's fields and relabelling them with
+                    // the IPv4 address is the exact mis-attribution this block exists to prevent,
+                    // reintroduced on the error path — and here it is worse than on desktop: `tz` drives
+                    // the timezone-vs-IP fix a user taps, `countryCode` drives the carrier-vs-IP verdict,
+                    // and `isp` feeds connectionClass. Drop them; "Unknown" is honest, a wrong verdict is
+                    // not.
+                    g.city = g.region = g.country = g.countryCode = g.tz = g.isp = null;
+                }
                 g.ip = v4;
                 g.exitIpv6 = was;
             }
