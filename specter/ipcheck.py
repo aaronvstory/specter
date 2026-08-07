@@ -41,6 +41,20 @@ from typing import NamedTuple
 
 CONFIG = Path.home() / ".specter-ipcheck.json"
 TIMEOUT = 8
+# The budget for the RETRY of a proxy's liveness probe, after the normal one ran out of time. Generous on
+# purpose: MEASURED 2026-08-07, five live lightningproxies SOCKS5 endpoints answered in ~800 ms once warm
+# but took 13-19 s each on a cold concurrent hosted run, so an 8 s retry would have failed for the same
+# reason the first attempt did and reported five working proxies as dead. Only ever paid once, and only by
+# a proxy that already missed the fast path.
+SLOW_TIMEOUT = 24
+# Soft ceiling on ONE check()'s wall clock. Not a hard kill — it only stops the OPTIONAL late work (the
+# IPv4 pin's endpoint walk, the direct-latency baseline) from starting when there is no time left for it.
+# The arithmetic it exists for: a bare `host:port` line can spend TIMEOUT on the liveness probe, TIMEOUT
+# again retrying it as the other transport, SLOW_TIMEOUT on the slow retry, and then, if the exit is
+# dual-stack, 3xTIMEOUT walking the v4 chain plus another TIMEOUT re-measuring geo. That is ~80s, and the
+# hosted checker's function cap is 60 — so the worst case threw away a result that had ALREADY succeeded.
+# Losing the v4 pin is a much smaller loss than losing the whole report.
+CHECK_BUDGET = 45
 
 # The blocklists behind the "found in N blacklists" count — keyless, no quota, no account. Every
 # zone here was verified live (queried for 127.0.0.2, which each one lists by convention). SORBS is
@@ -581,6 +595,10 @@ def parse_proxy(text: str, default_scheme: str = "http") -> Proxy | None:
     out; or a bare `host:port`. `default_scheme` (from the UI's selector) fills in when there's no
     `://`. Raises ValueError with a readable reason on anything it can't make sense of.
 
+    Separators: `;` is accepted anywhere `:` is, because vendors hand out `host;port;user;pass` as often
+    as the colon form and re-typing a pasted list is not a thing anyone should have to do. The two can be
+    mixed. Same caveat as below — a password containing `;` can't use that form.
+
     Limitation, stated rather than papered over: the `host:port:user:pass` form splits on colons, so a
     password that itself contains a colon can't be expressed that way — use the `user:pass@host:port`
     or `scheme://` form for those (percent-encoding not required)."""
@@ -592,6 +610,16 @@ def parse_proxy(text: str, default_scheme: str = "http") -> Proxy | None:
     if "://" in text:
         scheme, _, text = text.partition("://")
         scheme = scheme.lower()
+    # AFTER the scheme is off, so `socks5://` survives. Everything below is colon-separated, so one
+    # normalisation here teaches every shape to accept `;` instead of four places learning it separately.
+    #
+    # But NOT inside credentials. `user:pa;ss@host:8080` is a valid line today whose password genuinely
+    # contains a semicolon, and a blanket replace silently turned it into `pa:ss` — a working proxy failing
+    # to authenticate, with nothing on screen to say why. Only the host:port after the last `@` is
+    # normalised; before it, `;` is a password character and stays one. With no `@` there are no
+    # credentials to protect and the whole line is separators.
+    creds, at, hostport = text.rpartition("@")
+    text = creds + at + hostport.replace(";", ":") if at else text.replace(";", ":")
     if scheme not in _PROXY_SCHEMES:
         raise ValueError(f"unknown proxy scheme {scheme!r} — use http, socks5, or socks4")
 
@@ -771,12 +799,23 @@ def _opener(proxy: str | None, default_scheme: str = "http"):
         urllib.request.ProxyHandler({"http": p.http_url(), "https": p.http_url()}))
 
 
-def _get_json(url: str, opener, headers: dict | None = None) -> dict | None:
+def _effective_scheme(proxy, default_scheme: str) -> str:
+    """The transport a check ACTUALLY went out on. A line carrying its own ``scheme://`` overrides the UI
+    selector, so reporting the selector describes a request that was never made."""
+    try:
+        p = parse_proxy(proxy, default_scheme) if isinstance(proxy, str) else proxy
+        return p.scheme if p else default_scheme
+    except ValueError:
+        return default_scheme
+
+
+def _get_json(url: str, opener, headers: dict | None = None,
+              timeout: float | None = None) -> dict | None:
     """GET a JSON document. None on a transport failure; an API's own error body is returned as-is
     so the caller can surface *why* (bad key, quota spent) instead of a generic failure."""
     try:
         req = urllib.request.Request(url, headers=headers or {})
-        with opener.open(req, timeout=TIMEOUT) as r:
+        with opener.open(req, timeout=TIMEOUT if timeout is None else timeout) as r:
             return json.loads(r.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         try:
@@ -818,7 +857,7 @@ _V4_ECHOES: tuple[tuple[str, bool], ...] = (
 )
 
 
-def lookup_exit_v4(opener) -> str | None:
+def lookup_exit_v4(opener, deadline: float | None = None) -> str | None:
     """This connection's exit IP, forced over IPv4.
 
     A dual-stack proxy answers on whichever family the connection happens to use, so the ordinary exit
@@ -829,8 +868,15 @@ def lookup_exit_v4(opener) -> str | None:
 
     Asking an IPv4-only host pins the family, so a checkable address always exists. Returns None only when
     NO endpoint had an IPv4 route — a genuinely v6-only exit, which is worth reporting rather than
-    hiding. One endpoint failing no longer looks like that; see _V4_ECHOES."""
+    hiding. One endpoint failing no longer looks like that; see _V4_ECHOES.
+
+    ``deadline`` (a monotonic timestamp) stops the walk early. Three endpoints at the full timeout each is
+    24s that only a badly-behaved proxy ever spends, and it lands at the END of a check that may already
+    have paid a slow retry — enough, in the worst case, to run a HOSTED check past its function cap and
+    lose a result that had already succeeded. Stopping early costs the v4 pin, not the whole report."""
     for url, is_json in _V4_ECHOES:
+        if deadline is not None and time.monotonic() >= deadline:
+            return None
         raw = _get_json(url, opener) if is_json else _get_text(url, opener)
         ip = raw.get("ip") if isinstance(raw, dict) else raw
         # Strip HERE, where the address is accepted — not only in _get_text where it is fetched.
@@ -843,10 +889,11 @@ def lookup_exit_v4(opener) -> str | None:
     return None
 
 
-def lookup_geo(opener, ip: str | None = None) -> dict:
+def lookup_geo(opener, ip: str | None = None, timeout: float | None = None) -> dict:
     """ISP/location/timezone for ``ip``, or for this connection's own exit IP when ``ip`` is None
     (in which case it also discovers what that exit IP is, as seen through ``opener``'s proxy)."""
-    o = _get_json(f"https://ipwho.is/{urllib.parse.quote(ip, safe='') if ip else ''}", opener)
+    o = _get_json(f"https://ipwho.is/{urllib.parse.quote(ip, safe='') if ip else ''}", opener,
+                  timeout=timeout)
     if not o or not o.get("success"):
         return {}
     where = ", ".join(x for x in (o.get("city"), o.get("region"), o.get("country")) if x)
@@ -1212,11 +1259,28 @@ def check(proxy: str | None = None, ip: str | None = None,
     parsed leniently (see ``parse_proxy``); ``proxy_scheme`` fills in the transport when ``proxy``
     carries no ``scheme://`` of its own."""
     opener = _opener(proxy, proxy_scheme)
+    budget_ends = time.monotonic() + CHECK_BUDGET
     rep: dict = {"notes": []}
 
     def merge(part: dict) -> None:
         rep["notes"].extend(part.pop("notes", []))
         rep.update({k: v for k, v in part.items() if v is not None})
+
+    def budget_left(source: str = "") -> float:
+        """Seconds left in this check's wall-clock budget, 0 when spent (and a note saying which source
+        paid for it). Everything after the liveness probe goes out through the SAME opener, so a proxy
+        slow enough to need the retry makes every later request slow too — four reputation sources at the
+        full timeout each is another 32s, on top of a liveness path that may already have spent 40. The
+        hosted checker's function cap kills the whole invocation at that point and returns NOTHING, which
+        is a worse answer than the one this PR set out to fix."""
+        left = budget_ends - time.monotonic()
+        if left <= 1:
+            if source:
+                rep["notes"].append(
+                    f"{source}: not asked — this check had already spent its {CHECK_BUDGET}s on a slow "
+                    "proxy. The exit IP, blocklists and verdict above are unaffected.")
+            return 0.0
+        return left
 
     # An explicit --ip still gets ISP/location/timezone — the readout would otherwise show a bare
     # address with a dash under it, and where an IP sits is half of judging it.
@@ -1251,6 +1315,21 @@ def check(proxy: str | None = None, ip: str | None = None,
             rep["proxy_scheme_used"] = alt
             rep["notes"].append(f"Proxy: no answer as {proxy_scheme.upper()} — it responded as "
                                 f"{alt.upper()}. Set the transport to {alt.upper()} to avoid the retry.")
+    # A first request through a proxy can exceed TIMEOUT while the proxy is perfectly ALIVE, and calling
+    # that "dead" is a confident wrong answer. MEASURED 2026-08-07: five lightningproxies SOCKS5 endpoints
+    # answered in ~800 ms once warm, but on a cold, concurrent hosted run the same five took 13-19 s each
+    # and the whole batch rendered DEAD — while a direct SOCKS5 handshake to every one of them succeeded.
+    # So retry ONCE on the same transport before drawing any conclusion. This costs nothing on a genuinely
+    # dead proxy: a refused connection or an unresolvable host fails in well under a second, it does not
+    # burn the timeout.
+    if proxy and not geo:
+        started = time.monotonic()
+        geo = lookup_geo(opener, ip, timeout=SLOW_TIMEOUT)
+        latency_ms = int((time.monotonic() - started) * 1000)
+        if geo:
+            rep["notes"].append(
+                f"Proxy: no answer within {TIMEOUT}s, but it answered on a retry with a {SLOW_TIMEOUT}s "
+                "budget — the proxy is up, just slow to get going. The latency shown is the retry's.")
     merge(geo)
     if proxy:
         rep["proxy_alive"] = bool(geo)
@@ -1267,14 +1346,26 @@ def check(proxy: str | None = None, ip: str | None = None,
             # separates the two. `proxy_added_ms` is the honest figure — "what this proxy costs on top of
             # this machine's own path" — and it is comparable between a laptop in Asia and a Lambda in
             # Virginia, which the raw round trip is not. One extra request, only when a proxy is in play.
-            base_ms = _direct_baseline_ms(ip)   # cached, machine-constant — not re-measured per bulk row
+            # Skipped when the budget is gone: this is a COMPARISON nicety (what the proxy adds over this
+            # machine's own path), and spending the last seconds on it can cost the report itself.
+            base_ms = _direct_baseline_ms(ip) if time.monotonic() < budget_ends else None
             if base_ms is not None:
                 rep["direct_ms"] = base_ms
                 rep["proxy_added_ms"] = max(0, latency_ms - base_ms)
-        elif retried_scheme is None:
-            rep["notes"].append("Proxy: no answer as " + proxy_scheme.upper()
-                                + ", and the other transport did not answer either — it is down, "
-                                  "unreachable, or the credentials are wrong")
+        else:
+            # Say what was ACTUALLY tried, and no more. Two things were wrong here. (1) It named
+            # `proxy_scheme` — the UI SELECTOR — when a line carrying its own `socks5://` overrides the
+            # selector entirely, so a SOCKS5 line checked with the selector on HTTP reported "no answer as
+            # HTTP" about a request that went out as SOCKS5. (2) It claimed "the other transport did not
+            # answer either" even when no such retry was attempted, which is exactly the case for a line
+            # with an explicit scheme. Both statements read as evidence and neither was measured.
+            used = (rep.get("proxy_scheme_used") or _effective_scheme(proxy, proxy_scheme)).upper()
+            tried_both = retried_scheme is not None or "://" not in str(proxy)
+            rep["notes"].append(
+                f"Proxy: no answer as {used}"
+                + (", and the other transport did not answer either" if tried_both else "")
+                + f" — nothing came back within {TIMEOUT}s, then nothing within {SLOW_TIMEOUT}s on a "
+                  "retry. It is down, unreachable, out of plan quota, or the credentials are wrong.")
     if not rep.get("ip"):
         if not ip:
             # EVERY return carries a verdict. This one used to return a report with no `verdict` key at
@@ -1295,7 +1386,7 @@ def check(proxy: str | None = None, ip: str | None = None,
     # measured IPQS/AbuseIPDB/getIPIntel/Scamalytics against the IPv6 address and then relabelled the whole
     # report with the IPv4 one: a set of measurements attributed to an address they were never taken on.
     if not reverse_v4(rep["ip"]) and not ip:
-        v4 = lookup_exit_v4(opener)
+        v4 = lookup_exit_v4(opener, deadline=budget_ends)
         if v4:
             rep["exit_ipv6"] = rep["ip"]
             rep["ip"] = v4
@@ -1305,7 +1396,11 @@ def check(proxy: str | None = None, ip: str | None = None,
             # documents fixing for IPQS/AbuseIPDB. A dual-stack exit usually agrees with itself, but
             # "usually" is not a measurement, and country_code paints the flag while timezone drives the
             # device-vs-IP alignment. Costs one request, and only on the rare dual-stack path.
-            v4_geo = lookup_geo(opener, v4)
+            # Same grace the liveness probe got: a proxy that needed the slow retry to answer at all will
+            # miss a plain 8s budget here too, and this call failing costs the report its ISP/location/
+            # timezone (dropped, correctly, rather than relabelled just below).
+            v4_left = budget_left()
+            v4_geo = lookup_geo(opener, v4, timeout=min(SLOW_TIMEOUT, v4_left)) if v4_left else {}
             merge(v4_geo)
             # merge() writes every non-None field INCLUDING "ip", so the re-lookup's own echo of the
             # address would silently become the reported one. rep["ip"] is settled here and nowhere else.
@@ -1328,17 +1423,17 @@ def check(proxy: str | None = None, ip: str | None = None,
         else:
             rep["notes"].append("Exit: IPv6 only — checked against the 4 zones that hold IPv6 data")
 
-    if ipqs_key:
-        merge(lookup_ipqs(rep["ip"], ipqs_key, opener))
-    else:
+    if not ipqs_key:
         rep["notes"].append("No IPQualityScore key — no fraud score (set it in the Keys row)")
-    if abuse_key:
+    elif budget_left("IPQualityScore"):
+        merge(lookup_ipqs(rep["ip"], ipqs_key, opener))
+    if abuse_key and budget_left("AbuseIPDB"):
         merge(lookup_abuseipdb(rep["ip"], abuse_key, opener))
-    if getipintel_contact:
+    if getipintel_contact and budget_left("getIPIntel"):
         merge(lookup_getipintel(rep["ip"], getipintel_contact, opener))
     # Must run BEFORE connection_class() below, or its classifier is dead code. No "no key" note (unlike
     # IPQS): the tool is fully useful without it, and half a pair is a config mistake, not a measurement.
-    if scam_user and scam_key:
+    if scam_user and scam_key and budget_left("Scamalytics"):
         merge(lookup_scamalytics(rep["ip"], scam_user, scam_key, opener))
     bl_ip = rep["ip"]
 
@@ -1758,6 +1853,8 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
         <div class=rw><i>With auth</i><div>host:port:user:pass</div></div>
         <div class=rw><i>Or</i><div>user:pass@host:port</div></div>
         <div class=rw><i>With scheme</i><div>socks5://user:pass@host:port — wins over the selector</div></div>
+        <div class=rw><i>Separator</i><div>; works anywhere : does — host;port;user;pass. A ; inside a
+          password is left alone.</div></div>
       </div>
     </details>
     <!-- The button acts on the two fields directly above it, so nothing goes between them. Bulk is its own
@@ -2227,6 +2324,13 @@ const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpper
 function proxyParts(line){
   let s=(line||'').trim(), scheme=null;
   const i=s.indexOf('://'); if(i>0){scheme=s.slice(0,i).toLowerCase(); s=s.slice(i+3);}
+  // `;` is accepted anywhere `:` is — normalised in the same place, the same order, and with the same
+  // credential exemption as parse_proxy(). If only the server learned this, a `host;port;user;pass` line
+  // would check correctly while the copy chips beside it showed one unsplit blob; and if only the server
+  // learned the exemption, a `user:pa;ss@host` line would be CHECKED with the right password while the
+  // chip offered a corrupted one to copy.
+  {const a=s.lastIndexOf('@');
+   s = a<0 ? s.split(';').join(':') : s.slice(0,a+1)+s.slice(a+1).split(';').join(':');}
   let user=null, pass=null, hostport=s;
   const at=s.lastIndexOf('@');
   if(at>=0){const creds=s.slice(0,at); hostport=s.slice(at+1);
@@ -2285,8 +2389,7 @@ const chip=(label,value,titleText)=>value==null||value===''?'<span class=dim>—
   // long value (a full IPv6 exit, a whole `host:port:user:pass` line) renders clipped — and a title that
   // only says "Copy ip" is no escape hatch at all. This is the detail row that the truncated bulk-table
   // cell defers to, so it has to actually hold the whole string. One helper, so every chip gets it.
-  // `titleText` overrides the value for the one chip that must NOT reveal itself on hover: the whole line
-  // carries the password, which the row deliberately renders as dots.
+  // `titleText` overrides the value when a chip's hover text should say something other than the value.
   :`<button class=cp data-copy="${esc(value)}" title="${esc(titleText!=null?titleText:value)}&#10;Click to copy"><i>${esc(label)}</i>${esc(value)}</button>`;
 
 function bulkDetail(x){
@@ -2296,13 +2399,14 @@ function bulkDetail(x){
 
   t+=dGrp('Proxy');
   // All the credentials on ONE row of chips. One click copies just that part; a tick confirms in a slot
-  // that is always reserved, so nothing moves. The password shows dots but copies its real value.
+  // that is always reserved, so nothing moves. The password is shown IN FULL, deliberately: this is a
+  // proxy list the user pasted in themselves, on their own screen, and dots made the one field you most
+  // often need to eyeball against the vendor's dashboard the only one you could not read.
   t+=dRow('Copy',
     chip('host',p.host)+chip('port',p.port)+
     (p.user?chip('user',p.user):'')+
-    (p.pass?`<button class=cp data-copy="${esc(p.pass)}" title="Copy password"><i>pass</i>`+
-      '\u2022'.repeat(Math.min(p.pass.length,10))+`</button>`:'')+
-    chip('whole line',x.line,'The whole line, password included'));
+    (p.pass?chip('pass',p.pass):'')+
+    chip('whole line',x.line));
   t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
   t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
   if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
