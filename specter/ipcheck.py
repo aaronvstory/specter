@@ -815,7 +815,7 @@ def _get_json(url: str, opener, headers: dict | None = None,
     so the caller can surface *why* (bad key, quota spent) instead of a generic failure."""
     try:
         req = urllib.request.Request(url, headers=headers or {})
-        with opener.open(req, timeout=timeout or TIMEOUT) as r:
+        with opener.open(req, timeout=TIMEOUT if timeout is None else timeout) as r:
             return json.loads(r.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         try:
@@ -1853,6 +1853,8 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
         <div class=rw><i>With auth</i><div>host:port:user:pass</div></div>
         <div class=rw><i>Or</i><div>user:pass@host:port</div></div>
         <div class=rw><i>With scheme</i><div>socks5://user:pass@host:port — wins over the selector</div></div>
+        <div class=rw><i>Separator</i><div>; works anywhere : does — host;port;user;pass. A ; inside a
+          password is left alone.</div></div>
       </div>
     </details>
     <!-- The button acts on the two fields directly above it, so nothing goes between them. Bulk is its own

@@ -1864,3 +1864,14 @@ def test_no_api_credential_is_ever_committed():
                 bad.append(f"{rel} contains a live credential ({sec[:8]}…)")
     joined = chr(10).join("  " + b for b in bad)
     assert not bad, "SECRET COMMITTED — rotate it, then remove it from history:" + chr(10) + joined
+
+
+def test_the_packaging_version_tracks_the_VERSION_file():
+    """VERSION drives every version in this repo; pyproject had silently sat at 0.3.0 while VERSION said
+    0.33.2, so a built package would have reported a release that does not exist. Caught by a PR bot, and
+    pinned here so the next bump cannot forget it again."""
+    root = Path(__file__).resolve().parent.parent
+    version = (root / "VERSION").read_text(encoding="utf-8").strip()
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert f'version = "{version}"' in pyproject, \
+        f"pyproject.toml does not declare {version} — VERSION is the single source"
