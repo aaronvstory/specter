@@ -87,3 +87,38 @@
   `if (switched) render()` in the empty-targets branch, removed). LF/CRLF discipline held; no nul files.
   Squash-merged to main (d0917a7), pushed, branch deleted. Deployed v0.32.1 to P4 + 4a (both rebooted,
   module re-registered in scope). GPS left to the user (4a Lockito Florida sim running per user; P4 user-handled).
+
+## 2026-08-07 02:50 - Rip out per-identity GPS location spoofing (v0.33.0)
+- **What changed:** Removed the entire per-identity GPS feature — LocationManager+Fused hooks + spoof_gps
+  gate (HookEntry), gps_lat/lon/accuracy generation + centroid table + validator (Java+Python),
+  setGps/effectiveGps (RootWriter), the Identity Location card + editor + Settings global default/lock +
+  on-apply/match-to-IP GPS align (MainActivity), probe location read + verify_on_device.py GPS check, the
+  setGps/effectiveGps tests, and GPS-orphaned dead code (dead 4-tab Location nav + renderLocation,
+  HealthCheck.Geo.lat/lon). KEPT hide_mock + proxy-IP timezone align. ~955 LOC removed across 12 files.
+- **Why:** User asked to rip it out — they use Lockito for GPS; Specter's per-identity GPS fought it.
+- **Verified:** pytest + JVM green (byte-parity intact — gps gen was pure/hash-derived), clean module +
+  probe builds. Gauntlet: codex + code-reviewer both clean after reconciling one shared finding
+  (HealthCheck.Geo.lat/lon dead fields). VERSION 0.32.1→0.33.0. Squash-merged to main (4a23cca), pushed.
+  Deployed v0.33.0 to P4 + 4a (both rebooted, module re-registered). 4a Lockito dropped on reboot — user
+  handles GPS. Updated memory build-location-spoof-into-specter (feature removed, don't re-add).
+
+## 2026-08-07 - IPv4-only exit pin (webapp + Android) + bulk-table column cap
+
+- **What changed:** `specter/ipcheck.py` (`_V4_ECHOES` 3-endpoint chain, `_get_text`, geo re-measure on the
+  swapped IPv4 address, `.ipv` width cap, `chip()` value-on-title, own-IP prefill order); the same pin added
+  to `HealthCheck.java` where none existed (`lookupExitV4`, `getText`, `lookupGeo(net, ip)`, `Geo.exitIpv6`)
+  + an "ALSO EXITS AT" row in `MainActivity.java`; 4 new tests; CHANGELOG/DECISIONS/IDEAS; VERSION 0.33.1.
+  Generated `webapp/index.html` + `webapp/api/ipcheck_core.py` via `webapp/build.py`. PR #103, squashed to
+  `129ed10`.
+- **Why:** a ten-proxy batch showed one row exiting over IPv6 (graded against 2 blocklist zones instead of
+  14) and its 39-char address blew out every column width. Root cause: the exit lookup asks dual-stack
+  `ipwho.is`, and the family correction hung off a SINGLE IPv4-only host - when that answered with nothing
+  the report fell through to IPv6 silently. Android had no correction at all.
+- **Verified:** 275 Python tests green (each new one proven to FAIL without its fix), JVM suite green,
+  `:app:compileDebugJavaWithJavac` clean. Live through the proxy that actually failed
+  (`res.proxy-seller.com:10009`) with each endpoint forced dark in turn - the chain held every time and
+  returned None only when all three were dark. Column widths MEASURED in headless Chrome at 1900px:
+  Exit IP 388px -> 222px, giving back Proxy +29 / ISP +21 / Location +20 / Flags +17.
+- **Gauntlet:** `code-reviewer` subagent + codex + PR bots all converged on the SAME single bug - the
+  failed-re-lookup path relabelled stale IPv6 geo instead of dropping it. Fixed in `e0ccbc5` before merge.
+  Nothing else found by any source. The `test` CI check fails at 0 steps (known account-level outage).
