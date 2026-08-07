@@ -659,7 +659,7 @@ def test_flags_lists_only_true_verdicts_in_priority_order():
 
 def test_check_merges_every_source_and_assembles_verdict_and_flags(monkeypatch):
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "1.2.3.4", "isp": "ACME"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {"ip": "1.2.3.4", "isp": "ACME"})
     monkeypatch.setattr(ipcheck, "lookup_ipqs",
                         lambda ip, key, opener: {"fraud_score": 90, "proxy": True})
     monkeypatch.setattr(ipcheck, "lookup_abuseipdb",
@@ -675,7 +675,7 @@ def test_check_merges_every_source_and_assembles_verdict_and_flags(monkeypatch):
 
 def test_check_notes_when_no_key_is_set(monkeypatch):
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "1.2.3.4"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {"ip": "1.2.3.4"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {
         "blacklists": [], "policy_lists": [], "dnsbl_checked": 12, "dnsbl_usable": True})
     rep = ipcheck.check()                             # no ipqs_key
@@ -687,7 +687,7 @@ def test_check_carries_an_explicit_ip_even_when_geo_fails(monkeypatch):
     # --ip 5.6.7.8 with a geo lookup that returns nothing: the address we were told to check must still
     # be checked (blacklists), not dropped — the fix that made an explicit --ip survive a geo failure.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {})
     seen = {}
 
     def fake_dnsbl(ip):
@@ -703,7 +703,7 @@ def test_check_carries_an_explicit_ip_even_when_geo_fails(monkeypatch):
 def test_check_gives_up_with_a_note_when_the_exit_ip_cant_be_found(monkeypatch):
     # No --ip and geo failed -> there's nothing to check; say so, don't press on against a null IP.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {})
     called = {"dnsbl": False}
 
     def fake_dnsbl(ip):
@@ -878,7 +878,7 @@ def test_an_ipv6_exit_falls_back_to_ipv4_so_the_blocklists_still_run(monkeypatch
     # blocklist evidence behind a clean-looking verdict. Ask again over IPv4 instead of giving up.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     monkeypatch.setattr(ipcheck, "lookup_geo",
-                        lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798", "isp": "Starlink"})
+                        lambda opener, ip=None, timeout=None, errbox=None: {"ip": "2605:59ca::e798", "isp": "Starlink"})
     monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: "153.66.117.15")
     checked = {}
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: checked.setdefault("ip", ip) and {} or
@@ -944,7 +944,7 @@ def test_a_spent_budget_skips_the_reputation_sources_instead_of_losing_the_whole
     # which is a worse answer than the "dead proxy" this whole change set out to fix.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     monkeypatch.setattr(ipcheck, "lookup_geo",
-                        lambda opener, ip=None, timeout=None: {"ip": "1.2.3.4", "isp": "ACME"})
+                        lambda opener, ip=None, timeout=None, errbox=None: {"ip": "1.2.3.4", "isp": "ACME"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {})
     monkeypatch.setattr(ipcheck, "CHECK_BUDGET", -1)         # the budget is already gone on entry
     asked = []
@@ -960,6 +960,120 @@ def test_a_spent_budget_skips_the_reputation_sources_instead_of_losing_the_whole
     assert not any("No IPQualityScore key" in n for n in rep["notes"])
 
 
+def test_a_proxy_that_says_why_it_refused_has_that_repeated_instead_of_a_guess(monkeypatch):
+    # MEASURED 2026-08-08: proxy-seller answered CONNECT with `503 No exit node` — the credentials were
+    # fine and the vendor simply had no residential exit to hand out. The report rendered a bare DEAD and
+    # guessed "it is down, unreachable, or the credentials are wrong", sending the user to re-check the
+    # one thing that was never broken. When the proxy says why, say what it said.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+
+    def geo(opener, ip=None, timeout=None, errbox=None):
+        if errbox is not None:
+            errbox.append("Tunnel connection failed: 503 No exit node")
+        return {}
+
+    monkeypatch.setattr(ipcheck, "lookup_geo", geo)
+    rep = ipcheck.check("host:1080:user:pass")
+    assert rep["proxy_alive"] is False
+    assert rep["proxy_error"] == "Tunnel connection failed: 503 No exit node"
+    note = next(n for n in rep["notes"] if n.startswith("Proxy: no answer"))
+    assert "503 No exit node" in note
+    assert "credentials are wrong" not in note      # ...and the guess is NOT also offered alongside it
+
+
+def test_a_proxy_failure_reason_never_carries_the_credentials_out_with_it():
+    # The error branch is the one that leaks. A proxy library may put the username or the whole
+    # user:pass@host into the message it raises, and that string ends up in a report the user copies.
+    scrubbed = ipcheck._safe_reason(
+        "407 auth failed for tomuser:tomuserpass at host:1080", "host:1080:tomuser:tomuserpass")
+    assert "tomuserpass" not in scrubbed and "tomuser" not in scrubbed
+    # The LONGER form is scrubbed first on purpose: here the password contains the username, so
+    # replacing the username first would leave "***pass" — a fragment of the password still in the clear.
+    # The whole `user:pass` pair is itself one of the forms, so it collapses to a single marker.
+    assert scrubbed == "407 auth failed for *** at host:1080"
+
+
+def test_a_credential_survives_no_disguise_and_no_truncation():
+    """Both leaks the gauntlet reproduced, pinned.
+
+    (1) ORDER: `_why` used to cap the string at 160 chars and `_safe_reason` scrubbed afterwards, so a
+    cut landing inside a secret left a fragment that the literal replace could no longer match — the
+    trim CREATED the leak it looked like it prevented. Scrub first, cap last.
+    (2) DISGUISE: a literal replace of user/password misses the same secret percent-encoded, or
+    base64'd into `Proxy-Authorization: Basic ...`, which is exactly how urllib sends it.
+    """
+    import base64 as _b64
+    proxy = "h:1080:tomuser:tomuserpass"
+    b64 = _b64.b64encode(b"tomuser:tomuserpass").decode()
+    for label, reason in [
+        ("literal", "407 denied for tomuser:tomuserpass"),
+        ("base64 auth header", f"Proxy-Authorization: Basic {b64} rejected"),
+        ("percent-encoded", "failed http://tomuser%3Atomuserpass@h:1080"),
+        ("query encoding", "user=tomuser&pass=tomuserpass"),
+        ("secret across the cap", "x" * 155 + "tomuserpass tail"),
+        # An encoding nobody predicted: whatever follows an auth scheme is a credential by definition.
+        ("unknown encoding", "Bearer ZXhvdGljLXNlY3JldA=="),
+    ]:
+        out = ipcheck._safe_reason(reason, proxy)
+        for secret in ("tomuserpass", "tomuser", b64, "ZXhvdGlj"):
+            assert secret not in out, f"{label}: {secret!r} leaked -> {out!r}"
+        assert len(out) <= 160
+    # ...while the reason this whole feature exists still survives intact and readable.
+    assert ipcheck._safe_reason("Tunnel connection failed: 503 No exit node", proxy) \
+        == "Tunnel connection failed: 503 No exit node"
+
+
+def test_an_authorization_header_is_redacted_whatever_scheme_it_names():
+    # From the PR bots. Redacting only basic/bearer/digest left `Proxy-Authorization: Custom <token>`
+    # in the clear — the scheme is the attacker's choice, so keying on it is the wrong invariant.
+    # Whatever follows an Authorization header is a credential BY DEFINITION.
+    out = ipcheck._safe_reason("Proxy-Authorization: Custom secret-token-here rejected", "h:1080:u:p")
+    assert "secret-token-here" not in out
+    assert ipcheck._safe_reason("Authorization: Weird dG9tOnBhc3M=", "h:1080:u:p") \
+        == "Authorization: ***"
+    # ...and a reason with no credential in it is left completely alone.
+    assert ipcheck._safe_reason("Tunnel connection failed: 503 No exit node", "h:1080:u:p") \
+        == "Tunnel connection failed: 503 No exit node"
+
+
+def test_a_very_short_credential_does_not_shred_the_whole_message():
+    # A one-character username made a blind str.replace rewrite every innocent occurrence of that
+    # letter: "Proxy-Authorization" rendered as "Proxy-A***thorization", which is unreadable and tells
+    # the user nothing. Short secrets are matched on word boundaries instead — still redacted when they
+    # stand alone, harmless inside ordinary words.
+    out = ipcheck._safe_reason("Proxy-Authorization header rejected by u", "h:1080:u:p")
+    assert "Proxy-Authorization" in out          # the prose survives intact...
+    assert not out.endswith(" u")                # ...and the standalone credential is still redacted
+    assert "***" in out
+
+
+def test_a_timeout_is_never_reported_as_the_proxy_answering(monkeypatch):
+    # A timeout is OUR observation, not the proxy speaking. `_why` turns urllib's TimeoutError into the
+    # truthy string "timed out", which would have set proxy_error and rendered "the proxy answered:
+    # timed out" — a sentence that contradicts itself, for the most common failure mode there is.
+    monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
+
+    def geo(opener, ip=None, timeout=None, errbox=None):
+        if errbox is not None:
+            errbox.append("timed out")
+        return {}
+
+    monkeypatch.setattr(ipcheck, "lookup_geo", geo)
+    rep = ipcheck.check("socks5://host:1080:user:pass")
+    assert "proxy_error" not in rep
+    note = next(n for n in rep["notes"] if n.startswith("Proxy: no answer"))
+    assert "the proxy answered" not in note
+    assert "nothing came back within" in note
+
+
+def test_urllib_wrapping_is_unwrapped_so_the_reason_reads_like_a_sentence():
+    # urllib buries the useful part in `<urlopen error ...>`; a report that repeats the wrapper is
+    # quoting plumbing at the user instead of the vendor's answer.
+    assert ipcheck._why(Exception("<urlopen error Tunnel connection failed: 503 No exit node>")) \
+        == "Tunnel connection failed: 503 No exit node"
+    assert ipcheck._why(Exception("timed out")) == "timed out"
+
+
 def test_a_proxy_that_is_merely_slow_is_retried_before_being_called_dead(monkeypatch):
     # MEASURED 2026-08-07: five lightningproxies SOCKS5 endpoints answered in ~800 ms once warm, but a
     # cold concurrent hosted run had every one of them exceed the timeout — and the batch rendered DEAD
@@ -967,7 +1081,7 @@ def test_a_proxy_that_is_merely_slow_is_retried_before_being_called_dead(monkeyp
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     calls = []
 
-    def flaky(opener, ip=None, timeout=None):
+    def flaky(opener, ip=None, timeout=None, errbox=None):
         # Count only the calls that go THROUGH THE PROXY (opener is None, the stub above). The direct
         # no-proxy baseline in _direct_baseline_ms uses a real opener and must not be counted as a retry.
         if opener is None:
@@ -991,7 +1105,7 @@ def test_a_dead_proxy_note_names_the_transport_actually_used_and_claims_no_untri
     # SOCKS5 — and it claimed "the other transport did not answer either" when no such retry is even
     # attempted for an explicit scheme. Both read as evidence; neither was measured.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {})
     rep = ipcheck.check("socks5://host:1080:user:pass", proxy_scheme="http")
     note = next(n for n in rep["notes"] if n.startswith("Proxy: no answer"))
     assert "SOCKS5" in note and "HTTP" not in note     # the transport that was actually used
@@ -1045,7 +1159,7 @@ def test_geo_is_remeasured_on_the_ipv4_address_it_is_reported_against(monkeypatc
     # exit is not evidence about the other.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
 
-    def geo(opener, ip=None, timeout=None):
+    def geo(opener, ip=None, timeout=None, errbox=None):
         if ip is None:
             return {"ip": "2605:59ca::e798", "isp": "v6 upstream", "timezone": "America/Denver",
                     "country_code": "CA"}
@@ -1070,7 +1184,7 @@ def test_a_failed_ipv4_regeo_drops_the_stale_fields_rather_than_relabelling_them
     # `timezone` is what the device-vs-IP alignment acts on.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
     monkeypatch.setattr(ipcheck, "lookup_geo",
-                        lambda opener, ip=None, timeout=None: {} if ip else
+                        lambda opener, ip=None, timeout=None, errbox=None: {} if ip else
                         {"ip": "2605:59ca::e798", "isp": "v6 upstream", "location": "Denver, CO, US",
                          "country_code": "CA", "timezone": "America/Denver"})
     monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: "153.66.117.15")
@@ -1087,7 +1201,7 @@ def test_an_ipv6_only_exit_is_still_checked_against_the_zones_that_have_ipv6_dat
     # No IPv4 route: still check, against the four zones that actually hold IPv6 data, and report THAT
     # denominator — "0 of 4 IPv6 lists" is a real result, "0 of 17" would be a lie.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {"ip": "2605:59ca::e798"})
     monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: None)
     seen = {}
 
@@ -1213,7 +1327,7 @@ def test_every_reputation_source_is_asked_about_the_address_the_report_names(mon
     were never taken on."""
     asked = {}
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "2605:59ca::e798"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {"ip": "2605:59ca::e798"})
     monkeypatch.setattr(ipcheck, "lookup_exit_v4", lambda opener, deadline=None: "153.66.117.15")
     monkeypatch.setattr(ipcheck, "lookup_ipqs",
                         lambda ip, key, opener: asked.setdefault("ipqs", ip) and {} or {"fraud_score": 0})
@@ -1337,7 +1451,7 @@ def test_scamalytics_credentials_never_reach_the_caller(monkeypatch):
     # that forwards the user or key fails HERE. The key rides in the QUERY STRING, and the hosted deploy
     # renders this report in a visitor's browser.
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": None)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "1.2.3.4", "isp": "Example"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {"ip": "1.2.3.4", "isp": "Example"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
                                                             "dnsbl_checked": 17, "dnsbl_usable": True,
                                                             "dnsbl_detail": []})
@@ -1485,7 +1599,7 @@ def test_latency_reports_what_the_proxy_ADDS_not_the_raw_round_trip(monkeypatch)
     comparable between a laptop in Asia and a function in Virginia."""
     calls = []
 
-    def fake_geo(opener, ip=None, timeout=None):
+    def fake_geo(opener, ip=None, timeout=None, errbox=None):
         calls.append(opener)
         return {"ip": "153.66.193.140", "isp": "SpaceX Starlink"}
 
@@ -1509,7 +1623,7 @@ def test_direct_baseline_is_measured_once_per_run_not_per_row(monkeypatch):
     as DEAD. It must be measured once and cached (the autouse fixture clears the cache before this test)."""
     direct_calls = []
 
-    def fake_geo(opener, ip=None, timeout=None):
+    def fake_geo(opener, ip=None, timeout=None, errbox=None):
         if opener != "PROXIED":
             direct_calls.append(opener)     # only the DIRECT baseline lookups, not the proxied primary ones
         return {"ip": "1.2.3.4", "isp": "X"}
@@ -1559,7 +1673,7 @@ def test_ipapi_lookup_parses_and_degrades(monkeypatch):
 def test_ipapi_feeds_check_flow_and_proxy_note(monkeypatch):
     # End to end: with no keys, ip-api's hosting promotes the exit type to datacenter and proxy=true adds a
     # note. Override the autouse stub with a real-looking ip-api result.
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {"ip": "45.83.220.5", "isp": "31173 Services AB"})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {"ip": "45.83.220.5", "isp": "31173 Services AB"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
                                                             "dnsbl_checked": 17, "dnsbl_usable": True, "dnsbl_detail": []})
     monkeypatch.setattr(ipcheck, "_ipapi_lookup", lambda ip, opener=None: {
@@ -1575,7 +1689,7 @@ def test_no_baseline_request_is_made_when_there_is_no_proxy(monkeypatch):
     # double every keyless lookup for nothing.
     calls = []
     monkeypatch.setattr(ipcheck, "lookup_geo",
-                        lambda opener, ip=None, timeout=None: calls.append(opener) or {"ip": "8.8.8.8"})
+                        lambda opener, ip=None, timeout=None, errbox=None: calls.append(opener) or {"ip": "8.8.8.8"})
     monkeypatch.setattr(ipcheck, "dnsbl_check", lambda ip: {"blacklists": [], "policy_lists": [],
                                                             "dnsbl_checked": 17, "dnsbl_usable": True,
                                                             "dnsbl_detail": []})
@@ -1593,7 +1707,7 @@ def test_a_socks_proxy_addressed_as_http_is_retried_not_called_dead(monkeypatch)
         tried.append(scheme)
         return scheme
 
-    def fake_geo(opener, ip=None, timeout=None):
+    def fake_geo(opener, ip=None, timeout=None, errbox=None):
         # Only the SOCKS transport answers, exactly as the real proxy behaved.
         return {"ip": "24.26.39.144", "isp": "Spectrum"} if opener == "socks5" else {}
 
@@ -1612,7 +1726,7 @@ def test_a_socks_proxy_addressed_as_http_is_retried_not_called_dead(monkeypatch)
 
 def test_a_genuinely_dead_proxy_still_reads_dead_and_says_both_were_tried(monkeypatch):
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": scheme)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {})
     rep = ipcheck.check("host:9999", proxy_scheme="http")
     assert rep["proxy_alive"] is False
     assert rep["verdict"] == "unknown"                    # and never crashes the page
@@ -1624,7 +1738,7 @@ def test_an_explicit_scheme_is_never_second_guessed(monkeypatch):
     # with the user about what they typed.
     tried = []
     monkeypatch.setattr(ipcheck, "_opener", lambda proxy, scheme="http": tried.append(scheme) or scheme)
-    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None: {})
+    monkeypatch.setattr(ipcheck, "lookup_geo", lambda opener, ip=None, timeout=None, errbox=None: {})
     ipcheck.check("socks5://host:1080")
     assert tried == ["http"], f"an explicit scheme must be tried once, got {tried}"
 

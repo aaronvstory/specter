@@ -25,6 +25,7 @@ finding here means the same thing as a finding on the phone.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -799,6 +800,61 @@ def _opener(proxy: str | None, default_scheme: str = "http"):
         urllib.request.ProxyHandler({"http": p.http_url(), "https": p.http_url()}))
 
 
+def _secret_forms(p) -> list[str]:
+    """Every form a credential can wear inside an error string, longest first.
+
+    Replacing the literal ``user`` and ``password`` is not enough, because the credential does not
+    necessarily appear literally. urllib builds ``Proxy-Authorization: Basic <base64(user:pass)>``, and
+    a proxy URL percent-encodes. Each of those is the SAME secret in a costume, and an error that echoes
+    the header or the URL carries it straight through a literal scrub.
+
+    Longest first: a password that CONTAINS the username would otherwise be cut down to a fragment
+    (``***pass``) with the rest of the real password still in the clear."""
+    forms: set[str] = set()
+    user, password = getattr(p, "user", "") or "", getattr(p, "password", "") or ""
+    for secret in filter(None, (user, password)):
+        forms.update((secret, urllib.parse.quote(secret, safe=""), urllib.parse.quote_plus(secret)))
+    if user or password:
+        pair = f"{user}:{password}"
+        forms.update((pair, urllib.parse.quote(pair, safe=""),
+                      base64.b64encode(pair.encode("utf-8")).decode("ascii")))
+    return sorted((f for f in forms if f), key=len, reverse=True)
+
+
+def _safe_reason(reason: str, proxy) -> str:
+    """A proxy's failure reason with the credentials taken back out, then capped for display.
+
+    The error branch is the one that leaks. A proxy library is free to put the host, the username, the
+    whole ``user:pass@host:port``, or the Proxy-Authorization header into the message it raises, and
+    this string is on its way to a report the user copies into a public issue.
+
+    Order is the whole point: scrub FIRST, cap LAST. Capping first can cut a secret in half, and a half
+    secret survives every replace below."""
+    if not reason:
+        return ""
+    try:
+        p = parse_proxy(proxy, "http") if isinstance(proxy, str) else proxy
+    except ValueError:
+        p = None
+    if p:
+        for secret in _secret_forms(p):
+            if len(secret) >= 4:
+                reason = reason.replace(secret, "***")
+            else:
+                # A one- or two-character credential is still a credential, but a blind replace of it
+                # rewrites every innocent occurrence of those letters and shreds the message —
+                # "Proxy-Authorization" became "Proxy-A***thorization" for a username of "u". Require a
+                # word boundary so the standalone secret is still redacted and prose survives.
+                reason = re.sub(rf"\b{re.escape(secret)}\b", "***", reason)
+    # Whatever follows an Authorization header is a credential BY DEFINITION, whatever scheme it names.
+    # Redacting only basic/bearer/digest left `Proxy-Authorization: Custom <token>` in the clear. Take
+    # the value to end of line: losing a few words of trailing prose is cheaper than leaking a token.
+    reason = re.sub(r"(?im)^(.*?(?:proxy-)?authorization\s*:\s*).*$", r"\1***", reason)
+    # ...and the same for a bare scheme with no header name around it.
+    reason = re.sub(r"(?i)\b(basic|bearer|digest)\s+\S+", r"\1 ***", reason)
+    return reason[:160]
+
+
 def _effective_scheme(proxy, default_scheme: str) -> str:
     """The transport a check ACTUALLY went out on. A line carrying its own ``scheme://`` overrides the UI
     selector, so reporting the selector describes a request that was never made."""
@@ -809,10 +865,33 @@ def _effective_scheme(proxy, default_scheme: str) -> str:
         return default_scheme
 
 
+def _why(exc: BaseException) -> str:
+    """A transport failure as one short, quotable phrase — or "" when there is nothing worth repeating.
+
+    A proxy that refuses you usually SAYS why, and throwing that away is how a working credential set
+    with an empty vendor pool ends up rendered as a bare "DEAD". MEASURED 2026-08-08: proxy-seller
+    answered CONNECT with ``503 No exit node`` — the account was fine, the vendor simply had no
+    residential exit to hand out. "Dead" is the one thing that was NOT true.
+
+    urllib wraps the useful part in ``<urlopen error ...>``; unwrap it and keep the inside.
+
+    Deliberately does NOT truncate. Length is capped in _safe_reason AFTER scrubbing, because cutting
+    the string first can slice a credential in half, and a half-credential is exactly what a literal
+    replace can no longer match — the trim would create the leak it looks like it prevents."""
+    text = str(getattr(exc, "reason", None) or exc).strip()
+    m = re.match(r"<urlopen error (.*)>$", text)
+    if m:
+        text = m.group(1).strip()
+    return text
+
+
 def _get_json(url: str, opener, headers: dict | None = None,
-              timeout: float | None = None) -> dict | None:
+              timeout: float | None = None, errbox: list | None = None) -> dict | None:
     """GET a JSON document. None on a transport failure; an API's own error body is returned as-is
-    so the caller can surface *why* (bad key, quota spent) instead of a generic failure."""
+    so the caller can surface *why* (bad key, quota spent) instead of a generic failure.
+
+    ``errbox``, when given, collects the transport failure's reason so a caller can repeat it rather
+    than reporting a generic silence. Nothing is scrubbed here — see _safe_reason at the call site."""
     try:
         req = urllib.request.Request(url, headers=headers or {})
         with opener.open(req, timeout=TIMEOUT if timeout is None else timeout) as r:
@@ -821,8 +900,14 @@ def _get_json(url: str, opener, headers: dict | None = None,
         try:
             return json.loads(e.read().decode("utf-8", "replace"))
         except Exception:
+            # A proxy refusal can arrive as an HTTPError rather than a URLError; dropping it here
+            # would silently lose the one sentence that explains the failure.
+            if errbox is not None:
+                errbox.append(_why(e))
             return None
-    except Exception:
+    except Exception as e:
+        if errbox is not None:
+            errbox.append(_why(e))
         return None
 
 
@@ -889,11 +974,12 @@ def lookup_exit_v4(opener, deadline: float | None = None) -> str | None:
     return None
 
 
-def lookup_geo(opener, ip: str | None = None, timeout: float | None = None) -> dict:
+def lookup_geo(opener, ip: str | None = None, timeout: float | None = None,
+               errbox: list | None = None) -> dict:
     """ISP/location/timezone for ``ip``, or for this connection's own exit IP when ``ip`` is None
     (in which case it also discovers what that exit IP is, as seen through ``opener``'s proxy)."""
     o = _get_json(f"https://ipwho.is/{urllib.parse.quote(ip, safe='') if ip else ''}", opener,
-                  timeout=timeout)
+                  timeout=timeout, errbox=errbox)
     if not o or not o.get("success"):
         return {}
     where = ", ".join(x for x in (o.get("city"), o.get("region"), o.get("country")) if x)
@@ -1290,8 +1376,12 @@ def check(proxy: str | None = None, ip: str | None = None,
     # round trip a real request would pay. ponytail: one timed HTTPS round trip, not a separate TCP dial —
     # it measures usable latency (connect + TLS + fetch) rather than a raw handshake. Upgrade path if the
     # split ever matters: time the CONNECT separately to tell "proxy slow" from "upstream slow".
+    # Every probe drops its failure reason in here. The FIRST attempt is the one most likely to carry
+    # the vendor's own sentence ("503 No exit node"); the retry after it frequently just times out, so
+    # collecting only the last one would trade the useful answer for a generic one.
+    probe_errs: list[str] = []
     started = time.monotonic()
-    geo = lookup_geo(opener, ip)
+    geo = lookup_geo(opener, ip, errbox=probe_errs)
     latency_ms = int((time.monotonic() - started) * 1000)
     # A SOCKS proxy addressed as HTTP just reads DEAD — indistinguishable from one that is genuinely down.
     # MEASURED 2026-08-06: an entire vendor's list (lightningproxies, SOCKS5 on :1080) reported DEAD until
@@ -1306,7 +1396,7 @@ def check(proxy: str | None = None, ip: str | None = None,
         try:
             alt_opener = _opener(proxy, alt)
             started = time.monotonic()
-            geo = lookup_geo(alt_opener, ip)
+            geo = lookup_geo(alt_opener, ip, errbox=probe_errs)
             latency_ms = int((time.monotonic() - started) * 1000)
         except ValueError:
             geo = {}                    # the line doesn't even parse as the other family — not a retry case
@@ -1324,7 +1414,7 @@ def check(proxy: str | None = None, ip: str | None = None,
     # burn the timeout.
     if proxy and not geo:
         started = time.monotonic()
-        geo = lookup_geo(opener, ip, timeout=SLOW_TIMEOUT)
+        geo = lookup_geo(opener, ip, timeout=SLOW_TIMEOUT, errbox=probe_errs)
         latency_ms = int((time.monotonic() - started) * 1000)
         if geo:
             rep["notes"].append(
@@ -1361,11 +1451,23 @@ def check(proxy: str | None = None, ip: str | None = None,
             # with an explicit scheme. Both statements read as evidence and neither was measured.
             used = (rep.get("proxy_scheme_used") or _effective_scheme(proxy, proxy_scheme)).upper()
             tried_both = retried_scheme is not None or "://" not in str(proxy)
+            # If the proxy SAID why, repeat it. A vendor that answers CONNECT with "503 No exit node"
+            # has told us the account is fine and its pool is empty — reporting that as a bare "it is
+            # down, or the credentials are wrong" sends the user to re-check the one thing that was
+            # never broken. Only fall back to the list of possibilities when nothing was said.
+            spoken = next((e for e in probe_errs
+                           if e and not re.search(r"(?i)tim(ed )?out|timeout", e)), "")
+            reason = _safe_reason(spoken, proxy)
+            if reason:
+                rep["proxy_error"] = reason
+                why = "the proxy answered: " + reason
+            else:
+                why = (f"nothing came back within {TIMEOUT}s, then nothing within {SLOW_TIMEOUT}s on a "
+                       "retry. It is down, unreachable, out of plan quota, or the credentials are wrong.")
             rep["notes"].append(
                 f"Proxy: no answer as {used}"
                 + (", and the other transport did not answer either" if tried_both else "")
-                + f" — nothing came back within {TIMEOUT}s, then nothing within {SLOW_TIMEOUT}s on a "
-                  "retry. It is down, unreachable, out of plan quota, or the credentials are wrong.")
+                + " — " + why)
     if not rep.get("ip"):
         if not ip:
             # EVERY return carries a verdict. This one used to return a report with no `verdict` key at
@@ -2409,6 +2511,10 @@ function bulkDetail(x){
     chip('whole line',x.line));
   t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
   t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
+  // What the proxy SAID, when it said anything. "503 No exit node" means the credentials are fine and
+  // the vendor's pool is empty — a completely different action from "your proxy is down", and the row
+  // is the difference between the user re-checking their password and going to the vendor.
+  t+=dTxt('Proxy said',r.proxy_error||null);
   if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
     t+=dTxt('Latency',add+' ms added by the proxy · '+(add<400?'fast':add<1200?'usable':'slow'));
     if(r.direct_ms!=null)

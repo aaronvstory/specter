@@ -894,6 +894,10 @@ function bulkDetail(x){
     chip('whole line',x.line));
   t+=dTxt('Transport',(p.scheme||$('#ptype').value).toUpperCase());
   t+=dTxt('Reachable',r.proxy_alive===false?'no — no route out':r.ip?'yes':null);
+  // What the proxy SAID, when it said anything. "503 No exit node" means the credentials are fine and
+  // the vendor's pool is empty — a completely different action from "your proxy is down", and the row
+  // is the difference between the user re-checking their password and going to the vendor.
+  t+=dTxt('Proxy said',r.proxy_error||null);
   if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
     t+=dTxt('Latency',add+' ms added by the proxy · '+(add<400?'fast':add<1200?'usable':'slow'));
     if(r.direct_ms!=null)

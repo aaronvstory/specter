@@ -3,6 +3,31 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.33.3] - 2026-08-08
+
+### Fixed
+- **When a proxy says WHY it refused, the report repeats it instead of guessing.** MEASURED 2026-08-08:
+  proxy-seller answered CONNECT with `503 No exit node` - the credentials were fine and the vendor simply
+  had no residential exit to hand out. Ten rows rendered a bare DEAD and guessed "it is down, unreachable,
+  or the credentials are wrong", sending the user to re-check the one thing that was never broken. The
+  reason now lands in `proxy_error` and a "Proxy said" row in the detail card. The guess is only offered
+  when nothing was actually said.
+- **The scrub happens BEFORE the length cap, and covers the disguises.** Both found by the gauntlet and
+  reproduced. Capping first could slice a secret in half, and a half-secret is exactly what a literal
+  replace can no longer match - the trim created the leak it looked like it prevented. And a literal
+  replace missed the same secret percent-encoded or base64'd into `Proxy-Authorization: Basic ...`,
+  which is how urllib actually sends it. Six vectors are now pinned by a test, plus a catch-all that
+  redacts whatever follows any auth scheme.
+- **A timeout is no longer reported as "the proxy answered".** `_why` turns urllib's TimeoutError into
+  the truthy string "timed out", which rendered a sentence that contradicts itself for the most common
+  failure mode there is. Timeout-shaped reasons fall through to the honest silence wording.
+- **Every probe records its reason, not just the slow retry.** The FIRST attempt is the one most likely
+  to carry the vendor's own sentence; the retry after it frequently just times out.
+- **The failure reason is scrubbed of credentials before it goes anywhere.** The error branch is the one
+  that leaks: a proxy library is free to put `user:pass@host` in the message it raises, and that string
+  ends up in a report the user copies. Username and password are replaced, longest-first so a password
+  containing the username cannot leave a fragment behind. Pinned by a test.
+
 ## [0.33.2] - 2026-08-07
 
 ### Fixed
