@@ -838,9 +838,19 @@ def _safe_reason(reason: str, proxy) -> str:
         p = None
     if p:
         for secret in _secret_forms(p):
-            reason = reason.replace(secret, "***")
-    # Belt and braces for the encoding we did NOT predict: whatever follows an auth scheme is a
-    # credential by definition, so redact it without having to recognise it first.
+            if len(secret) >= 4:
+                reason = reason.replace(secret, "***")
+            else:
+                # A one- or two-character credential is still a credential, but a blind replace of it
+                # rewrites every innocent occurrence of those letters and shreds the message —
+                # "Proxy-Authorization" became "Proxy-A***thorization" for a username of "u". Require a
+                # word boundary so the standalone secret is still redacted and prose survives.
+                reason = re.sub(rf"\b{re.escape(secret)}\b", "***", reason)
+    # Whatever follows an Authorization header is a credential BY DEFINITION, whatever scheme it names.
+    # Redacting only basic/bearer/digest left `Proxy-Authorization: Custom <token>` in the clear. Take
+    # the value to end of line: losing a few words of trailing prose is cheaper than leaking a token.
+    reason = re.sub(r"(?im)^(.*?(?:proxy-)?authorization\s*:\s*).*$", r"\1***", reason)
+    # ...and the same for a bare scheme with no header name around it.
     reason = re.sub(r"(?i)\b(basic|bearer|digest)\s+\S+", r"\1 ***", reason)
     return reason[:160]
 

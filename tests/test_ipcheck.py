@@ -1023,6 +1023,30 @@ def test_a_credential_survives_no_disguise_and_no_truncation():
         == "Tunnel connection failed: 503 No exit node"
 
 
+def test_an_authorization_header_is_redacted_whatever_scheme_it_names():
+    # From the PR bots. Redacting only basic/bearer/digest left `Proxy-Authorization: Custom <token>`
+    # in the clear — the scheme is the attacker's choice, so keying on it is the wrong invariant.
+    # Whatever follows an Authorization header is a credential BY DEFINITION.
+    out = ipcheck._safe_reason("Proxy-Authorization: Custom secret-token-here rejected", "h:1080:u:p")
+    assert "secret-token-here" not in out
+    assert ipcheck._safe_reason("Authorization: Weird dG9tOnBhc3M=", "h:1080:u:p") \
+        == "Authorization: ***"
+    # ...and a reason with no credential in it is left completely alone.
+    assert ipcheck._safe_reason("Tunnel connection failed: 503 No exit node", "h:1080:u:p") \
+        == "Tunnel connection failed: 503 No exit node"
+
+
+def test_a_very_short_credential_does_not_shred_the_whole_message():
+    # A one-character username made a blind str.replace rewrite every innocent occurrence of that
+    # letter: "Proxy-Authorization" rendered as "Proxy-A***thorization", which is unreadable and tells
+    # the user nothing. Short secrets are matched on word boundaries instead — still redacted when they
+    # stand alone, harmless inside ordinary words.
+    out = ipcheck._safe_reason("Proxy-Authorization header rejected by u", "h:1080:u:p")
+    assert "Proxy-Authorization" in out          # the prose survives intact...
+    assert not out.endswith(" u")                # ...and the standalone credential is still redacted
+    assert "***" in out
+
+
 def test_a_timeout_is_never_reported_as_the_proxy_answering(monkeypatch):
     # A timeout is OUR observation, not the proxy speaking. `_why` turns urllib's TimeoutError into the
     # truthy string "timed out", which would have set proxy_error and rendered "the proxy answered:
