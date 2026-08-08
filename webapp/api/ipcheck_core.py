@@ -2730,7 +2730,7 @@ $('#bulkgo').onclick=async()=>{
      get:x=>num(x.r&&(x.r.flags||[]).length), cell:x=>detectedCell(x.r)},
     {k:'fraud', h:'IPQS', ttl:'IPQualityScore fraud score, 0-100', get:x=>num(x.r&&x.r.fraud_score), drop:1,
      cell:x=>x.r&&x.r.fraud_score!=null
-       ?`<span class="c-${band(x.r.fraud_score)}">${x.r.fraud_score}</span>`
+       ?`<span class="c-${band(x.r.fraud_score)}">${esc(x.r.fraud_score)}</span>`
        :'<span class="dim nodata" title="No IPQualityScore key — not measured">n/k</span>'},
     {k:'gii', h:'GII', ttl:'getIPIntel proxy/hosting probability, 0-1', drop:1,
      get:x=>num(x.r&&x.r.getipintel_score),
@@ -2745,7 +2745,7 @@ $('#bulkgo').onclick=async()=>{
      get:x=>num(x.r&&x.r.abuse_confidence),
      cell:x=>x.r&&x.r.abuse_confidence!=null
        ?`<span class="c-${x.r.abuse_confidence>=50?'dirty':x.r.abuse_confidence>=10?'suspect':'clean'}">`+
-        x.r.abuse_confidence+`%</span>`
+        esc(x.r.abuse_confidence)+`%</span>`
        :'<span class="dim nodata" title="No AbuseIPDB key — not measured">n/k</span>'},
     // Scamalytics: the OVERALL score + band, and nothing more. Sorting by it is offered because the user
     // asked to see it, but the colour never goes green and the band sits on the sub-line — the score
