@@ -8,7 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ### Fixed
 - **The verdict reason is on the pill's tooltip, not printed under it.** Inline it was prose in a
   scanning table: Verdict became the second-widest column (200px) and ellipsised to unreadable stubs
-  (`no proxy flaâ¦`). For a CLEAN row it was also a double negative duplicating the Flags cell beside
+  (`no proxy fla…`). For a CLEAN row it was also a double negative duplicating the Flags cell beside
   it - "no proxy flags" next to a Flags column already reading "none". Now 100px; the full text is one
   hover away and spelled out in the row's own BECAUSE line. (Reverts the inline form added in 0.33.4.)
 - **Columns no row could fill are collapsed, and named.** A residential exit has no datacenter/Tor/
@@ -20,7 +20,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [0.33.5] - 2026-08-08
 
 ### Fixed
-- Mojibake in the 0.33.4 notes (`ÃÂ·` for `Â·`), from a double-encoded bytes literal.
+- Mojibake in the 0.33.4 notes (`Â·` for `·`), from a double-encoded bytes literal.
 
 ### Changed
 - **The page's flag abbreviations are GENERATED from `IPQS_FLAGS`, not hand-mirrored in JavaScript.**

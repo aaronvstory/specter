@@ -2015,7 +2015,7 @@ def test_the_pages_signal_codes_are_generated_from_IPQS_FLAGS():
     assert "__SIGNAL_CODES__" not in ipcheck.PAGE
 
 
-def test_a_bulk_run_completes_in_a_real_browser_without_an_uncaught_error():
+def test_a_bulk_run_completes_in_a_real_browser_without_an_uncaught_error(tmp_path):
     """Drive an actual bulk run in Chrome and assert no handler threw and the rows rendered.
 
     `test_the_generated_page_runs_without_a_top_level_error` only proves the script reached its LAST
@@ -2061,14 +2061,15 @@ addEventListener('load',()=>setTimeout(()=>{
       cols:[...document.querySelectorAll('table.bulk thead th')].map(e=>e.textContent.trim()).filter(Boolean),
       note:(document.querySelector('.note')||{}).textContent||''});},2000);},150));
 </script>"""
-    tmp = root / "webapp" / "_bulkrun_probe.html"
+    # pytest's tmp_path, not a fixed name inside webapp/: two parallel runs would race on the same
+    # file, and a crashed earlier run's leftover would be silently overwritten — or, worse, a real
+    # file of that name deleted. The page inlines everything it needs, so it does not care where it
+    # sits; its icon/manifest requests just 404, exactly as they would offline.
+    tmp = tmp_path / "bulkrun_probe.html"
     tmp.write_text(harness + (root / "webapp" / "index.html").read_text("utf-8"), encoding="utf-8")
-    try:
-        r = subprocess.run([chrome, "--headless", "--disable-gpu", "--no-sandbox",
-                            "--virtual-time-budget=9000", "--dump-dom", tmp.as_uri()],
-                           capture_output=True, text=True, timeout=180)
-    finally:
-        tmp.unlink(missing_ok=True)
+    r = subprocess.run([chrome, "--headless", "--disable-gpu", "--no-sandbox",
+                        "--virtual-time-budget=9000", "--dump-dom", tmp.as_uri()],
+                       capture_output=True, text=True, timeout=180)
     m = re.search(r"<title>RESULT(.*?)</title>", r.stdout, re.S)
     assert m, "the bulk run never reported — the page or the click handler died before it could"
     got = json.loads(m.group(1).replace("&quot;", chr(34)).replace("&amp;", "&"))
