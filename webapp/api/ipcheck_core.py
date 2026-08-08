@@ -1662,7 +1662,7 @@ body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
     radial-gradient(1200px 500px at 78% -8%, color-mix(in srgb,var(--accent) 8%,transparent), transparent 70%),
     var(--bg);
   -webkit-font-smoothing:antialiased;}
-.wrap{max-width:760px;margin:0 auto;padding:30px 20px 72px}
+.wrap{max-width:880px;margin:0 auto;padding:30px 20px 72px}
 .top{display:flex;align-items:center;justify-content:space-between;margin:0 0 20px}
 .brand{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--soft)}
 .pulse{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent);animation:pulse 2.4s infinite}
@@ -1733,7 +1733,7 @@ details[open] summary::before{content:"− "}
    it; anything left over on a final row grows too, rather than sitting at a quarter width beside dead
    space. min-width:0 is required — a flex item otherwise floors at its CONTENT width, which both widens
    the tile with the longest caption and stops that caption's ellipsis from ever engaging. */
-.tile{flex:1 1 120px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+.tile{flex:1 1 min(190px, calc(50% - 6px));min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
 .tile em{font-style:normal;display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
 .tile strong{display:block;font:700 27px/1 var(--mono);margin:9px 0 5px}
 /* One line, always. Tiles share a grid row, so a caption that wraps to three lines makes EVERY tile that
@@ -1794,7 +1794,7 @@ svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
 .rw{display:flex;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
 .rw:first-child{border-top:0}
 .rw i{font-style:normal;color:var(--dim);width:118px;flex:none;font:600 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
-.rw div{font-family:var(--mono);word-break:break-all}
+.rw div{font-family:var(--mono);overflow-wrap:anywhere;word-break:normal}
 .note{color:var(--soft);font-size:12.5px;padding:4px 0}.note+.note{border-top:1px solid var(--line);margin-top:2px;padding-top:8px}
 textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
   padding:11px 12px;font:13px/1.5 var(--mono);resize:vertical;margin-top:12px}
@@ -1807,7 +1807,7 @@ textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px colo
    right edge of the page. So `.bulkwide` is a plain outer wrapper and `.blk` stays on the inner panel.
    The 48px gutter is not decoration either — 100vw INCLUDES the vertical scrollbar, so a smaller inset
    makes the panel wider than the viewport and the whole page picks up a horizontal scrollbar. */
-.bulkwide{width:min(1680px,calc(100vw - 48px));margin-left:50%;transform:translateX(-50%)}
+.bulkwide{width:min(1440px,calc(100vw - 48px));margin-left:50%;transform:translateX(-50%)}
 /* Sortable headers — comparing a batch means reordering it by whichever signal you care about. */
 table.bulk th.s{cursor:pointer;user-select:none;white-space:nowrap}
 table.bulk th.s:hover{color:var(--accent)}
@@ -1837,6 +1837,10 @@ table.bulk th.s[data-dir="-1"]::after{content:"▼"}
    column with it. */
 table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
 .sub{display:block;font-size:9.5px;line-height:1.35;color:var(--dim);letter-spacing:.02em}
+/* A verdict's reason is prose, and prose has no natural width — unbounded it made Verdict the second
+   widest column in the table and pushed the measurements off to the right. Same cap-and-hover idiom as
+   the exit IP: two lines of reason is enough to recognise WHY, the rest is on the title. */
+table.bulk td .sub{max-width:210px;overflow:hidden;text-overflow:ellipsis}
 /* Detected-as codes: three letters each, full meaning on hover. Spelling them out
    ("VPN Proxy Recent abuse Bot") made this the widest column on the table for the least information. */
 .fx{display:inline-block;padding:2px 4px;margin-right:3px;border-radius:4px;font-size:10px;font-weight:700;
@@ -1920,6 +1924,10 @@ table.bulk td{padding:9px 7px;border-bottom:1px solid var(--line);vertical-align
 table.bulk tr:last-child td{border-bottom:0}
 table.bulk tbody tr:hover td{background:var(--panel2)}
 .vpill{display:inline-block;padding:3px 9px;border-radius:6px;font:600 10px/1.5 var(--mono);letter-spacing:.04em}
+.v-queued-p{background:color-mix(in srgb,var(--dim) 16%,transparent);color:var(--dim)}
+/* A running row's pill breathes, so "still going" is visible without reading the clock beside it. */
+.vpill.live{animation:livepulse 1.4s ease-in-out infinite}
+@keyframes livepulse{0%,100%{opacity:1}50%{opacity:.45}}
 .v-dirty-p{background:color-mix(in srgb,var(--dirty) 16%,transparent);color:var(--dirty)}
 .v-suspect-p{background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect)}
 .v-clean-p{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean)}
@@ -2060,6 +2068,37 @@ async function boot(){
   }
 }
 const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+// ONE vocabulary for IPQS's flags, shared by the bulk table and the single-check card. It used to live
+// inside the bulk handler, so the single view fell back to printing the raw API value and the same signal
+// read three different ways across the page — `PRX` in a table cell, `proxy` on a chip, `bot_status` on
+// another. A reader should not have to learn that those are the same thing.
+//
+// The underscore in the pattern is load-bearing: IPQS sends `recent_abuse`, and the old `/recent abuse/`
+// (space) never matched it, so the table silently printed the raw key next to properly abbreviated
+// neighbours. A code table that can't name a signal must be obvious about it, not quietly inconsistent.
+const SIGNALS=[[/tor/i,'TOR','Tor'],[/vpn/i,'VPN','VPN'],[/proxy/i,'PRX','Proxy'],
+               [/recent[ _]?abuse|frequent/i,'ABU','Recent abuse'],[/bot/i,'BOT','Bot'],
+               [/crawler|spider/i,'CRW','Crawler'],[/scanner/i,'SCN','Security scanner'],
+               [/high.risk/i,'ATK','High-risk attacks'],
+               // Found by test_every_ipqs_flag_label_has_a_short_code: these two are in IPQS_FLAGS and had
+               // no abbreviation, so they rendered as full text wedged between three-letter neighbours.
+               [/shared/i,'SHR','Shared connection'],[/mobile/i,'MOB','Mobile']];
+// [shortCode, fullName] for a raw flag key. An unknown flag keeps its own text rather than being dropped —
+// a code table must never silently swallow a signal it has no abbreviation for.
+const signalOf=s=>{const m=SIGNALS.find(([re])=>re.test(s));
+  return m?[m[1],m[2]]:[String(s),String(s)];};
+
+// How long THIS row has been waiting on its proxy. Seconds, because a bulk check of cold residential
+// exits runs 5-20s a row and the whole point is being able to see which one is dragging.
+const elapsed=x=>x.startedAt?((Date.now()-x.startedAt)/1000).toFixed(0)+'s':'';
+// One honest line about the run: how many are done, how many are in flight, how long it has taken.
+const runSummary=rows=>{
+  const done=rows.filter(x=>!x.busy).length, running=rows.filter(x=>x.busy&&x.startedAt).length;
+  const started=rows.map(x=>x.startedAt).filter(Boolean);
+  const secs=started.length?((Date.now()-Math.min(...started))/1000).toFixed(0):0;
+  return done===rows.length?`${done} checked in ${secs}s`
+    :`${done}/${rows.length} checked · ${running} running · ${secs}s`;};
+
 const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
 const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
 // Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score
@@ -2306,8 +2345,10 @@ function render(r){
   // Every caption is ONE short line — tiles share a grid row, so a caption that wraps makes every tile tall.
   // A clipped caption stays readable: tile() hangs the full text on the title, and the detail breakdown below
   // lists it in full. Never truncate without leaving a way to read the rest.
-  const tile=(label,value,cap,colour,small)=>
-    `<div class=tile title="${esc(label)}: ${esc(cap)}"><em>${esc(label)}</em>`+
+  // `full` overrides the hover text when the visible caption is a shortened form of it — a caption that
+  // ellipsises must still have somewhere to say the whole thing.
+  const tile=(label,value,cap,colour,small,full)=>
+    `<div class=tile title="${esc(label)}: ${esc(full||cap)}"><em>${esc(label)}</em>`+
     `<strong style="${small?'font-size:20px;':''}color:var(--${colour})">${esc(value)}</strong>`+
     `<small>${esc(cap)}</small></div>`;
   // Latency leads when a proxy was used — a proxy that works but takes 4s is a different problem from a
@@ -2319,8 +2360,10 @@ function render(r){
   if(r.proxy_ms!=null){const add=r.proxy_added_ms!=null?r.proxy_added_ms:r.proxy_ms;
     tiles+=tile('Latency', add+' ms',
       (add<400?'fast':add<1200?'usable':'slow')
-      + (r.direct_ms!=null?` · ${r.proxy_ms} ms total, ${r.direct_ms} ms without it`:''),
-      add<400?'clean':add<1200?'suspect':'dirty', true);}
+      + (r.direct_ms!=null?` · ${r.proxy_ms} ms total`:''),
+      add<400?'clean':add<1200?'suspect':'dirty', true,
+      r.direct_ms!=null?`${add} ms added by the proxy · ${r.proxy_ms} ms total round trip · `
+        +`${r.direct_ms} ms without it`:null);}
   if(r.connection_class)
     tiles+=tile('Exit type', r.connection_class==='tor'?'Tor'
         :r.connection_class[0].toUpperCase()+r.connection_class.slice(1),
@@ -2347,7 +2390,10 @@ function render(r){
   t+=blk(`<div class=tiles>${tiles}</div>`);
 
   if(r.fraud_score!=null){
-    const chips=(r.flags||[]).length?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
+    // Same SIGNALS table the bulk column uses, spelled out here because there is room for it. The raw
+    // API key stays on the hover so nothing is hidden from someone cross-checking against IPQS.
+    const chips=(r.flags||[]).length
+      ?r.flags.map(f=>`<span class=chip title="${esc(f)}">${esc(signalOf(f)[1])}</span>`).join('')
       :'<span class="chip ok">Not flagged as proxy or VPN</span>';
     t+=blk(`<div class="panel flagbar"><div class=lbl>Flagged as</div><div class=chips>${chips}</div></div>`);
   }
@@ -2554,8 +2600,11 @@ function bulkDetail(x){
     ?`<span class="c-${band(r.fraud_score)}">${r.fraud_score}</span> · ${esc(bandWord(r.fraud_score))}`+
      (r.ipqs_strictness!=null?` · IPQS strictness ${esc(r.ipqs_strictness)}`:'')
     :'<span class=dim>no IPQualityScore key — not measured</span>');
+  // Same SIGNALS vocabulary as the table cell above it and the single-check card. This row was the third
+  // spelling of one thing — the cell said `PRX ABU BOT`, the card said `Proxy Recent abuse Bot`, and this
+  // said `proxy · recent_abuse · bot_status`. The raw API key stays on the hover.
   t+=dRow('Detected as',(r.flags||[]).length
-    ?esc(r.flags.join(' · '))
+    ?r.flags.map(f=>`<span title="${esc(f)}">${esc(signalOf(f)[1])}</span>`).join(' · ')
     :(r.fraud_score!=null?'<span class=c-clean>no proxy/VPN/Tor flag</span>':'<span class=dim>not measured</span>'));
   t+=dRow('getIPIntel',r.getipintel_score!=null
     ?`<span class="c-${r.getipintel_score>=0.99?'dirty':r.getipintel_score>=0.90?'suspect':'clean'}">`+
@@ -2643,7 +2692,11 @@ $('#bulkgo').onclick=async()=>{
              (x.parts.port?`<span class=pxp>:${esc(x.parts.port)}</span>`:'')+`</span>`},
     {k:'status', h:'Status',
      get:x=>x.busy?3:(x.r&&(x.r.error||(!x.isIp&&x.r.proxy_alive===false)))?0:1,
-     cell:x=>x.busy?'<span class="vpill v-unknown-p">…</span>'
+     cell:x=>x.busy
+       ?(x.startedAt
+         ?`<span class="vpill v-unknown-p live">checking</span>`+
+          `<span class=sub data-elapsed="${x.i}">${elapsed(x)}</span>`
+         :'<span class="vpill v-queued-p" title="Waiting for a free slot — 4 checks run at a time">queued</span>')
        :(x.r.error||(!x.isIp&&x.r.proxy_alive===false))?'<span class="vpill v-dirty-p">DEAD</span>'
        :x.isIp?'<span class="vpill v-unknown-p" title="Checked directly as an IP, not through a proxy">IP</span>'
        :'<span class="vpill v-clean-p">UP</span>'},
@@ -2660,7 +2713,13 @@ $('#bulkgo').onclick=async()=>{
     {k:'verdict', h:'Verdict',
      get:x=>{const m={dirty:0,suspect:1,unknown:2,clean:3};const v=x.r&&x.r.verdict;
              return v in m?m[v]:4;},
-     cell:x=>x.busy?'<span class="vpill v-unknown-p">…</span>':vpill(x.r.error?'unknown':x.r.verdict)},
+     cell:x=>{if(x.busy)return '<span class="vpill v-unknown-p">…</span>';
+       const why=x.r.error||(x.r.verdict_factors||[]).join(' · ')||x.r.verdict_reason||'';
+       return vpill(x.r.error?'unknown':x.r.verdict)+
+         // The single-check card names the evidence behind its verdict; the table used to show the
+         // conclusion alone, which is the one thing a reader can't act on. Same data, one line, full
+         // text on hover — the table's own footnote already promises hover-for-the-rest.
+         (why?`<span class=sub title="${esc(why)}">${esc(why)}</span>`:'');}},
     {k:'ip', h:'Exit IP', get:x=>(x.r&&x.r.ip)||'',
      cell:x=>x.r&&x.r.ip
        ?flagImg(x.r.country_code||'')+`<span class=ipv title="${esc(x.r.ip)}">${esc(x.r.ip)}</span>`+
@@ -2743,12 +2802,8 @@ $('#bulkgo').onclick=async()=>{
       (pol?`<span class=sub title="${esc((r.policy_lists||[]).join(', '))}">+${pol} policy</span>`:'');
   }
 
-  // IPQS's flags as three-letter codes. Spelling them out ("VPN Proxy Recent abuse Bot") made this the
-  // widest column on the table for the least information; each code carries its full meaning on hover.
-  const FXC=[[/tor/i,'TOR','Tor'],[/vpn/i,'VPN','VPN'],[/proxy/i,'PRX','Proxy'],
-             [/recent abuse|frequent/i,'ABU','Recent abuse'],[/bot/i,'BOT','Bot'],
-             [/crawler|spider/i,'CRW','Crawler'],[/scanner/i,'SCN','Security scanner'],
-             [/high.risk/i,'ATK','High-risk attacks']];
+  // IPQS's flags as three-letter codes (SIGNALS, shared with the single-check card). Spelling them out
+  // made this the widest column on the table for the least information; the full name is on the hover.
 
   // "Is it detectable as a proxy at all" — the question the fraud score can't answer, because it saturates.
   function detectedCell(r){
@@ -2760,11 +2815,9 @@ $('#bulkgo').onclick=async()=>{
     // Three codes, then "+N" — six flags on a row made this the widest column on the table. The overflow
     // count is never silent: the full list is on the cell, and the detail row spells every one of them out.
     const CAPN=3;
-    const codes=f.map(s=>{const m=FXC.find(([re])=>re.test(s));
-      // An unmatched flag keeps its own text rather than being dropped — a code table must never silently
-      // swallow a signal it has no abbreviation for.
-      return `<span class=fx title="${esc(s)}">${esc(m?m[1]:s)}</span>`;});
-    return `<span title="${esc(f.join(' · '))}">`+codes.slice(0,CAPN).join('')+
+    const codes=f.map(s=>{const [code,full]=signalOf(s);
+      return `<span class=fx title="${esc(full)}">${esc(code)}</span>`;});
+    return `<span title="${esc(f.map(x=>signalOf(x)[1]).join(' · '))}">`+codes.slice(0,CAPN).join('')+
       (codes.length>CAPN?`<span class=fx>+${codes.length-CAPN}</span>`:'')+`</span>`;
   }
 
@@ -2797,7 +2850,7 @@ $('#bulkgo').onclick=async()=>{
     const dead=rows.filter(x=>!x.busy&&x.r&&(x.r.proxy_alive===false||x.r.error)).length;
     const live=rows.filter(x=>x.r&&x.r.proxy_ms!=null).map(x=>x.r.proxy_ms).sort((a,b)=>a-b);
     let h=`<div class=bulkwide><div class="blk panel"><div class=bsum>`+
-      `<span>Checked <b>${done}/${rows.length}</b></span>`+
+      `<span data-runsum>${esc(runSummary(rows))}</span>`+
       (tally('clean')?`<span class=s-clean>Clean <b>${tally('clean')}</b></span>`:'')+
       (tally('suspect')?`<span class=s-suspect>Suspect <b>${tally('suspect')}</b></span>`:'')+
       (tally('dirty')?`<span class=s-dirty>Dirty <b>${tally('dirty')}</b></span>`:'')+
@@ -2813,25 +2866,48 @@ $('#bulkgo').onclick=async()=>{
         `aria-expanded="${x.open}" title="Show every field for this proxy">`+
         `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" `+
         `stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></td>`+
-        COLS.map(c=>`<td${c.k==='isp'||c.k==='loc'?' class=cap':''}>${c.cell(x)}</td>`).join('')+`</tr>`;
+        // A row that has not been measured yet must not render a REASON for having no value. Every
+        // score cell falls back to "n/k = no key" when its number is missing, which is true for a
+        // finished row and a lie for one still in flight — the key is fine, the check simply has not
+        // happened. Guarded once here rather than in each of the ten cells that could get it wrong.
+        COLS.map(c=>`<td${c.k==='isp'||c.k==='loc'?' class=cap':''}>`+
+          ((x.busy&&c.k!=='proxy'&&c.k!=='status')?'<span class=dim>·</span>':c.cell(x))+
+          `</td>`).join('')+`</tr>`;
       if(x.open)h+=`<tr class=detrow><td colspan="${COLS.length+1}">${bulkDetail(x)}</td></tr>`;
     }
     h+=`</tbody></table></div><p class=note style="padding:10px 2px 0">`+
       `Click a heading to sort · the chevron opens a proxy's full detail · hover a heading, code or `+
-      `truncated value for the full text · n/k = no key, n/a = the source didn't answer — neither is clean`+
+      `truncated value for the full text · a dot = not checked yet, n/k = no key, n/a = the source `+
+      `didn't answer — none of the three is clean`+
       `</p></div></div>`;
     out.innerHTML=h;
   };
   bulk={rows, draw, sort:k=>{sortDir=(sortKey===k?-sortDir:1);sortKey=k;draw();}};
   draw();
   let idx=0; const CAP=4;
+  // Tick the elapsed counters WITHOUT redrawing: draw() rebuilds the whole table, which would collapse
+  // any detail row the user has open and fight their sort every 500ms. Only the timers change, so only
+  // the timers are touched.
+  const tick=setInterval(()=>{
+    for(const x of rows){
+      if(!x.busy||!x.startedAt)continue;
+      const el=out.querySelector(`[data-elapsed="${x.i}"]`);
+      if(el)el.textContent=elapsed(x);
+    }
+    const sum=out.querySelector('[data-runsum]');
+    if(sum)sum.textContent=runSummary(rows);
+  },500);
   const worker=async()=>{ while(idx<rows.length){const x=rows[idx++];
+    x.startedAt=Date.now(); draw();          // "queued" -> "checking", with its own clock running
     try{const resp=await fetch(API,{method:'POST',body:bulkBody(x.line)}); x.r=await resp.json();}
     catch(e){x.r={error:String(e)};}
     x.busy=false; draw();
   }};
-  await Promise.all(Array.from({length:Math.min(CAP,rows.length)},worker));
-  b.disabled=false; b.textContent='Check all';
+  // finally, not a trailing statement: if anything in the run throws (a draw() bug, a JSON parse), the
+  // interval would otherwise tick forever against a table nobody is updating, and the button would stay
+  // disabled with no way back short of a reload.
+  try{ await Promise.all(Array.from({length:Math.min(CAP,rows.length)},worker)); }
+  finally{ clearInterval(tick); draw(); b.disabled=false; b.textContent='Check all'; }
 };
 
 // LAST statement in the script, and the tripwire for a whole class of failure: if ANY top-level statement
