@@ -214,10 +214,9 @@ table.bulk th.s[data-dir="-1"]::after{content:"▼"}
    column with it. */
 table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
 .sub{display:block;font-size:9.5px;line-height:1.35;color:var(--dim);letter-spacing:.02em}
-/* A verdict's reason is prose, and prose has no natural width — unbounded it made Verdict the second
-   widest column in the table and pushed the measurements off to the right. Same cap-and-hover idiom as
-   the exit IP: two lines of reason is enough to recognise WHY, the rest is on the title. */
-table.bulk td .sub{max-width:210px;overflow:hidden;text-overflow:ellipsis}
+/* Sub-lines are short by nature ("1128 total", "low"). The cap is a backstop so a long one can never
+   widen its column the way the verdict reason did before it moved to the pill's title. */
+table.bulk td .sub{max-width:120px;overflow:hidden;text-overflow:ellipsis}
 /* Detected-as codes: three letters each, full meaning on hover. Spelling them out
    ("VPN Proxy Recent abuse Bot") made this the widest column on the table for the least information. */
 .fx{display:inline-block;padding:2px 4px;margin-right:3px;border-radius:4px;font-size:10px;font-weight:700;
@@ -357,28 +356,17 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
 </div>
 <script>
 const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-// ONE vocabulary for IPQS's flags, shared by the bulk table and the single-check card. It used to live
-// inside the bulk handler, so the single view fell back to printing the raw API value and the same signal
-// read three different ways across the page — `PRX` in a table cell, `proxy` on a chip, `bot_status` on
-// another. A reader should not have to learn that those are the same thing.
-//
-// The underscore in the pattern is load-bearing: IPQS sends `recent_abuse`, and the old `/recent abuse/`
-// (space) never matched it, so the table silently printed the raw key next to properly abbreviated
-// neighbours. A code table that can't name a signal must be obvious about it, not quietly inconsistent.
-const SIGNALS=[[/tor/i,'TOR','Tor'],[/vpn/i,'VPN','VPN'],[/proxy/i,'PRX','Proxy'],
-               [/recent[ _]?abuse|frequent/i,'ABU','Recent abuse'],[/bot/i,'BOT','Bot'],
-               [/crawler|spider/i,'CRW','Crawler'],[/scanner/i,'SCN','Security scanner'],
-               [/high.risk/i,'ATK','High-risk attacks'],
-               // Found by test_every_ipqs_flag_label_has_a_short_code: these two are in IPQS_FLAGS and had
-               // no abbreviation, so they rendered as full text wedged between three-letter neighbours.
-               [/shared/i,'SHR','Shared connection'],[/mobile/i,'MOB','Mobile']];
-// [shortCode, fullName] for a raw flag key. An unknown flag keeps its own text rather than being dropped —
-// a code table must never silently swallow a signal it has no abbreviation for.
-const signalOf=s=>{const m=SIGNALS.find(([re])=>re.test(s));
-  return m?[m[1],m[2]]:[String(s),String(s)];};
+// The abbreviation table, GENERATED from IPQS_FLAGS (see SIGNAL_CODES_JS) so there is exactly one
+// place a flag is defined. It used to be a hand-written list of REGEXES living inside the bulk-table
+// handler — unreachable from the other two renderers, and matching by pattern because a hand-mirrored
+// copy cannot know which label it is looking at. Generated, it can: these are exact keys.
+const SIGNAL_CODES={"Bot": "BOT", "Crawler": "CRW", "Frequent abuser": "ABU", "High-risk attacks": "ATK", "Mobile": "MOB", "Proxy": "PRX", "Recent abuse": "ABU", "Security scanner": "SCN", "Shared connection": "SHR", "Tor": "TOR", "Tor (active)": "TOR", "VPN": "VPN", "VPN (active)": "VPN"};
+// The three-letter code for a flag, for the one column too narrow to spell it out. An unknown flag
+// keeps its own text — a code table must never silently swallow a signal it has no abbreviation for.
+const signalCode=s=>SIGNAL_CODES[s]||String(s);
 
-// How long THIS row has been waiting on its proxy. Seconds, because a bulk check of cold residential
-// exits runs 5-20s a row and the whole point is being able to see which one is dragging.
+// How long THIS row has been waiting on its proxy. Seconds, because a bulk run over cold residential
+// exits takes 5-20s a row and the whole point is seeing which one is dragging.
 const elapsed=x=>x.startedAt?((Date.now()-x.startedAt)/1000).toFixed(0)+'s':'';
 // One honest line about the run: how many are done, how many are in flight, how long it has taken.
 const runSummary=rows=>{
@@ -387,6 +375,10 @@ const runSummary=rows=>{
   const secs=started.length?((Date.now()-Math.min(...started))/1000).toFixed(0):0;
   return done===rows.length?`${done} checked in ${secs}s`
     :`${done}/${rows.length} checked · ${running} running · ${secs}s`;};
+
+// The exact opening tag every "not measured" cell renders. Markup, not a bare word, so a VALUE
+// containing the same letters cannot be mistaken for the marker — esc() escapes `<` and `"`.
+const NODATA='<span class="dim nodata"';
 
 const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
 const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';

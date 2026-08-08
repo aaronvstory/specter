@@ -217,10 +217,9 @@ table.bulk th.s[data-dir="-1"]::after{content:"▼"}
    column with it. */
 table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
 .sub{display:block;font-size:9.5px;line-height:1.35;color:var(--dim);letter-spacing:.02em}
-/* A verdict's reason is prose, and prose has no natural width — unbounded it made Verdict the second
-   widest column in the table and pushed the measurements off to the right. Same cap-and-hover idiom as
-   the exit IP: two lines of reason is enough to recognise WHY, the rest is on the title. */
-table.bulk td .sub{max-width:210px;overflow:hidden;text-overflow:ellipsis}
+/* Sub-lines are short by nature ("1128 total", "low"). The cap is a backstop so a long one can never
+   widen its column the way the verdict reason did before it moved to the pill's title. */
+table.bulk td .sub{max-width:120px;overflow:hidden;text-overflow:ellipsis}
 /* Detected-as codes: three letters each, full meaning on hover. Spelling them out
    ("VPN Proxy Recent abuse Bot") made this the widest column on the table for the least information. */
 .fx{display:inline-block;padding:2px 4px;margin-right:3px;border-radius:4px;font-size:10px;font-weight:700;
@@ -451,28 +450,17 @@ async function boot(){
   }
 }
 const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-// ONE vocabulary for IPQS's flags, shared by the bulk table and the single-check card. It used to live
-// inside the bulk handler, so the single view fell back to printing the raw API value and the same signal
-// read three different ways across the page — `PRX` in a table cell, `proxy` on a chip, `bot_status` on
-// another. A reader should not have to learn that those are the same thing.
-//
-// The underscore in the pattern is load-bearing: IPQS sends `recent_abuse`, and the old `/recent abuse/`
-// (space) never matched it, so the table silently printed the raw key next to properly abbreviated
-// neighbours. A code table that can't name a signal must be obvious about it, not quietly inconsistent.
-const SIGNALS=[[/tor/i,'TOR','Tor'],[/vpn/i,'VPN','VPN'],[/proxy/i,'PRX','Proxy'],
-               [/recent[ _]?abuse|frequent/i,'ABU','Recent abuse'],[/bot/i,'BOT','Bot'],
-               [/crawler|spider/i,'CRW','Crawler'],[/scanner/i,'SCN','Security scanner'],
-               [/high.risk/i,'ATK','High-risk attacks'],
-               // Found by test_every_ipqs_flag_label_has_a_short_code: these two are in IPQS_FLAGS and had
-               // no abbreviation, so they rendered as full text wedged between three-letter neighbours.
-               [/shared/i,'SHR','Shared connection'],[/mobile/i,'MOB','Mobile']];
-// [shortCode, fullName] for a raw flag key. An unknown flag keeps its own text rather than being dropped —
-// a code table must never silently swallow a signal it has no abbreviation for.
-const signalOf=s=>{const m=SIGNALS.find(([re])=>re.test(s));
-  return m?[m[1],m[2]]:[String(s),String(s)];};
+// The abbreviation table, GENERATED from IPQS_FLAGS (see SIGNAL_CODES_JS) so there is exactly one
+// place a flag is defined. It used to be a hand-written list of REGEXES living inside the bulk-table
+// handler — unreachable from the other two renderers, and matching by pattern because a hand-mirrored
+// copy cannot know which label it is looking at. Generated, it can: these are exact keys.
+const SIGNAL_CODES={"Bot": "BOT", "Crawler": "CRW", "Frequent abuser": "ABU", "High-risk attacks": "ATK", "Mobile": "MOB", "Proxy": "PRX", "Recent abuse": "ABU", "Security scanner": "SCN", "Shared connection": "SHR", "Tor": "TOR", "Tor (active)": "TOR", "VPN": "VPN", "VPN (active)": "VPN"};
+// The three-letter code for a flag, for the one column too narrow to spell it out. An unknown flag
+// keeps its own text — a code table must never silently swallow a signal it has no abbreviation for.
+const signalCode=s=>SIGNAL_CODES[s]||String(s);
 
-// How long THIS row has been waiting on its proxy. Seconds, because a bulk check of cold residential
-// exits runs 5-20s a row and the whole point is being able to see which one is dragging.
+// How long THIS row has been waiting on its proxy. Seconds, because a bulk run over cold residential
+// exits takes 5-20s a row and the whole point is seeing which one is dragging.
 const elapsed=x=>x.startedAt?((Date.now()-x.startedAt)/1000).toFixed(0)+'s':'';
 // One honest line about the run: how many are done, how many are in flight, how long it has taken.
 const runSummary=rows=>{
@@ -481,6 +469,10 @@ const runSummary=rows=>{
   const secs=started.length?((Date.now()-Math.min(...started))/1000).toFixed(0):0;
   return done===rows.length?`${done} checked in ${secs}s`
     :`${done}/${rows.length} checked · ${running} running · ${secs}s`;};
+
+// The exact opening tag every "not measured" cell renders. Markup, not a bare word, so a VALUE
+// containing the same letters cannot be mistaken for the marker — esc() escapes `<` and `"`.
+const NODATA='<span class="dim nodata"';
 
 const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
 const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
@@ -776,7 +768,7 @@ function render(r){
     // Same SIGNALS table the bulk column uses, spelled out here because there is room for it. The raw
     // API key stays on the hover so nothing is hidden from someone cross-checking against IPQS.
     const chips=(r.flags||[]).length
-      ?r.flags.map(f=>`<span class=chip title="${esc(f)}">${esc(signalOf(f)[1])}</span>`).join('')
+      ?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
       :'<span class="chip ok">Not flagged as proxy or VPN</span>';
     t+=blk(`<div class="panel flagbar"><div class=lbl>Flagged as</div><div class=chips>${chips}</div></div>`);
   }
@@ -847,7 +839,8 @@ $('#go').onclick=async()=>{
 };
 
 // Bulk: check many proxies (one per line) and show them in one copyable comparison table.
-const vpill=v=>`<span class="vpill v-${v||'unknown'}-p">${esc((v||'—').toUpperCase())}</span>`;
+const vpill=(v,why)=>`<span class="vpill v-${v||'unknown'}-p"`+
+  (why?` title="${esc(why)}"`:'')+`>${esc((v||'—').toUpperCase())}</span>`;
 
 // Split a proxy line into its parts so each one can be copied on its own. Mirrors parse_proxy() in
 // ipcheck.py and accepts the same four shapes; returns nulls rather than throwing, because this only
@@ -987,7 +980,7 @@ function bulkDetail(x){
   // spelling of one thing — the cell said `PRX ABU BOT`, the card said `Proxy Recent abuse Bot`, and this
   // said `proxy · recent_abuse · bot_status`. The raw API key stays on the hover.
   t+=dRow('Detected as',(r.flags||[]).length
-    ?r.flags.map(f=>`<span title="${esc(f)}">${esc(signalOf(f)[1])}</span>`).join(' · ')
+    ?esc(r.flags.join(' · '))
     :(r.fraud_score!=null?'<span class=c-clean>no proxy/VPN/Tor flag</span>':'<span class=dim>not measured</span>'));
   t+=dRow('getIPIntel',r.getipintel_score!=null
     ?`<span class="c-${r.getipintel_score>=0.99?'dirty':r.getipintel_score>=0.90?'suspect':'clean'}">`+
@@ -1097,12 +1090,13 @@ $('#bulkgo').onclick=async()=>{
      get:x=>{const m={dirty:0,suspect:1,unknown:2,clean:3};const v=x.r&&x.r.verdict;
              return v in m?m[v]:4;},
      cell:x=>{if(x.busy)return '<span class="vpill v-unknown-p">…</span>';
+       // The reason goes on the PILL, not under it. Printed inline it was prose in a scanning table:
+       // it made Verdict the second-widest column, ellipsised to unreadable stubs ("no proxy fla…"),
+       // and for a CLEAN row it was a double negative that duplicated the Flags column next to it
+       // ("no proxy flags" beside a Flags cell already reading "none"). The full text is one hover
+       // away and spelled out in the row's own BECAUSE line.
        const why=x.r.error||(x.r.verdict_factors||[]).join(' · ')||x.r.verdict_reason||'';
-       return vpill(x.r.error?'unknown':x.r.verdict)+
-         // The single-check card names the evidence behind its verdict; the table used to show the
-         // conclusion alone, which is the one thing a reader can't act on. Same data, one line, full
-         // text on hover — the table's own footnote already promises hover-for-the-rest.
-         (why?`<span class=sub title="${esc(why)}">${esc(why)}</span>`:'');}},
+       return vpill(x.r.error?'unknown':x.r.verdict, why);}},
     {k:'ip', h:'Exit IP', get:x=>(x.r&&x.r.ip)||'',
      cell:x=>x.r&&x.r.ip
        ?flagImg(x.r.country_code||'')+`<span class=ipv title="${esc(x.r.ip)}">${esc(x.r.ip)}</span>`+
@@ -1113,11 +1107,11 @@ $('#bulkgo').onclick=async()=>{
      get:x=>num(x.r&&(x.r.blacklists||[]).length), cell:x=>listsCell(x.r)},
     {k:'detected', h:'Flags', ttl:'What IPQualityScore detected — hover a code for its meaning',
      get:x=>num(x.r&&(x.r.flags||[]).length), cell:x=>detectedCell(x.r)},
-    {k:'fraud', h:'IPQS', ttl:'IPQualityScore fraud score, 0-100', get:x=>num(x.r&&x.r.fraud_score),
+    {k:'fraud', h:'IPQS', ttl:'IPQualityScore fraud score, 0-100', get:x=>num(x.r&&x.r.fraud_score), drop:1,
      cell:x=>x.r&&x.r.fraud_score!=null
-       ?`<span class="c-${band(x.r.fraud_score)}">${x.r.fraud_score}</span>`
-       :'<span class=dim title="No IPQualityScore key — not measured">n/k</span>'},
-    {k:'gii', h:'GII', ttl:'getIPIntel proxy/hosting probability, 0-1',
+       ?`<span class="c-${band(x.r.fraud_score)}">${esc(x.r.fraud_score)}</span>`
+       :'<span class="dim nodata" title="No IPQualityScore key — not measured">n/k</span>'},
+    {k:'gii', h:'GII', ttl:'getIPIntel proxy/hosting probability, 0-1', drop:1,
      get:x=>num(x.r&&x.r.getipintel_score),
      cell:x=>x.r&&x.r.getipintel_score!=null
        ?`<span class="c-${x.r.getipintel_score>=0.99?'dirty':x.r.getipintel_score>=0.90?'suspect':'clean'}">`+
@@ -1125,29 +1119,29 @@ $('#bulkgo').onclick=async()=>{
        // WHY it has no score, not just that it hasn't. getIPIntel meters 15/min per contact AND per
        // connecting IP, so a bulk run can genuinely exhaust it mid-batch — and "n/a" with no reason sent
        // the user asking why one row was blank. The note it returned is the answer; show it.
-       :`<span class=dim title="${esc(giiWhy(x.r))}">n/a</span>`},
-    {k:'abuse', h:'AbuseDB', ttl:'AbuseIPDB confidence — reports in the last 90 days',
+       :`<span class="dim nodata" title="${esc(giiWhy(x.r))}">n/a</span>`},
+    {k:'abuse', h:'AbuseDB', ttl:'AbuseIPDB confidence — reports in the last 90 days', drop:1,
      get:x=>num(x.r&&x.r.abuse_confidence),
      cell:x=>x.r&&x.r.abuse_confidence!=null
        ?`<span class="c-${x.r.abuse_confidence>=50?'dirty':x.r.abuse_confidence>=10?'suspect':'clean'}">`+
-        x.r.abuse_confidence+`%</span>`
-       :'<span class=dim title="No AbuseIPDB key — not measured">n/k</span>'},
+        esc(x.r.abuse_confidence)+`%</span>`
+       :'<span class="dim nodata" title="No AbuseIPDB key — not measured">n/k</span>'},
     // Scamalytics: the OVERALL score + band, and nothing more. Sorting by it is offered because the user
     // asked to see it, but the colour never goes green and the band sits on the sub-line — the score
     // MIS-RANKS (Tor 15 "low", clean Comcast 18, Mullvad 44 highest), so it must not read as a ranking.
-    {k:'scam', h:'SCAM', ttl:'Scamalytics score — shown, not scored: it tracks the ISP score, not this IP',
+    {k:'scam', h:'SCAM', ttl:'Scamalytics score — shown, not scored: it tracks the ISP score, not this IP', drop:1,
      get:x=>num(x.r&&x.r.scam_score),
      cell:x=>x.r&&x.r.scam_risk
        ?`<span class="c-${scamColour(x.r.scam_risk)}" title="Scamalytics ${esc(x.r.scam_score)} · `+
         `${esc(x.r.scam_risk)}. Shown, not scored: it tracks the ISP score, not this IP.">`+
         `${esc(x.r.scam_score)}</span><span class=sub>${esc(x.r.scam_risk)}</span>`
-       :'<span class=dim title="No Scamalytics credentials — not measured">n/k</span>'},
-    {k:'type', h:'Exit', ttl:'Exit type — hosting, Tor or a mobile line, where it could be determined',
+       :'<span class="dim nodata" title="No Scamalytics credentials — not measured">n/k</span>'},
+    {k:'type', h:'Exit', ttl:'Exit type — hosting, Tor or a mobile line, where it could be determined', drop:1,
      get:x=>(x.r&&x.r.connection_class)||'zz',
      cell:x=>x.r&&x.r.connection_class
        ?`<span class="c-${ccColour(x.r.connection_class)}" title="${esc(ccCap(x.r.connection_class))}">`+
         `${esc({datacenter:'hosting',tor:'Tor',mobile:'mobile'}[x.r.connection_class]||x.r.connection_class)}</span>`
-       :`<span class=dim title="${x.r&&x.r.scam_risk!=null
+       :`<span class="dim nodata" title="${x.r&&x.r.scam_risk!=null
            ?'Scamalytics raised no datacenter or proxy record, and no hosting name matched — not proof of a real line'
            :'No hosting name matched, and Scamalytics did not run — not proof of a real line'}">—</span>`},
     {k:'isp', h:'ISP', get:x=>(x.r&&(x.r.isp||x.r.organization))||'',
@@ -1185,8 +1179,8 @@ $('#bulkgo').onclick=async()=>{
       (pol?`<span class=sub title="${esc((r.policy_lists||[]).join(', '))}">+${pol} policy</span>`:'');
   }
 
-  // IPQS's flags as three-letter codes (SIGNALS, shared with the single-check card). Spelling them out
-  // made this the widest column on the table for the least information; the full name is on the hover.
+  // Three-letter codes (signalCode). Spelling them out made this the widest column on the table for the
+  // least information; the full label is on the hover.
 
   // "Is it detectable as a proxy at all" — the question the fraud score can't answer, because it saturates.
   function detectedCell(r){
@@ -1198,9 +1192,8 @@ $('#bulkgo').onclick=async()=>{
     // Three codes, then "+N" — six flags on a row made this the widest column on the table. The overflow
     // count is never silent: the full list is on the cell, and the detail row spells every one of them out.
     const CAPN=3;
-    const codes=f.map(s=>{const [code,full]=signalOf(s);
-      return `<span class=fx title="${esc(full)}">${esc(code)}</span>`;});
-    return `<span title="${esc(f.map(x=>signalOf(x)[1]).join(' · '))}">`+codes.slice(0,CAPN).join('')+
+    const codes=f.map(s=>`<span class=fx title="${esc(s)}">${esc(signalCode(s))}</span>`);
+    return `<span title="${esc(f.join(' · '))}">`+codes.slice(0,CAPN).join('')+
       (codes.length>CAPN?`<span class=fx>+${codes.length-CAPN}</span>`:'')+`</span>`;
   }
 
@@ -1232,6 +1225,22 @@ $('#bulkgo').onclick=async()=>{
     const tally=k=>rows.filter(x=>!x.busy&&x.r&&!x.r.error&&x.r.verdict===k).length;
     const dead=rows.filter(x=>!x.busy&&x.r&&(x.r.proxy_alive===false||x.r.error)).length;
     const live=rows.filter(x=>x.r&&x.r.proxy_ms!=null).map(x=>x.r.proxy_ms).sort((a,b)=>a-b);
+    // A 15-column table that spends width on a column every row left empty is width taken from the
+    // columns carrying the answer. A residential exit has no datacenter/Tor/mobile signal at all, and
+    // getIPIntel rate-limits itself away partway through a bulk run — so those two are routinely dashes
+    // end to end. Collapse only once every row has LANDED: columns appearing and vanishing mid-run under
+    // the reader's eye is worse than a column of dashes.
+    const settled=rows.every(x=>!x.busy);
+    // Match the MARKUP, not the word: `includes('nodata')` would also fire on a cell whose VALUE
+    // happened to contain that text (an ISP or a risk band called "nodata"), dropping a column that
+    // had something to show — the same class of bug as the predicate this replaced. esc() turns `<`
+    // and `"` into entities, so no escaped value can ever produce this opening tag.
+    // Blank means "every cell rendered the not-measured marker" — read off the markup the column
+    // ACTUALLY produced. A predicate written beside the cell drifts from it: SCAM's asked about
+    // scam_score while its cell renders whenever scam_risk exists, so a run with a risk band but no
+    // integer score would have collapsed a column that had something to show in every row.
+    const dropped=settled?COLS.filter(c=>c.drop&&rows.every(x=>c.cell(x).includes(NODATA))):[];
+    const SHOWN=COLS.filter(c=>!dropped.includes(c));
     let h=`<div class=bulkwide><div class="blk panel"><div class=bsum>`+
       `<span data-runsum>${esc(runSummary(rows))}</span>`+
       (tally('clean')?`<span class=s-clean>Clean <b>${tally('clean')}</b></span>`:'')+
@@ -1240,7 +1249,7 @@ $('#bulkgo').onclick=async()=>{
       (dead?`<span class=s-dead>Dead <b>${dead}</b></span>`:'')+
       (live.length?`<span>Median <b>${live[Math.floor(live.length/2)]} ms</b></span>`:'')+
       `</div><div class=tablewrap><table class=bulk><thead><tr><th class=cw></th>`+
-      COLS.map(c=>`<th class=s data-sort="${c.k}"`+
+      SHOWN.map(c=>`<th class=s data-sort="${c.k}"`+
         (c.ttl?` title="${esc(c.ttl)}"`:'')+
         (sortKey===c.k?` data-dir="${sortDir}"`:'')+`>${esc(c.h)}</th>`).join('')+
       `</tr></thead><tbody>`;
@@ -1253,15 +1262,16 @@ $('#bulkgo').onclick=async()=>{
         // score cell falls back to "n/k = no key" when its number is missing, which is true for a
         // finished row and a lie for one still in flight — the key is fine, the check simply has not
         // happened. Guarded once here rather than in each of the ten cells that could get it wrong.
-        COLS.map(c=>`<td${c.k==='isp'||c.k==='loc'?' class=cap':''}>`+
+        SHOWN.map(c=>`<td${c.k==='isp'||c.k==='loc'?' class=cap':''}>`+
           ((x.busy&&c.k!=='proxy'&&c.k!=='status')?'<span class=dim>·</span>':c.cell(x))+
           `</td>`).join('')+`</tr>`;
-      if(x.open)h+=`<tr class=detrow><td colspan="${COLS.length+1}">${bulkDetail(x)}</td></tr>`;
+      if(x.open)h+=`<tr class=detrow><td colspan="${SHOWN.length+1}">${bulkDetail(x)}</td></tr>`;
     }
     h+=`</tbody></table></div><p class=note style="padding:10px 2px 0">`+
       `Click a heading to sort · the chevron opens a proxy's full detail · hover a heading, code or `+
       `truncated value for the full text · a dot = not checked yet, n/k = no key, n/a = the source `+
       `didn't answer — none of the three is clean`+
+      (dropped.length?` · hidden because no row had one: ${esc(dropped.map(c=>c.h).join(', '))}`:'')+
       `</p></div></div>`;
     out.innerHTML=h;
   };
