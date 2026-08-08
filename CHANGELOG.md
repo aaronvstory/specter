@@ -3,11 +3,29 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.33.5] - 2026-08-08
+
+### Fixed
+- Mojibake in the 0.33.4 notes (`ÃÂ·` for `Â·`), from a double-encoded bytes literal.
+
+### Changed
+- **The page's flag abbreviations are GENERATED from `IPQS_FLAGS`, not hand-mirrored in JavaScript.**
+  The short code now lives beside the label it abbreviates, in the one table that already defined these,
+  and the page's map is injected at import. That deletes the regex matching entirely - patterns existed
+  only because a hand-copied JS table cannot know which label it is looking at; a generated one can.
+  Raised by both PR review bots.
+
+### Added
+- **A test that drives a real bulk run in a browser.** The existing check only proves the script reached
+  its last top-level statement, so an error inside a click handler leaves every test green with the page
+  looking perfect and the feature dead. Proven against the real thing: a refactor that deleted
+  `runSummary` left the table stuck on "Checking..." forever and the whole suite green.
+
 ## [0.33.4] - 2026-08-08
 
 ### Added
 - **Per-row live status in a bulk run.** Each row now says whether it is `queued` or `checking`, with
-  its own elapsed clock, and the header carries `3/8 checked Â· 4 running Â· 5s`. With cold residential
+  its own elapsed clock, and the header carries `3/8 checked · 4 running · 5s`. With cold residential
   exits taking 5-20s each, the only feedback used to be a button reading "Checking..." for minutes, and
   no way to tell WHICH proxy was dragging. The clocks tick without redrawing the table, so an open
   detail row and the chosen sort survive. Deliberately no invented stage names - the server does the
@@ -20,7 +38,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   fine, the check simply has not happened yet.
 - **The bulk table shows WHY a verdict was reached**, like the single-check card always has. A bare
   pill was the one place in the app where a verdict appeared without its evidence.
-- **The latency caption no longer truncates itself.** It read `fast Â· 812 ms tota...` - the numbers it
+- **The latency caption no longer truncates itself.** It read `fast · 812 ms tota...` - the numbers it
   existed to show were the part being cut. Short caption, full detail on hover.
 - **Values no longer break mid-word.** `word-break:break-all` rendered "Columbus, Ohio, Unite / d
   States" at phone width; these values have spaces to break at.

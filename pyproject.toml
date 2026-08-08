@@ -1,6 +1,6 @@
 [project]
 name = "specter"
-version = "0.33.4"
+version = "0.33.5"
 description = "Per-app device identity rotation for Android — coherent, never-reused fingerprints per signup"
 readme = "README.md"
 requires-python = ">=3.10"

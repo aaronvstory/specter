@@ -1991,28 +1991,80 @@ def test_the_packaging_version_tracks_the_VERSION_file():
         f"pyproject.toml does not declare {version} — VERSION is the single source"
 
 
-def test_every_ipqs_flag_label_has_a_short_code_in_the_pages_signal_table():
-    """The bulk table abbreviates each IPQS flag to three letters; the single-check card and the detail
-    row spell the same flag out. All three read one `SIGNALS` table in the page.
+def test_the_pages_signal_codes_are_generated_from_IPQS_FLAGS():
+    """The bulk table's Flags column abbreviates each IPQS flag to three letters; everything with room
+    spells it out. There is now ONE definition — `IPQS_FLAGS` — and the page's table is generated from
+    it at import, so the two cannot drift.
 
-    An unmatched label does not crash — it falls through to printing itself — which is the right
-    behaviour at runtime and precisely why it needs a test: a new flag added to `IPQS_FLAGS` would
-    silently render as a full-width label wedged between three-letter neighbours, and nobody would
-    notice until the column looked wrong. Pinned here so the JS table has to learn each new flag.
+    This replaces a test that scraped the JS with a regex. That test was brittle in exactly the way the
+    reviewers said: it also matched commented-out entries, so disabling a mapping left it green while
+    the page silently printed the raw label. Generating the table removes the failure mode rather than
+    testing for it.
     """
-    page = ipcheck.PAGE
-    table = re.search(r"const SIGNALS=\[(.*?)\];", page, re.S)
-    assert table, "SIGNALS table not found in PAGE — did it get renamed?"
-    # Strip `//` line comments FIRST. Without this the regex happily reads a commented-OUT entry, so
-    # disabling a mapping would leave the test green while the page fell back to printing the raw label —
-    # a test that can silently stop testing is worse than no test at all. (Found by codex.)
-    body = re.sub(r"//.*", "", table.group(1))
-    # [/pattern/i,'CODE','Full name'] — pull the pattern and the code out of each entry.
-    entries = re.findall(r"\[/(.+?)/i,'([A-Z]+)'", body)
-    assert len(entries) >= 8, f"expected the full signal table, parsed {entries}"
+    codes = json.loads(re.search(r"const SIGNAL_CODES=(\{.*?\});", ipcheck.PAGE).group(1))
+    assert codes == {label: code for _key, label, code in ipcheck.IPQS_FLAGS}
+    # Every label `flags()` can emit is a key, so no flag can reach the page without an abbreviation.
+    every = ipcheck.flags({key: True for key, _label, _code in ipcheck.IPQS_FLAGS})
+    assert every and all(label in codes for label in every)
+    # The codes are what the narrow column can actually fit.
+    assert all(len(c) == 3 and c.isupper() for c in codes.values()), codes
+    # The placeholder must never ship: a page containing the literal would render "undefined" codes.
+    assert "__SIGNAL_CODES__" not in ipcheck.PAGE
 
-    for _key, label in ipcheck.IPQS_FLAGS:
-        hit = next((code for pat, code in entries
-                    if re.search(pat.replace("\\\\", "\\"), label, re.I)), None)
-        assert hit, (f"IPQS flag {label!r} has no short code in the page's SIGNALS table — it would "
-                     f"render as its own full text beside three-letter codes")
+
+def test_a_bulk_run_completes_in_a_real_browser_without_an_uncaught_error():
+    """Drive an actual bulk run in Chrome and assert no handler threw and the rows rendered.
+
+    `test_the_generated_page_runs_without_a_top_level_error` only proves the script reached its LAST
+    top-level statement. An error inside an event handler happens long after that, so the stamp is
+    present, the page looks perfect, and the feature is dead. Not hypothetical: deleting `runSummary`
+    during a refactor left `draw()` throwing a ReferenceError with every test green and the table stuck
+    on "Checking..." forever. Only loading the page and clicking caught it.
+
+    `fetch` is stubbed BEFORE the page's own script runs, so this exercises the real render path with no
+    network. Errors are collected from `unhandledrejection` as well as `error` — the failure above was a
+    rejected promise, which `window.onerror` alone never sees.
+    """
+    import shutil
+    import subprocess
+    chrome = next((c for c in (r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                               r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe",
+                               "/usr/bin/google-chrome", "/usr/bin/chromium")
+                   if Path(c).exists()), None) or shutil.which("chrome") or shutil.which("chromium")
+    if not chrome:
+        return                                          # no browser here; it still runs locally
+    root = Path(__file__).resolve().parents[1]
+    harness = """<script>
+window.__errs=[];
+addEventListener('error',e=>window.__errs.push(String(e.message)));
+addEventListener('unhandledrejection',e=>window.__errs.push('REJECT: '+String(e.reason)));
+window.fetch=async(u,o)=>({json:async()=>({ip:'172.8.14.57',verdict:'suspect',
+  verdict_factors:['IPQualityScore flagged this as a proxy'],flags:['Proxy','Recent abuse','Bot'],
+  blacklists:[],dnsbl_checked:14,dnsbl_zones_total:14,dnsbl_usable:true,dnsbl_detail:[],
+  fraud_score:100,proxy_alive:true,proxy_ms:812,direct_ms:640,proxy_added_ms:172,notes:[]})});
+addEventListener('load',()=>setTimeout(()=>{
+  try{
+    document.querySelectorAll('details')[1].open=true;
+    document.getElementById('bulk').value='a.example.com:1080:u:p';
+    document.getElementById('bulkgo').click();
+  }catch(e){window.__errs.push('DRIVER: '+e);}
+  setTimeout(()=>{const t=document.querySelector('table.bulk');
+    document.title='RESULT'+JSON.stringify({errs:window.__errs,
+      rows:t?t.querySelectorAll('tbody tr').length:0,
+      codes:[...document.querySelectorAll('.fx')].map(e=>e.textContent)});},2000);},150));
+</script>"""
+    tmp = root / "webapp" / "_bulkrun_probe.html"
+    tmp.write_text(harness + (root / "webapp" / "index.html").read_text("utf-8"), encoding="utf-8")
+    try:
+        r = subprocess.run([chrome, "--headless", "--disable-gpu", "--no-sandbox",
+                            "--virtual-time-budget=9000", "--dump-dom", tmp.as_uri()],
+                           capture_output=True, text=True, timeout=180)
+    finally:
+        tmp.unlink(missing_ok=True)
+    m = re.search(r"<title>RESULT(.*?)</title>", r.stdout, re.S)
+    assert m, "the bulk run never reported — the page or the click handler died before it could"
+    got = json.loads(m.group(1).replace("&quot;", chr(34)).replace("&amp;", "&"))
+    assert got["errs"] == [], f"a handler threw during a bulk run: {got['errs']}"
+    assert got["rows"] >= 1, f"the table rendered {got['rows']} rows for 1 proxy"
+    # ...and the generated abbreviation table actually reached the cells.
+    assert "PRX" in got["codes"], f"signal codes did not render: {got['codes']}"

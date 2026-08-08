@@ -146,20 +146,24 @@ GETIPINTEL_RETRYABLE = (-5, -6)
 
 # IPQS boolean verdicts worth showing, in the order they matter. active_* means the anonymising
 # service is live on that IP right now, not merely that it was one historically.
+# (api key, display label, three-letter code). The code is what the bulk table's narrow Flags column
+# shows; the label is what everything with room spells out, and is what `flags()` actually returns.
+# The page's abbreviation table is GENERATED from this one (see SIGNAL_CODES_JS) rather than
+# hand-mirrored in JavaScript — a second copy is a second thing to forget when a flag is added.
 IPQS_FLAGS = [
-    ("tor", "Tor"),
-    ("active_tor", "Tor (active)"),
-    ("vpn", "VPN"),
-    ("active_vpn", "VPN (active)"),
-    ("proxy", "Proxy"),
-    ("recent_abuse", "Recent abuse"),
-    ("frequent_abuser", "Frequent abuser"),
-    ("high_risk_attacks", "High-risk attacks"),
-    ("bot_status", "Bot"),
-    ("is_crawler", "Crawler"),
-    ("security_scanner", "Security scanner"),
-    ("shared_connection", "Shared connection"),
-    ("mobile", "Mobile"),
+    ("tor", "Tor", "TOR"),
+    ("active_tor", "Tor (active)", "TOR"),
+    ("vpn", "VPN", "VPN"),
+    ("active_vpn", "VPN (active)", "VPN"),
+    ("proxy", "Proxy", "PRX"),
+    ("recent_abuse", "Recent abuse", "ABU"),
+    ("frequent_abuser", "Frequent abuser", "ABU"),
+    ("high_risk_attacks", "High-risk attacks", "ATK"),
+    ("bot_status", "Bot", "BOT"),
+    ("is_crawler", "Crawler", "CRW"),
+    ("security_scanner", "Security scanner", "SCN"),
+    ("shared_connection", "Shared connection", "SHR"),
+    ("mobile", "Mobile", "MOB"),
 ]
 
 
@@ -343,7 +347,7 @@ def is_datacenter(rep: dict) -> bool:
 
 def flags(rep: dict) -> list[str]:
     """The IPQS verdicts that are true, as display labels."""
-    return [label for key, label in IPQS_FLAGS if rep.get(key)]
+    return [label for key, label, _code in IPQS_FLAGS if rep.get(key)]
 
 
 _VERDICT_LEAD = {"dirty": "High friction — ", "suspect": "Some risk — "}
@@ -1043,7 +1047,7 @@ def lookup_ipqs(ip: str, key: str, opener) -> dict:
     out["ipqs_raw"] = {k: v for k, v in o.items()
                        if k not in ("success", "message", "request_id", "api_version")
                        and not _premium(v) and not (isinstance(v, str) and key and key in v)}
-    for key_name, _ in IPQS_FLAGS:
+    for key_name, _label, _code in IPQS_FLAGS:
         out[key_name] = bool(o.get(key_name))
     for src, dst in (("connection_type", "connection_type"), ("abuse_velocity", "abuse_velocity"),
                      ("organization", "organization"), ("ISP", "isp"), ("host", "host")):
@@ -2068,28 +2072,17 @@ async function boot(){
   }
 }
 const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-// ONE vocabulary for IPQS's flags, shared by the bulk table and the single-check card. It used to live
-// inside the bulk handler, so the single view fell back to printing the raw API value and the same signal
-// read three different ways across the page — `PRX` in a table cell, `proxy` on a chip, `bot_status` on
-// another. A reader should not have to learn that those are the same thing.
-//
-// The underscore in the pattern is load-bearing: IPQS sends `recent_abuse`, and the old `/recent abuse/`
-// (space) never matched it, so the table silently printed the raw key next to properly abbreviated
-// neighbours. A code table that can't name a signal must be obvious about it, not quietly inconsistent.
-const SIGNALS=[[/tor/i,'TOR','Tor'],[/vpn/i,'VPN','VPN'],[/proxy/i,'PRX','Proxy'],
-               [/recent[ _]?abuse|frequent/i,'ABU','Recent abuse'],[/bot/i,'BOT','Bot'],
-               [/crawler|spider/i,'CRW','Crawler'],[/scanner/i,'SCN','Security scanner'],
-               [/high.risk/i,'ATK','High-risk attacks'],
-               // Found by test_every_ipqs_flag_label_has_a_short_code: these two are in IPQS_FLAGS and had
-               // no abbreviation, so they rendered as full text wedged between three-letter neighbours.
-               [/shared/i,'SHR','Shared connection'],[/mobile/i,'MOB','Mobile']];
-// [shortCode, fullName] for a raw flag key. An unknown flag keeps its own text rather than being dropped —
-// a code table must never silently swallow a signal it has no abbreviation for.
-const signalOf=s=>{const m=SIGNALS.find(([re])=>re.test(s));
-  return m?[m[1],m[2]]:[String(s),String(s)];};
+// The abbreviation table, GENERATED from IPQS_FLAGS (see SIGNAL_CODES_JS) so there is exactly one
+// place a flag is defined. It used to be a hand-written list of REGEXES living inside the bulk-table
+// handler — unreachable from the other two renderers, and matching by pattern because a hand-mirrored
+// copy cannot know which label it is looking at. Generated, it can: these are exact keys.
+const SIGNAL_CODES=__SIGNAL_CODES__;
+// The three-letter code for a flag, for the one column too narrow to spell it out. An unknown flag
+// keeps its own text — a code table must never silently swallow a signal it has no abbreviation for.
+const signalCode=s=>SIGNAL_CODES[s]||String(s);
 
-// How long THIS row has been waiting on its proxy. Seconds, because a bulk check of cold residential
-// exits runs 5-20s a row and the whole point is being able to see which one is dragging.
+// How long THIS row has been waiting on its proxy. Seconds, because a bulk run over cold residential
+// exits takes 5-20s a row and the whole point is seeing which one is dragging.
 const elapsed=x=>x.startedAt?((Date.now()-x.startedAt)/1000).toFixed(0)+'s':'';
 // One honest line about the run: how many are done, how many are in flight, how long it has taken.
 const runSummary=rows=>{
@@ -2393,7 +2386,7 @@ function render(r){
     // Same SIGNALS table the bulk column uses, spelled out here because there is room for it. The raw
     // API key stays on the hover so nothing is hidden from someone cross-checking against IPQS.
     const chips=(r.flags||[]).length
-      ?r.flags.map(f=>`<span class=chip title="${esc(f)}">${esc(signalOf(f)[1])}</span>`).join('')
+      ?r.flags.map(f=>`<span class=chip>${esc(f)}</span>`).join('')
       :'<span class="chip ok">Not flagged as proxy or VPN</span>';
     t+=blk(`<div class="panel flagbar"><div class=lbl>Flagged as</div><div class=chips>${chips}</div></div>`);
   }
@@ -2604,7 +2597,7 @@ function bulkDetail(x){
   // spelling of one thing — the cell said `PRX ABU BOT`, the card said `Proxy Recent abuse Bot`, and this
   // said `proxy · recent_abuse · bot_status`. The raw API key stays on the hover.
   t+=dRow('Detected as',(r.flags||[]).length
-    ?r.flags.map(f=>`<span title="${esc(f)}">${esc(signalOf(f)[1])}</span>`).join(' · ')
+    ?esc(r.flags.join(' · '))
     :(r.fraud_score!=null?'<span class=c-clean>no proxy/VPN/Tor flag</span>':'<span class=dim>not measured</span>'));
   t+=dRow('getIPIntel',r.getipintel_score!=null
     ?`<span class="c-${r.getipintel_score>=0.99?'dirty':r.getipintel_score>=0.90?'suspect':'clean'}">`+
@@ -2802,8 +2795,8 @@ $('#bulkgo').onclick=async()=>{
       (pol?`<span class=sub title="${esc((r.policy_lists||[]).join(', '))}">+${pol} policy</span>`:'');
   }
 
-  // IPQS's flags as three-letter codes (SIGNALS, shared with the single-check card). Spelling them out
-  // made this the widest column on the table for the least information; the full name is on the hover.
+  // Three-letter codes (signalCode). Spelling them out made this the widest column on the table for the
+  // least information; the full label is on the hover.
 
   // "Is it detectable as a proxy at all" — the question the fraud score can't answer, because it saturates.
   function detectedCell(r){
@@ -2815,9 +2808,8 @@ $('#bulkgo').onclick=async()=>{
     // Three codes, then "+N" — six flags on a row made this the widest column on the table. The overflow
     // count is never silent: the full list is on the cell, and the detail row spells every one of them out.
     const CAPN=3;
-    const codes=f.map(s=>{const [code,full]=signalOf(s);
-      return `<span class=fx title="${esc(full)}">${esc(code)}</span>`;});
-    return `<span title="${esc(f.map(x=>signalOf(x)[1]).join(' · '))}">`+codes.slice(0,CAPN).join('')+
+    const codes=f.map(s=>`<span class=fx title="${esc(s)}">${esc(signalCode(s))}</span>`);
+    return `<span title="${esc(f.join(' · '))}">`+codes.slice(0,CAPN).join('')+
       (codes.length>CAPN?`<span class=fx>+${codes.length-CAPN}</span>`:'')+`</span>`;
   }
 
@@ -2919,6 +2911,14 @@ $('#bulkgo').onclick=async()=>{
 document.documentElement.dataset.specterReady='1';
 </script>
 """
+
+# Inject the generated abbreviation table into the page, once, at import. Every consumer reads PAGE —
+# webapp/build.py writes it, serve() serves it — so there is one substitution point and no way for the
+# shipped page and IPQS_FLAGS to disagree.
+PAGE = PAGE.replace("__SIGNAL_CODES__",
+                    json.dumps({label: code for _key, label, code in IPQS_FLAGS},
+                               ensure_ascii=False, sort_keys=True))
+assert "__SIGNAL_CODES__" not in PAGE, "signal-code injection failed — the page would ship a literal"
 
 
 def serve(port: int, open_browser: bool = True) -> None:
