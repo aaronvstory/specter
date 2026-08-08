@@ -2051,7 +2051,9 @@ addEventListener('load',()=>setTimeout(()=>{
   setTimeout(()=>{const t=document.querySelector('table.bulk');
     document.title='RESULT'+JSON.stringify({errs:window.__errs,
       rows:t?t.querySelectorAll('tbody tr').length:0,
-      codes:[...document.querySelectorAll('.fx')].map(e=>e.textContent)});},2000);},150));
+      codes:[...document.querySelectorAll('.fx')].map(e=>e.textContent),
+      cols:[...document.querySelectorAll('table.bulk thead th')].map(e=>e.textContent.trim()).filter(Boolean),
+      note:(document.querySelector('.note')||{}).textContent||''});},2000);},150));
 </script>"""
     tmp = root / "webapp" / "_bulkrun_probe.html"
     tmp.write_text(harness + (root / "webapp" / "index.html").read_text("utf-8"), encoding="utf-8")
@@ -2068,3 +2070,13 @@ addEventListener('load',()=>setTimeout(()=>{
     assert got["rows"] >= 1, f"the table rendered {got['rows']} rows for 1 proxy"
     # ...and the generated abbreviation table actually reached the cells.
     assert "PRX" in got["codes"], f"signal codes did not render: {got['codes']}"
+    # A column no row could fill is width taken from the columns carrying the answer. The stub returns
+    # no getIPIntel score and no connection_class, so both must collapse once the run settles — and must
+    # be NAMED, because a column that silently disappears reads as a bug rather than a decision.
+    assert "GII" not in got["cols"] and "Exit" not in got["cols"], (
+        f"empty columns were not collapsed: {got['cols']}")
+    assert "hidden because no row had one" in got["note"] and "GII" in got["note"], (
+        f"collapsed columns were not named in the footnote: {got['note'][-160:]}")
+    # ...while the columns that always carry an answer are never droppable.
+    for keep in ("Proxy", "Status", "Verdict", "Exit IP"):
+        assert keep in got["cols"], f"the {keep} column went missing: {got['cols']}"

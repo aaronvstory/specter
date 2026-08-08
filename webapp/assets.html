@@ -214,10 +214,9 @@ table.bulk th.s[data-dir="-1"]::after{content:"▼"}
    column with it. */
 table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
 .sub{display:block;font-size:9.5px;line-height:1.35;color:var(--dim);letter-spacing:.02em}
-/* A verdict's reason is prose, and prose has no natural width — unbounded it made Verdict the second
-   widest column in the table and pushed the measurements off to the right. Same cap-and-hover idiom as
-   the exit IP: two lines of reason is enough to recognise WHY, the rest is on the title. */
-table.bulk td .sub{max-width:210px;overflow:hidden;text-overflow:ellipsis}
+/* Sub-lines are short by nature ("1128 total", "low"). The cap is a backstop so a long one can never
+   widen its column the way the verdict reason did before it moved to the pill's title. */
+table.bulk td .sub{max-width:120px;overflow:hidden;text-overflow:ellipsis}
 /* Detected-as codes: three letters each, full meaning on hover. Spelling them out
    ("VPN Proxy Recent abuse Bot") made this the widest column on the table for the least information. */
 .fx{display:inline-block;padding:2px 4px;margin-right:3px;border-radius:4px;font-size:10px;font-weight:700;

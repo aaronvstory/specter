@@ -3,6 +3,20 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.33.6] - 2026-08-08
+
+### Fixed
+- **The verdict reason is on the pill's tooltip, not printed under it.** Inline it was prose in a
+  scanning table: Verdict became the second-widest column (200px) and ellipsised to unreadable stubs
+  (`no proxy flaâ¦`). For a CLEAN row it was also a double negative duplicating the Flags cell beside
+  it - "no proxy flags" next to a Flags column already reading "none". Now 100px; the full text is one
+  hover away and spelled out in the row's own BECAUSE line. (Reverts the inline form added in 0.33.4.)
+- **Columns no row could fill are collapsed, and named.** A residential exit has no datacenter/Tor/
+  mobile signal at all and getIPIntel rate-limits itself away partway through a bulk run, so `Exit` and
+  `GII` were routinely dashes end to end - width taken from the columns carrying the answer. They now
+  drop out once the run settles, with the footnote saying which and why. Never mid-run: columns
+  appearing and vanishing under the reader is worse than a column of dashes.
+
 ## [0.33.5] - 2026-08-08
 
 ### Fixed
