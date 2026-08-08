@@ -2091,6 +2091,10 @@ const runSummary=rows=>{
   return done===rows.length?`${done} checked in ${secs}s`
     :`${done}/${rows.length} checked · ${running} running · ${secs}s`;};
 
+// The exact opening tag every "not measured" cell renders. Markup, not a bare word, so a VALUE
+// containing the same letters cannot be mistaken for the marker — esc() escapes `<` and `"`.
+const NODATA='<span class="dim nodata"';
+
 const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
 const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
 // Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score
@@ -2848,11 +2852,15 @@ $('#bulkgo').onclick=async()=>{
     // end to end. Collapse only once every row has LANDED: columns appearing and vanishing mid-run under
     // the reader's eye is worse than a column of dashes.
     const settled=rows.every(x=>!x.busy);
+    // Match the MARKUP, not the word: `includes('nodata')` would also fire on a cell whose VALUE
+    // happened to contain that text (an ISP or a risk band called "nodata"), dropping a column that
+    // had something to show — the same class of bug as the predicate this replaced. esc() turns `<`
+    // and `"` into entities, so no escaped value can ever produce this opening tag.
     // Blank means "every cell rendered the not-measured marker" — read off the markup the column
     // ACTUALLY produced. A predicate written beside the cell drifts from it: SCAM's asked about
     // scam_score while its cell renders whenever scam_risk exists, so a run with a risk band but no
     // integer score would have collapsed a column that had something to show in every row.
-    const dropped=settled?COLS.filter(c=>c.drop&&rows.every(x=>c.cell(x).includes('nodata'))):[];
+    const dropped=settled?COLS.filter(c=>c.drop&&rows.every(x=>c.cell(x).includes(NODATA))):[];
     const SHOWN=COLS.filter(c=>!dropped.includes(c));
     let h=`<div class=bulkwide><div class="blk panel"><div class=bsum>`+
       `<span data-runsum>${esc(runSummary(rows))}</span>`+

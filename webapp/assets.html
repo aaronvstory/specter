@@ -376,6 +376,10 @@ const runSummary=rows=>{
   return done===rows.length?`${done} checked in ${secs}s`
     :`${done}/${rows.length} checked · ${running} running · ${secs}s`;};
 
+// The exact opening tag every "not measured" cell renders. Markup, not a bare word, so a VALUE
+// containing the same letters cannot be mistaken for the marker — esc() escapes `<` and `"`.
+const NODATA='<span class="dim nodata"';
+
 const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
 const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
 // Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score
