@@ -180,3 +180,48 @@
   Detected; TZ matched exactly -> STILL VPN Detected. So it is `publicVPN`, not `timezoneMismatch`: the home
   line exits at `23.159.216.252` (Byte Node AS17243, a hosting ASN, IPQS 100 Proxy/abuse/bot). Not MTU either
   - `tun0` measured MTU 1500, already the plain-Ethernet value vs p0f's 1300-1460 tunnel signatures.
+
+## 2026-08-08/09 - Webapp UI pass: live per-row status + view harmonization (PRs #106, #107)
+
+- **What changed:** `specter/ipcheck.py` (the PAGE source; index.html + ipcheck_core.py are generated).
+  Per-row `queued`/`checking Ns` status + a live run header; the busy-row `n/k` lie replaced with a
+  neutral marker; verdict reason moved to the pill's tooltip (200px -> 100px); columns empty for EVERY
+  row collapse once settled, named in the footnote; the JS flag-abbreviation table is now GENERATED from
+  IPQS_FLAGS (3-tuples now) and injected into PAGE at import; latency caption untruncated; tiles
+  `min(190px, calc(50% - 6px))` (4-up desktop / 2-up phone); `word-break:break-all` ->
+  `overflow-wrap:anywhere`. Squashed `98172b7` and `d0833aa`.
+- **Why:** the user asked for clarity during a run and said the single-IP and bulk views felt like
+  different apps - which they were: two renderers (118 vs 60 lines) showing the same fields in different
+  visual languages.
+- **Verified by SCREENSHOT through the real render paths** (fixtures stub only the API): dark, light,
+  desktop, expanded detail, mid-run, and a true 390px phone viewport. 296 tests green.
+- **METHOD NOTES worth reusing:**
+  - Headless Chrome floors its viewport at ~512px, so `--window-size=430` renders 512 and CROPS. A naive
+    mobile screenshot looked like a layout break that did not exist. Real narrow testing needs an iframe.
+  - A fixture must carry the REAL data shape. Mine fed raw flag keys when `flags()` returns display
+    labels, which invented a "three different spellings" bug that did not exist. Check the shape first.
+  - Measure, do not eyeball: added table scroll-shadows, measured flat (19,21,25) across the edge, and
+    reverted rather than ship an effect that was not rendering.
+- **THE IMPORTANT ONE - a whole test-gap class:** refactoring deleted `runSummary`, so `draw()` threw a
+  ReferenceError and the bulk table sat on "Checking..." forever - with ALL 291 tests green.
+  `test_the_generated_page_runs_without_a_top_level_error` only proves the script reached its LAST
+  top-level statement; a handler error happens long after that. There is now a test that drives a real
+  bulk run in Chrome and collects `unhandledrejection` as well as `error` (the failure was a rejected
+  promise, which onerror never sees). Proven by re-deleting `runSummary`: the old test passes, the new
+  one fails.
+- **Gauntlet ran THREE rounds; each round found a flaw in the previous round's fix** - every one the same
+  shape, reaching for a PROXY of the condition instead of the condition itself:
+  1. (both reviewers, independently) valid JSON is not safe raw inside `<script>` - a `</script>` in a
+     label ends the ELEMENT. `<`/`>`/`&` are now backslash-u escaped, plus ensure_ascii.
+  2. (both) a `blank` predicate written beside a `cell` drifts from it - SCAM's asked about scam_score
+     while its cell renders on scam_risk. Fixed by DERIVING blankness from the rendered markup.
+  3. (codex) `includes('nodata')` was a substring match a VALUE could forge -> match the opening tag.
+  4. (codex) my claim "every value goes through esc()" was FALSE: `fraud_score` / `abuse_confidence`
+     interpolated raw. Both escaped; verified in-browser with hostile values forging the marker.
+  Plus from the PR bots: mojibake TWICE (writing non-ASCII as a Python BYTES literal into already-UTF-8
+  text encodes it a second time - write a str and let .encode do it once), a browser test using `return`
+  instead of `pytest.skip` (reports PASS on a machine with no Chrome), and a fixed-path temp file that
+  races under parallel runs.
+- **PROCESS:** a `code-reviewer` subagent ran `git stash` in the shared working tree earlier in the
+  session and swallowed an in-flight fix. Recovered in full, but review subagents must be told NEVER to
+  touch git state - they share the tree.
