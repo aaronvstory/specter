@@ -39,7 +39,7 @@ body{margin:0;color:var(--ink);font:15px/1.55 var(--sans);
     radial-gradient(1200px 500px at 78% -8%, color-mix(in srgb,var(--accent) 8%,transparent), transparent 70%),
     var(--bg);
   -webkit-font-smoothing:antialiased;}
-.wrap{max-width:760px;margin:0 auto;padding:30px 20px 72px}
+.wrap{max-width:880px;margin:0 auto;padding:30px 20px 72px}
 .top{display:flex;align-items:center;justify-content:space-between;margin:0 0 20px}
 .brand{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--soft)}
 .pulse{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent);animation:pulse 2.4s infinite}
@@ -110,7 +110,7 @@ details[open] summary::before{content:"− "}
    it; anything left over on a final row grows too, rather than sitting at a quarter width beside dead
    space. min-width:0 is required — a flex item otherwise floors at its CONTENT width, which both widens
    the tile with the longest caption and stops that caption's ellipsis from ever engaging. */
-.tile{flex:1 1 120px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+.tile{flex:1 1 min(190px, calc(50% - 6px));min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
 .tile em{font-style:normal;display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
 .tile strong{display:block;font:700 27px/1 var(--mono);margin:9px 0 5px}
 /* One line, always. Tiles share a grid row, so a caption that wraps to three lines makes EVERY tile that
@@ -171,7 +171,7 @@ svg.ico{width:13px;height:13px;margin-right:7px;vertical-align:-2px;flex:none}
 .rw{display:flex;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
 .rw:first-child{border-top:0}
 .rw i{font-style:normal;color:var(--dim);width:118px;flex:none;font:600 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
-.rw div{font-family:var(--mono);word-break:break-all}
+.rw div{font-family:var(--mono);overflow-wrap:anywhere;word-break:normal}
 .note{color:var(--soft);font-size:12.5px;padding:4px 0}.note+.note{border-top:1px solid var(--line);margin-top:2px;padding-top:8px}
 textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
   padding:11px 12px;font:13px/1.5 var(--mono);resize:vertical;margin-top:12px}
@@ -184,7 +184,7 @@ textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px colo
    right edge of the page. So `.bulkwide` is a plain outer wrapper and `.blk` stays on the inner panel.
    The 48px gutter is not decoration either — 100vw INCLUDES the vertical scrollbar, so a smaller inset
    makes the panel wider than the viewport and the whole page picks up a horizontal scrollbar. */
-.bulkwide{width:min(1680px,calc(100vw - 48px));margin-left:50%;transform:translateX(-50%)}
+.bulkwide{width:min(1440px,calc(100vw - 48px));margin-left:50%;transform:translateX(-50%)}
 /* Sortable headers — comparing a batch means reordering it by whichever signal you care about. */
 table.bulk th.s{cursor:pointer;user-select:none;white-space:nowrap}
 table.bulk th.s:hover{color:var(--accent)}
@@ -214,6 +214,10 @@ table.bulk th.s[data-dir="-1"]::after{content:"▼"}
    column with it. */
 table.bulk th em{font-style:normal;color:var(--dim);font-weight:400}
 .sub{display:block;font-size:9.5px;line-height:1.35;color:var(--dim);letter-spacing:.02em}
+/* A verdict's reason is prose, and prose has no natural width — unbounded it made Verdict the second
+   widest column in the table and pushed the measurements off to the right. Same cap-and-hover idiom as
+   the exit IP: two lines of reason is enough to recognise WHY, the rest is on the title. */
+table.bulk td .sub{max-width:210px;overflow:hidden;text-overflow:ellipsis}
 /* Detected-as codes: three letters each, full meaning on hover. Spelling them out
    ("VPN Proxy Recent abuse Bot") made this the widest column on the table for the least information. */
 .fx{display:inline-block;padding:2px 4px;margin-right:3px;border-radius:4px;font-size:10px;font-weight:700;
@@ -297,6 +301,10 @@ table.bulk td{padding:9px 7px;border-bottom:1px solid var(--line);vertical-align
 table.bulk tr:last-child td{border-bottom:0}
 table.bulk tbody tr:hover td{background:var(--panel2)}
 .vpill{display:inline-block;padding:3px 9px;border-radius:6px;font:600 10px/1.5 var(--mono);letter-spacing:.04em}
+.v-queued-p{background:color-mix(in srgb,var(--dim) 16%,transparent);color:var(--dim)}
+/* A running row's pill breathes, so "still going" is visible without reading the clock beside it. */
+.vpill.live{animation:livepulse 1.4s ease-in-out infinite}
+@keyframes livepulse{0%,100%{opacity:1}50%{opacity:.45}}
 .v-dirty-p{background:color-mix(in srgb,var(--dirty) 16%,transparent);color:var(--dirty)}
 .v-suspect-p{background:color-mix(in srgb,var(--suspect) 16%,transparent);color:var(--suspect)}
 .v-clean-p{background:color-mix(in srgb,var(--clean) 15%,transparent);color:var(--clean)}
@@ -349,6 +357,37 @@ table.bulk tbody tr:hover td{background:var(--panel2)}
 </div>
 <script>
 const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+// ONE vocabulary for IPQS's flags, shared by the bulk table and the single-check card. It used to live
+// inside the bulk handler, so the single view fell back to printing the raw API value and the same signal
+// read three different ways across the page — `PRX` in a table cell, `proxy` on a chip, `bot_status` on
+// another. A reader should not have to learn that those are the same thing.
+//
+// The underscore in the pattern is load-bearing: IPQS sends `recent_abuse`, and the old `/recent abuse/`
+// (space) never matched it, so the table silently printed the raw key next to properly abbreviated
+// neighbours. A code table that can't name a signal must be obvious about it, not quietly inconsistent.
+const SIGNALS=[[/tor/i,'TOR','Tor'],[/vpn/i,'VPN','VPN'],[/proxy/i,'PRX','Proxy'],
+               [/recent[ _]?abuse|frequent/i,'ABU','Recent abuse'],[/bot/i,'BOT','Bot'],
+               [/crawler|spider/i,'CRW','Crawler'],[/scanner/i,'SCN','Security scanner'],
+               [/high.risk/i,'ATK','High-risk attacks'],
+               // Found by test_every_ipqs_flag_label_has_a_short_code: these two are in IPQS_FLAGS and had
+               // no abbreviation, so they rendered as full text wedged between three-letter neighbours.
+               [/shared/i,'SHR','Shared connection'],[/mobile/i,'MOB','Mobile']];
+// [shortCode, fullName] for a raw flag key. An unknown flag keeps its own text rather than being dropped —
+// a code table must never silently swallow a signal it has no abbreviation for.
+const signalOf=s=>{const m=SIGNALS.find(([re])=>re.test(s));
+  return m?[m[1],m[2]]:[String(s),String(s)];};
+
+// How long THIS row has been waiting on its proxy. Seconds, because a bulk check of cold residential
+// exits runs 5-20s a row and the whole point is being able to see which one is dragging.
+const elapsed=x=>x.startedAt?((Date.now()-x.startedAt)/1000).toFixed(0)+'s':'';
+// One honest line about the run: how many are done, how many are in flight, how long it has taken.
+const runSummary=rows=>{
+  const done=rows.filter(x=>!x.busy).length, running=rows.filter(x=>x.busy&&x.startedAt).length;
+  const started=rows.map(x=>x.startedAt).filter(Boolean);
+  const secs=started.length?((Date.now()-Math.min(...started))/1000).toFixed(0):0;
+  return done===rows.length?`${done} checked in ${secs}s`
+    :`${done}/${rows.length} checked · ${running} running · ${secs}s`;};
+
 const band=s=>s>=85?'dirty':s>=60?'suspect':'clean';
 const bandWord=s=>s>=85?'high risk':s>=60?'suspicious':'clean';
 // Mirrors getipintel_band() in ipcheck.py. Low is "no proxy signal", never "residential" — a low score

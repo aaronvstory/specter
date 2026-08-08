@@ -1989,3 +1989,26 @@ def test_the_packaging_version_tracks_the_VERSION_file():
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     assert f'version = "{version}"' in pyproject, \
         f"pyproject.toml does not declare {version} — VERSION is the single source"
+
+
+def test_every_ipqs_flag_label_has_a_short_code_in_the_pages_signal_table():
+    """The bulk table abbreviates each IPQS flag to three letters; the single-check card and the detail
+    row spell the same flag out. All three read one `SIGNALS` table in the page.
+
+    An unmatched label does not crash — it falls through to printing itself — which is the right
+    behaviour at runtime and precisely why it needs a test: a new flag added to `IPQS_FLAGS` would
+    silently render as a full-width label wedged between three-letter neighbours, and nobody would
+    notice until the column looked wrong. Pinned here so the JS table has to learn each new flag.
+    """
+    page = ipcheck.PAGE
+    table = re.search(r"const SIGNALS=\[(.*?)\];", page, re.S)
+    assert table, "SIGNALS table not found in PAGE — did it get renamed?"
+    # [/pattern/i,'CODE','Full name'] — pull the pattern and the code out of each entry.
+    entries = re.findall(r"\[/(.+?)/i,'([A-Z]+)'", table.group(1))
+    assert len(entries) >= 8, f"expected the full signal table, parsed {entries}"
+
+    for _key, label in ipcheck.IPQS_FLAGS:
+        hit = next((code for pat, code in entries
+                    if re.search(pat.replace("\\\\", "\\"), label, re.I)), None)
+        assert hit, (f"IPQS flag {label!r} has no short code in the page's SIGNALS table — it would "
+                     f"render as its own full text beside three-letter codes")

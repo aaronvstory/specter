@@ -3,6 +3,40 @@
 All notable changes to Specter are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.33.4] - 2026-08-08
+
+### Added
+- **Per-row live status in a bulk run.** Each row now says whether it is `queued` or `checking`, with
+  its own elapsed clock, and the header carries `3/8 checked Â· 4 running Â· 5s`. With cold residential
+  exits taking 5-20s each, the only feedback used to be a button reading "Checking..." for minutes, and
+  no way to tell WHICH proxy was dragging. The clocks tick without redrawing the table, so an open
+  detail row and the chosen sort survive. Deliberately no invented stage names - the server does the
+  whole check in one request and streams nothing, so "connecting" / "reading reputation" would be a
+  guess dressed as a measurement.
+
+### Fixed
+- **A row still being checked no longer claims a REASON for having no value.** Every score cell fell
+  back to `n/k` (= no key), which is true for a finished row and false for one in flight - the key is
+  fine, the check simply has not happened yet.
+- **The bulk table shows WHY a verdict was reached**, like the single-check card always has. A bare
+  pill was the one place in the app where a verdict appeared without its evidence.
+- **The latency caption no longer truncates itself.** It read `fast Â· 812 ms tota...` - the numbers it
+  existed to show were the part being cut. Short caption, full detail on hover.
+- **Values no longer break mid-word.** `word-break:break-all` rendered "Columbus, Ohio, Unite / d
+  States" at phone width; these values have spaces to break at.
+- **Signal tiles no longer strand one on its own row** (six wrapped 5 + 1, and flex stretched the loner
+  full width). Now 4-up on the desktop column and 2-up on a phone, from one rule.
+- **`Shared connection` and `Mobile` had no short code**, so they rendered as full text wedged between
+  three-letter neighbours. Found by a new test that pins every `IPQS_FLAGS` label to the page's signal
+  table, so a flag added on the Python side cannot silently render wrong.
+
+### Changed
+- **One signal vocabulary.** The abbreviation table lived inside the bulk handler and was unreachable
+  from the other two renderers; it is now shared by the table cell, the single-check card and the
+  detail row. Same output as before for existing flags - a consolidation, not a visible change.
+- **Less of a jump between the two views**: the form column 760px -> 880px, the comparison table
+  1680px -> 1440px.
+
 ## [0.33.3] - 2026-08-08
 
 ### Fixed
