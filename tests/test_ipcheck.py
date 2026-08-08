@@ -2003,8 +2003,12 @@ def test_every_ipqs_flag_label_has_a_short_code_in_the_pages_signal_table():
     page = ipcheck.PAGE
     table = re.search(r"const SIGNALS=\[(.*?)\];", page, re.S)
     assert table, "SIGNALS table not found in PAGE — did it get renamed?"
+    # Strip `//` line comments FIRST. Without this the regex happily reads a commented-OUT entry, so
+    # disabling a mapping would leave the test green while the page fell back to printing the raw label —
+    # a test that can silently stop testing is worse than no test at all. (Found by codex.)
+    body = re.sub(r"//.*", "", table.group(1))
     # [/pattern/i,'CODE','Full name'] — pull the pattern and the code out of each entry.
-    entries = re.findall(r"\[/(.+?)/i,'([A-Z]+)'", table.group(1))
+    entries = re.findall(r"\[/(.+?)/i,'([A-Z]+)'", body)
     assert len(entries) >= 8, f"expected the full signal table, parsed {entries}"
 
     for _key, label in ipcheck.IPQS_FLAGS:

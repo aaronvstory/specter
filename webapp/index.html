@@ -1286,9 +1286,11 @@ $('#bulkgo').onclick=async()=>{
     catch(e){x.r={error:String(e)};}
     x.busy=false; draw();
   }};
-  await Promise.all(Array.from({length:Math.min(CAP,rows.length)},worker));
-  clearInterval(tick); draw();
-  b.disabled=false; b.textContent='Check all';
+  // finally, not a trailing statement: if anything in the run throws (a draw() bug, a JSON parse), the
+  // interval would otherwise tick forever against a table nobody is updating, and the button would stay
+  // disabled with no way back short of a reload.
+  try{ await Promise.all(Array.from({length:Math.min(CAP,rows.length)},worker)); }
+  finally{ clearInterval(tick); draw(); b.disabled=false; b.textContent='Check all'; }
 };
 
 // LAST statement in the script, and the tripwire for a whole class of failure: if ANY top-level statement
