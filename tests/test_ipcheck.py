@@ -2086,3 +2086,23 @@ addEventListener('load',()=>setTimeout(()=>{
     # ...while the columns that always carry an answer are never droppable.
     for keep in ("Proxy", "Status", "Verdict", "Exit IP"):
         assert keep in got["cols"], f"the {keep} column went missing: {got['cols']}"
+
+
+def test_every_droppable_column_renders_the_exact_no_data_marker():
+    """A column opts into collapsing with `drop:1`, and the collapse decides emptiness by looking for
+    the marker its no-data branch renders. If a cell's markup drifts from the marker by so much as a
+    quote, that column can never collapse again — and nothing fails: it just quietly keeps its width
+    forever. This is a silent no-op, which is the worst kind of regression, so it gets a test.
+
+    Checked against the SHIPPED page rather than the source string, because that is what runs.
+    """
+    page = (Path(__file__).resolve().parents[1] / "webapp" / "index.html").read_text("utf-8")
+    marker = '<span class="dim nodata"'
+    assert f"const NODATA='{marker}'" in page, "the marker constant moved — update this test with it"
+    for key in ("fraud", "gii", "abuse", "scam", "type"):
+        body = re.search(r"\{k:'" + key + r"'.*?\n(?=    \{k:'|  \];)", page, re.S)
+        assert body, f"column {key!r} not found in the page"
+        assert "drop:1" in body.group(0), f"column {key!r} lost its drop flag"
+        assert marker in body.group(0), (
+            f"column {key!r} is droppable but its no-data branch no longer renders the exact marker, "
+            f"so it can never collapse — and nothing would fail to tell you")
