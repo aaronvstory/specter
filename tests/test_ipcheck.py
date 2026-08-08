@@ -1894,7 +1894,10 @@ def test_the_generated_page_runs_without_a_top_level_error():
                                "/usr/bin/google-chrome", "/usr/bin/chromium")
                    if Path(c).exists()), None) or shutil.which("chrome") or shutil.which("chromium")
     if not chrome:
-        return                                          # no browser here; it still runs locally
+        import pytest
+        # skip, NOT return: a `return` reports PASS, so a machine without a browser would
+        # show green for a check that never ran. A skip says so out loud.
+        pytest.skip("no Chrome/Chromium on this machine — browser check not run")
     page = Path(__file__).resolve().parents[1] / "webapp" / "index.html"
     r = subprocess.run([chrome, "--headless", "--disable-gpu", "--virtual-time-budget=6000",
                         "--dump-dom", page.as_uri()], capture_output=True, text=True, timeout=120)
@@ -2032,7 +2035,10 @@ def test_a_bulk_run_completes_in_a_real_browser_without_an_uncaught_error():
                                "/usr/bin/google-chrome", "/usr/bin/chromium")
                    if Path(c).exists()), None) or shutil.which("chrome") or shutil.which("chromium")
     if not chrome:
-        return                                          # no browser here; it still runs locally
+        import pytest
+        # skip, NOT return: a `return` reports PASS, so a machine without a browser would
+        # show green for a check that never ran. A skip says so out loud.
+        pytest.skip("no Chrome/Chromium on this machine — browser check not run")
     root = Path(__file__).resolve().parents[1]
     harness = """<script>
 window.__errs=[];
