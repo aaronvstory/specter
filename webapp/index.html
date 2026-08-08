@@ -1267,12 +1267,9 @@ $('#bulkgo').onclick=async()=>{
           `</td>`).join('')+`</tr>`;
       if(x.open)h+=`<tr class=detrow><td colspan="${SHOWN.length+1}">${bulkDetail(x)}</td></tr>`;
     }
-    h+=`</tbody></table></div><p class=note style="padding:10px 2px 0">`+
-      `Click a heading to sort · the chevron opens a proxy's full detail · hover a heading, code or `+
-      `truncated value for the full text · a dot = not checked yet, n/k = no key, n/a = the source `+
-      `didn't answer — none of the three is clean`+
-      (dropped.length?` · hidden because no row had one: ${esc(dropped.map(c=>c.h).join(', '))}`:'')+
-      `</p></div></div>`;
+    h+=`</tbody></table></div><div class=hint style="padding:10px 2px 0"><div class=rw><i>Click a heading</i><div>Sort by that column</div></div><div class=rw><i>Chevron icon</i><div>Open full detail for this proxy</div></div><div class=rw><i>Hover any value</i><div>Full text on tooltip</div></div><div class=rw><i>• / n/k / n/a</i><div>Dot = not checked yet · n/k = no key · n/a = source didn't answer · none are clean</div></div>`+
+      (dropped.length?`<div class=rw><i>Hidden</i><div>${esc(dropped.map(c=>c.h).join(', '))} — no rows had values</div></div>`:'')+
+      `</div></div></div>`;
     out.innerHTML=h;
   };
   bulk={rows, draw, sort:k=>{sortDir=(sortKey===k?-sortDir:1);sortKey=k;draw();}};
